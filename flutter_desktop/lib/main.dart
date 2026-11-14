@@ -35,6 +35,7 @@ class Product {
     required this.name,
     required this.category,
     this.price,
+    this.active = true,
     this.image,
     this.descriptionTr,
     this.displayNameAr,
@@ -44,6 +45,7 @@ class Product {
   final String name;
   final String category;
   final double? price;
+  final bool active;
   final String? image, descriptionTr, displayNameAr, displayNameEn;
 }
 
@@ -201,6 +203,16 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       final snap = store.read();
       final next = copyJson(snap.data);
       next.putIfAbsent('localMenu', () => data['products']);
+      // Safe first-upgrade fallback: do not show legacy Şambali ID 32
+      // before the first website sync. An explicit CMS active:true restores it.
+      final rawLocalMenu = next['localMenu'];
+      if (rawLocalMenu is List) {
+        for (final product in rawLocalMenu.whereType<Map>()) {
+          if (product['id'] == 32 && product['active'] == null) {
+            product['active'] = false;
+          }
+        }
+      }
       // Keep intentional local 'not for sale' (null) prices intact.
       // The website sync supplies published prices when enabled.
       final printerSettings =
@@ -281,6 +293,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     final savedMenu = asMaps(store.read().data['localMenu']);
     if (savedMenu.isNotEmpty) {
       menu = savedMenu
+          .where((p) => p['active'] != false)
           .map(
             (p) => Product(
               id: p['id'] as int,
@@ -1697,7 +1710,7 @@ class _OrderComposerState extends State<_OrderComposer> {
   @override
   Widget build(BuildContext context) {
     final filtered = widget.products
-        .where((p) => (category == 'all' || p.category == category))
+        .where((p) => p.active && (category == 'all' || p.category == category))
         .toList();
     final totalCents = counts.entries.fold<int>(0, (sum, e) {
       final p = widget.products.firstWhere((x) => x.id == e.key);
