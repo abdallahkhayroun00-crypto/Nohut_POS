@@ -38,7 +38,7 @@ Json submitStaffOrder(PosStore store, Json payload) {
     final lines = <Json>[];
     for (final row in asMaps(payload['lines'])) {
       final p = asMaps(s['localMenu'])
-          .where((p) => p['id'] == row['productId'] && p['price'] is num)
+          .where((p) => p['id'] == row['productId'] && p['price'] is num && p['active'] != false)
           .firstOrNull;
       if (p == null ||
           row['qty'] is! int ||
