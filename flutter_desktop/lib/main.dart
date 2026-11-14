@@ -152,9 +152,13 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
   Future<void> _startLan() async {
     await _loadMenu();
     if (mounted && widget.startServer) {
-      await lan.start();
+      try {
+        await lan.start();
+      } catch (e) {
+        _notify('Yerel sunucu başlatılamadı: $e', error: true);
+      }
+      if (mounted) qrSync.start();
     }
-    if (mounted) qrSync.start();
   }
 
   Future<void> _loadMenu() async {
