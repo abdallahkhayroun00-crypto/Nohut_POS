@@ -76,47 +76,55 @@ Validation: HTML logic regressions, SQLite/domain/receipt/report tests and deskt
 XP-237B specification: https://www.xprintertech.com/desktop-label-printer-xp-237b — 58 mm receipt paper, 48 mm print width, ESC/POS receipt mode. Browser print dialog preferences are owned by the browser; CSS constrains the receipt to the 48 mm content area.
 
 
-## Official QR menu: automatic website synchronization (phase 2)
+## Nohut QR Menu full catalog sync — stable-ID version 1
 
-The restaurant's Windows POS can use the **published Nohut QR Menu** as the
-single price authority for local products. Under **Ayarlar → Resmî QR Menü ·
-Otomatik Eşitleme**, keep the switch enabled (default). The app checks once
-after startup and again every **10 minutes** while the Windows app is open.
-Use **Şimdi Eşitle** for an immediate attempt.
+When **Ayarlar → Resmî QR Menü · Otomatik Eşitleme** is enabled (default),
+Windows POS checks the official published QR site after startup and every
+**10 minutes**. Use **Şimdi Eşitle** to check immediately.
 
-Source endpoints (public HTTPS JSON; no API token, no payment or staff data):
+Reads THREE public HTTPS endpoints:
+- `https://nohutfalafel.github.io/qr-menu/cms/catalog-v1.json`
 - `https://nohutfalafel.github.io/qr-menu/cms/menu-prices.json`
 - `https://nohutfalafel.github.io/qr-menu/cms/campaigns.json`
 
-What is synchronized into the **local SQLite catalog**:
-- Existing products: prices are updated by exact Turkish name and category,
-  retaining the old local product ID.
-- Newly listed products: appended with fresh local product IDs.
-- Published campaigns: cached in `qrCampaigns` with active status, localized
-  campaign text, dates, and public image paths.
-- The PC keeps the historical order lines/payments completely unchanged.
-  Old receipts retain their original prices.
-- Product removals and renames are **not inferred** from missing names; local
-  entries are kept and counted as unlisted. Names are not permanent IDs.
-- Duplicate/invalid/suspiciously short responses or category conflicts abort
-  the entire update. SQLite revision conflict triggers a fresh-state retry.
-- If offline, network fails, or the source is invalid: keep the entire local
-  menu, show a status/error, and retry on the next interval. Unchanged remote
-  content causes no SQLite write.
-- Turn off the switch before making temporary owner-only local price changes:
-  when enabled the website is the authority on the next successful sync.
-  The switch is persisted in the local SQLite settings.
+**Important source rules:** the versioned catalog supplies **immutable product
+IDs**, eight product categories (+ All), Turkish/English/Arabic names and
+descriptions and original product image asset paths. The two independent CMS
+files remain authoritative for **current prices and live offers**. If a CMS
+product doesn't match a catalog name/category, sync refuses the whole update
+and leaves local SQLite unchanged. QR cards and their original visual
+composition in the customer-facing website are not modified by this POS feature.
 
-**Current scope:** the public `cms/menu-prices.json` contains name, category,
-price. Product ingredient descriptions, per-product images, and Arabic/English
-names are currently in the website's JS/CSS assets, not this structured feed.
-Full content sync requires a versioned canonical JSON catalog with immutable
-product IDs. The platform catalog in Trendyol/Yemeksepeti is still a DEMO and
-is deliberately not updated. This feature does not deploy Cloudflare Pages or
-connect payment, fiscal, or delivery APIs.
+On a successful sync, SQLite's `localMenu` products are matched by **ID,
+not name**. Legacy IDs **0–50** are retained and the two new products use
+**51 = Vegan Dürüm**, **52 = Layali Lübnan**. Product names, translated
+copy, prices and source image paths are updated; missing new IDs are appended.
+The order composer shows a thumbnail and Turkish product description. If
+offline, images show an icon, while cached product data still works.
 
-**Deployment:** no changes are applied to the restaurant until the draft PR is
-reviewed, Flutter CI passes, and a Windows release is installed on the laptop.
-Back up the existing SQLite database before replacing the program.
-Run tests: `flutter test test/qr_menu_sync_test.dart` and
-`flutter test test/qr_menu_reader_test.dart`.
+The local `qrCategories` and `qrCampaigns` metadata caches are updated,
+but customer order history, customer data, payment records, receipt snapshots,
+staff configuration, kitchen print jobs and platform demo menus are untouched.
+Existing orders keep their original prices. POS-only local products are kept.
+Collision with a custom local ID, duplicate ID, stale catalog, invalid feed
+or network failure aborts the update without corrupting local orders. A failed
+sync retains the previous SQLite menu; an unchanged sync makes no DB write.
+A stored switch can disable auto-sync so owner-only price changes are kept.
+
+Photos are URL-linked website assets, **not offline-downloaded originals**;
+they need connectivity to display, unlike cached product text/prices.
+The two products that do not have a distinct source image path use a fallback
+icon in the POS; their current QR website graphics are unchanged.
+The descriptions are restaurant copy and not structured allergen declarations.
+
+To inspect:
+- `flutter test test/qr_menu_reader_test.dart`
+- `flutter test test/qr_menu_sync_test.dart`
+- `flutter analyze --no-fatal-infos`
+
+**Deployment:** changes on a GitHub branch have no impact on installed Windows
+POS until merged, built and installed. Back up the live restaurant SQLite
+database before upgrading. Only after passing CI and validating 53 products,
+orders and the XP-237B printer on the real laptop should the new executable
+replace the old one. GitHub Actions build artifacts are temporarily retained;
+their presence alone does not mean the software is installed.
