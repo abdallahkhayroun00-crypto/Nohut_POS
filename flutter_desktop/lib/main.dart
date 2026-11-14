@@ -205,9 +205,12 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       next.putIfAbsent('localMenu', () => data['products']);
       // Safe first-upgrade fallback: do not show legacy Şambali ID 32
       // before the first website sync. An explicit CMS active:true restores it.
-      for (final product in asMaps(next['localMenu'])) {
-        if (product['id'] == 32 && product['active'] == null) {
-          product['active'] = false;
+      final rawLocalMenu = next['localMenu'];
+      if (rawLocalMenu is List) {
+        for (final product in rawLocalMenu.whereType<Map>()) {
+          if (product['id'] == 32 && product['active'] == null) {
+            product['active'] = false;
+          }
         }
       }
       // Keep intentional local 'not for sale' (null) prices intact.
