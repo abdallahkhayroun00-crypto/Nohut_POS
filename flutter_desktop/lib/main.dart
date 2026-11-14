@@ -780,6 +780,12 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
             (e.source == 'Masa' || e.source == 'Gel-Al') &&
             onIstanbulDay(e.stamp, businessDay))
         .fold<int>(0, (sum, entry) => sum + entry.amount);
+    final lastDailyReceipt = orders
+        .where((o) => o['numberDay'] == businessDay)
+        .fold<int>(0, (max, o) {
+          final n = o['dailyNumber'];
+          return n is int && n > max ? n : max;
+        });
     final active = orders
         .where((o) => o['closed'] != true && o['cancelled'] != true)
         .toList();
@@ -853,6 +859,11 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                   'Bugün Net Tahsilat',
                   formatTry(todayNetReceipts),
                   Icons.payments_outlined,
+                ),
+                _metric(
+                  'Günlük Son Fiş',
+                  lastDailyReceipt.toString().padLeft(4, '0'),
+                  Icons.confirmation_number_outlined,
                 ),
                 _metric(
                   'Açık Sipariş · Devreden Dahil',
