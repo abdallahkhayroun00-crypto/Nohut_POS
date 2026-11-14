@@ -10,6 +10,7 @@ class PublishedProductPrice {
     required this.category,
     required this.name,
     required this.priceTl,
+    this.active = true,
     required this.names,
     required this.displayNames,
     required this.descriptions,
@@ -19,6 +20,7 @@ class PublishedProductPrice {
   final String category;
   final String name;
   final double priceTl;
+  final bool active;
   final Map<String, String> names, displayNames, descriptions;
   final String? image;
 }
@@ -82,7 +84,7 @@ class QrMenuReader {
         cms is! Map) {
       throw const FormatException('Unsupported catalog or CMS format.');
     }
-    final livePrices = <String, (String, double)>{};
+    final livePrices = <String, (String, double, bool)>{};
     for (final group in cms.entries) {
       if (group.key is! String || group.value is! List) {
         throw const FormatException('Invalid CMS price group.');
@@ -93,7 +95,14 @@ class QrMenuReader {
             livePrices.containsKey(item['name'])) {
           throw const FormatException('Duplicate CMS product name.');
         }
-        livePrices[item['name'] as String] = (group.key as String, readPrice(item['price']));
+        if (item['active'] != null && item['active'] is! bool) {
+          throw const FormatException('Invalid CMS product visibility flag.');
+        }
+        livePrices[item['name'] as String] = (
+          group.key as String,
+          readPrice(item['price']),
+          item['active'] != false,
+        );
       }
     }
 
@@ -129,7 +138,7 @@ class QrMenuReader {
       }
       products.add(PublishedProductPrice(
         id: item['id'] as int, category: item['category'] as String,
-        name:name, priceTl:price.$2, names:localized,
+        name:name, priceTl:price.$2, active:price.$3, names:localized,
         displayNames:readLanguages(item['displayName'],requiredText:true),
         descriptions:readLanguages(item['description']),
         image:readProductImage(item['image']),
