@@ -204,7 +204,8 @@ class QrMenuAutoSync extends ChangeNotifier {
     try {
       // No store access or mutation while waiting for the network.
       final remote = await reader.readPublishedMenu();
-      if (_disposed) return;
+      // The operator may switch auto-sync off while the HTTPS call is pending.
+      if (_disposed || !enabled) return;
       QrMenuSyncResult? result;
       for (var attempt = 0; attempt < 4; attempt++) {
         final current = store.read();
