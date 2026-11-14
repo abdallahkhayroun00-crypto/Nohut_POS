@@ -9,7 +9,7 @@ import 'package:nohut_falafel_desktop/qr_menu_reader.dart';
 /// published 51/52 identities. All network calls are stubbed.
 class QrCatalogFixture {
   static List<Map<String,dynamic>> get legacyMenu {
-    final source=jsonDecode(File('assets/menu.json').readAsStringSync()) as Map;
+    final source=jsonDecode(File('test/fixtures/legacy-menu-v1.json').readAsStringSync()) as Map;
     return [for(final p in (source['products'] as List))
       Map<String,dynamic>.from(p as Map)];
   }

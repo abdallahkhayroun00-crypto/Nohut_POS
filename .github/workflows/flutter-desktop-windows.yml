@@ -48,6 +48,15 @@ jobs:
           node-version: '22'
       - name: Preserved HTML prototype regression
         run: node pos-demo/tests/logic.test.cjs
+      - name: Install phone UI test dependencies
+        working-directory: flutter_desktop/ui-tests
+        run: npm ci
+      - name: Install phone test browser
+        working-directory: flutter_desktop/ui-tests
+        run: npx playwright install chromium
+      - name: Phone ordering workflows at 320, 390 and 768 pixels
+        working-directory: flutter_desktop/ui-tests
+        run: npm test
       - name: Validate Windows receipt script syntax
         shell: pwsh
         run: |

@@ -7,6 +7,17 @@ import 'operations.dart';
 import 'operations_ui.dart';
 import 'platform_workflows.dart';
 
+String remoteStatusLabel(String value) =>
+    const {
+      'Created': 'Kabul bekliyor',
+      'Picking': 'Hazırlanıyor',
+      'Invoiced': 'Hazır',
+      'Shipped': 'Kuryede',
+      'Delivered': 'Teslim edildi',
+      'Cancelled': 'İptal edildi',
+    }[value] ??
+    value;
+
 class PlatformPanel extends StatefulWidget {
   const PlatformPanel({super.key, required this.state, required this.edit});
   final Json state;
@@ -51,7 +62,10 @@ class _PlatformPanelState extends State<PlatformPanel> {
       key: ValueKey('$tab:$value:${options.join()}'),
       initialValue: value,
       items: options
-          .map((s) => DropdownMenuItem(value: s, child: Text(s)))
+          .map(
+            (s) =>
+                DropdownMenuItem(value: s, child: Text(remoteStatusLabel(s))),
+          )
           .toList(),
       onChanged: (v) => setState(() => change(v!)),
     ),
@@ -63,7 +77,10 @@ class _PlatformPanelState extends State<PlatformPanel> {
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
-      panelTitle('Online Siparişler · DEMO'),
+      panelTitle('Online Siparişler · Ayrı Test Alanı'),
+      info(
+        'Bu alan yalnızca bellekte çalışır. Test siparişleri restoran kayıtlarına, kasaya ve yazıcıya gönderilmez. Uygulama kapanınca silinir.',
+      ),
       info(
         'Gerçek platform API’si bağlı değil. Test istekleri Senkronizasyon ekranında açık sonuç bekler. Kurye ve tahsilat platforma aittir.',
       ),
@@ -126,9 +143,14 @@ class _PlatformPanelState extends State<PlatformPanel> {
             ])
               button(
                 'Örnek ${kind.$2}',
-                () => edit(
-                  (s) => importPlatform(s, platformFixture(s, source, kind.$1)),
-                ),
+                asMaps(hub()['menu'][source]).isEmpty
+                    ? null
+                    : () => edit(
+                        (s) => importPlatform(
+                          s,
+                          platformFixture(s, source, kind.$1),
+                        ),
+                      ),
               ),
           ],
         ),
@@ -141,7 +163,7 @@ class _PlatformPanelState extends State<PlatformPanel> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   panelTitle(
-                    '#${displayOrderNumber(o)} · ${o['platformPackageId']} · ${o['demoRemoteStatus']}',
+                    '#${displayOrderNumber(o)} · ${o['platformPackageId']} · ${remoteStatusLabel('${o['demoRemoteStatus']}')}',
                   ),
                   Text(
                     'Toplam ${formatTry(orderTotalCents(o))} · ${o['platformDeliveryType']} · Tahsilat ${o['platformCollection']}',

@@ -163,3 +163,7 @@ not whatever timezone is configured in Windows.
 Tests: `flutter test test/daily_midnight_test.dart`. The new POS build must
 be installed on the restaurant's Windows laptop after backup and review;
 merging the code does not remotely update an already-installed application.
+# POS usability changes
+
+See [UX audit progress](UX_AUDIT_PROGRESS.md) for implemented improvements, validation and remaining brand work. Phone browser checks are in `ui-tests/` (`npm ci`, `npx playwright install chromium`, `npm test`). Platform examples use a separate temporary test area and never write restaurant orders to SQLite.
+

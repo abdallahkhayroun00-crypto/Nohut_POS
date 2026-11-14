@@ -32,6 +32,25 @@ Map<String, dynamic> positionsToJson(Map<int, Rect> positions) => {
     '${entry.key}': {'x': entry.value.left, 'y': entry.value.top},
 };
 
+bool validFloorPlacement(Map<int, Rect> positions) {
+  const entrance = Rect.fromLTWH(.118, .274, .103, .15);
+  final entries = positions.entries.toList();
+  for (var i = 0; i < entries.length; i++) {
+    final r = entries[i].value;
+    if (r.left < 0 ||
+        r.top < 0 ||
+        r.right > 1 ||
+        r.bottom > 1 ||
+        r.overlaps(entrance))
+      return false;
+    if (r.top < .338 && r.bottom > .328) return false;
+    for (var j = i + 1; j < entries.length; j++) {
+      if (r.inflate(.012).overlaps(entries[j].value)) return false;
+    }
+  }
+  return true;
+}
+
 class RestaurantFloorPlan extends StatelessWidget {
   const RestaurantFloorPlan({
     super.key,
@@ -89,6 +108,52 @@ class RestaurantFloorPlan extends StatelessWidget {
             const SizedBox(height: 15),
             LayoutBuilder(
               builder: (context, constraints) {
+                if (!editing && constraints.maxWidth < 740) {
+                  return Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (var n = 1; n <= 5; n++)
+                        SizedBox(
+                          width: constraints.maxWidth < 380
+                              ? constraints.maxWidth
+                              : (constraints.maxWidth - 8) / 2,
+                          child: Builder(
+                            builder: (context) {
+                              final o = activeTable(state, n);
+                              return OutlinedButton(
+                                onPressed: () => onTable(n),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 12,
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      Text(
+                                        'Masa $n',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                      Text(
+                                        o == null
+                                            ? 'Boş · Yeni sipariş'
+                                            : '${o['serviceStatus']}',
+                                      ),
+                                      if (o != null)
+                                        Text(
+                                          'Kalan ${formatTry(orderDueCents(o))}',
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                    ],
+                  );
+                }
                 final width = math.max(740.0, constraints.maxWidth);
                 final height = width * 640 / 1075;
                 return SingleChildScrollView(
@@ -173,7 +238,7 @@ class RestaurantFloorPlan extends StatelessWidget {
             : null,
         child: Tooltip(
           message: busy
-              ? 'Masa $n · Dolu · Kalan ${formatTry(orderDueCents(order))}'
+              ? 'Masa $n · ${order['serviceStatus']} · Kalan ${formatTry(orderDueCents(order))}'
               : 'Masa $n · Boş · Yeni sipariş',
           child: DecoratedBox(
             decoration: BoxDecoration(
@@ -213,7 +278,7 @@ class RestaurantFloorPlan extends StatelessWidget {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        busy ? '● Dolu' : '○ Boş',
+                        busy ? '${order['serviceStatus']}' : '○ Boş',
                         style: TextStyle(
                           fontSize: n == 5 ? 10 : 12,
                           color: busy
@@ -221,7 +286,7 @@ class RestaurantFloorPlan extends StatelessWidget {
                               : const Color(0xff3c7d56),
                         ),
                       ),
-                      if (n != 5) ...[
+                      ...[
                         const SizedBox(height: 4),
                         Text(
                           busy
