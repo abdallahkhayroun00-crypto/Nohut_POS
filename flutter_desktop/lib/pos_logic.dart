@@ -112,6 +112,20 @@ String nowTime() {
   return '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
 }
 
+/// Refuse inactive products even if a cashier kept an old composer open
+/// while the QR catalog was updated in another window.
+void validateVisibleProductLines(Json state, List<Json> lines) {
+  final hiddenIds = asMaps(state['localMenu'])
+      .where((p) => p['active'] == false && p['id'] is int)
+      .map((p) => p['id'] as int)
+      .toSet();
+  for (final line in lines) {
+    if (hiddenIds.contains(line['productId'])) {
+      throw const FormatException('Ürün artık satışta değil; menüyü yenileyin.');
+    }
+  }
+}
+
 Json newLocalOrder({
   required Json state,
   required String source,
@@ -128,6 +142,7 @@ Json newLocalOrder({
   }
   if (productLines.isEmpty) throw const FormatException('No products');
   validateProductLines(productLines);
+  validateVisibleProductLines(state, productLines);
   if (source == 'Masa' && activeTable(state, table!) != null) {
     throw const FormatException('Masa dolu; mevcut hesaba ek sipariş ekleyin');
   }
@@ -174,6 +189,7 @@ Json newLocalOrder({
 void addOrderBatch(Json state, int orderId, List<Json> productLines) {
   if (productLines.isEmpty) throw const FormatException('No products');
   validateProductLines(productLines);
+  validateVisibleProductLines(state, productLines);
   final order =
       mutableOrder(state, orderId) ??
       (throw const FormatException('Sipariş bulunamadı'));
