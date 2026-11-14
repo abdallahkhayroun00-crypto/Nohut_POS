@@ -96,7 +96,7 @@ QrMenuSyncResult reconcilePublishedMenu(
   for (final p in published.products) {
     final local = localByName[p.name];
     if (local == null) {
-      products.add({
+      products.add(<String, Object>{
         'id': nextId++,
         'category': p.category,
         'name': p.name,
