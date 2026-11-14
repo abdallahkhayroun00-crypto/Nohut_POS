@@ -28,6 +28,26 @@ Json state() => {
 
 void main() {
   test(
+    'requeue rejects cancelled originals and platform jobs but allows correction notices',
+    () {
+      final s = state();
+      final o = newLocalOrder(
+        state: s,
+        source: 'Masa',
+        table: 1,
+        productLines: [row()],
+      );
+      final original = asMaps(s['printJobs']).first;
+      expect(canRequeueLocalKitchen(s, original), isTrue);
+      cancelLocalOrder(s, o['id'] as int, 'Vazgeçti');
+      expect(canRequeueLocalKitchen(s, asMaps(s['printJobs']).first), isFalse);
+      expect(canRequeueLocalKitchen(s, asMaps(s['printJobs']).last), isTrue);
+      o['source'] = 'Trendyol Go';
+      expect(canRequeueLocalKitchen(s, asMaps(s['printJobs']).last), isFalse);
+    },
+  );
+
+  test(
     'cash input conserves cents and rejects overflow, scientific, negative and malformed input',
     () {
       expect(parseMoney(' 1234,56 '), 123456);

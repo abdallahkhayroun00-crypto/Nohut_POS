@@ -180,6 +180,16 @@ bool correctionKitchenJob(Json state, Map job) {
       asMaps(source['lines']).any((l) => l['correction'] == true);
 }
 
+/// Cancelled originals and platform jobs must never be requeued as local food.
+bool canRequeueLocalKitchen(Json state, Map job) {
+  final order = mutableOrder(state, job['orderId'] as int);
+  return order != null &&
+      ['Masa', 'Gel-Al'].contains(order['source']) &&
+      job['state'] != 'Gönderiliyor' &&
+      job['state'] != 'İptal' &&
+      (order['cancelled'] != true || correctionKitchenJob(state, job));
+}
+
 Json newLocalOrder({
   required Json state,
   required String source,

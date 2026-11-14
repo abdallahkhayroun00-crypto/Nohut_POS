@@ -22,7 +22,7 @@ The original source inventory contained 96 callback definitions. Dynamic rows re
 
 ## Corrections
 
-- Kitchen jobs freeze their content when accepted. Cancelling products can no longer rewrite the original slip. Full cancellation cancels unsent original jobs while allowing correction notices to print.
+- Kitchen jobs freeze their content when accepted. Cancelling products can no longer rewrite the original slip. Full cancellation cancels unsent original jobs while allowing correction notices to print. Manual requeue also rejects cancelled originals and platform jobs.
 - Employee additions retain employee names in frozen tickets. New items on a served order reset preparation status.
 - Saved/new and historical linked orders reset stale filters. Closed historical refunds no longer appear as outstanding debts. Dashboard print count excludes completed work.
 - Failed cashier commits preserve the draft. Explicit refresh updates prices and marks withdrawn products for removal; unavailable-row note editing is disabled safely. Cashier and phone row/quantity/note limits align with server validation.
@@ -38,6 +38,6 @@ Uses the existing original logo and QR-menu colors: green `#123e30`, cream `#f6f
 
 ## Verification and limits
 
-Local Linux validation: 82 Flutter tests passed, one Windows-only invalid-printer test skipped; all 131 preserved HTML assertions passed; analysis has no errors or warnings (SDK informational deprecations remain). The Windows workflow separately runs analysis, all Flutter tests, the HTML suite, three phone browser widths, PowerShell syntax validation and a native release build. See the associated PR checks for its final result and downloadable executable folder.
+Local Linux validation: 83 Flutter tests passed, one Windows-only invalid-printer test skipped; all 131 preserved HTML assertions passed; analysis has no errors or warnings (SDK informational deprecations remain). The Windows workflow separately runs analysis, all Flutter tests, the HTML suite, three phone browser widths, PowerShell syntax validation and a native release build. See the associated PR checks for its final result and downloadable executable folder.
 
 The Linux host blocked Chromium's local socket setup, so browser execution is delegated to that workflow. A rendered Flutter capture was visually inspected. Printing uses a fake transport in automated queue tests; physical XP-237B output, real restaurant Wi-Fi phones, bank terminals and real platform APIs are not certified by these tests. The platform area remains an explicitly labeled in-memory simulation.

@@ -1200,7 +1200,7 @@ class PrinterPanel extends StatelessWidget {
                   },
                   child: const Text('Önizle'),
                 ),
-                if (j['state'] != 'Gönderiliyor')
+                if (canRequeueLocalKitchen(state, j))
                   OutlinedButton(
                     onPressed: () async {
                       if (!await confirmAction(
@@ -1219,7 +1219,7 @@ class PrinterPanel extends StatelessWidget {
                                   r['batchId'] == j['batchId'],
                             );
                         if (job['state'] != j['state'] ||
-                            job['state'] == 'Gönderiliyor') {
+                            !canRequeueLocalKitchen(s, job)) {
                           throw const FormatException(
                             'Yazdırma durumu değişti. Kuyruğu ve çıktıyı tekrar kontrol edin.',
                           );
