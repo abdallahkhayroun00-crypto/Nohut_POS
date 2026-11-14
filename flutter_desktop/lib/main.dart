@@ -1250,7 +1250,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       children: [
         _sectionTitle(
           'Tüm Siparişler',
-          'Varsayılan: Bugün ($businessDay). Geçmiş siparişler tarih filtresiyle açılır.'
+          'Varsayılan: Bugün ($businessDay). Geçmiş siparişler tarih filtresiyle açılır.',
           action: FilledButton.icon(
             onPressed: () => _composer(),
             icon: const Icon(Icons.add),
