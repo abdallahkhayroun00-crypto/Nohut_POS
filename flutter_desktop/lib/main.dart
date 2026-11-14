@@ -761,6 +761,19 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
 
   Widget _dashboard(Json db) {
     final orders = asMaps(db['orders']);
+    final todayOrders = orders.where(
+      (o) =>
+          onIstanbulDay(o['createdAt'], businessDay) &&
+          o['cancelled'] != true &&
+          o['demoRemoteStatus'] != 'Created',
+    ).toList();
+    // Use PAYMENT timestamps, not order creation dates. A table that
+    // pays after midnight belongs to the new day's receipts.
+    final todayNetReceipts = ledger(db)
+        .where((e) =>
+            (e.source == 'Masa' || e.source == 'Gel-Al') &&
+            onIstanbulDay(e.stamp, businessDay))
+        .fold<int>(0, (sum, entry) => sum + entry.amount);
     final active = orders
         .where((o) => o['closed'] != true && o['cancelled'] != true)
         .toList();
@@ -768,12 +781,6 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       5,
       (i) => activeTable(db, i + 1),
     ).where((o) => o != null).length;
-    final cash = orders.fold<int>(0, (sum, o) {
-      if (o['source'] == 'Masa' || o['source'] == 'Gel-Al') {
-        return sum + orderPaidCents(o);
-      }
-      return sum;
-    });
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -832,22 +839,27 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
               crossAxisSpacing: 10,
               children: [
                 _metric(
-                  'Aktif Sipariş',
-                  '${active.length}',
+                  'Bugünün Siparişleri · $businessDay',
+                  '${todayOrders.length}',
                   Icons.receipt_outlined,
                 ),
                 _metric(
-                  'Dolu Masa',
+                  'Bugün Net Tahsilat',
+                  formatTry(todayNetReceipts),
+                  Icons.payments_outlined,
+                ),
+                _metric(
+                  'Açık Sipariş · Devreden Dahil',
+                  '${active.length}',
+                  Icons.pending_actions_outlined,
+                ),
+                _metric(
+                  'Dolu Masa · Devreden Dahil',
                   '$busy / 5',
                   Icons.table_restaurant_outlined,
                 ),
                 _metric(
-                  'Restoran Tahsilatı · Demo',
-                  formatTry(cash),
-                  Icons.payments_outlined,
-                ),
-                _metric(
-                  'Yazdırma Bekleyen',
+                  'Yazdırma Bekleyen · Devreden Dahil',
                   '${asMaps(db['printJobs']).where((j) => j['state'] != 'İşaretlendi').length}',
                   Icons.print_outlined,
                 ),
@@ -863,15 +875,15 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Son Siparişler',
+                  'Bugünün Son Siparişleri',
                   style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
                 ),
                 const SizedBox(height: 13),
-                if (orders.isEmpty)
+                if (todayOrders.isEmpty)
                   const Text(
-                    'Henüz sipariş yok. Masa veya Gel-Al ile başlayın.',
+                    'Bugün henüz sipariş yok. Eski kayıtlar Tüm Siparişler bölümünde saklanır.',
                   ),
-                for (final o in orders.reversed.take(6))
+                for (final o in todayOrders.reversed.take(6))
                   ListTile(
                     leading: const Icon(Icons.receipt_long_outlined),
                     title: Text(
