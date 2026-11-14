@@ -35,11 +35,16 @@ class Product {
     required this.name,
     required this.category,
     this.price,
+    this.image,
+    this.descriptionTr,
+    this.displayNameAr,
+    this.displayNameEn,
   });
   final int id;
   final String name;
   final String category;
   final double? price;
+  final String? image, descriptionTr, displayNameAr, displayNameEn;
 }
 
 class OrderRequest {
@@ -148,8 +153,8 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     await _loadMenu();
     if (mounted && widget.startServer) {
       await lan.start();
-      if (mounted) qrSync.start();
     }
+    if (mounted) qrSync.start();
   }
 
   Future<void> _loadMenu() async {
@@ -254,6 +259,10 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
               name: p['name'] as String,
               category: p['category'] as String,
               price: (p['price'] as num?)?.toDouble(),
+              image: p['image'] as String?,
+              descriptionTr: (p['description'] as Map?)?['tr'] as String?,
+              displayNameAr: (p['displayName'] as Map?)?['ar'] as String?,
+              displayNameEn: (p['displayName'] as Map?)?['en'] as String?,
             ),
           )
           .toList();
@@ -1778,6 +1787,19 @@ class _OrderComposerState extends State<_OrderComposer> {
                   itemBuilder: (context, i) {
                     final p = filtered[i], qty = counts[p.id] ?? 0;
                     return ListTile(
+                      leading: p.image == null
+                          ? const Icon(Icons.restaurant_menu_outlined)
+                          : SizedBox(
+                              width: 48,
+                              height: 48,
+                              child: Image.network(
+                                Uri.parse('https://nohutfalafel.github.io/qr-menu/')
+                                    .resolve(p.image!).toString(),
+                                fit: BoxFit.contain,
+                                errorBuilder: (_, __, ___) =>
+                                    const Icon(Icons.restaurant_menu_outlined),
+                              ),
+                            ),
                       title: Text(
                         p.name,
                         style: const TextStyle(fontWeight: FontWeight.w600),
@@ -1785,7 +1807,10 @@ class _OrderComposerState extends State<_OrderComposer> {
                       subtitle: Text(
                         p.price == null
                             ? 'Fiyat belirlenmedi'
-                            : '${formatTry(cents(p.price))} · ${notes[p.id] ?? ''}',
+                            : '${formatTry(cents(p.price))} · ${notes[p.id] ?? ''}'
+                              '${p.descriptionTr == null || p.descriptionTr!.isEmpty ? '' : ' · ${p.descriptionTr}'}',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                       ),
                       onTap: () async {
                         final v = await askFields(context, p.name, [
