@@ -93,7 +93,8 @@ void main() {
         store,
         transport: (text, name) async {
           calls++;
-          expect(text, contains('#$calls'));
+          // Display receipt number resets per Istanbul day and is 4 digits.
+          expect(text, contains('#${calls.toString().padLeft(4, '0')}'));
           expect(name, 'TEST');
           if (fail) throw StateError('Offline');
           if (calls != 1) return;
