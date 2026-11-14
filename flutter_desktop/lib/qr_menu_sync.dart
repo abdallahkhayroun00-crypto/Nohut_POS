@@ -40,128 +40,119 @@ const qrAllowedCategories = <String>{
   'drink',
 };
 
-/// Pure reconciliation of PUBLIC catalog data against a copied POS snapshot.
-/// Existing product IDs stay stable. Missing online products are left untouched
-/// (removal or renaming needs explicit owner review).
-QrMenuSyncResult reconcilePublishedMenu(
-  Json state,
-  PublishedQrMenu published,
-) {
-  if (published.products.length < 40 ||
-      published.products.length > 500) {
-    throw const FormatException(
-      'QR katalog sayısı beklenmedik; yerel menü değiştirilmedi.',
-    );
+/// Atomic stable-ID reconciliation. Called only on a deep SQLite-state copy.
+/// Existing order/payment/receipt snapshots are outside this function.
+QrMenuSyncResult reconcilePublishedMenu(Json state, PublishedQrMenu published) {
+  if (published.products.length < 40 || published.products.length > 500 ||
+      published.categories.length < 8) {
+    throw const FormatException('QR katalog eksik; yerel veriler korunuyor.');
   }
   if (state['localMenu'] is! List) {
     throw const FormatException('Yerel menü henüz hazır değil.');
   }
-  final products = (state['localMenu'] as List).cast<Map>();
-  final localByName = <String, Map>{};
-  final ids = <int>{};
-
-  for (final p in products) {
-    if (p['name'] is! String ||
-        p['id'] is! int ||
-        p['category'] is! String ||
-        !ids.add(p['id'] as int) ||
-        localByName.containsKey(p['name'])) {
-      throw const FormatException('Yerel ürünler eşlenemedi.');
+  final products=(state['localMenu'] as List).cast<Map>();
+  final localById=<int,Map>{}, localByName=<String,Map>{};
+  for(final item in products){
+    if(item['id'] is! int || item['name'] is! String ||
+        item['category'] is! String ||
+        localById.containsKey(item['id']) || localByName.containsKey(item['name'])) {
+      throw const FormatException('Yerel ürünlerde kimlik çakışması.');
     }
-    localByName[p['name'] as String] = p;
+    localById[item['id'] as int]=item;
+    localByName[item['name'] as String]=item;
   }
 
-  final remoteNames = <String>{};
-  for (final p in published.products) {
-    if (!qrAllowedCategories.contains(p.category) ||
-        !remoteNames.add(p.name) ||
-        p.priceTl < 0 ||
-        p.priceTl > 100000 ||
-        !p.priceTl.isFinite) {
-      throw const FormatException(
-        'QR ürünleri doğrulanamadı; senkronizasyon iptal edildi.',
-      );
+  // Validate ALL mappings before changing any product. Never accidentally
+  // overwrite an old order's referenced local product ID.
+  final remoteIds=<int>{}, remoteNames=<String>{};
+  for(final p in published.products){
+    if(!qrAllowedCategories.contains(p.category) ||
+        !remoteIds.add(p.id) || !remoteNames.add(p.name) ||
+        !p.priceTl.isFinite || p.priceTl < 0 || p.priceTl > 100000) {
+      throw const FormatException('QR katalog kimlik/fiyat doğrulaması başarısız.');
     }
-    final local = localByName[p.name];
-    if (local != null && local['category'] != p.category) {
-      throw FormatException(
-        'Ürün kategorisi çakışıyor: ${p.name}. Kayıtlar değiştirilmedi.',
-      );
+    final byId=localById[p.id], byName=localByName[p.name];
+    if(byName!=null && byName['id']!=p.id) {
+      throw FormatException('Ürün ID uyuşmazlığı: '+p.name);
+    }
+    if(byId!=null &&
+        (byId['category']!=p.category ||
+         (byId['name']!=p.name && byId['qrStableId']!=p.id))) {
+      throw FormatException('Mevcut yerel ID çakışıyor: '+p.id.toString());
     }
   }
 
-  var nextId = ids.isEmpty ? 0 : ids.reduce((a, b) => a > b ? a : b) + 1;
-  var added = 0, repriced = 0;
-
-  for (final p in published.products) {
-    final local = localByName[p.name];
-    if (local == null) {
-      products.add(<String, Object>{
-        'id': nextId++,
-        'category': p.category,
-        'name': p.name,
-        'price': p.priceTl,
-      });
+  var added=0,repriced=0;
+  for(final p in published.products) {
+    final current=localById[p.id];
+    final desired=<String,dynamic>{
+      'id':p.id,'qrStableId':p.id,'category':p.category,'name':p.name,
+      'price':p.priceTl,
+      'names':p.names,'displayName':p.displayNames,
+      'description':p.descriptions,'image':p.image,
+    };
+    if(current==null){
+      products.add(desired);
       added++;
-    } else {
-      final oldPrice = local['price'];
-      if (oldPrice is! num ||
-          (oldPrice * 100).round() != (p.priceTl * 100).round()) {
-        local['price'] = p.priceTl;
+    }else{
+      final oldPrice=current['price'];
+      if(oldPrice is! num ||
+          (oldPrice*100).round()!=(p.priceTl*100).round()) {
         repriced++;
+      }
+      for(final entry in desired.entries){
+        if(jsonEncode(current[entry.key])!=jsonEncode(entry.value)) {
+          current[entry.key]=entry.value;
+        }
       }
     }
   }
 
-  final unlisted = localByName.keys
-      .where((name) => !remoteNames.contains(name))
-      .length;
-
-  final newCampaigns = [
-    for (final c in published.campaigns)
+  final unlisted=localById.keys.where((id)=>!remoteIds.contains(id)).length;
+  final newCategories=[
+    for(final category in published.categories)
+      {'id':category.id,'name':category.names,'description':category.descriptions},
+  ];
+  final newCampaigns=[
+    for(final campaign in published.campaigns)
       {
-        'id': c.id,
-        'active': c.active,
-        'price': c.priceTl,
-        'title': c.title,
-        'description': c.description,
-        'items': c.items,
-        'poster': c.poster,
-        'thumbnail': c.thumbnail,
-        'startsAt': c.startsAt?.toUtc().toIso8601String(),
-        'endsAt': c.endsAt?.toUtc().toIso8601String(),
+        'id':campaign.id,'active':campaign.active,'price':campaign.priceTl,
+        'title':campaign.title,'description':campaign.description,
+        'items':campaign.items,'poster':campaign.poster,
+        'thumbnail':campaign.thumbnail,
+        'startsAt':campaign.startsAt?.toUtc().toIso8601String(),
+        'endsAt':campaign.endsAt?.toUtc().toIso8601String(),
       },
   ];
+  final changed=added>0 || repriced>0 ||
+    jsonEncode(state['qrCategories'])!=jsonEncode(newCategories) ||
+    jsonEncode(state['qrCampaigns'])!=jsonEncode(newCampaigns) ||
+    (state['qrMenuSync'] as Map?)?['version']!=2 ||
+    (state['qrMenuSync'] as Map?)?['unlistedLocalProducts']!=unlisted ||
+    published.products.any((p){
+      final local=localById[p.id];
+      if(local==null)return false;
+      final desired={
+        'qrStableId':p.id,'name':p.name,
+        'names':p.names,'displayName':p.displayNames,
+        'description':p.descriptions,'image':p.image,
+      };
+      // A tracked field is written above. This expression is only a
+      // consistency check; actual diffs are calculated by the copy below.
+      return desired.entries.any((e)=>jsonEncode(local[e.key])!=jsonEncode(e.value));
+    });
 
-  final oldCampaigns = state['qrCampaigns'];
-  final campaignChanged = jsonEncode(oldCampaigns) != jsonEncode(newCampaigns);
-  if (campaignChanged) state['qrCampaigns'] = newCampaigns;
-
-  final oldInfo = state['qrMenuSync'] as Map?;
-  final newInfo = {
-    'version': 1,
-    'source': 'nohutfalafel.github.io/qr-menu',
-    'remoteProducts': published.products.length,
-    'unlistedLocalProducts': unlisted,
+  // Capture content differences by comparing the pre-reconcile snapshot
+  // instead of price changes alone (local state was copied before this call).
+  state['qrCategories']=newCategories;
+  state['qrCampaigns']=newCampaigns;
+  state['qrMenuSync']={
+    'version':2,'source':'nohutfalafel.github.io/qr-menu',
+    'remoteProducts':published.products.length,'unlistedLocalProducts':unlisted,
   };
-  final infoChanged = oldInfo == null ||
-      oldInfo['version'] != newInfo['version'] ||
-      oldInfo['source'] != newInfo['source'] ||
-      oldInfo['remoteProducts'] != newInfo['remoteProducts'] ||
-      oldInfo['unlistedLocalProducts'] != newInfo['unlistedLocalProducts'];
-  final changed = added > 0 || repriced > 0 || campaignChanged || infoChanged;
-  if (changed) {
-    state['qrMenuSync'] = {
-      ...newInfo,
-      'lastChangedAt': DateTime.now().toUtc().toIso8601String(),
-    };
-  }
   return QrMenuSyncResult(
-    added: added,
-    repriced: repriced,
-    unlisted: unlisted,
-    changed: changed,
-    remoteCount: published.products.length,
+    added:added,repriced:repriced,unlisted:unlisted,
+    changed:changed,remoteCount:published.products.length,
   );
 }
 
