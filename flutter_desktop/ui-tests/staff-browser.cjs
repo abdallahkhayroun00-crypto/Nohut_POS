@@ -28,6 +28,10 @@ const assert = require('node:assert/strict');
       if (mode === 'conflict') return route.fulfill({ status: 409, json: { error: 'conflict' } });
       return route.fulfill({ json: { orderNumber: '0002', orderId: 1201, revision: ++revision } });
     }
+    if (url.pathname.startsWith('/assets/fonts/')) {
+      const name = path.basename(url.pathname);
+      return route.fulfill({ contentType: 'font/ttf', body: fs.readFileSync(path.join(__dirname, '../assets/brand/fonts', name)) });
+    }
     if (url.pathname === '/assets/nohut-logo.webp') {
       return route.fulfill({ contentType: 'image/webp', body: fs.readFileSync(path.join(__dirname, '../assets/brand/nohut-logo.webp')) });
     }
@@ -47,6 +51,8 @@ const assert = require('node:assert/strict');
       await page.clock.install();
       await page.goto('http://pos.test/');
       await page.locator('#staff option[value="1"]').waitFor({ state: 'attached' });
+      await page.evaluate(async () => { await document.fonts.load('16px Bree'); await document.fonts.load('16px Barlow'); await document.fonts.load('600 16px Barlow'); await document.fonts.load('700 16px Barlow'); await document.fonts.ready; });
+      assert.equal(await page.evaluate(() => [...document.fonts].every(f => f.status === 'loaded')), true);
       assert.equal(await page.locator('#staff').inputValue(), '', 'staff is deliberately selected each visit');
       assert.match(await page.locator('#orders').innerText(), /Sos ayrı/);
       assert.match(await page.locator('#orders').innerText(), /Domates/);
@@ -93,6 +99,34 @@ const assert = require('node:assert/strict');
       mode = 'success'; await page.locator('#retry').click();
       await page.waitForFunction(() => document.getElementById('notice').textContent.includes('kaydedildi'));
       assert.equal(posts.at(-1).requestId, requestId, 'lost response retry uses the same idempotency key');
+      await page.locator('#source').selectOption('Gel-Al');
+      await page.locator('#pickup').selectOption('Telefon');
+      await page.locator('#customer-name').fill('Ayşe');
+      await page.locator('#customer-phone').fill('05551234567');
+      await page.locator('#customer-time').fill('18:30');
+      await page.locator('#search').fill('bulunmayan');
+      assert.match(await page.locator('#menu').innerText(), /Ürün bulunamadı/);
+      await page.locator('#search').fill('');
+      await page.locator('[data-custom="0"]').click();
+      await page.locator('#custom-cancel').click();
+      assert.equal(await page.locator('.cart-line').count(), 0);
+      await page.locator('[data-add="0"]').click();
+      await page.locator('[data-delta="1"]').click();
+      await page.locator('[data-delta="-1"]').click();
+      await page.locator('[data-removed]').fill('Domates');
+      await page.locator('#reload').click();
+      assert.equal(await page.locator('#customer-name').inputValue(), 'Ayşe');
+      await page.locator('#submit').click();
+      await page.waitForFunction(() => document.getElementById('notice').textContent.includes('kaydedildi'));
+      assert.equal(posts.at(-1).source, 'Gel-Al');
+      assert.equal(posts.at(-1).pickupChannel, 'Telefon');
+      assert.deepEqual(posts.at(-1).customer, { name: 'Ayşe', phone: '05551234567', time: '18:30' });
+      assert.deepEqual(posts.at(-1).lines[0].removed, ['Domates']);
+      assert.equal(posts.at(-1).lines[0].qty, 1);
+      await page.locator('#order-filter').selectOption('ready');
+      assert.match(await page.locator('#orders').innerText(), /Açık sipariş yok/);
+      await page.locator('#order-filter').selectOption('Masa');
+      assert.match(await page.locator('#orders').innerText(), /Masa 3/);
       assert.deepEqual(errors, []);
       console.log(`PASS staff workflow at ${width}px`);
       await context.close();

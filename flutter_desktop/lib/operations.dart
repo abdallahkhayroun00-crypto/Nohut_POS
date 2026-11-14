@@ -292,13 +292,7 @@ void cancelProduct(
       },
     ],
   });
-  (state['printJobs'] as List).add({
-    'orderId': orderId,
-    'batchId': id,
-    'state': 'Bekliyor',
-    'createdAt': utcNow(),
-    'created': nowTime(),
-  });
+  queueLocalKitchen(state, o, batches.last as Map);
   (o.putIfAbsent('voids', () => <dynamic>[]) as List).add({
     'name': l['name'],
     'qty': qty,
@@ -328,6 +322,13 @@ void cancelLocalOrder(Json state, int id, String reason) {
   o['closed'] = true;
   o['cancelled'] = true;
   o['tableReleased'] = true;
+  for (final job in (state['printJobs'] as List).whereType<Map>()) {
+    if (job['orderId'] == id &&
+        job['state'] == 'Bekliyor' &&
+        !correctionKitchenJob(state, job)) {
+      job['state'] = 'İptal';
+    }
+  }
 }
 
 void setLocalService(Json o, String status) {
@@ -523,7 +524,8 @@ void closeCash(Json s, int counted) {
   final c = (cashBook(s)['sessions'] as List).cast<Map>().firstWhere(
     (c) => c['id'] == active['id'],
   );
-  final end = utcNow(), expected = expectedCash(s, active, end: utcNow());
+  final end = utcNow();
+  final expected = expectedCash(s, active, end: end);
   c.addAll(<String, dynamic>{
     'closedAt': end,
     'countedCents': counted,
@@ -579,11 +581,16 @@ void saveEmployee(Json state, int? id, String name, String role, bool active) {
 }
 
 String receiptText(Json state, Json job) {
-  final o = mutableOrder(state, job['orderId'] as int);
+  final snapshot = job['snapshot'];
+  final o = snapshot is Map && snapshot['order'] is Map
+      ? Map<String, dynamic>.from(snapshot['order'] as Map)
+      : mutableOrder(state, job['orderId'] as int);
   if (o == null) throw const FormatException('Sipariş bulunamadı');
-  final batch = asMaps(
-    o['batches'],
-  ).where((b) => b['id'] == job['batchId']).firstOrNull;
+  final batch = snapshot is Map && snapshot['batch'] is Map
+      ? Map<String, dynamic>.from(snapshot['batch'] as Map)
+      : asMaps(
+          o['batches'],
+        ).where((b) => b['id'] == job['batchId']).firstOrNull;
   if (batch == null) throw const FormatException('Mutfak partisi bulunamadı');
   return [
     'NOHUT FALAFEL · MUTFAK',

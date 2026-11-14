@@ -17,6 +17,9 @@ class PosLanServer extends ChangeNotifier {
   String? selectedIp;
   List<String> addresses = const [];
   String? _staffHtml;
+  bool _starting = false, _disposed = false;
+  int _generation = 0;
+  bool get starting => _starting;
 
   bool get running => _server != null;
   bool get available => addresses.any((a) => a != '127.0.0.1');
@@ -24,10 +27,23 @@ class PosLanServer extends ChangeNotifier {
   String get adminBrowserUrl => 'Windows Yönetici Paneli';
 
   Future<void> discover() async {
-    final list = await NetworkInterface.list(
-      type: InternetAddressType.IPv4,
-      includeLoopback: false,
-    );
+    if (_disposed) return;
+    error = null;
+    List<NetworkInterface> list;
+    try {
+      list = await NetworkInterface.list(
+        type: InternetAddressType.IPv4,
+        includeLoopback: false,
+      );
+    } on SocketException catch (e) {
+      if (_disposed) return;
+      addresses = const [];
+      selectedIp = '127.0.0.1';
+      error = 'Wi-Fi adresi okunamadı; yerel bağlantı korunuyor: $e';
+      notifyListeners();
+      return;
+    }
+    if (_disposed) return;
     final found = <String>[];
     final ranked = <(String, String)>[];
     for (final interface in list) {
@@ -74,12 +90,22 @@ class PosLanServer extends ChangeNotifier {
   }
 
   Future<void> start() async {
-    if (_server != null) return;
+    if (_disposed || _server != null || _starting) return;
+    _starting = true;
+    final generation = _generation;
     error = null;
+    notifyListeners();
     try {
       await discover();
+      if (_disposed || generation != _generation) return;
       _staffHtml ??= await rootBundle.loadString('assets/staff.html');
-      _server = await HttpServer.bind(InternetAddress.anyIPv4, port);
+      if (_disposed || generation != _generation) return;
+      final bound = await HttpServer.bind(InternetAddress.anyIPv4, port);
+      if (_disposed || generation != _generation) {
+        await bound.close(force: true);
+        return;
+      }
+      _server = bound;
       port = _server!.port;
       _server!.listen(
         (r) => _handle(r).catchError((Object e, StackTrace stack) {
@@ -93,21 +119,26 @@ class PosLanServer extends ChangeNotifier {
           }
         }),
         onError: (Object e) {
+          if (_disposed) return;
           error = 'Local Server error: $e';
           notifyListeners();
         },
       );
     } catch (e) {
+      if (_disposed || generation != _generation) return;
       error = 'Port $port kullanılamıyor: $e';
+    } finally {
+      _starting = false;
+      if (!_disposed) notifyListeners();
     }
-    notifyListeners();
   }
 
   Future<void> stop() async {
+    _generation++;
     final server = _server;
     _server = null;
     await server?.close(force: true);
-    notifyListeners();
+    if (!_disposed) notifyListeners();
   }
 
   void _json(HttpResponse response, int status, Map<String, dynamic> data) {
@@ -122,17 +153,68 @@ class PosLanServer extends ChangeNotifier {
   // Hide unpublished products from staff phones without touching SQLite or
   // archived order snapshots used for accounting and reprints.
   Map<String, dynamic> _staffState(Map<String, dynamic> source) {
-    final state = copyJson(source);
-    final products = state['localMenu'];
-    if (products is List) {
-      products.removeWhere((row) => row is Map && row['active'] == false);
-    }
-    return state;
+    // Phone ordering does not need the cash book, settings, old receipts,
+    // payments, reconciliation records or the closed-order archive.
+    return {
+      'employees': asMaps(source['employees'])
+          .map(
+            (e) => {
+              for (final key in ['id', 'name', 'active']) key: e[key],
+            },
+          )
+          .toList(),
+      'localMenu': asMaps(
+        source['localMenu'],
+      ).where((p) => p['active'] != false).toList(),
+      'orders': asMaps(source['orders'])
+          .where(
+            (o) =>
+                ['Masa', 'Gel-Al'].contains(o['source']) &&
+                o['closed'] != true &&
+                o['cancelled'] != true &&
+                o['tableReleased'] != true,
+          )
+          .map(
+            (o) => {
+              for (final key in [
+                'id',
+                'dailyNumber',
+                'numberDay',
+                'source',
+                'table',
+                'createdAt',
+                'serviceStatus',
+                'customer',
+                'batches',
+              ])
+                key: o[key],
+            },
+          )
+          .toList(),
+    };
   }
 
   Future<void> _handle(HttpRequest request) async {
     final uri = request.uri;
     final resource = uri.path;
+    const brandFonts = [
+      'Barlow-Regular.ttf',
+      'Barlow-SemiBold.ttf',
+      'Barlow-Bold.ttf',
+      'BreeSerif-Regular.ttf',
+    ];
+    if (request.method == 'GET' &&
+        brandFonts.any((font) => resource == '/assets/fonts/$font')) {
+      final font = resource.substring('/assets/fonts/'.length);
+      final bytes = await rootBundle.load('assets/brand/fonts/$font');
+      request.response.headers.set('Content-Type', 'font/ttf');
+      request.response.headers.set('Cache-Control', 'public, max-age=86400');
+      request.response.add(
+        bytes.buffer.asUint8List(bytes.offsetInBytes, bytes.lengthInBytes),
+      );
+      await request.response.close();
+      return;
+    }
     if (request.method == 'GET' && resource == '/assets/nohut-logo.webp') {
       final bytes = await rootBundle.load('assets/brand/nohut-logo.webp');
       request.response.headers.set('Content-Type', 'image/webp');
@@ -232,6 +314,8 @@ class PosLanServer extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
+    _generation++;
     _server?.close(force: true);
     super.dispose();
   }

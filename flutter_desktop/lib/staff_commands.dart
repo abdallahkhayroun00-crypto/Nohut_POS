@@ -38,7 +38,12 @@ Json submitStaffOrder(PosStore store, Json payload) {
     final lines = <Json>[];
     for (final row in asMaps(payload['lines'])) {
       final p = asMaps(s['localMenu'])
-          .where((p) => p['id'] == row['productId'] && p['price'] is num && p['active'] != false)
+          .where(
+            (p) =>
+                p['id'] == row['productId'] &&
+                p['price'] is num &&
+                p['active'] != false,
+          )
           .firstOrNull;
       if (p == null ||
           row['qty'] is! int ||
@@ -66,7 +71,13 @@ Json submitStaffOrder(PosStore store, Json payload) {
     final existing = source == 'Masa' ? activeTable(s, table as int) : null;
     Json order;
     if (existing != null) {
-      addOrderBatch(s, existing['id'] as int, lines);
+      addOrderBatch(
+        s,
+        existing['id'] as int,
+        lines,
+        cashier: '${staff['name']}',
+        staffId: staff['id'] as int,
+      );
       order = mutableOrder(s, existing['id'] as int)!;
       final batch = (order['batches'] as List).last as Map;
       batch['staff'] = staff['name'];

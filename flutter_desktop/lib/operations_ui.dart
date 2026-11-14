@@ -7,6 +7,7 @@ import 'receipt_printer.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as path;
 
+import 'brand.dart';
 import 'pos_logic.dart';
 import 'pos_store.dart';
 import 'operations.dart';
@@ -16,49 +17,122 @@ import 'qr_menu_sync.dart';
 
 typedef EditState = bool Function(void Function(Json) change);
 
+String optionLabel(String value) =>
+    const {
+      'ACTIVE': 'Satışta',
+      'PASSIVE': 'Satış dışı',
+      'direct': 'Restoranda onay',
+      'indirect': 'Platform uygulamasında onay',
+      'Created': 'Kabul bekliyor',
+      'Picking': 'Hazırlanıyor',
+      'Invoiced': 'Hazır',
+      'Shipped': 'Kuryede',
+      'Delivered': 'Teslim edildi',
+      'Cancelled': 'İptal edildi',
+      'UnSupplied': 'Tedarik edilemedi',
+      'Collected': 'Platform tahsil etti',
+      'Pending': 'Tahsilat bekliyor',
+      'wrap': 'Dürümler',
+      'plate': 'Porsiyonlar',
+      'meze': 'Mezeler',
+      'fatte': 'Fatte',
+      'side': 'Diğer',
+      'salad': 'Salatalar',
+      'dessert': 'Tatlılar',
+      'drink': 'İçecekler',
+      'NONE': 'Yanıt yok',
+      'WAITING_FOR_APPROVE': 'Onay bekliyor',
+      'APPROVED': 'Onaylandı',
+      'REJECTED': 'Reddedildi',
+    }[value] ??
+    value;
+
 Future<List<String>?> askFields(
   BuildContext context,
   String title,
-  List<(String, String)> fields,
-) async {
+  List<(String, String)> fields, {
+  Map<int, List<String>> choices = const {},
+  String? Function(List<String>)? validate,
+}) async {
+  final selectable = <int, List<String>>{
+    for (var i = 0; i < fields.length; i++)
+      if (fields[i].$1.contains('evet / hayır')) i: ['evet', 'hayır'],
+    ...choices,
+  };
   final controllers = fields
       .map((f) => TextEditingController(text: f.$2))
       .toList();
+  for (final entry in selectable.entries) {
+    if (!entry.value.contains(controllers[entry.key].text))
+      controllers[entry.key].text = entry.value.first;
+  }
+  String? formError;
   final result = await showDialog<List<String>>(
     context: context,
-    builder: (ctx) => AlertDialog(
-      title: Text(title),
-      content: SizedBox(
-        width: 480,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (var i = 0; i < fields.length; i++)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 7),
-                  child: TextField(
-                    controller: controllers[i],
-                    decoration: InputDecoration(labelText: fields[i].$1),
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, update) => AlertDialog(
+        title: Text(title),
+        content: SizedBox(
+          width: 480,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (var i = 0; i < fields.length; i++)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 7),
+                    child: selectable.containsKey(i)
+                        ? DropdownButtonFormField<String>(
+                            initialValue: controllers[i].text,
+                            isExpanded: true,
+                            decoration: InputDecoration(
+                              labelText: fields[i].$1,
+                            ),
+                            items: selectable[i]!
+                                .map(
+                                  (v) => DropdownMenuItem(
+                                    value: v,
+                                    child: Text(optionLabel(v)),
+                                  ),
+                                )
+                                .toList(),
+                            onChanged: (v) => controllers[i].text = v!,
+                          )
+                        : TextField(
+                            controller: controllers[i],
+                            decoration: InputDecoration(
+                              labelText: fields[i].$1,
+                            ),
+                          ),
                   ),
-                ),
-            ],
+                if (formError != null)
+                  Text(
+                    formError!,
+                    style: const TextStyle(color: Color(0xff8c352e)),
+                  ),
+              ],
+            ),
           ),
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Vazgeç'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final values = controllers.map((c) => c.text.trim()).toList();
+              final error = validate?.call(values);
+              if (error != null) {
+                update(() => formError = error);
+                return;
+              }
+              Navigator.pop(ctx, values);
+            },
+            child: const Text('Kaydet'),
+          ),
+        ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(ctx),
-          child: const Text('Vazgeç'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.pop(
-            ctx,
-            controllers.map((c) => c.text.trim()).toList(),
-          ),
-          child: const Text('Kaydet'),
-        ),
-      ],
     ),
   );
   // Let the dialog finish its closing animation before disposing its inputs.
@@ -95,10 +169,16 @@ Future<bool> confirmAction(
     false;
 
 int parseMoney(String text) {
-  if (!RegExp(r'^\d+([.,]\d{1,2})?$').hasMatch(text)) {
+  final input = text.trim();
+  if (!RegExp(r'^\d+([.,]\d{1,2})?$').hasMatch(input)) {
     throw const FormatException('Tutar en fazla iki ondalık basamak olmalı');
   }
-  return cents(double.parse(text.replaceAll(',', '.')));
+  final parts = input.replaceAll(',', '.').split('.');
+  final whole = int.tryParse(parts[0]);
+  if (whole == null || whole > 999999999)
+    throw const FormatException('Tutar çok büyük');
+  final fraction = parts.length == 1 ? 0 : int.parse(parts[1].padRight(2, '0'));
+  return whole * 100 + fraction;
 }
 
 int parseInteger(String text) =>
@@ -107,7 +187,11 @@ Widget panelTitle(String text) => Padding(
   padding: const EdgeInsets.symmetric(vertical: 14),
   child: Text(
     text,
-    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 20),
+    style: const TextStyle(
+      fontFamily: NohutBrand.headingFont,
+      fontWeight: FontWeight.w400,
+      fontSize: 22,
+    ),
   ),
 );
 Widget info(String text) => Padding(
@@ -631,8 +715,12 @@ class StaffPanel extends StatelessWidget {
       person == null ? 'Personel Ekle' : 'Personel Düzenle',
       [
         ('Ad', '${person?['name'] ?? ''}'),
-        ('Görev: Personel / Yönetici', '${person?['role'] ?? 'Personel'}'),
+        ('Görev', '${person?['role'] ?? 'Personel'}'),
       ],
+      choices: {
+        1: ['Personel', 'Yönetici'],
+      },
+      validate: (v) => v[0].isEmpty ? 'Personel adı gerekli' : null,
     );
     if (v != null) {
       edit(
@@ -708,7 +796,8 @@ class _ReportsPanelState extends State<ReportsPanel> {
       if (File(v[0]).existsSync()) {
         throw const FormatException('Dosya zaten var. Yeni bir ad seçin.');
       }
-      File(v[0]).writeAsStringSync(content);
+      // Excel on Windows needs a UTF-8 BOM for Turkish column names.
+      File(v[0]).writeAsStringSync('\uFEFF$content');
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -732,6 +821,7 @@ class _ReportsPanelState extends State<ReportsPanel> {
     width: 175,
     child: DropdownButtonFormField<String>(
       isExpanded: true,
+      key: ValueKey('$label:$value'),
       initialValue: value,
       decoration: InputDecoration(labelText: label),
       items: items
@@ -965,12 +1055,7 @@ class _ReportsPanelState extends State<ReportsPanel> {
                 if (v != null && context.mounted) {
                   final valid = v
                       .take(2)
-                      .every(
-                        (d) =>
-                            d.isEmpty ||
-                            RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(d) &&
-                                DateTime.tryParse(d) != null,
-                      );
+                      .every((d) => d.isEmpty || validBusinessDate(d));
                   if (!valid ||
                       v[0].isNotEmpty &&
                           v[1].isNotEmpty &&
@@ -1001,7 +1086,7 @@ class _ReportsPanelState extends State<ReportsPanel> {
         for (final r in rows)
           ListTile(
             title: Text(
-              '#${r.orderId} · ${r.source} · ${r.method} · ${r.kind}',
+              '#${displayOrderNumber(mutableOrder(s, r.orderId) ?? {'id': r.orderId})} · ${r.source} · ${r.method} · ${r.kind}',
             ),
             subtitle: Text('${r.stamp} · ${r.staff}'),
             trailing: Text(formatTry(r.amount)),
@@ -1016,7 +1101,9 @@ class _ReportsPanelState extends State<ReportsPanel> {
         ),
         for (final r in saleRows)
           ListTile(
-            title: Text('#${r.orderId} · ${r.quantity} × ${r.product}'),
+            title: Text(
+              '#${displayOrderNumber(mutableOrder(s, r.orderId) ?? {'id': r.orderId})} · ${r.quantity} × ${r.product}',
+            ),
             subtitle: Text('${r.source} · ${r.staff} · ${r.stamp}'),
             trailing: Text(formatTry(r.amount)),
           ),
@@ -1032,18 +1119,6 @@ class _ReportsPanelState extends State<ReportsPanel> {
           'SellerDiscount',
           'PaymentOrder',
         ], (v) => financeType = v),
-        for (final o in asMaps(s['orders']).where(
-          (o) =>
-              o['source'] == 'Trendyol Go' &&
-              o['demoRemoteStatus'] == 'Delivered' &&
-              o['cancelled'] != true &&
-              !asMaps(hub['settlements']).any((r) => r['orderId'] == o['id']),
-        ))
-          OutlinedButton(
-            onPressed: () =>
-                widget.edit((s) => sampleSettlement(s, o['id'] as int)),
-            child: Text('#${displayOrderNumber(o)} Örnek Finans Kaydı Al'),
-          ),
         OutlinedButton(
           onPressed: () => export(
             '\uFEFF${[
@@ -1058,14 +1133,6 @@ class _ReportsPanelState extends State<ReportsPanel> {
           ListTile(
             title: Text('#${r[0]} · ${r[2]} · ${formatTry(r[3] as int)}'),
             subtitle: Text('${r[4]} · ${r[5]} · ${r[6]}'),
-          ),
-        for (final r in settlements)
-          OutlinedButton(
-            onPressed: () => widget.edit((s) {
-              final record = findRecord(s, 'settlements', r['id']);
-              record['paymentStatus'] = 'Eşleşti (demo)';
-            }),
-            child: Text('${r['paymentOrderId']} Örnek Ödeme Emri Eşleştir'),
           ),
       ],
     );
@@ -1217,6 +1284,10 @@ class _SettingsPanelState extends State<SettingsPanel> {
       ExpansionTile(
         title: const Text('Yerel Menü Fiyatları'),
         children: [
+          if (state['settings']?['qrAutoSync'] != false)
+            info(
+              'Fiyat kaynağı resmî QR menüdür. Yerel fiyat düzenlemek için otomatik eşitlemeyi kapatın.',
+            ),
           TextField(
             decoration: const InputDecoration(labelText: 'Ürün adına göre ara'),
             onChanged: (v) => setState(() => menuSearch = v),
@@ -1233,24 +1304,27 @@ class _SettingsPanelState extends State<SettingsPanel> {
                     : formatTry(cents(p['price'])),
               ),
               trailing: OutlinedButton(
-                onPressed: () async {
-                  final v = await askFields(context, 'Yerel Ürün Fiyatı', [
-                    (
-                      'Fiyat ₺ (boş = satış dışı)',
-                      p['price'] == null ? '' : '${p['price']}',
-                    ),
-                  ]);
-                  if (v != null) {
-                    edit((s) {
-                      final row = (s['localMenu'] as List)
-                          .cast<Map>()
-                          .firstWhere((row) => row['id'] == p['id']);
-                      row['price'] = v[0].isEmpty
-                          ? null
-                          : fromCents(parseMoney(v[0]));
-                    });
-                  }
-                },
+                onPressed: state['settings']?['qrAutoSync'] != false
+                    ? null
+                    : () async {
+                        final v =
+                            await askFields(context, 'Yerel Ürün Fiyatı', [
+                              (
+                                'Fiyat ₺ (boş = satış dışı)',
+                                p['price'] == null ? '' : '${p['price']}',
+                              ),
+                            ]);
+                        if (v != null) {
+                          edit((s) {
+                            final row = (s['localMenu'] as List)
+                                .cast<Map>()
+                                .firstWhere((row) => row['id'] == p['id']);
+                            row['price'] = v[0].isEmpty
+                                ? null
+                                : fromCents(parseMoney(v[0]));
+                          });
+                        }
+                      },
                 child: const Text('Fiyat Düzenle'),
               ),
             ),
@@ -1274,7 +1348,12 @@ class _SettingsPanelState extends State<SettingsPanel> {
         onChanged: (enabled) => edit((s) {
           final cfg =
               s.putIfAbsent('settings', () => <String, dynamic>{}) as Map;
+          final wasEnabled = cfg['autoPrint'] == true;
           cfg['autoPrint'] = enabled;
+          if (enabled && !wasEnabled)
+            cfg['autoPrintEnabledAt'] = DateTime.now()
+                .toUtc()
+                .toIso8601String();
           cfg.putIfAbsent(
             'autoPrintEnabledAt',
             () => DateTime.now().toUtc().toIso8601String(),
@@ -1288,7 +1367,7 @@ class _SettingsPanelState extends State<SettingsPanel> {
               'Windows termal yazıcısının tam adı',
               '${state['settings']?['printerName'] ?? ''}',
             ),
-          ]);
+          ], validate: (v) => v[0].isEmpty ? 'Yazıcı adı gerekli' : null);
           if (v != null) {
             edit((s) {
               final settings =
@@ -1296,6 +1375,10 @@ class _SettingsPanelState extends State<SettingsPanel> {
               settings['printerName'] = v[0];
               settings['printerCount'] = 1;
               settings['printerMode'] = 'windows';
+              if (settings['autoPrint'] != true)
+                settings['autoPrintEnabledAt'] = DateTime.now()
+                    .toUtc()
+                    .toIso8601String();
               settings['autoPrint'] = true;
               settings.putIfAbsent(
                 'autoPrintEnabledAt',

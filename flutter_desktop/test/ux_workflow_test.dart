@@ -11,17 +11,15 @@ import 'package:nohut_falafel_desktop/floor_plan.dart';
 
 void main() {
   setUpAll(() async {
-    if (Platform.environment['NOHUT_UI_PREVIEW'] != null &&
-        Platform.isWindows) {
-      final loader = FontLoader('Segoe UI');
-      loader.addFont(
-        Future.value(
-          ByteData.sublistView(
-            await File(r'C:\Windows\Fonts\segoeui.ttf').readAsBytes(),
-          ),
-        ),
-      );
-      await loader.load();
+    if (Platform.environment['NOHUT_UI_PREVIEW'] != null) {
+      for (final entry in {
+        'Barlow Semi Condensed': 'Barlow-Regular.ttf',
+        'Bree Serif': 'BreeSerif-Regular.ttf',
+      }.entries) {
+        final loader = FontLoader(entry.key);
+        loader.addFont(rootBundle.load('assets/brand/fonts/${entry.value}'));
+        await loader.load();
+      }
       final icons = FontLoader('MaterialIcons');
       icons.addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'));
       await icons.load();

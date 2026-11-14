@@ -121,9 +121,63 @@ void validateVisibleProductLines(Json state, List<Json> lines) {
       .toSet();
   for (final line in lines) {
     if (hiddenIds.contains(line['productId'])) {
-      throw const FormatException('Ürün artık satışta değil; menüyü yenileyin.');
+      throw const FormatException(
+        'Ürün artık satışta değil; menüyü yenileyin.',
+      );
     }
   }
+}
+
+/// The cashier reviews a draft, never a historical price snapshot. Refuse
+/// stale drafts after sync or a local price/availability change.
+void validateCashierDraft(Json state, List<Json> lines) {
+  validateProductLines(lines);
+  final menu = asMaps(state['localMenu']);
+  for (final line in lines) {
+    final p = menu.where((p) => p['id'] == line['productId']).firstOrNull;
+    if (p == null ||
+        p['active'] == false ||
+        p['price'] is! num ||
+        cents(p['price']) != cents(line['price'])) {
+      throw const FormatException(
+        'Menü fiyatı veya ürün durumu değişti. Güncel menüyü alın; sepetiniz korunuyor.',
+      );
+    }
+  }
+}
+
+void queueLocalKitchen(Json state, Json order, Map batch) {
+  (state['printJobs'] as List).add({
+    'orderId': order['id'], 'batchId': batch['id'], 'state': 'Bekliyor',
+    'created': nowTime(), 'createdAt': DateTime.now().toUtc().toIso8601String(),
+    // Immutable content: cancellation must not rewrite an accepted ticket.
+    'snapshot': copyJson({
+      'order': {
+        for (final key in [
+          'id',
+          'dailyNumber',
+          'numberDay',
+          'source',
+          'table',
+          'createdAt',
+        ])
+          key: order[key],
+      },
+      'batch': batch,
+    }),
+  });
+}
+
+bool correctionKitchenJob(Json state, Map job) {
+  final snapshot = job['snapshot'];
+  final batch = snapshot is Map ? snapshot['batch'] : null;
+  final source = batch is Map
+      ? batch
+      : asMaps(
+          mutableOrder(state, job['orderId'] as int)?['batches'],
+        ).where((b) => b['id'] == job['batchId']).firstOrNull;
+  return source is Map &&
+      asMaps(source['lines']).any((l) => l['correction'] == true);
 }
 
 Json newLocalOrder({
@@ -176,17 +230,17 @@ Json newLocalOrder({
   };
   (state['orders'] as List).add(order);
   assignDailyNumbers(state);
-  (state['printJobs'] as List).add({
-    'orderId': id,
-    'batchId': 1,
-    'state': 'Bekliyor',
-    'created': nowTime(),
-    'createdAt': DateTime.now().toUtc().toIso8601String(),
-  });
+  queueLocalKitchen(state, order, (order['batches'] as List).first as Map);
   return order;
 }
 
-void addOrderBatch(Json state, int orderId, List<Json> productLines) {
+void addOrderBatch(
+  Json state,
+  int orderId,
+  List<Json> productLines, {
+  String cashier = 'Kasa (PC)',
+  int? staffId,
+}) {
   if (productLines.isEmpty) throw const FormatException('No products');
   validateProductLines(productLines);
   validateVisibleProductLines(state, productLines);
@@ -208,19 +262,15 @@ void addOrderBatch(Json state, int orderId, List<Json> productLines) {
       1;
   batches.add({
     'id': nextBatchId,
-    'staff': 'Kasa (PC)',
+    'staff': cashier,
+    if (staffId != null) 'staffId': staffId,
     'time': nowTime(),
     'createdAt': DateTime.now().toUtc().toIso8601String(),
     'lines': productLines,
   });
-  (order['events'] as List).add('${nowTime()} · Kasa (PC) · Ek sipariş');
-  (state['printJobs'] as List).add({
-    'orderId': orderId,
-    'batchId': nextBatchId,
-    'state': 'Bekliyor',
-    'created': nowTime(),
-    'createdAt': DateTime.now().toUtc().toIso8601String(),
-  });
+  (order['events'] as List).add('${nowTime()} · $cashier · Ek sipariş');
+  order['serviceStatus'] = 'Hazırlanıyor';
+  queueLocalKitchen(state, order, batches.last as Map);
 }
 
 /// Use only when working with the actual JSON map inside a transaction.
@@ -304,18 +354,35 @@ void recordPayment(
 }
 
 void validateProductLines(List<Json> lines) {
+  if (lines.isEmpty || lines.length > 200)
+    throw const FormatException('1–200 ürün satırı seçin');
   for (final l in lines) {
     if (l['qty'] is! int ||
         (l['qty'] as int) < 1 ||
+        (l['qty'] as int) > 1000 ||
         l['price'] is! num ||
         !(l['price'] as num).isFinite ||
         (l['price'] as num) < 0) {
       throw const FormatException('Ürün adedi / fiyatı geçersiz');
     }
+    if ((l['note'] != null &&
+            (l['note'] is! String || (l['note'] as String).length > 500)) ||
+        (l['removed'] != null &&
+            (l['removed'] is! List ||
+                (l['removed'] as List).length > 50 ||
+                (l['removed'] as List).any(
+                  (x) => x is! String || x.length > 100,
+                )))) {
+      throw const FormatException(
+        'Not en fazla 500 karakter; malzeme listesi geçersiz.',
+      );
+    }
   }
 }
 
 void closeLocalTable(Json order) {
+  if (order['closed'] == true || order['cancelled'] == true)
+    throw const FormatException('Hesap zaten kapalı');
   if (order['source'] != 'Masa') throw const FormatException('Only tables');
   if (orderDueCents(order) != 0) {
     throw const FormatException('Önce kalan hesabı kapatın');
@@ -326,7 +393,10 @@ void closeLocalTable(Json order) {
 }
 
 String formatTry(int amount) {
-  final value = amount / 100;
-  final fixed = value.toStringAsFixed(2);
-  return '$fixed ₺';
+  final absolute = amount.abs();
+  final whole = (absolute ~/ 100).toString().replaceAllMapped(
+    RegExp(r'\B(?=(\d{3})+(?!\d))'),
+    (_) => '.',
+  );
+  return '${amount < 0 ? '-' : ''}$whole,${(absolute % 100).toString().padLeft(2, '0')} ₺';
 }
