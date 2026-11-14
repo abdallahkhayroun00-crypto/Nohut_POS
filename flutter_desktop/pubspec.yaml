@@ -25,3 +25,15 @@ flutter:
     - assets/staff.html
     - assets/printing/
     - assets/brand/
+    - assets/brand/fonts/
+  fonts:
+    - family: Barlow Semi Condensed
+      fonts:
+        - asset: assets/brand/fonts/Barlow-Regular.ttf
+        - asset: assets/brand/fonts/Barlow-SemiBold.ttf
+          weight: 600
+        - asset: assets/brand/fonts/Barlow-Bold.ttf
+          weight: 700
+    - family: Bree Serif
+      fonts:
+        - asset: assets/brand/fonts/BreeSerif-Regular.ttf

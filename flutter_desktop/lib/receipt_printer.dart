@@ -57,7 +57,7 @@ class ReceiptPrinter {
                     ) >=
                     0) &&
             o != null &&
-            o['cancelled'] != true &&
+            (o['cancelled'] != true || correctionKitchenJob(next, candidate)) &&
             !isPlatform(o)) {
           job = candidate;
           break;

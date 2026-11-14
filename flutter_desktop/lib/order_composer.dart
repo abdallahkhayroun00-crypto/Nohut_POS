@@ -6,11 +6,17 @@ class _OrderComposer extends StatefulWidget {
     this.table,
     this.adding = false,
     this.tableOrders = const {},
+    this.onSubmit,
+    this.refreshProducts,
+    this.refreshTables,
   });
   final List<Product> products;
   final int? table;
   final bool adding;
   final Map<int, Json> tableOrders;
+  final bool Function(OrderRequest)? onSubmit;
+  final List<Product> Function()? refreshProducts;
+  final Map<int, Json> Function()? refreshTables;
   @override
   State<_OrderComposer> createState() => _OrderComposerState();
 }
@@ -22,14 +28,25 @@ class _OrderComposerState extends State<_OrderComposer> {
   String category = 'all', search = '', source = 'Masa', pickup = 'Tezgahtan';
   int? table;
   int nextLine = 0;
+  String? saveError;
+  late List<Product> products;
+  late Map<int, Json> tableOrders;
   @override
   void initState() {
     super.initState();
+    products = widget.products;
+    tableOrders = widget.tableOrders;
     table = widget.table;
     if (widget.adding) source = table == null ? 'Gel-Al' : 'Masa';
   }
 
   void add(Product p, {String note = '', String removed = ''}) {
+    if (draft.length >= 200) {
+      setState(
+        () => saveError = 'Bir sipariş en fazla 200 ayrı satır içerebilir.',
+      );
+      return;
+    }
     setState(
       () => draft.add({
         '_draftId': nextLine++,
@@ -72,7 +89,7 @@ class _OrderComposerState extends State<_OrderComposer> {
   }
 
   Widget productList() {
-    final products = widget.products
+    final visibleProducts = products
         .where(
           (p) =>
               p.active &&
@@ -117,9 +134,9 @@ class _OrderComposerState extends State<_OrderComposer> {
         ),
         Expanded(
           child: ListView.builder(
-            itemCount: products.length,
+            itemCount: visibleProducts.length,
             itemBuilder: (context, i) {
-              final p = products[i];
+              final p = visibleProducts[i];
               return Card(
                 child: Padding(
                   padding: const EdgeInsets.all(10),
@@ -215,7 +232,7 @@ class _OrderComposerState extends State<_OrderComposer> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              '${line['name']}',
+                              "${line['name']}${line['_unavailable'] == true ? ' · Satış dışı, satırı kaldırın' : ''}",
                               style: const TextStyle(
                                 fontWeight: FontWeight.w700,
                               ),
@@ -258,12 +275,14 @@ class _OrderComposerState extends State<_OrderComposer> {
                                 ),
                                 IconButton(
                                   tooltip: 'Satır notunu düzenle',
-                                  onPressed: () => customize(
-                                    widget.products.firstWhere(
-                                      (p) => p.id == line['productId'],
-                                    ),
-                                    line,
-                                  ),
+                                  onPressed: line['_unavailable'] == true
+                                      ? null
+                                      : () => customize(
+                                          products.firstWhere(
+                                            (p) => p.id == line['productId'],
+                                          ),
+                                          line,
+                                        ),
                                   icon: const Icon(Icons.edit_outlined),
                                 ),
                                 IconButton(
@@ -307,6 +326,7 @@ class _OrderComposerState extends State<_OrderComposer> {
                       widget.adding ? 'Ek Sipariş' : 'Yeni Sipariş',
                       style: const TextStyle(
                         fontSize: 21,
+                        fontFamily: NohutBrand.headingFont,
                         fontWeight: FontWeight.w800,
                       ),
                     ),
@@ -344,13 +364,15 @@ class _OrderComposerState extends State<_OrderComposer> {
                       child: DropdownButtonFormField<int>(
                         isExpanded: true,
                         initialValue: table,
-                        decoration: const InputDecoration(labelText: 'Masa'),
+                        decoration: const InputDecoration(
+                          labelText: 'Masa seçin',
+                        ),
                         items: List.generate(
                           5,
                           (i) => DropdownMenuItem(
                             value: i + 1,
                             child: Text(
-                              'Masa ${i + 1} · ${widget.tableOrders[i + 1] == null ? 'Boş' : 'Dolu · Ek sipariş #${displayOrderNumber(widget.tableOrders[i + 1]!)}'}',
+                              'Masa ${i + 1} · ${tableOrders[i + 1] == null ? 'Boş' : 'Dolu · Ek sipariş #${displayOrderNumber(tableOrders[i + 1]!)}'}',
                             ),
                           ),
                         ),
@@ -424,6 +446,35 @@ class _OrderComposerState extends State<_OrderComposer> {
                         ),
                 ),
               ),
+              if (saveError != null) ...[
+                Text(
+                  saveError!,
+                  style: const TextStyle(color: Color(0xff8c352e)),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () => setState(() {
+                    products = widget.refreshProducts?.call() ?? products;
+                    tableOrders = widget.refreshTables?.call() ?? tableOrders;
+                    for (final line in draft) {
+                      final product = products
+                          .where((p) => p.id == line['productId'])
+                          .firstOrNull;
+                      line['_unavailable'] =
+                          product == null ||
+                          !product.active ||
+                          product.price == null;
+                      if (product != null && product.price != null) {
+                        line['price'] = product.price;
+                        line['name'] = product.name;
+                      }
+                    }
+                    saveError =
+                        'Güncel fiyatlar ve masalar yüklendi. Sepeti kontrol edip kaydedin.';
+                  }),
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Güncel Menü ve Masaları Al'),
+                ),
+              ],
               const Divider(),
               Wrap(
                 alignment: WrapAlignment.spaceBetween,
@@ -440,26 +491,35 @@ class _OrderComposerState extends State<_OrderComposer> {
                   ),
                   FilledButton.icon(
                     onPressed:
-                        draft.isEmpty || (source == 'Masa' && table == null)
+                        draft.isEmpty ||
+                            draft.any((l) => l['_unavailable'] == true) ||
+                            (source == 'Masa' && table == null)
                         ? null
-                        : () => Navigator.pop(
-                            context,
-                            OrderRequest(
+                        : () {
+                            final request = OrderRequest(
                               source: source,
                               table: source == 'Masa' ? table : null,
                               pickupChannel: pickup,
                               customer: pickupCustomer,
                               expectedTableOrderId:
-                                  widget.tableOrders[table]?['id'] as int?,
+                                  tableOrders[table]?['id'] as int?,
                               lines: draft
                                   .map(
-                                    (line) =>
-                                        Map<String, dynamic>.from(line)
-                                          ..remove('_draftId'),
+                                    (line) => Map<String, dynamic>.from(line)
+                                      ..remove('_draftId')
+                                      ..remove('_unavailable'),
                                   )
                                   .toList(),
-                            ),
-                          ),
+                            );
+                            if (widget.onSubmit?.call(request) ?? true) {
+                              Navigator.pop(context, request);
+                            } else {
+                              setState(
+                                () => saveError =
+                                    'Kaydedilemedi. Güncel menü ve masaları alın; sepetiniz korunuyor.',
+                              );
+                            }
+                          },
                     icon: const Icon(Icons.save),
                     label: const Text('Siparişi Kaydet'),
                   ),

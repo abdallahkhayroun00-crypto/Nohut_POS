@@ -11,6 +11,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
+import 'brand.dart';
+import 'payment_dialog.dart';
 import 'floor_plan.dart';
 import 'lan_server.dart';
 import 'pos_logic.dart';
@@ -80,25 +82,7 @@ class NohutFalafelApp extends StatelessWidget {
   Widget build(BuildContext context) => MaterialApp(
     debugShowCheckedModeBanner: false,
     title: 'Nohut Falafel · Yönetici Paneli',
-    theme: ThemeData(
-      useMaterial3: true,
-      colorScheme: ColorScheme.fromSeed(seedColor: dark, surface: cream),
-      scaffoldBackgroundColor: cream,
-      fontFamily: 'Segoe UI',
-      cardTheme: CardThemeData(
-        color: Colors.white,
-        elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(17),
-          side: const BorderSide(color: Color(0xffe1e8df)),
-        ),
-      ),
-      inputDecorationTheme: const InputDecorationTheme(
-        border: OutlineInputBorder(),
-        isDense: true,
-        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-      ),
-    ),
+    theme: NohutBrand.theme(),
     home: ManagerDesktop(databaseFile: databaseFile, startServer: startServer),
   );
 }
@@ -293,45 +277,40 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     });
   }
 
+  void _focusOrder(Json order) {
+    setState(() {
+      selectedOrder = order['id'] as int;
+      selectedTable = order['table'] as int?;
+      page = order['source'] == 'Masa' ? 'tables' : 'orders';
+      orderFrom = orderTo = '${order['numberDay'] ?? ''}';
+      orderFilter = 'Tümü';
+      orderSearch = orderStatus = orderStaff = '';
+    });
+  }
+
+  List<Product> _currentProducts() => asMaps(store.read().data['localMenu'])
+      .where((p) => p['active'] != false)
+      .map(
+        (p) => Product(
+          id: p['id'] as int,
+          name: p['name'] as String,
+          category: p['category'] as String,
+          price: (p['price'] as num?)?.toDouble(),
+          image: p['image'] as String?,
+          descriptionTr: (p['description'] as Map?)?['tr'] as String?,
+        ),
+      )
+      .toList();
+
   Future<void> _composer({int? table, int? addToOrder}) async {
-    final savedMenu = asMaps(store.read().data['localMenu']);
-    if (savedMenu.isNotEmpty) {
-      menu = savedMenu
-          .where((p) => p['active'] != false)
-          .map(
-            (p) => Product(
-              id: p['id'] as int,
-              name: p['name'] as String,
-              category: p['category'] as String,
-              price: (p['price'] as num?)?.toDouble(),
-              image: p['image'] as String?,
-              descriptionTr: (p['description'] as Map?)?['tr'] as String?,
-              displayNameAr: (p['displayName'] as Map?)?['ar'] as String?,
-              displayNameEn: (p['displayName'] as Map?)?['en'] as String?,
-            ),
-          )
-          .toList();
-    }
+    menu = _currentProducts();
     if (menu.isEmpty) {
       _notify('Menü yükleniyor veya okunamadı.', error: true);
       return;
     }
-    final request = await showDialog<OrderRequest>(
-      context: context,
-      builder: (ctx) => _OrderComposer(
-        products: menu,
-        table: table,
-        adding: addToOrder != null,
-        tableOrders: {
-          for (var n = 1; n <= 5; n++)
-            if (activeTable(store.read().data, n) != null)
-              n: activeTable(store.read().data, n)!,
-        },
-      ),
-    );
-    if (request == null) return;
     int? created;
-    final ok = _edit((data) {
+    bool saveRequest(OrderRequest request) => _edit((data) {
+      validateCashierDraft(data, request.lines);
       if (addToOrder != null) {
         addOrderBatch(data, addToOrder, request.lines);
         created = addToOrder;
@@ -361,14 +340,31 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
         created = o['id'] as int;
       }
     });
-    if (ok) {
-      setState(() {
-        page = request.source == 'Masa' || table != null ? 'tables' : 'orders';
-        selectedTable = request.table ?? table;
-        selectedOrder = created;
-      });
-      final saved = mutableOrder(store.read().data, created!);
-      _notify('Sipariş #${displayOrderNumber(saved!)} kaydedildi.');
+    final request = await showDialog<OrderRequest>(
+      context: context,
+      builder: (ctx) => _OrderComposer(
+        products: menu,
+        onSubmit: saveRequest,
+        refreshProducts: _currentProducts,
+        refreshTables: () => {
+          for (var n = 1; n <= 5; n++)
+            if (activeTable(store.read().data, n) != null)
+              n: activeTable(store.read().data, n)!,
+        },
+        table: table,
+        adding: addToOrder != null,
+        tableOrders: {
+          for (var n = 1; n <= 5; n++)
+            if (activeTable(store.read().data, n) != null)
+              n: activeTable(store.read().data, n)!,
+        },
+      ),
+    );
+    if (request == null) return;
+    if (created != null) {
+      final saved = mutableOrder(store.read().data, created!)!;
+      _focusOrder(saved);
+      _notify('Sipariş #${displayOrderNumber(saved)} kaydedildi.');
     }
   }
 
@@ -393,95 +389,18 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
   }) async {
     if (order['source'] != 'Masa' && order['source'] != 'Gel-Al') return;
     final due = maximumCents ?? orderDueCents(order);
-    final amount = TextEditingController(text: (due / 100).toStringAsFixed(2));
-    final received = TextEditingController(
-      text: (due / 100).toStringAsFixed(2),
-    );
-    var method = 'Nakit';
     if (due <= 0) {
       _notify('Bu hesapta kalan ödeme bulunmuyor.');
       return;
     }
     final result = await showDialog<(int, String, int?)>(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialog) => AlertDialog(
-          title: Text(
-            'Ödeme · #${displayOrderNumber(order)} ${guestName ?? ''}',
-          ),
-          content: SizedBox(
-            width: 360,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Ödenecek en fazla ${formatTry(due)}'),
-                const SizedBox(height: 16),
-                DropdownButtonFormField<String>(
-                  isExpanded: true,
-                  initialValue: method,
-                  decoration: const InputDecoration(labelText: 'Yöntem'),
-                  items: ['Nakit', 'Kart']
-                      .map((m) => DropdownMenuItem(value: m, child: Text(m)))
-                      .toList(),
-                  onChanged: (v) => setDialog(() => method = v ?? 'Nakit'),
-                ),
-                const SizedBox(height: 14),
-                TextField(
-                  controller: amount,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'Tutar (₺)'),
-                ),
-                if (method == 'Nakit') ...[
-                  const SizedBox(height: 14),
-                  TextField(
-                    controller: received,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Alınan nakit (₺)',
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 12),
-                const Text(
-                  'Kart seçeneği şu anda banka POS cihazına bağlı değildir.',
-                  style: TextStyle(fontSize: 11, color: Colors.deepOrange),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Vazgeç'),
-            ),
-            FilledButton(
-              onPressed: () {
-                try {
-                  final n = parseMoney(amount.text),
-                      r = method == 'Nakit' ? parseMoney(received.text) : null;
-                  if (n <= 0 || n > due)
-                    throw const FormatException(
-                      'Tutar kalan bakiyeyi aşamaz ve sıfır olamaz.',
-                    );
-                  if (r != null && r < n)
-                    throw const FormatException(
-                      'Alınan nakit tutarı yetersiz.',
-                    );
-                  Navigator.pop(ctx, (n, method, r));
-                } on FormatException catch (e) {
-                  _notify(e.message, error: true);
-                }
-              },
-              child: const Text('Ödemeyi Gözden Geçir'),
-            ),
-          ],
-        ),
+      builder: (ctx) => PaymentEntryDialog(
+        dueCents: due,
+        orderNumber: displayOrderNumber(order),
+        guestName: guestName ?? '',
       ),
     );
-    await Future<void>.delayed(const Duration(milliseconds: 250));
-    amount.dispose();
-    received.dispose();
     if (!mounted) return;
     if (result == null) return;
     final (amountCents, methodName, receivedCents) = result;
@@ -783,6 +702,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                     title,
                     style: const TextStyle(
                       fontSize: 22,
+                      fontFamily: NohutBrand.headingFont,
                       fontWeight: FontWeight.w900,
                       color: dark,
                     ),
@@ -888,10 +808,11 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
           ),
           child: Row(
             children: [
-              const Icon(
-                Icons.storefront_outlined,
-                color: Color(0xfff0d9ab),
-                size: 48,
+              Image.asset(
+                'assets/brand/nohut-logo.webp',
+                width: 64,
+                height: 64,
+                semanticLabel: 'Nohut Falafel',
               ),
               const SizedBox(width: 16),
               const Expanded(
@@ -967,7 +888,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                 ),
                 _metric(
                   'Yazdırma Bekleyen · Devreden Dahil',
-                  '${asMaps(db['printJobs']).where((j) => j['state'] != 'İşaretlendi').length}',
+                  '$waitingPrints',
                   Icons.print_outlined,
                 ),
               ],
@@ -998,10 +919,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                     ),
                     subtitle: Text(o['closed'] == true ? 'Kapalı' : 'Açık'),
                     trailing: Text(formatTry(orderTotalCents(o))),
-                    onTap: () => setState(() {
-                      selectedOrder = o['id'] as int;
-                      page = 'orders';
-                    }),
+                    onTap: () => _focusOrder(o),
                   ),
               ],
             ),
@@ -1380,14 +1298,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
               ('Bitiş YYYY-MM-DD', orderTo),
             ]);
             if (v != null && mounted) {
-              if (v
-                      .skip(3)
-                      .any(
-                        (d) =>
-                            d.isNotEmpty &&
-                            (!RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(d) ||
-                                DateTime.tryParse(d) == null),
-                      ) ||
+              if (v.skip(3).any((d) => d.isNotEmpty && !validBusinessDate(d)) ||
                   v[3].isNotEmpty &&
                       v[4].isNotEmpty &&
                       v[3].compareTo(v[4]) > 0) {
@@ -1484,6 +1395,8 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
         .where(
           (o) =>
               (o['source'] == 'Masa' || o['source'] == 'Gel-Al') &&
+              o['closed'] != true &&
+              o['cancelled'] != true &&
               orderDueCents(o) > 0,
         )
         .toList();
@@ -1531,12 +1444,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                   ),
                   subtitle: Text('Toplam ${formatTry(orderTotalCents(o))}'),
                   trailing: FilledButton(
-                    onPressed: () {
-                      setState(() {
-                        selectedOrder = o['id'] as int;
-                        page = 'orders';
-                      });
-                    },
+                    onPressed: () => _focusOrder(o),
                     child: Text('Kalan ${formatTry(orderDueCents(o))}'),
                   ),
                 ),
@@ -1612,6 +1520,9 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                       if (lan.addresses.isNotEmpty)
                         DropdownButtonFormField<String>(
                           isExpanded: true,
+                          key: ValueKey(
+                            '${lan.selectedIp}:${lan.addresses.join(',')}',
+                          ),
                           initialValue:
                               lan.selectedIp != null &&
                                   lan.addresses.contains(lan.selectedIp)
@@ -1659,7 +1570,9 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                           ),
                           if (!lan.running)
                             FilledButton(
-                              onPressed: () => lan.start(),
+                              onPressed: lan.starting
+                                  ? null
+                                  : () => lan.start(),
                               child: const Text('Sunucuyu Başlat'),
                             ),
                           if (lan.running)

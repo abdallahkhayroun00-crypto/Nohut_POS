@@ -5,6 +5,17 @@ String istanbulDay(DateTime instant) => instant
     .toIso8601String()
     .substring(0, 10);
 
+bool validBusinessDate(String value) {
+  if (!RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(value)) return false;
+  final parsed = DateTime.tryParse(value);
+  return parsed != null && parsed.toIso8601String().substring(0, 10) == value;
+}
+
+bool validBusinessRange(String from, String to) =>
+    (from.isEmpty || validBusinessDate(from)) &&
+    (to.isEmpty || validBusinessDate(to)) &&
+    (from.isEmpty || to.isEmpty || from.compareTo(to) <= 0);
+
 /// Receipts use 4 digits per Istanbul calendar day (0001, 0002 ...).
 /// The immutable SQLite order ID remains independent of this display number.
 String displayOrderNumber(Map order) {
@@ -19,8 +30,11 @@ String displayOrderNumber(Map order) {
 /// Calculating in UTC avoids dependency on Windows regional time settings.
 DateTime nextIstanbulMidnightUtc(DateTime instant) {
   final local = instant.toUtc().add(const Duration(hours: 3));
-  return DateTime.utc(local.year, local.month, local.day + 1)
-      .subtract(const Duration(hours: 3));
+  return DateTime.utc(
+    local.year,
+    local.month,
+    local.day + 1,
+  ).subtract(const Duration(hours: 3));
 }
 
 /// Include transactions on the business day in which they actually occurred.

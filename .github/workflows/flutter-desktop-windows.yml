@@ -15,6 +15,10 @@ on:
       - '.github/workflows/flutter-desktop-windows.yml'
   workflow_dispatch:
 
+env:
+  FLUTTER_SUPPRESS_ANALYTICS: 'true'
+  DART_SUPPRESS_ANALYTICS: 'true'
+
 permissions:
   contents: read
 

@@ -7,16 +7,7 @@ import 'operations.dart';
 import 'operations_ui.dart';
 import 'platform_workflows.dart';
 
-String remoteStatusLabel(String value) =>
-    const {
-      'Created': 'Kabul bekliyor',
-      'Picking': 'Hazırlanıyor',
-      'Invoiced': 'Hazır',
-      'Shipped': 'Kuryede',
-      'Delivered': 'Teslim edildi',
-      'Cancelled': 'İptal edildi',
-    }[value] ??
-    value;
+String remoteStatusLabel(String value) => optionLabel(value);
 
 class PlatformPanel extends StatefulWidget {
   const PlatformPanel({super.key, required this.state, required this.edit});
@@ -45,6 +36,7 @@ class _PlatformPanelState extends State<PlatformPanel> {
     'Değerlendirmeler',
     'Faturalar',
     'Senkronizasyon',
+    'Finans',
   ];
   bool edit(void Function(Json) f) => widget.edit(f);
   Widget button(String label, void Function()? action) => Padding(
@@ -89,6 +81,10 @@ class _PlatformPanelState extends State<PlatformPanel> {
         status = 'Tümü';
         selectedMenu.clear();
         selectedItems.clear();
+        claimItems.clear();
+        search = '';
+        reviewFrom = reviewTo = '';
+        reviewReply = reviewComment = 'Tümü';
       }),
       if (source == 'Yemeksepeti')
         info(
@@ -117,6 +113,7 @@ class _PlatformPanelState extends State<PlatformPanel> {
         'Değerlendirmeler' => reviews(),
         'Faturalar' => invoices(),
         'Senkronizasyon' => sync(),
+        'Finans' => finance(),
         _ => orders(),
       },
     ],
@@ -166,7 +163,7 @@ class _PlatformPanelState extends State<PlatformPanel> {
                     '#${displayOrderNumber(o)} · ${o['platformPackageId']} · ${remoteStatusLabel('${o['demoRemoteStatus']}')}',
                   ),
                   Text(
-                    'Toplam ${formatTry(orderTotalCents(o))} · ${o['platformDeliveryType']} · Tahsilat ${o['platformCollection']}',
+                    'Toplam ${formatTry(orderTotalCents(o))} · ${o['platformDeliveryType']} · Tahsilat ${optionLabel('${o['platformCollection']}')}',
                   ),
                   Text(
                     '${o['platformPaymentLabel']} · Sipariş revizyonu ${o['platformRevision']}',
@@ -298,7 +295,7 @@ class _PlatformPanelState extends State<PlatformPanel> {
                                   !(next == 'Shipped' &&
                                       o['platformPickup'] == true))
                                 button(
-                                  'Test: $next',
+                                  'Test: ${optionLabel(next)}',
                                   () => edit(
                                     (s) => externalPlatformEvent(
                                       s,
@@ -381,7 +378,10 @@ class _PlatformPanelState extends State<PlatformPanel> {
               final v = await askFields(
                 context,
                 'Kabul Akışı · Yalnızca Senaryo',
-                [('direct / indirect', '${cfg['acceptFlow']}')],
+                [('Onay nerede verilir?', '${cfg['acceptFlow']}')],
+                choices: {
+                  0: ['direct', 'indirect'],
+                },
               );
               if (v != null) {
                 edit((s) {
@@ -495,13 +495,18 @@ class _PlatformPanelState extends State<PlatformPanel> {
             ),
             for (final category in rows.map((m) => '${m['cat']}').toSet())
               button(
-                '$category Aç/Kapat',
+                '${optionLabel(category)} Aç/Kapat',
                 blocked
                     ? null
                     : () async {
-                        final v = await askFields(context, 'Kategori Durumu', [
-                          ('ACTIVE / PASSIVE', 'ACTIVE'),
-                        ]);
+                        final v = await askFields(
+                          context,
+                          'Kategori Durumu',
+                          [('Satış durumu', 'ACTIVE')],
+                          choices: {
+                            0: ['ACTIVE', 'PASSIVE'],
+                          },
+                        );
                         if (v != null) {
                           request('category-status', category, {
                             'status': v[0],
@@ -523,7 +528,7 @@ class _PlatformPanelState extends State<PlatformPanel> {
                   value: selectedMenu.contains(m['id']),
                   title: Text('${m['name']} · ${formatTry(cents(m['price']))}'),
                   subtitle: Text(
-                    '${m['id']} · Yerel ${m['localId'] ?? 'Eşlenmedi'} · ${m['status']} / ${m['categoryStatus']}',
+                    '${m['id']} · Yerel ${m['localId'] ?? 'Eşlenmedi'} · ${optionLabel('${m['status']}')} / ${optionLabel('${m['categoryStatus']}')}',
                   ),
                   onChanged: blocked
                       ? null
@@ -804,14 +809,28 @@ class _PlatformPanelState extends State<PlatformPanel> {
                 'REJECTED',
               ], (v) => status = v),
               button('Yorum Filtreleri', () async {
-                final v = await askFields(context, 'Yorum Filtreleri', [
-                  ('Metin / sipariş kodu', search),
-                  ('Başlangıç YYYY-MM-DD', reviewFrom),
-                  ('Bitiş YYYY-MM-DD', reviewTo),
-                  ('Yanıt: Tümü / Var / Yok', reviewReply),
-                  ('Yorum metni: Tümü / Var / Yok', reviewComment),
-                ]);
+                final v = await askFields(
+                  context,
+                  'Yorum Filtreleri',
+                  [
+                    ('Metin / sipariş kodu', search),
+                    ('Başlangıç YYYY-MM-DD', reviewFrom),
+                    ('Bitiş YYYY-MM-DD', reviewTo),
+                    ('Yanıt: Tümü / Var / Yok', reviewReply),
+                    ('Yorum metni', reviewComment),
+                  ],
+                  choices: {
+                    3: ['Tümü', 'Var', 'Yok'],
+                    4: ['Tümü', 'Var', 'Yok'],
+                  },
+                );
                 if (v != null && mounted) {
+                  if (!validBusinessRange(v[1], v[2])) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Tarih aralığı geçersiz')),
+                    );
+                    return;
+                  }
                   setState(() {
                     search = v[0];
                     reviewFrom = v[1];
@@ -906,6 +925,54 @@ class _PlatformPanelState extends State<PlatformPanel> {
         ),
     ],
   );
+  Widget finance() {
+    final records = asMaps(
+      hub()['settlements'],
+    ).where((r) => r['source'] == source).toList();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        panelTitle('Hakediş ve Mutabakat · Test Alanı'),
+        info(
+          'Bu örnekler yalnızca test alanında kalır. Banka hesabına bağlanmaz.',
+        ),
+        for (final o in asMaps(widget.state['orders']).where(
+          (o) =>
+              o['source'] == source &&
+              o['source'] == 'Trendyol Go' &&
+              o['demoRemoteStatus'] == 'Delivered' &&
+              o['cancelled'] != true &&
+              !records.any((r) => r['orderId'] == o['id']),
+        ))
+          button(
+            '#${displayOrderNumber(o)} Örnek Finans Kaydı Al',
+            () => edit((s) => sampleSettlement(s, o['id'] as int)),
+          ),
+        if (records.isEmpty)
+          info(
+            'Teslim edilmiş Trendyol Go test siparişleri için örnek hakediş oluşturabilirsiniz.',
+          ),
+        for (final r in records)
+          Card(
+            child: ListTile(
+              title: Text(
+                '${r['paymentOrderId']} · Net ${formatTry(cents(r['net']))}',
+              ),
+              subtitle: Text('${r['paymentStatus']}'),
+              trailing: button(
+                'Örnek Ödeme Emri Eşleştir',
+                () => edit(
+                  (s) =>
+                      findRecord(s, 'settlements', r['id'])['paymentStatus'] =
+                          'Eşleşti (demo)',
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
   Widget sync() => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
