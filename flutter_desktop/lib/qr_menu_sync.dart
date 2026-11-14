@@ -82,6 +82,7 @@ QrMenuSyncResult reconcilePublishedMenu(Json state, PublishedQrMenu published) {
     }
   }
 
+  final beforeMenu=jsonEncode(products);
   var added=0,repriced=0;
   for(final p in published.products) {
     final current=localById[p.id];
@@ -124,26 +125,13 @@ QrMenuSyncResult reconcilePublishedMenu(Json state, PublishedQrMenu published) {
         'endsAt':campaign.endsAt?.toUtc().toIso8601String(),
       },
   ];
-  final changed=added>0 || repriced>0 ||
+  final changed=jsonEncode(products)!=beforeMenu ||
     jsonEncode(state['qrCategories'])!=jsonEncode(newCategories) ||
     jsonEncode(state['qrCampaigns'])!=jsonEncode(newCampaigns) ||
     (state['qrMenuSync'] as Map?)?['version']!=2 ||
-    (state['qrMenuSync'] as Map?)?['unlistedLocalProducts']!=unlisted ||
-    published.products.any((p){
-      final local=localById[p.id];
-      if(local==null)return false;
-      final desired={
-        'qrStableId':p.id,'name':p.name,
-        'names':p.names,'displayName':p.displayNames,
-        'description':p.descriptions,'image':p.image,
-      };
-      // A tracked field is written above. This expression is only a
-      // consistency check; actual diffs are calculated by the copy below.
-      return desired.entries.any((e)=>jsonEncode(local[e.key])!=jsonEncode(e.value));
-    });
+    (state['qrMenuSync'] as Map?)?['unlistedLocalProducts']!=unlisted;
 
-  // Capture content differences by comparing the pre-reconcile snapshot
-  // instead of price changes alone (local state was copied before this call).
+  // Store only catalog metadata; customer orders are never touched.
   state['qrCategories']=newCategories;
   state['qrCampaigns']=newCampaigns;
   state['qrMenuSync']={
