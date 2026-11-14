@@ -106,7 +106,9 @@ Json? activeTable(Json db, int table) {
 }
 
 String nowTime() {
-  final now = DateTime.now();
+  // Restaurant timestamps always use Türkiye local time (UTC+03:00),
+  // independent of the Windows user's regional timezone.
+  final now = DateTime.now().toUtc().add(const Duration(hours: 3));
   return '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
 }
 
