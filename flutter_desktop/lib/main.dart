@@ -20,8 +20,10 @@ import 'operations_ui.dart';
 import 'platform_workflows.dart';
 import 'platform_ui.dart';
 
-const dark = Color(0xff193f2c);
-const cream = Color(0xfff5f7f1);
+part 'order_composer.dart';
+
+const dark = Color(0xff123e30);
+const cream = Color(0xfff6f2e7);
 const emerald = Color(0xff3b7550);
 
 void main() {
@@ -56,12 +58,14 @@ class OrderRequest {
     required this.pickupChannel,
     required this.lines,
     this.customer = const {},
+    this.expectedTableOrderId,
   });
   final String source;
   final int? table;
   final String pickupChannel;
   final List<Json> lines;
   final Json customer;
+  final int? expectedTableOrderId;
 }
 
 class NohutFalafelApp extends StatelessWidget {
@@ -318,6 +322,11 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
         products: menu,
         table: table,
         adding: addToOrder != null,
+        tableOrders: {
+          for (var n = 1; n <= 5; n++)
+            if (activeTable(store.read().data, n) != null)
+              n: activeTable(store.read().data, n)!,
+        },
       ),
     );
     if (request == null) return;
@@ -327,6 +336,20 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
         addOrderBatch(data, addToOrder, request.lines);
         created = addToOrder;
       } else {
+        final occupied = request.source == 'Masa'
+            ? activeTable(data, request.table!)
+            : null;
+        if (request.source == 'Masa' &&
+            occupied?['id'] != request.expectedTableOrderId) {
+          throw const FormatException(
+            'Masa hesabı değişti. Güncel masayı kontrol edip yeniden sipariş açın.',
+          );
+        }
+        if (occupied != null) {
+          addOrderBatch(data, occupied['id'] as int, request.lines);
+          created = occupied['id'] as int;
+          return;
+        }
         final o = newLocalOrder(
           state: data,
           source: request.source,
@@ -344,7 +367,8 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
         selectedTable = request.table ?? table;
         selectedOrder = created;
       });
-      _notify('Sipariş SQLite veritabanına kaydedildi · #$created');
+      final saved = mutableOrder(store.read().data, created!);
+      _notify('Sipariş #${displayOrderNumber(saved!)} kaydedildi.');
     }
   }
 
@@ -436,12 +460,20 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                 try {
                   final n = parseMoney(amount.text),
                       r = method == 'Nakit' ? parseMoney(received.text) : null;
+                  if (n <= 0 || n > due)
+                    throw const FormatException(
+                      'Tutar kalan bakiyeyi aşamaz ve sıfır olamaz.',
+                    );
+                  if (r != null && r < n)
+                    throw const FormatException(
+                      'Alınan nakit tutarı yetersiz.',
+                    );
                   Navigator.pop(ctx, (n, method, r));
                 } on FormatException catch (e) {
                   _notify(e.message, error: true);
                 }
               },
-              child: const Text('Ödemeyi Kaydet'),
+              child: const Text('Ödemeyi Gözden Geçir'),
             ),
           ],
         ),
@@ -453,6 +485,16 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     if (!mounted) return;
     if (result == null) return;
     final (amountCents, methodName, receivedCents) = result;
+    final confirmed = await confirmAction(
+      context,
+      'Ödemeyi Onayla',
+      'Sipariş #${displayOrderNumber(order)} · ${guestName ?? ''}\nTutar: ${formatTry(amountCents)}\nYöntem: $methodName\n'
+          '${receivedCents == null ? 'Banka terminalinde başarılı tahsilatı doğrulayın. Bu kayıt banka işlemi başlatmaz.' : 'Alınan: ${formatTry(receivedCents)} · Para üstü: ${formatTry(receivedCents - amountCents)}'}',
+      confirm: methodName == 'Kart'
+          ? 'Terminalde Onaylandı · Kaydet'
+          : 'Nakdi Aldım · Kaydet',
+    );
+    if (!confirmed || !mounted) return;
     final ok = _edit((data) {
       final target = mutableOrder(data, order['id'] as int);
       if (target == null) throw const FormatException('Sipariş bulunamadı');
@@ -473,7 +515,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
         latest['guestName'] = guestName;
       }
     });
-    if (ok) _notify('Ödeme kaydedildi · ${formatTry(amountCents)} (demo)');
+    if (ok) _notify('Ödeme kaydedildi · ${formatTry(amountCents)}');
   }
 
   void _closeTable(Json order) {
@@ -504,9 +546,10 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       final width = MediaQuery.sizeOf(context).width;
       final condensed = width < 1050;
       return Scaffold(
+        drawer: condensed ? Drawer(child: _sidebar(false)) : null,
         body: Row(
           children: [
-            SizedBox(width: condensed ? 74 : 235, child: _sidebar(condensed)),
+            if (!condensed) SizedBox(width: 235, child: _sidebar(false)),
             Expanded(
               child: Column(
                 children: [
@@ -516,6 +559,14 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                     padding: const EdgeInsets.symmetric(horizontal: 27),
                     child: Row(
                       children: [
+                        if (condensed)
+                          Builder(
+                            builder: (ctx) => IconButton(
+                              tooltip: 'Menüyü aç',
+                              onPressed: () => Scaffold.of(ctx).openDrawer(),
+                              icon: const Icon(Icons.menu),
+                            ),
+                          ),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -524,7 +575,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                               const Text(
                                 'NOHUT FALAFEL / YÖNETİCİ',
                                 style: TextStyle(
-                                  color: Color(0xff8c998f),
+                                  color: Color(0xff526251),
                                   fontSize: 10,
                                   fontWeight: FontWeight.w700,
                                   letterSpacing: 1.3,
@@ -548,8 +599,8 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                         const SizedBox(width: 8),
                         Text(
                           lan.running
-                              ? 'Local Server · AKTİF'
-                              : 'Local Server · KAPALI',
+                              ? 'Yerel sunucu açık'
+                              : 'Yerel sunucu kapalı',
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w800,
@@ -593,7 +644,12 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
           padding: const EdgeInsets.fromLTRB(14, 24, 14, 20),
           child: Row(
             children: [
-              const Icon(Icons.restaurant, color: Color(0xfff0d6a7), size: 30),
+              Image.asset(
+                'assets/brand/nohut-logo.webp',
+                width: 44,
+                height: 44,
+                semanticLabel: 'Nohut Falafel',
+              ),
               if (!condensed) ...[
                 const SizedBox(width: 10),
                 const Expanded(
@@ -661,7 +717,12 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                       tileColor: page == item.$1
                           ? const Color(0xff37694d)
                           : Colors.transparent,
-                      onTap: () => _switch(item.$1),
+                      onTap: () {
+                        if (MediaQuery.sizeOf(context).width < 1050) {
+                          Navigator.of(context).pop();
+                        }
+                        _switch(item.$1);
+                      },
                     ),
                   ),
                 ),
@@ -731,7 +792,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                     description,
                     style: const TextStyle(
                       fontSize: 12,
-                      color: Color(0xff708374),
+                      color: Color(0xff526251),
                     ),
                   ),
                 ],
@@ -761,7 +822,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                 child: Text(
                   label,
                   style: const TextStyle(
-                    color: Color(0xff809081),
+                    color: Color(0xff526251),
                     fontSize: 12,
                   ),
                 ),
@@ -780,18 +841,22 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
 
   Widget _dashboard(Json db) {
     final orders = asMaps(db['orders']);
-    final todayOrders = orders.where(
-      (o) =>
-          onIstanbulDay(o['createdAt'], businessDay) &&
-          o['cancelled'] != true &&
-          o['demoRemoteStatus'] != 'Created',
-    ).toList();
+    final todayOrders = orders
+        .where(
+          (o) =>
+              onIstanbulDay(o['createdAt'], businessDay) &&
+              o['cancelled'] != true &&
+              o['demoRemoteStatus'] != 'Created',
+        )
+        .toList();
     // Use PAYMENT timestamps, not order creation dates. A table that
     // pays after midnight belongs to the new day's receipts.
     final todayNetReceipts = ledger(db)
-        .where((e) =>
-            (e.source == 'Masa' || e.source == 'Gel-Al') &&
-            onIstanbulDay(e.stamp, businessDay))
+        .where(
+          (e) =>
+              (e.source == 'Masa' || e.source == 'Gel-Al') &&
+              onIstanbulDay(e.stamp, businessDay),
+        )
         .fold<int>(0, (sum, entry) => sum + entry.amount);
     final lastDailyReceipt = orders
         .where((o) => o['numberDay'] == businessDay)
@@ -802,6 +867,12 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     final active = orders
         .where((o) => o['closed'] != true && o['cancelled'] != true)
         .toList();
+    final waitingPrints = asMaps(
+      db['printJobs'],
+    ).where((j) => j['state'] == 'Bekliyor').length;
+    final failedPrints = asMaps(
+      db['printJobs'],
+    ).where((j) => j['state'] == 'Kontrol gerekli').length;
     final busy = List.generate(
       5,
       (i) => activeTable(db, i + 1),
@@ -851,6 +922,10 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
             ],
           ),
         ),
+        const SizedBox(height: 12),
+        Text(
+          'Açık sipariş: ${active.length} · Dolu masa: $busy / 5 · Yazdırma bekleyen: $waitingPrints · Kontrol gerekli: $failedPrints',
+        ),
         const SizedBox(height: 18),
         LayoutBuilder(
           builder: (context, c) {
@@ -859,7 +934,9 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               crossAxisCount: n,
-              mainAxisExtent: 160,
+              mainAxisExtent:
+                  160 *
+                  MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 3.0),
               mainAxisSpacing: 10,
               crossAxisSpacing: 10,
               children: [
@@ -980,6 +1057,13 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
               const SizedBox(width: 8),
               FilledButton(
                 onPressed: () {
+                  if (!validFloorPlacement(draftFloor)) {
+                    _notify(
+                      'Masalar çakışamaz ve kapı açık kalmalı.',
+                      error: true,
+                    );
+                    return;
+                  }
                   final done = _edit(
                     (data) =>
                         data['floorPositions'] = positionsToJson(draftFloor),
@@ -1006,7 +1090,11 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
             final top = (r.top + delta.dy)
                 .clamp(0.0, 1.0 - r.height)
                 .toDouble();
-            draftFloor[n] = Rect.fromLTWH(left, top, r.width, r.height);
+            final next = {
+              ...draftFloor,
+              n: Rect.fromLTWH(left, top, r.width, r.height),
+            };
+            if (validFloorPlacement(next)) draftFloor = next;
           }),
         ),
         const SizedBox(height: 17),
@@ -1053,9 +1141,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        closed
-                            ? 'Kapalı'
-                            : 'Açık · ${o['serviceStatus'] ?? 'Hazırlanıyor'}',
+                        '${o['numberDay'] ?? ''} · ${closed ? 'Kapalı' : 'Açık · ${o['serviceStatus'] ?? 'Hazırlanıyor'}'}',
                         style: const TextStyle(
                           color: Color(0xff708273),
                           fontSize: 12,
@@ -1094,9 +1180,20 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                     ),
                     const SizedBox(width: 11),
                     Expanded(
-                      child: Text(
-                        '${line['name'] ?? line['productKey'] ?? 'Ürün'}',
-                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${line['name'] ?? line['productKey'] ?? 'Ürün'}',
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          if ('${line['note'] ?? ''}'.isNotEmpty)
+                            Text('Not: ${line['note']}'),
+                          if ((line['removed'] as List? ?? []).isNotEmpty)
+                            Text(
+                              'Çıkar: ${(line['removed'] as List).join(', ')}',
+                            ),
+                        ],
                       ),
                     ),
                     Text(
@@ -1257,7 +1354,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     }).toList();
     final focused = selectedOrder == null
         ? null
-        : all.where((o) => o['id'] == selectedOrder).firstOrNull;
+        : filtered.where((o) => o['id'] == selectedOrder).firstOrNull;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1322,7 +1419,10 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
               ChoiceChip(
                 label: Text(filter),
                 selected: orderFilter == filter,
-                onSelected: (_) => setState(() => orderFilter = filter),
+                onSelected: (_) => setState(() {
+                  orderFilter = filter;
+                  selectedOrder = null;
+                }),
               ),
           ],
         ),
@@ -1341,9 +1441,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                   ),
                   title: Text('#${displayOrderNumber(o)} · ${o['source']}'),
                   subtitle: Text(
-                    o['closed'] == true
-                        ? 'Kapalı'
-                        : (o['serviceStatus'] ?? 'Açık').toString(),
+                    '${o['numberDay'] ?? ''} · ${o['created'] ?? ''} · ${o['closed'] == true ? 'Kapalı' : o['serviceStatus'] ?? 'Açık'}',
                   ),
                   trailing: Text(formatTry(orderTotalCents(o))),
                   onTap: () => setState(() => selectedOrder = o['id'] as int),
@@ -1355,7 +1453,31 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     );
   }
 
-  Widget _online(Json db) => PlatformPanel(state: db, edit: _edit);
+  Json? platformDemo;
+  Widget _online(Json db) {
+    platformDemo ??= {...emptyPosState(), 'localMenu': asMaps(db['localMenu'])};
+    seedPlatformMenu(
+      platformDemo!,
+      asMaps(
+        platformDemo!['localMenu'],
+      ).where((p) => p['active'] != false).toList(),
+    );
+    return PlatformPanel(
+      state: platformDemo!,
+      edit: (change) {
+        try {
+          final next = copyJson(platformDemo!);
+          change(next);
+          PosStore.validate(next);
+          setState(() => platformDemo = next);
+          return true;
+        } catch (e) {
+          _notify('$e', error: true);
+          return false;
+        }
+      },
+    );
+  }
 
   Widget _payments(Json db) {
     final locals = asMaps(db['orders'])
@@ -1639,7 +1761,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                       const Text(
                         'Android Chrome · iPhone Safari',
                         style: TextStyle(
-                          color: Color(0xff798e7b),
+                          color: Color(0xff526251),
                           fontSize: 11,
                         ),
                       ),
@@ -1677,325 +1799,4 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       ),
     ),
   );
-}
-
-class _OrderComposer extends StatefulWidget {
-  const _OrderComposer({
-    required this.products,
-    this.table,
-    this.adding = false,
-  });
-  final List<Product> products;
-  final int? table;
-  final bool adding;
-
-  @override
-  State<_OrderComposer> createState() => _OrderComposerState();
-}
-
-class _OrderComposerState extends State<_OrderComposer> {
-  final counts = <int, int>{};
-  final notes = <int, String>{};
-  Json pickupCustomer = {};
-  final removed = <int, List<String>>{};
-  String category = 'all', source = 'Masa', pickup = 'Tezgahtan';
-  int? table;
-  @override
-  void initState() {
-    super.initState();
-    table = widget.table;
-    if (widget.adding) source = widget.table == null ? 'Gel-Al' : 'Masa';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final filtered = widget.products
-        .where((p) => p.active && (category == 'all' || p.category == category))
-        .toList();
-    final totalCents = counts.entries.fold<int>(0, (sum, e) {
-      final p = widget.products.firstWhere((x) => x.id == e.key);
-      return sum + cents(p.price) * e.value;
-    });
-    return Dialog(
-      child: SizedBox(
-        width: 820,
-        height: 650,
-        child: Padding(
-          padding: const EdgeInsets.all(22),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      widget.adding
-                          ? 'Ek Sipariş · Kasa (PC)'
-                          : 'Yeni Sipariş · Kasa (PC)',
-                      style: const TextStyle(
-                        fontSize: 21,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  if (!widget.adding)
-                    Expanded(
-                      child: DropdownButtonFormField<String>(
-                        isExpanded: true,
-                        initialValue: source,
-                        decoration: const InputDecoration(
-                          labelText: 'Sipariş Türü',
-                        ),
-                        items: ['Masa', 'Gel-Al']
-                            .map(
-                              (v) => DropdownMenuItem(value: v, child: Text(v)),
-                            )
-                            .toList(),
-                        onChanged: (v) => setState(() => source = v ?? 'Masa'),
-                      ),
-                    ),
-                  if (!widget.adding) const SizedBox(width: 12),
-                  if (source == 'Masa')
-                    Expanded(
-                      child: DropdownButtonFormField<int>(
-                        initialValue: table,
-                        decoration: const InputDecoration(labelText: 'Masa'),
-                        items: List.generate(
-                          5,
-                          (i) => DropdownMenuItem(
-                            value: i + 1,
-                            child: Text('Masa ${i + 1}'),
-                          ),
-                        ),
-                        onChanged: widget.adding
-                            ? null
-                            : (v) => setState(() => table = v),
-                      ),
-                    ),
-                  if (source == 'Gel-Al')
-                    Expanded(
-                      child: DropdownButtonFormField<String>(
-                        isExpanded: true,
-                        initialValue: pickup,
-                        decoration: const InputDecoration(
-                          labelText: 'Teslim Alma',
-                        ),
-                        items: ['Tezgahtan', 'Telefon']
-                            .map(
-                              (v) => DropdownMenuItem(value: v, child: Text(v)),
-                            )
-                            .toList(),
-                        onChanged: (v) =>
-                            setState(() => pickup = v ?? 'Tezgahtan'),
-                      ),
-                    ),
-                ],
-              ),
-              if (source == 'Gel-Al' && !widget.adding)
-                OutlinedButton(
-                  onPressed: () async {
-                    final v = await askFields(context, 'Gel-Al Bilgileri', [
-                      ('Ad', '${pickupCustomer['name'] ?? ''}'),
-                      ('Telefon', '${pickupCustomer['phone'] ?? ''}'),
-                      ('Teslim alma saati', '${pickupCustomer['time'] ?? ''}'),
-                    ]);
-                    if (v != null && mounted) {
-                      setState(
-                        () => pickupCustomer = {
-                          'name': v[0],
-                          'phone': v[1],
-                          'time': v[2],
-                        },
-                      );
-                    }
-                  },
-                  child: const Text('Gel-Al Müşteri / Saat Bilgisi'),
-                ),
-              const SizedBox(height: 15),
-              const Text('Ürüne dokunun: not ve çıkarılan malzemeler.'),
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    for (final x in [
-                      ('all', 'Tümü'),
-                      ('wrap', 'Dürümler'),
-                      ('plate', 'Porsiyonlar'),
-                      ('meze', 'Mezeler'),
-                      ('fatte', 'Fatte'),
-                      ('side', 'Diğer'),
-                      ('salad', 'Salatalar'),
-                      ('dessert', 'Tatlı'),
-                      ('drink', 'İçecekler'),
-                    ])
-                      Padding(
-                        padding: const EdgeInsets.only(right: 7),
-                        child: ChoiceChip(
-                          label: Text(x.$2),
-                          selected: category == x.$1,
-                          onSelected: (_) => setState(() => category = x.$1),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 8),
-              Expanded(
-                child: ListView.builder(
-                  itemCount: filtered.length,
-                  itemBuilder: (context, i) {
-                    final p = filtered[i], qty = counts[p.id] ?? 0;
-                    return ListTile(
-                      leading: p.image == null
-                          ? const Icon(Icons.restaurant_menu_outlined)
-                          : SizedBox(
-                              width: 48,
-                              height: 48,
-                              child: Image.network(
-                                Uri.parse('https://nohutfalafel.github.io/qr-menu/')
-                                    .resolve(p.image!).toString(),
-                                fit: BoxFit.contain,
-                                errorBuilder: (_, __, ___) =>
-                                    const Icon(Icons.restaurant_menu_outlined),
-                              ),
-                            ),
-                      title: Text(
-                        p.name,
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      subtitle: Text(
-                        p.price == null
-                            ? 'Fiyat belirlenmedi'
-                            : '${formatTry(cents(p.price))} · ${notes[p.id] ?? ''}'
-                              '${p.descriptionTr == null || p.descriptionTr!.isEmpty ? '' : ' · ${p.descriptionTr}'}',
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      onTap: () async {
-                        final v = await askFields(context, p.name, [
-                          ('Ürün notu', notes[p.id] ?? ''),
-                          (
-                            'Çıkarılan malzemeler (virgülle)',
-                            (removed[p.id] ?? []).join(', '),
-                          ),
-                        ]);
-                        if (v != null && mounted) {
-                          setState(() {
-                            notes[p.id] = v[0];
-                            removed[p.id] = v[1]
-                                .split(',')
-                                .map((s) => s.trim())
-                                .where((s) => s.isNotEmpty)
-                                .toList();
-                          });
-                        }
-                      },
-                      trailing: p.price == null
-                          ? const Text(
-                              'Fiyat yok',
-                              style: TextStyle(color: Colors.deepOrange),
-                            )
-                          : Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IconButton(
-                                  onPressed: qty > 0
-                                      ? () => setState(() {
-                                          if (qty == 1) {
-                                            counts.remove(p.id);
-                                          } else {
-                                            counts[p.id] = qty - 1;
-                                          }
-                                        })
-                                      : null,
-                                  icon: const Icon(Icons.remove_circle_outline),
-                                ),
-                                Text(
-                                  '$qty',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                                IconButton(
-                                  onPressed: () =>
-                                      setState(() => counts[p.id] = qty + 1),
-                                  icon: const Icon(
-                                    Icons.add_circle,
-                                    color: emerald,
-                                  ),
-                                ),
-                              ],
-                            ),
-                    );
-                  },
-                ),
-              ),
-              const Divider(),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      'Ürün: ${counts.values.fold<int>(0, (a, b) => a + b)} · Toplam: ${formatTry(totalCents)}',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                  OutlinedButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('Vazgeç'),
-                  ),
-                  const SizedBox(width: 10),
-                  FilledButton.icon(
-                    onPressed:
-                        counts.isEmpty || (source == 'Masa' && table == null)
-                        ? null
-                        : () {
-                            final lines = <Json>[];
-                            for (final entry in counts.entries) {
-                              final product = widget.products.firstWhere(
-                                (p) => p.id == entry.key,
-                              );
-                              lines.add({
-                                'productId': product.id,
-                                'productKey': product.name,
-                                'name': product.name,
-                                'price': product.price,
-                                'qty': entry.value,
-                                'removed': removed[product.id] ?? <String>[],
-                                'note': notes[product.id] ?? '',
-                              });
-                            }
-                            Navigator.pop(
-                              context,
-                              OrderRequest(
-                                source: source,
-                                table: source == 'Masa' ? table : null,
-                                pickupChannel: pickup,
-                                lines: lines,
-                                customer: pickupCustomer,
-                              ),
-                            );
-                          },
-                    icon: const Icon(Icons.save),
-                    label: const Text('Siparişi Kaydet'),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 }

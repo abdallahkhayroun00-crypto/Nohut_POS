@@ -128,6 +128,7 @@ Future<void> windowsPrint(String text, String printer) async {
       '\n',
     );
     final command =
+        '[Console]::OutputEncoding = [Text.UTF8Encoding]::new(\$false)\n'
         'try {\n$body\n'
         r'} catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }'
         '\nexit 0';
@@ -144,7 +145,9 @@ Future<void> windowsPrint(String text, String printer) async {
     );
     await process.stdin.close();
     final output = process.stdout.drain<void>();
-    final errors = process.stderr.transform(utf8.decoder).join();
+    final errors = process.stderr
+        .transform(const Utf8Decoder(allowMalformed: true))
+        .join();
     int code;
     try {
       code = await process.exitCode.timeout(const Duration(seconds: 45));

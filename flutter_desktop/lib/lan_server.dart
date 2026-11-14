@@ -133,6 +133,16 @@ class PosLanServer extends ChangeNotifier {
   Future<void> _handle(HttpRequest request) async {
     final uri = request.uri;
     final resource = uri.path;
+    if (request.method == 'GET' && resource == '/assets/nohut-logo.webp') {
+      final bytes = await rootBundle.load('assets/brand/nohut-logo.webp');
+      request.response.headers.set('Content-Type', 'image/webp');
+      request.response.headers.set('Cache-Control', 'public, max-age=86400');
+      request.response.add(
+        bytes.buffer.asUint8List(bytes.offsetInBytes, bytes.lengthInBytes),
+      );
+      await request.response.close();
+      return;
+    }
     if (request.method == 'GET' &&
         ['/', '/personel', '/personel/'].contains(resource)) {
       request.response.headers.contentType = ContentType.html;

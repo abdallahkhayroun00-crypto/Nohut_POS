@@ -69,6 +69,31 @@ Future<List<String>?> askFields(
   return result;
 }
 
+Future<bool> confirmAction(
+  BuildContext context,
+  String title,
+  String detail, {
+  String confirm = 'Onayla',
+}) async =>
+    await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: SingleChildScrollView(child: Text(detail)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Vazgeç'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(confirm),
+          ),
+        ],
+      ),
+    ) ??
+    false;
+
 int parseMoney(String text) {
   if (!RegExp(r'^\d+([.,]\d{1,2})?$').hasMatch(text)) {
     throw const FormatException('Tutar en fazla iki ondalık basamak olmalı');
@@ -142,7 +167,35 @@ class CashPanel extends StatelessWidget {
                   final v = await askFields(context, 'Kapanış Sayımı', [
                     ('Sayılan nakit ₺', ''),
                   ]);
-                  if (v != null) edit((s) => closeCash(s, parseMoney(v[0])));
+                  if (v == null || !context.mounted) return;
+                  int counted;
+                  try {
+                    counted = parseMoney(v[0]);
+                  } on FormatException catch (e) {
+                    ScaffoldMessenger.of(
+                      context,
+                    ).showSnackBar(SnackBar(content: Text(e.message)));
+                    return;
+                  }
+                  final expected = expectedCash(s, active);
+                  final confirmed = await confirmAction(
+                    context,
+                    'Kasayı Kapatmadan Önce',
+                    'Beklenen: ${formatTry(expected)}\nSayılan: ${formatTry(counted)}\nFark: ${formatTry(counted - expected)}',
+                    confirm: 'Sayımı Onayla ve Kapat',
+                  );
+                  if (confirmed)
+                    edit((next) {
+                      final current = activeCash(next);
+                      if (current == null ||
+                          current['id'] != active['id'] ||
+                          expectedCash(next, current) != expected) {
+                        throw const FormatException(
+                          'Kasa değişti. Güncel sayımı kontrol edin.',
+                        );
+                      }
+                      closeCash(next, counted);
+                    });
                 },
                 child: const Text('Kasayı Kapat'),
               ),
@@ -285,7 +338,15 @@ class OrderOperations extends StatelessWidget {
                 child: const Text('Kişi Ekle'),
               ),
               OutlinedButton(
-                onPressed: () => edit((s) => resetGuests(mutableOrder(s, id)!)),
+                onPressed: () async {
+                  if (await confirmAction(
+                    context,
+                    'Kişi Paylarını Sıfırla',
+                    'Sipariş #${displayOrderNumber(o)} için ürün dağılımı silinecek. Devam edilsin mi?',
+                  )) {
+                    edit((s) => resetGuests(mutableOrder(s, id)!));
+                  }
+                },
                 child: const Text('Kişi Paylarını Sıfırla'),
               ),
               if (['Hazırlanıyor', 'Hazır'].contains(o['serviceStatus']))
@@ -333,6 +394,51 @@ class OrderOperations extends StatelessWidget {
                     Wrap(
                       spacing: 6,
                       children: [
+                        if (asMaps(o['guestChecks']).isNotEmpty &&
+                            line.total > allocatedTo(o, line.key))
+                          PopupMenuButton<int>(
+                            tooltip: 'Kalan ürün payını kişiye ata',
+                            onSelected: (guestId) => edit((s) {
+                              final current = mutableOrder(s, id)!;
+                              final currentLine = checkLines(
+                                current,
+                              ).firstWhere((l) => l.key == line.key);
+                              final remaining =
+                                  currentLine.total -
+                                  allocatedTo(current, line.key);
+                              if (remaining <= 0)
+                                throw const FormatException(
+                                  'Ürün zaten dağıtılmış.',
+                                );
+                              final guest = asMaps(
+                                current['guestChecks'],
+                              ).firstWhere((g) => g['id'] == guestId);
+                              final previous = asMaps(guest['allocations'])
+                                  .where((a) => a['key'] == line.key)
+                                  .fold<int>(
+                                    0,
+                                    (n, a) => n + (a['cents'] as int),
+                                  );
+                              allocateProduct(
+                                current,
+                                guestId,
+                                line.key,
+                                previous + remaining,
+                              );
+                            }),
+                            itemBuilder: (context) => [
+                              for (final g in asMaps(o['guestChecks']))
+                                PopupMenuItem(
+                                  value: g['id'] as int,
+                                  child: Text(
+                                    '${g['name']} · ${formatTry(line.total - allocatedTo(o, line.key))}',
+                                  ),
+                                ),
+                            ],
+                            child: const Chip(
+                              label: Text('Ürünü Kişiye Ata ▾'),
+                            ),
+                          ),
                         OutlinedButton(
                           onPressed: () async {
                             final v = await askFields(context, 'Ürün İptali', [
@@ -459,7 +565,35 @@ class OrderOperations extends StatelessWidget {
                                 ),
                                 ('Neden', ''),
                               ]);
-                          if (v != null) {
+                          if (v != null && context.mounted) {
+                            int amount;
+                            try {
+                              amount = parseMoney(v[0]);
+                            } on FormatException catch (e) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text(e.message)),
+                              );
+                              return;
+                            }
+                            if (amount <= 0 ||
+                                amount > paymentNetCents(p) ||
+                                v[1].trim().isEmpty) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Geçerli iade tutarı ve neden girin.',
+                                  ),
+                                ),
+                              );
+                              return;
+                            }
+                            final confirmed = await confirmAction(
+                              context,
+                              'İadeyi Gözden Geçir',
+                              'Sipariş #${displayOrderNumber(o)}\nTutar: ${formatTry(amount)}\nYöntem: ${p['method']}\nNeden: ${v[1]}\n${p['method'] == 'Kart' ? 'İadeyi önce banka terminalinde tamamlayın. Bu kayıt bankaya işlem göndermez.' : 'Nakit iadesini doğrulayın.'}',
+                              confirm: 'İade Yapıldı · Kaydet',
+                            );
+                            if (!confirmed) return;
                             edit(
                               (s) => refundPayment(
                                 mutableOrder(s, id)!,
@@ -560,7 +694,9 @@ class _ReportsPanelState extends State<ReportsPanel> {
       staff = '',
       // Each new business day starts with empty daily reports. To inspect
       // past dates, change the filters or clear both dates for all history.
-      from = istanbulDay(DateTime.now()),
+      from = istanbulDay(
+        DateTime.now(),
+      ),
       to = istanbulDay(DateTime.now()),
       financeType = 'Tümü';
   Future<void> export(String content, String name) async {
@@ -755,9 +891,48 @@ class _ReportsPanelState extends State<ReportsPanel> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final days in [1, 7, 30])
+              OutlinedButton(
+                onPressed: () => setState(() {
+                  final now = DateTime.now().toUtc().add(
+                    const Duration(hours: 3),
+                  );
+                  to = now.toIso8601String().substring(0, 10);
+                  from = now
+                      .subtract(Duration(days: days - 1))
+                      .toIso8601String()
+                      .substring(0, 10);
+                }),
+                child: Text(days == 1 ? 'Bugün' : 'Son $days Gün'),
+              ),
+            OutlinedButton(
+              onPressed: () async {
+                final range = await showDateRangePicker(
+                  context: context,
+                  firstDate: DateTime(2020),
+                  lastDate: DateTime(2100),
+                  helpText: 'Rapor tarih aralığı',
+                );
+                if (range != null && mounted)
+                  setState(() {
+                    from = range.start.toIso8601String().substring(0, 10);
+                    to = range.end.toIso8601String().substring(0, 10);
+                  });
+              },
+              child: const Text('Takvimden Seç'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
         _hourlyChart(s),
         panelTitle('Raporlar · Tahsilat ve İade'),
-        info('Varsayılan: bugün (00:00–23:59, Europe/Istanbul). Geçmiş kayıtları görmek için tarih filtrelerini değiştirin veya boş bırakın.'),
+        info(
+          'Varsayılan: bugün (00:00–23:59, Europe/Istanbul). Geçmiş kayıtları görmek için tarih filtrelerini değiştirin veya boş bırakın.',
+        ),
         Wrap(
           spacing: 8,
           runSpacing: 10,
@@ -960,20 +1135,35 @@ class PrinterPanel extends StatelessWidget {
                 ),
                 if (j['state'] != 'Gönderiliyor')
                   OutlinedButton(
-                    onPressed: () => edit((s) {
-                      final job = (s['printJobs'] as List)
-                          .cast<Map>()
-                          .firstWhere(
-                            (r) =>
-                                r['orderId'] == j['orderId'] &&
-                                r['batchId'] == j['batchId'],
+                    onPressed: () async {
+                      if (!await confirmAction(
+                        context,
+                        'Yeniden Yazdırmayı Onayla',
+                        'Sipariş #${displayOrderNumber(mutableOrder(state, j['orderId'] as int) ?? {'id': j['orderId']})} · Parti ${j['batchId']}\nDurum: ${j['state']}\nÖnce yazıcı çıktısını kontrol edin. Bu işlem aynı mutfak fişini tekrar basabilir.',
+                        confirm: 'Kontrol Ettim · Yeniden Yazdır',
+                      ))
+                        return;
+                      edit((s) {
+                        final job = (s['printJobs'] as List)
+                            .cast<Map>()
+                            .firstWhere(
+                              (r) =>
+                                  r['orderId'] == j['orderId'] &&
+                                  r['batchId'] == j['batchId'],
+                            );
+                        if (job['state'] != j['state'] ||
+                            job['state'] == 'Gönderiliyor') {
+                          throw const FormatException(
+                            'Yazdırma durumu değişti. Kuyruğu ve çıktıyı tekrar kontrol edin.',
                           );
-                      job['state'] = 'Bekliyor';
-                      job['createdAt'] = DateTime.now()
-                          .toUtc()
-                          .toIso8601String();
-                      job['error'] = '';
-                    }),
+                        }
+                        job['state'] = 'Bekliyor';
+                        job['createdAt'] = DateTime.now()
+                            .toUtc()
+                            .toIso8601String();
+                        job['error'] = '';
+                      });
+                    },
                     child: const Text('Kontrol Ettim · Yeniden Kuyruğa Al'),
                   ),
               ],
@@ -984,7 +1174,7 @@ class PrinterPanel extends StatelessWidget {
   );
 }
 
-class SettingsPanel extends StatelessWidget {
+class SettingsPanel extends StatefulWidget {
   const SettingsPanel({
     super.key,
     required this.state,
@@ -997,6 +1187,16 @@ class SettingsPanel extends StatelessWidget {
   final PosStore store;
   final QrMenuAutoSync qrSync;
   @override
+  State<SettingsPanel> createState() => _SettingsPanelState();
+}
+
+class _SettingsPanelState extends State<SettingsPanel> {
+  String menuSearch = '';
+  Json get state => widget.state;
+  EditState get edit => widget.edit;
+  PosStore get store => widget.store;
+  QrMenuAutoSync get qrSync => widget.qrSync;
+  @override
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
@@ -1007,9 +1207,8 @@ class SettingsPanel extends StatelessWidget {
         enabled: state['settings']?['qrAutoSync'] != false,
         onToggle: (enabled) {
           final saved = edit((s) {
-            final settings = s.putIfAbsent(
-              'settings', () => <String, dynamic>{},
-            ) as Map;
+            final settings =
+                s.putIfAbsent('settings', () => <String, dynamic>{}) as Map;
             settings['qrAutoSync'] = enabled;
           });
           if (saved && enabled) qrSync.syncNow();
@@ -1018,7 +1217,14 @@ class SettingsPanel extends StatelessWidget {
       ExpansionTile(
         title: const Text('Yerel Menü Fiyatları'),
         children: [
-          for (final p in asMaps(state['localMenu']))
+          TextField(
+            decoration: const InputDecoration(labelText: 'Ürün adına göre ara'),
+            onChanged: (v) => setState(() => menuSearch = v),
+          ),
+          for (final p in asMaps(state['localMenu']).where(
+            (p) =>
+                '${p['name']}'.toLowerCase().contains(menuSearch.toLowerCase()),
+          ))
             ListTile(
               title: Text('${p['name']}'),
               subtitle: Text(
@@ -1056,16 +1262,9 @@ class SettingsPanel extends StatelessWidget {
       info(
         'Yemeksepeti / Trendyol Go: DEMO. Banka POS / ÖKC bağlı değil. Termal yazıcı Windows sürücüsüyle çalışır. Gerçek API anahtarı girmeyin.',
       ),
-      for (final src in platformSources)
-        ListTile(
-          title: Text(src),
-          subtitle: const Text('Ortam: DEMO · Canlı bağlantı yok'),
-          trailing: OutlinedButton(
-            onPressed: () =>
-                edit((s) => queuePlatform(s, 'sync', src, src, {})),
-            child: const Text('Örnek Bağlantı İsteği'),
-          ),
-        ),
+      info(
+        'Platform denemeleri Online Siparişler bölümündeki ayrı test alanında yapılır.',
+      ),
       SwitchListTile(
         title: const Text('Otomatik Masa / Gel-Al Fişi'),
         subtitle: const Text(
