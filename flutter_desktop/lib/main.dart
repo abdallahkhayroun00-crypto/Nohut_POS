@@ -121,8 +121,8 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
   String orderSearch = '',
       orderStatus = '',
       orderStaff = '',
-      orderFrom = '',
-      orderTo = '';
+      orderFrom = istanbulDay(DateTime.now()),
+      orderTo = istanbulDay(DateTime.now());
 
   static const sections = [
     ('dashboard', Icons.dashboard_outlined, 'Genel Bakış'),
@@ -161,7 +161,13 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     final delay = midnight.difference(now) + const Duration(milliseconds: 100);
     _midnightTimer = Timer(delay, () {
       if (!mounted) return;
-      setState(() => businessDay = istanbulDay(DateTime.now()));
+      setState(() {
+        businessDay = istanbulDay(DateTime.now());
+        // Default order list begins with only the new day's orders.
+        // All prior records remain available through the date filters.
+        orderFrom = businessDay;
+        orderTo = businessDay;
+      });
       _scheduleIstanbulMidnight();
     });
   }
@@ -1233,7 +1239,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       children: [
         _sectionTitle(
           'Tüm Siparişler',
-          'Masa / Gel-Al / Online platform kayıtları.',
+          'Varsayılan: Bugün ($businessDay). Geçmiş siparişler tarih filtresiyle açılır.'
           action: FilledButton.icon(
             onPressed: () => _composer(),
             icon: const Icon(Icons.add),
