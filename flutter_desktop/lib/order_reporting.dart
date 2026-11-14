@@ -5,8 +5,30 @@ String istanbulDay(DateTime instant) => instant
     .toIso8601String()
     .substring(0, 10);
 
-String displayOrderNumber(Map order) =>
-    '${order['dailyNumber'] ?? order['id']}';
+/// Receipts use 4 digits per Istanbul calendar day (0001, 0002 ...).
+/// The immutable SQLite order ID remains independent of this display number.
+String displayOrderNumber(Map order) {
+  final number = order['dailyNumber'];
+  if (number is int && number >= 0) {
+    return number.toString().padLeft(4, '0');
+  }
+  return '${order['id']}';
+}
+
+/// UTC instant of the next 00:00 in Türkiye (fixed UTC+03:00).
+/// Calculating in UTC avoids dependency on Windows regional time settings.
+DateTime nextIstanbulMidnightUtc(DateTime instant) {
+  final local = instant.toUtc().add(const Duration(hours: 3));
+  return DateTime.utc(local.year, local.month, local.day + 1)
+      .subtract(const Duration(hours: 3));
+}
+
+/// Include transactions on the business day in which they actually occurred.
+bool onIstanbulDay(Object? rawTimestamp, String day) {
+  if (rawTimestamp is! String) return false;
+  final stamp = DateTime.tryParse(rawTimestamp);
+  return stamp != null && istanbulDay(stamp) == day;
+}
 
 void assignDailyNumbers(Map<String, dynamic> state) {
   final orders = (state['orders'] as List).cast<Map>();
