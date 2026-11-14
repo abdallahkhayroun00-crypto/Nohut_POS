@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:nohut_falafel_desktop/pos_logic.dart';
 import 'package:nohut_falafel_desktop/pos_store.dart';
 import 'package:nohut_falafel_desktop/qr_menu_sync.dart';
 import 'package:nohut_falafel_desktop/staff_commands.dart';
@@ -90,6 +91,39 @@ void main() {
     expect(store.read().revision, before.revision);
     expect(jsonEncode(store.read().data['orders']),
         jsonEncode(before.data['orders']));
+  });
+
+  test('cashier cannot submit a hidden product using a stale order window',
+      () async {
+    final state = QrCatalogFixture.localState();
+    final hidden = await QrCatalogFixture.reader(
+      pricesOverride: pricesWithSambaliVisible(false),
+    ).readPublishedMenu();
+    reconcilePublishedMenu(state, hidden);
+    final orderCount = (state['orders'] as List).length;
+    final line = <String, dynamic>{
+      'productId': 32,
+      'productKey': 'Şambali Tatlısı',
+      'name': 'Şambali Tatlısı',
+      'price': 70,
+      'qty': 1,
+      'removed': <String>[],
+      'note': '',
+    };
+    expect(
+      () => newLocalOrder(
+        state: state, source: 'Gel-Al', productLines: [line],
+      ),
+      throwsFormatException,
+    );
+    expect((state['orders'] as List).length, orderCount);
+    final visible = await QrCatalogFixture.reader(
+      pricesOverride: pricesWithSambaliVisible(true),
+    ).readPublishedMenu();
+    reconcilePublishedMenu(state, visible);
+    expect(newLocalOrder(
+      state: state, source: 'Gel-Al', productLines: [line],
+    )['id'], isA<int>());
   });
 
   test('malformed visibility value fails closed before SQLite sync', () async {
