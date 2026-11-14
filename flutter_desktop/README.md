@@ -76,28 +76,47 @@ Validation: HTML logic regressions, SQLite/domain/receipt/report tests and deskt
 XP-237B specification: https://www.xprintertech.com/desktop-label-printer-xp-237b — 58 mm receipt paper, 48 mm print width, ESC/POS receipt mode. Browser print dialog preferences are owned by the browser; CSS constrains the receipt to the 48 mm content area.
 
 
-## Official QR menu: read-only website check (phase 1)
+## Official QR menu: automatic website synchronization (phase 2)
 
-Under **Ayarlar → Resmî QR Menü — Web Verilerini Oku**, press
-**QR Menü Bilgilerini Kontrol Et**. The Windows app fetches these public HTTPS
-files from the restaurant's current QR-menu site:
+The restaurant's Windows POS can use the **published Nohut QR Menu** as the
+single price authority for local products. Under **Ayarlar → Resmî QR Menü ·
+Otomatik Eşitleme**, keep the switch enabled (default). The app checks once
+after startup and again every **10 minutes** while the Windows app is open.
+Use **Şimdi Eşitle** for an immediate attempt.
 
+Source endpoints (public HTTPS JSON; no API token, no payment or staff data):
 - `https://nohutfalafel.github.io/qr-menu/cms/menu-prices.json`
 - `https://nohutfalafel.github.io/qr-menu/cms/campaigns.json`
 
-The preview shows product counts, menu mismatches, price differences, currently
-visible campaigns, and the retrieval timestamp. Invalid JSON, duplicate names,
-unexpected prices, invalid campaign assets/dates, and HTTP failures are reported
-as read errors. The operator can retry. No API key is needed for these public
-read-only endpoints.
+What is synchronized into the **local SQLite catalog**:
+- Existing products: prices are updated by exact Turkish name and category,
+  retaining the old local product ID.
+- Newly listed products: appended with fresh local product IDs.
+- Published campaigns: cached in `qrCampaigns` with active status, localized
+  campaign text, dates, and public image paths.
+- The PC keeps the historical order lines/payments completely unchanged.
+  Old receipts retain their original prices.
+- Product removals and renames are **not inferred** from missing names; local
+  entries are kept and counted as unlisted. Names are not permanent IDs.
+- Duplicate/invalid/suspiciously short responses or category conflicts abort
+  the entire update. SQLite revision conflict triggers a fresh-state retry.
+- If offline, network fails, or the source is invalid: keep the entire local
+  menu, show a status/error, and retry on the next interval. Unchanged remote
+  content causes no SQLite write.
+- Turn off the switch before making temporary owner-only local price changes:
+  when enabled the website is the authority on the next successful sync.
+  The switch is persisted in the local SQLite settings.
 
-**Safety boundary:** this feature reads but NEVER automatically applies remote
-prices or campaigns, edits the restaurant's SQLite state, changes customer
-orders, or modifies the website. Offline operation remains unchanged. The
-remote price file contains category/name/price only. Product descriptions,
-ingredients, translations, and product images are still defined in website
-JavaScript and need a versioned public JSON catalog plus ID mapping before
-full synchronization can be safely enabled. A Cloudflare Pages migration has
-not been implemented by this feature.
+**Current scope:** the public `cms/menu-prices.json` contains name, category,
+price. Product ingredient descriptions, per-product images, and Arabic/English
+names are currently in the website's JS/CSS assets, not this structured feed.
+Full content sync requires a versioned canonical JSON catalog with immutable
+product IDs. The platform catalog in Trendyol/Yemeksepeti is still a DEMO and
+is deliberately not updated. This feature does not deploy Cloudflare Pages or
+connect payment, fiscal, or delivery APIs.
 
-Run `flutter test test/qr_menu_reader_test.dart` for parser/read-only tests.
+**Deployment:** no changes are applied to the restaurant until the draft PR is
+reviewed, Flutter CI passes, and a Windows release is installed on the laptop.
+Back up the existing SQLite database before replacing the program.
+Run tests: `flutter test test/qr_menu_sync_test.dart` and
+`flutter test test/qr_menu_reader_test.dart`.
