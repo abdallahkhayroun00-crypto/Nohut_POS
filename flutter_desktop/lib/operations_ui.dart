@@ -558,8 +558,10 @@ class _ReportsPanelState extends State<ReportsPanel> {
       method = 'Tümü',
       kind = 'Tümü',
       staff = '',
-      from = '',
-      to = '',
+      // Each new business day starts with empty daily reports. To inspect
+      // past dates, change the filters or clear both dates for all history.
+      from = istanbulDay(DateTime.now()),
+      to = istanbulDay(DateTime.now()),
       financeType = 'Tümü';
   Future<void> export(String content, String name) async {
     final v = await askFields(context, 'CSV Kaydet', [
@@ -755,6 +757,7 @@ class _ReportsPanelState extends State<ReportsPanel> {
       children: [
         _hourlyChart(s),
         panelTitle('Raporlar · Tahsilat ve İade'),
+        info('Varsayılan: bugün (00:00–23:59, Europe/Istanbul). Geçmiş kayıtları görmek için tarih filtrelerini değiştirin veya boş bırakın.'),
         Wrap(
           spacing: 8,
           runSpacing: 10,
