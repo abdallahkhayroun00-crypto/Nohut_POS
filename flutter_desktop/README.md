@@ -128,3 +128,36 @@ database before upgrading. Only after passing CI and validating 53 products,
 orders and the XP-237B printer on the real laptop should the new executable
 replace the old one. GitHub Actions build artifacts are temporarily retained;
 their presence alone does not mean the software is installed.
+
+
+## 00:00 daily reset — Europe/Istanbul
+
+The Windows POS dashboard automatically rolls over at **00:00 Türkiye time**
+(UTC+03:00), even if the Windows machine has another timezone. Restarting after
+midnight also selects the new business day. The next invoice number displayed
+on receipts is **0001** (then 0002, etc.) for each new local day. Internal
+SQLite order IDs are always unique and **never** reset.
+
+The following **daily views** begin at zero at the new midnight:
+- Today's order count and today's recent orders on Genel Bakış
+- Today's net restaurant collection (cash/card receipts minus refunds, by the
+  actual payment event timestamp, not the original order date)
+- Raporlar by default: today's hourly density, financial ledger and product
+  sales; historic data is available by changing/clearing the date filters
+- Tüm Siparişler initially shows the new day's records, with earlier dates
+  accessible from Sipariş Filtreleri.
+
+**No destructive reset happens.** Open/unpaid tables, pending print jobs, cash
+sessions, refunds, financial audit records, SQLite history and previous days'
+sales remain intact. Operational counters such as `Dolu Masa`,
+`Açık Sipariş`, `Yazdırma Bekleyen` and balances due continue across
+midnight until resolved; zeroing them would hide genuine work or cash owed.
+Cash drawer balances are NOT physically reset at midnight.
+
+All results are scoped by **Europe/Istanbul calendar day**, and local
+restaurant operations can proceed offline. The date boundary uses UTC+03:00,
+not whatever timezone is configured in Windows.
+
+Tests: `flutter test test/daily_midnight_test.dart`. The new POS build must
+be installed on the restaurant's Windows laptop after backup and review;
+merging the code does not remotely update an already-installed application.
