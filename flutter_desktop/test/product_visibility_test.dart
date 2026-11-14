@@ -121,8 +121,10 @@ void main() {
       pricesOverride: pricesWithSambaliVisible(true),
     ).readPublishedMenu();
     reconcilePublishedMenu(state, visible);
+    // SQLite state is decoded as dynamic JSON before the real cashier writes.
+    final activated = copyJson(state);
     expect(newLocalOrder(
-      state: state, source: 'Gel-Al', productLines: [line],
+      state: activated, source: 'Gel-Al', productLines: [line],
     )['id'], isA<int>());
   });
 
