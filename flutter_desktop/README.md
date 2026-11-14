@@ -74,3 +74,30 @@ GitHub Actions runs strict Flutter analysis, domain/SQLite/HTTP/widget tests, th
 Validation: HTML logic regressions, SQLite/domain/receipt/report tests and desktop widget tests. The Linux workspace cannot enumerate network interfaces (`Bad value for ai_flags`); the existing real HTTP concurrency test must run on Windows CI. A physical receipt test on the restaurant laptop remains necessary.
 
 XP-237B specification: https://www.xprintertech.com/desktop-label-printer-xp-237b — 58 mm receipt paper, 48 mm print width, ESC/POS receipt mode. Browser print dialog preferences are owned by the browser; CSS constrains the receipt to the 48 mm content area.
+
+
+## Official QR menu: read-only website check (phase 1)
+
+Under **Ayarlar → Resmî QR Menü — Web Verilerini Oku**, press
+**QR Menü Bilgilerini Kontrol Et**. The Windows app fetches these public HTTPS
+files from the restaurant's current QR-menu site:
+
+- `https://nohutfalafel.github.io/qr-menu/cms/menu-prices.json`
+- `https://nohutfalafel.github.io/qr-menu/cms/campaigns.json`
+
+The preview shows product counts, menu mismatches, price differences, currently
+visible campaigns, and the retrieval timestamp. Invalid JSON, duplicate names,
+unexpected prices, invalid campaign assets/dates, and HTTP failures are reported
+as read errors. The operator can retry. No API key is needed for these public
+read-only endpoints.
+
+**Safety boundary:** this feature reads but NEVER automatically applies remote
+prices or campaigns, edits the restaurant's SQLite state, changes customer
+orders, or modifies the website. Offline operation remains unchanged. The
+remote price file contains category/name/price only. Product descriptions,
+ingredients, translations, and product images are still defined in website
+JavaScript and need a versioned public JSON catalog plus ID mapping before
+full synchronization can be safely enabled. A Cloudflare Pages migration has
+not been implemented by this feature.
+
+Run `flutter test test/qr_menu_reader_test.dart` for parser/read-only tests.
