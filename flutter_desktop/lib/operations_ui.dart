@@ -11,6 +11,7 @@ import 'pos_logic.dart';
 import 'pos_store.dart';
 import 'operations.dart';
 import 'platform_workflows.dart';
+import 'qr_menu_preview.dart';
 
 typedef EditState = bool Function(void Function(Json) change);
 
@@ -995,6 +996,7 @@ class SettingsPanel extends StatelessWidget {
     children: [
       panelTitle('Ayarlar'),
       SelectableText('SQLite: ${store.filePath}'),
+      QrMenuPreviewPanel(localMenu: asMaps(state['localMenu'])),
       ExpansionTile(
         title: const Text('Yerel Menü Fiyatları'),
         children: [
