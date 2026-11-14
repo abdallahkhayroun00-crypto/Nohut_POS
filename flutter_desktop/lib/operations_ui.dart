@@ -11,6 +11,8 @@ import 'pos_logic.dart';
 import 'pos_store.dart';
 import 'operations.dart';
 import 'platform_workflows.dart';
+import 'qr_menu_preview.dart';
+import 'qr_menu_sync.dart';
 
 typedef EditState = bool Function(void Function(Json) change);
 
@@ -985,16 +987,31 @@ class SettingsPanel extends StatelessWidget {
     required this.state,
     required this.edit,
     required this.store,
+    required this.qrSync,
   });
   final Json state;
   final EditState edit;
   final PosStore store;
+  final QrMenuAutoSync qrSync;
   @override
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       panelTitle('Ayarlar'),
       SelectableText('SQLite: ${store.filePath}'),
+      QrMenuSyncPanel(
+        sync: qrSync,
+        enabled: state['settings']?['qrAutoSync'] != false,
+        onToggle: (enabled) {
+          final saved = edit((s) {
+            final settings = s.putIfAbsent(
+              'settings', () => <String, dynamic>{},
+            ) as Map;
+            settings['qrAutoSync'] = enabled;
+          });
+          if (saved && enabled) qrSync.syncNow();
+        },
+      ),
       ExpansionTile(
         title: const Text('Yerel Menü Fiyatları'),
         children: [

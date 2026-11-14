@@ -37,7 +37,9 @@ jobs:
         run: flutter pub get
       - name: Dart static analysis
         working-directory: flutter_desktop
-        run: flutter analyze
+        # Keep static errors/warnings fatal; newer Flutter releases emit info-only
+        # SDK deprecations even for unchanged code (e.g. material.dart).
+        run: flutter analyze --no-fatal-infos
       - name: Unit tests
         working-directory: flutter_desktop
         run: flutter test --reporter expanded
