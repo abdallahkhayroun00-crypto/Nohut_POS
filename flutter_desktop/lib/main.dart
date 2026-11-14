@@ -169,11 +169,8 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       final snap = store.read();
       final next = copyJson(snap.data);
       next.putIfAbsent('localMenu', () => data['products']);
-      for (final product in (next['localMenu'] as List).cast<Map>()) {
-        if (product['category'] == 'drink' && product['price'] == null) {
-          product['price'] = 45;
-        }
-      }
+      // Keep intentional local 'not for sale' (null) prices intact.
+      // The website sync supplies published prices when enabled.
       final printerSettings =
           next.putIfAbsent('settings', () => <String, dynamic>{}) as Map;
       printerSettings['printerModel'] = 'XP-237B';
