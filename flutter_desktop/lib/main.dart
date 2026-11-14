@@ -110,6 +110,8 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
   late final ReceiptPrinter receiptPrinter;
   late final PosLanServer lan;
   late final QrMenuAutoSync qrSync;
+  Timer? _midnightTimer;
+  String businessDay = istanbulDay(DateTime.now());
   List<Product> menu = const [];
   String page = 'dashboard';
   int? selectedTable, selectedOrder;
@@ -142,10 +144,25 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     lan = PosLanServer(store);
     receiptPrinter = ReceiptPrinter(store);
     qrSync = QrMenuAutoSync(store);
+    _scheduleIstanbulMidnight();
     receiptPrinter.start();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // Menu initialization precedes staff order acceptance.
       unawaited(_startLan());
+    });
+  }
+
+  /// Rolls daily dashboard and report filters over at 00:00 Europe/Istanbul,
+  /// without deleting persisted orders, payments, or any unpaid table.
+  void _scheduleIstanbulMidnight() {
+    _midnightTimer?.cancel();
+    final now = DateTime.now().toUtc();
+    final midnight = nextIstanbulMidnightUtc(now);
+    final delay = midnight.difference(now) + const Duration(milliseconds: 100);
+    _midnightTimer = Timer(delay, () {
+      if (!mounted) return;
+      setState(() => businessDay = istanbulDay(DateTime.now()));
+      _scheduleIstanbulMidnight();
     });
   }
 
@@ -204,6 +221,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
 
   @override
   void dispose() {
+    _midnightTimer?.cancel();
     qrSync.dispose();
     receiptPrinter.dispose();
     lan.dispose();
@@ -1371,7 +1389,11 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
 
   Widget _staff(Json db) => StaffPanel(state: db, edit: _edit);
 
-  Widget _reports(Json db) => ReportsPanel(state: db, edit: _edit);
+  Widget _reports(Json db) => ReportsPanel(
+    key: ValueKey('daily-reports-$businessDay'),
+    state: db,
+    edit: _edit,
+  );
 
   Widget _wifi(Json db) {
     final url = lan.staffUrl;
