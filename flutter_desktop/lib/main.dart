@@ -3,6 +3,7 @@ import 'order_reporting.dart';
 import 'dart:async';
 
 import 'receipt_printer.dart';
+import 'qr_menu_sync.dart';
 
 import 'dart:convert';
 
@@ -103,6 +104,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
   late final PosStore store;
   late final ReceiptPrinter receiptPrinter;
   late final PosLanServer lan;
+  late final QrMenuAutoSync qrSync;
   List<Product> menu = const [];
   String page = 'dashboard';
   int? selectedTable, selectedOrder;
@@ -134,6 +136,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     store = PosStore(databaseFile: widget.databaseFile);
     lan = PosLanServer(store);
     receiptPrinter = ReceiptPrinter(store);
+    qrSync = QrMenuAutoSync(store);
     receiptPrinter.start();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // Menu initialization precedes staff order acceptance.
@@ -143,7 +146,10 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
 
   Future<void> _startLan() async {
     await _loadMenu();
-    if (mounted && widget.startServer) await lan.start();
+    if (mounted && widget.startServer) {
+      await lan.start();
+      if (mounted) qrSync.start();
+    }
   }
 
   Future<void> _loadMenu() async {
@@ -192,6 +198,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
 
   @override
   void dispose() {
+    qrSync.dispose();
     receiptPrinter.dispose();
     lan.dispose();
     store.dispose();
@@ -1578,7 +1585,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
   }
 
   Widget _settings(Json db) =>
-      SettingsPanel(state: db, edit: _edit, store: store);
+      SettingsPanel(state: db, edit: _edit, store: store, qrSync: qrSync);
 
   Widget _notice(String text) => Container(
     padding: const EdgeInsets.all(15),
