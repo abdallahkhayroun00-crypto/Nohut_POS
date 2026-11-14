@@ -118,6 +118,17 @@ class PosLanServer extends ChangeNotifier {
     response.close();
   }
 
+  // Hide unpublished products from staff phones without touching SQLite or
+  // archived order snapshots used for accounting and reprints.
+  Map<String, dynamic> _staffState(Map<String, dynamic> source) {
+    final state = copyJson(source);
+    final products = state['localMenu'];
+    if (products is List) {
+      products.removeWhere((row) => row is Map && row['active'] == false);
+    }
+    return state;
+  }
+
   Future<void> _handle(HttpRequest request) async {
     final uri = request.uri;
     final resource = uri.path;
@@ -141,7 +152,7 @@ class PosLanServer extends ChangeNotifier {
       final current = store.read();
       _json(request.response, 200, {
         'revision': current.revision,
-        'state': current.data,
+        'state': _staffState(current.data),
       });
       return;
     }
@@ -150,7 +161,7 @@ class PosLanServer extends ChangeNotifier {
       _json(request.response, 200, {
         'online': true,
         'revision': current.revision,
-        'state': current.data,
+        'state': _staffState(current.data),
         'ip': selectedIp,
         'port': port,
         'staffUrl': staffUrl,
