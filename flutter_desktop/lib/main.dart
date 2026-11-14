@@ -203,6 +203,13 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       final snap = store.read();
       final next = copyJson(snap.data);
       next.putIfAbsent('localMenu', () => data['products']);
+      // Safe first-upgrade fallback: do not show legacy Şambali ID 32
+      // before the first website sync. An explicit CMS active:true restores it.
+      for (final product in asMaps(next['localMenu'])) {
+        if (product['id'] == 32 && product['active'] == null) {
+          product['active'] = false;
+        }
+      }
       // Keep intentional local 'not for sale' (null) prices intact.
       // The website sync supplies published prices when enabled.
       final printerSettings =
