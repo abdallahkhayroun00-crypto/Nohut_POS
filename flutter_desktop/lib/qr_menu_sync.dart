@@ -88,7 +88,7 @@ QrMenuSyncResult reconcilePublishedMenu(Json state, PublishedQrMenu published) {
     final current=localById[p.id];
     final desired=<String,dynamic>{
       'id':p.id,'qrStableId':p.id,'category':p.category,'name':p.name,
-      'price':p.priceTl,
+      'price':p.priceTl,'active':p.active,
       'names':p.names,'displayName':p.displayNames,
       'description':p.descriptions,'image':p.image,
     };
