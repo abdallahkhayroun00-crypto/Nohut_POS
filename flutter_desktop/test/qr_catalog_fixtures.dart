@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:nohut_falafel_desktop/pos_logic.dart';
+import 'package:nohut_falafel_desktop/operations.dart';
 import 'package:nohut_falafel_desktop/qr_menu_reader.dart';
 
 /// Exercises the real 51-item bundled POS ID allocation, plus the two new
