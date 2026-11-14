@@ -140,6 +140,8 @@ SQLite order IDs are always unique and **never** reset.
 
 The following **daily views** begin at zero at the new midnight:
 - Today's order count and today's recent orders on Genel Bakış
+- Günlük Son Fiş (last daily receipt counter) displays **0000** at midnight and
+  increases to **0001** with the first new business-day order
 - Today's net restaurant collection (cash/card receipts minus refunds, by the
   actual payment event timestamp, not the original order date)
 - Raporlar by default: today's hourly density, financial ledger and product
