@@ -45,11 +45,14 @@ class ReceiptPrinter {
       final snap = store.read(), next = copyJson(snap.data);
       final settings = next['settings'] as Map? ?? {};
       final printer = '${settings['printerName'] ?? ''}'.trim();
-      if (printer.isEmpty || settings['autoPrint'] != true) return;
+      if (printer.isEmpty) return;
+      final paymentOnly = settings['receiptPolicy'] == 'onPayment';
+      if (!paymentOnly && settings['autoPrint'] != true) return;
       Map? job;
       for (final candidate in (next['printJobs'] as List).cast<Map>()) {
         final o = mutableOrder(next, candidate['orderId'] as int);
-        if (candidate['state'] == 'Bekliyor' &&
+        if ((!paymentOnly || candidate['kind'] == 'paymentReceipt') &&
+            candidate['state'] == 'Bekliyor' &&
             candidate['createdAt'] is String &&
             (settings['autoPrintEnabledAt'] == null ||
                 '${candidate['createdAt']}'.compareTo(
@@ -65,7 +68,9 @@ class ReceiptPrinter {
       }
       if (job == null) return;
       final id = job['orderId'], batch = job['batchId'];
-      final text = receiptText(next, Map<String, dynamic>.from(job));
+      final text = job['kind'] == 'paymentReceipt'
+          ? job['text'] as String
+          : receiptText(next, Map<String, dynamic>.from(job));
       job['state'] = 'Gönderiliyor';
       job['attempts'] = (job['attempts'] as int? ?? 0) + 1;
       if (!store.replace(next, snap.revision).ok) return;

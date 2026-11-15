@@ -67,7 +67,6 @@ void main() {
           'Masalar',
           'Tüm Siparişler',
           'Kasa & Ödemeler',
-          'Yazdırma Kuyruğu',
           'Personel Yönetimi',
           'Raporlar',
           'Ayarlar',

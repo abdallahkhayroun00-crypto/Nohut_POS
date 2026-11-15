@@ -147,6 +147,7 @@ void validateCashierDraft(Json state, List<Json> lines) {
 }
 
 void queueLocalKitchen(Json state, Json order, Map batch) {
+  if (state['settings']?['receiptPolicy'] == 'onPayment') return;
   (state['printJobs'] as List).add({
     'orderId': order['id'], 'batchId': batch['id'], 'state': 'Bekliyor',
     'created': nowTime(), 'createdAt': DateTime.now().toUtc().toIso8601String(),
@@ -257,6 +258,8 @@ void addOrderBatch(
   final order =
       mutableOrder(state, orderId) ??
       (throw const FormatException('Sipariş bulunamadı'));
+  if (order['terminalPending'] != null)
+    throw const FormatException('Terminal sonucu bekleniyor');
   if (order['closed'] == true || order['cancelled'] == true) {
     throw const FormatException('Hesap kapalı');
   }
@@ -307,6 +310,8 @@ void recordPayment(
   if (order['closed'] == true || order['cancelled'] == true) {
     throw const FormatException('Hesap kapalı');
   }
+  if (order['terminalPending'] != null)
+    throw const FormatException('Terminal işlemi bekleniyor');
   final due = orderDueCents(order);
   final guests = asMaps(order['guestChecks']);
   if (guests.isNotEmpty) {
@@ -391,6 +396,8 @@ void validateProductLines(List<Json> lines) {
 }
 
 void closeLocalTable(Json order) {
+  if (order['terminalPending'] != null)
+    throw const FormatException('Terminal sonucu bekleniyor');
   if (order['closed'] == true || order['cancelled'] == true)
     throw const FormatException('Hesap zaten kapalı');
   if (order['source'] != 'Masa') throw const FormatException('Only tables');
