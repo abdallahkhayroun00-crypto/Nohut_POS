@@ -76,6 +76,7 @@ try {
         $qty=$matches[1];$name=$matches[2];$amount=$matches[3]
         $h=[Math]::Max(6,$g.MeasureString($name,$bold,[single]($w-24)).Height+2)
       }
+      if($h -gt $bottom-[Math]::Max($margin,$hardY+1)){throw 'A receipt row cannot fit the configured page height'}
       if($y+$h -gt $bottom){$e.HasMorePages=$true;return}
       if($isTotal){$g.DrawLine([System.Drawing.Pens]::Black,[single]$x,[single]$y,[single]($x+$w),[single]$y);$y+=1}
       if($line -match '^(\d+) × (.*?) · ([\d.,]+ ₺)$'){

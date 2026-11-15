@@ -288,6 +288,9 @@ void addOrderBatch(
   });
   (order['events'] as List).add('${nowTime()} · $cashier · Ek sipariş');
   order['serviceStatus'] = 'Hazırlanıyor';
+  order['serviceStartedAt'] = DateTime.now().toUtc().toIso8601String();
+  order.remove('readyAt');
+  order.remove('deliveredAt');
   queueLocalKitchen(state, order, batches.last as Map);
 }
 

@@ -81,10 +81,16 @@ class _OrderComposerState extends State<_OrderComposer> {
     );
     if (result == null || !mounted) return;
     if (line == null) {
+      if (result['qty'] == 0 || draft.length >= 200) return;
       add(p);
       setState(() => draft.last.addAll(result));
     } else
-      setState(() => line.addAll(result));
+      setState(() {
+        if (result['qty'] == 0)
+          draft.remove(line);
+        else
+          line.addAll(result);
+      });
   }
 
   Widget productList() {

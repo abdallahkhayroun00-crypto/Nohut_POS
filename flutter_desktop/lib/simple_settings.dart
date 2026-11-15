@@ -6,6 +6,7 @@ import 'pos_store.dart';
 import 'operations_ui.dart';
 import 'qr_menu_sync.dart';
 import 'qr_menu_preview.dart';
+import 'receipt_printer.dart';
 
 class SimpleSettings extends StatefulWidget {
   const SimpleSettings({
@@ -238,6 +239,30 @@ class _SimpleSettingsState extends State<SimpleSettings> {
                         );
                       cfg['receiptScale'] = 'shrink';
                     });
+                },
+              ),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.print_outlined),
+                label: const Text('Hizalama Testi Yazdır'),
+                onPressed: () async {
+                  try {
+                    await windowsPrint(
+                      'HİZALAMA TESTİ\nSol |--------------------| Sağ\nOrtalanmış baskı alanı\nKağıt: ${settings['paperWidthMm'] ?? 56} mm\nBu bir sipariş değildir.',
+                      '${settings['printerName'] ?? 'XP-237B'}',
+                      settings: settings,
+                    );
+                    if (context.mounted)
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Test yazıcı kuyruğuna gönderildi'),
+                        ),
+                      );
+                  } catch (e) {
+                    if (context.mounted)
+                      ScaffoldMessenger.of(
+                        context,
+                      ).showSnackBar(SnackBar(content: Text('$e')));
+                  }
                 },
               ),
               for (final j in asMaps(widget.state['printJobs']).where(

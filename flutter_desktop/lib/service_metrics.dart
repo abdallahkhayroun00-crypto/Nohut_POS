@@ -10,7 +10,7 @@ String elapsedService(Json o) {
   String span(DateTime? a, DateTime? b) => a == null || b == null
       ? '—'
       : '${b.difference(a).inMinutes.clamp(0, 99999)} dk';
-  return 'Hazırlık: ${span(start, ready)} · Teslim: ${span(ready, end)} · Toplam: ${span(start, end ?? DateTime.now())}';
+  return 'Hazırlık: ${span(DateTime.tryParse('${o['serviceStartedAt']}') ?? start, ready ?? (o['serviceStatus'] == 'Hazırlanıyor' ? DateTime.now() : null))} · Teslim: ${span(ready, end ?? (o['serviceStatus'] == 'Hazır' ? DateTime.now() : null))} · Toplam: ${span(start, end ?? DateTime.now())}';
 }
 
 class StaffMetrics extends StatelessWidget {

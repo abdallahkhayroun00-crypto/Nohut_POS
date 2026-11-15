@@ -122,6 +122,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
   late final PosLanServer lan;
   late final QrMenuAutoSync qrSync;
   Timer? _midnightTimer;
+  Timer? _serviceTimer;
   final Set<String> seenNotices = {};
   Json? latestNotice;
   bool orderModalOpen = false;
@@ -165,6 +166,9 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     receiptPrinter = ReceiptPrinter(store);
     qrSync = QrMenuAutoSync(store);
     _scheduleIstanbulMidnight();
+    _serviceTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) setState(() {});
+    });
     seenNotices.addAll(
       asMaps(store.read().data['staffNotices']).map((n) => '${n['id']}'),
     );
@@ -271,6 +275,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
   @override
   void dispose() {
     _midnightTimer?.cancel();
+    _serviceTimer?.cancel();
     qrSync.dispose();
     receiptPrinter.dispose();
     lan.dispose();
@@ -544,6 +549,14 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                           final result = await customizeLineDialog(
                             ctx,
                             line.line,
+                            description:
+                                _currentProducts()
+                                    .where(
+                                      (p) => p.id == line.line['productId'],
+                                    )
+                                    .firstOrNull
+                                    ?.descriptionTr ??
+                                '',
                           );
                           if (result != null)
                             _edit(
@@ -637,7 +650,9 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
               : receivedCents == null
               ? 'Banka terminalinde başarılı tahsilatı doğrulayın. Bu kayıt banka işlemi başlatmaz.'
               : 'Alınan: ${formatTry(receivedCents)} · Para üstü: ${formatTry(receivedCents - amountCents)}'}',
-      confirm: methodName == 'Kart'
+      confirm: methodName == 'Karışık'
+          ? 'Nakit ve Kart Onaylandı · Kaydet'
+          : methodName == 'Kart'
           ? 'Terminalde Onaylandı · Kaydet'
           : 'Nakdi Aldım · Kaydet',
     );

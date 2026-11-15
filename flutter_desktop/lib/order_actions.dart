@@ -65,7 +65,12 @@ void editLocalLine(
   line['voided'] = quantity == 0;
   line['note'] = note;
   line['removed'] = removed;
-  if (quantity > previous) order['serviceStatus'] = 'Hazırlanıyor';
+  if (quantity > previous) {
+    order['serviceStatus'] = 'Hazırlanıyor';
+    order['serviceStartedAt'] = utcNow();
+    order.remove('readyAt');
+    order.remove('deliveredAt');
+  }
   (order['events'] as List).add(
     '${utcNow()} · $by · ${line['name']} $previous → $quantity · $note',
   );

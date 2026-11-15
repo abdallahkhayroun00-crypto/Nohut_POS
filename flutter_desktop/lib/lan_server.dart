@@ -1,3 +1,4 @@
+import 'operations.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -198,6 +199,7 @@ class PosLanServer extends ChangeNotifier {
                     'balanceCents': guestBalance(o, guest['id'] as int),
                   },
               ],
+              'serviceStartedAt': o['serviceStartedAt'],
               'readyAt': o['readyAt'],
               'deliveredAt': o['deliveredAt'],
             },

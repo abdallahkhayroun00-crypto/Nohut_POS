@@ -1,4 +1,5 @@
 import 'order_reporting.dart';
+import 'receipt_preview.dart';
 
 import 'dart:io';
 
@@ -337,16 +338,7 @@ class OrderOperations extends StatelessWidget {
             builder: (ctx) => AlertDialog(
               title: const Text('Hesap Özeti'),
               content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Image.asset(
-                      'assets/printing/nohut-receipt-logo.png',
-                      width: 70,
-                    ),
-                    SelectableText(billText(o)),
-                  ],
-                ),
+                child: ReceiptPreview(order: o, settings: printSettings),
               ),
               actions: [
                 TextButton(
