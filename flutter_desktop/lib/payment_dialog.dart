@@ -101,9 +101,11 @@ class _PaymentEntryDialogState extends State<PaymentEntryDialog> {
               ),
             ] else ...[
               const SizedBox(height: 12),
-              const Text(
-                'Banka terminalinde başarılı tahsilatı ayrıca doğrulayın. Bu ekran bankaya işlem göndermez.',
-                style: TextStyle(color: Color(0xff775624)),
+              Text(
+                method == 'inPOS m530'
+                    ? 'Tutar eşleştirilmiş inPOS cihazına gönderilir. Ödeme yalnızca cihaz onayından sonra kaydedilir.'
+                    : 'Banka terminalinde başarılı tahsilatı ayrıca doğrulayın. Bu ekran bankaya işlem göndermez.',
+                style: const TextStyle(color: Color(0xff775624)),
               ),
             ],
             if (error != null)
