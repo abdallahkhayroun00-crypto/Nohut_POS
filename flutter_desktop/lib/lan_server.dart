@@ -188,6 +188,10 @@ class PosLanServer extends ChangeNotifier {
                 'batches',
               ])
                 key: o[key],
+              'totalCents': orderTotalCents(o),
+              'paidCents': orderPaidCents(o),
+              'dueCents': orderDueCents(o),
+              'guestChecks': o['guestChecks'] ?? [],
             },
           )
           .toList(),
@@ -264,7 +268,8 @@ class PosLanServer extends ChangeNotifier {
       });
       return;
     }
-    if (request.method == 'POST' && resource == '/api/staff/orders') {
+    if (request.method == 'POST' &&
+        ['/api/staff/orders', '/api/staff/actions'].contains(resource)) {
       // Reject browser requests from unrelated origins (prototype has no login).
       final origin = request.headers.value('origin');
       if (origin != null &&
@@ -287,10 +292,9 @@ class PosLanServer extends ChangeNotifier {
       try {
         final incoming = jsonDecode(utf8.decode(chunks));
         if (incoming is! Map) throw const FormatException('Geçersiz istek');
-        final result = submitStaffOrder(
-          store,
-          Map<String, dynamic>.from(incoming),
-        );
+        final result = resource == '/api/staff/orders'
+            ? submitStaffOrder(store, Map<String, dynamic>.from(incoming))
+            : submitStaffAction(store, Map<String, dynamic>.from(incoming));
         _json(request.response, 200, result);
       } on StaffConflict {
         _json(request.response, 409, {

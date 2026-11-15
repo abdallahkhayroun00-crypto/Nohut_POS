@@ -356,21 +356,22 @@ class OrderOperations extends StatelessWidget {
           ),
           child: const Text('Hesap Özeti Önizle'),
         ),
-        OutlinedButton(
-          onPressed: () async {
-            try {
-              final printer = printerName;
-              await windowsPrint(billText(o), printer);
-            } catch (e) {
-              if (context.mounted) {
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(SnackBar(content: Text('$e')));
+        if (orderPaidCents(o) > 0)
+          OutlinedButton(
+            onPressed: () async {
+              try {
+                final printer = printerName;
+                await windowsPrint(billText(o), printer);
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(SnackBar(content: Text('$e')));
+                }
               }
-            }
-          },
-          child: const Text('Hesap Özeti Yazdır'),
-        ),
+            },
+            child: const Text('Hesap Özeti Yazdır'),
+          ),
         if (o['closed'] != true)
           for (final g in asMaps(o['guestChecks']))
             Wrap(

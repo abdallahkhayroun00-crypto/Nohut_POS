@@ -8,7 +8,9 @@ class PaymentEntryDialog extends StatefulWidget {
     required this.dueCents,
     required this.orderNumber,
     this.guestName = '',
+    this.inposReady = false,
   });
+  final bool inposReady;
   final int dueCents;
   final String orderNumber, guestName;
   @override
@@ -59,6 +61,7 @@ class _PaymentEntryDialogState extends State<PaymentEntryDialog> {
               items: [
                 'Nakit',
                 'Kart',
+                if (widget.inposReady) 'inPOS m530',
               ].map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
               onChanged: (m) => setState(() {
                 method = m!;
@@ -98,9 +101,11 @@ class _PaymentEntryDialogState extends State<PaymentEntryDialog> {
               ),
             ] else ...[
               const SizedBox(height: 12),
-              const Text(
-                'Banka terminalinde başarılı tahsilatı ayrıca doğrulayın. Bu ekran bankaya işlem göndermez.',
-                style: TextStyle(color: Color(0xff775624)),
+              Text(
+                method == 'inPOS m530'
+                    ? 'Tutar eşleştirilmiş inPOS cihazına gönderilir. Ödeme yalnızca cihaz onayından sonra kaydedilir.'
+                    : 'Banka terminalinde başarılı tahsilatı ayrıca doğrulayın. Bu ekran bankaya işlem göndermez.',
+                style: const TextStyle(color: Color(0xff775624)),
               ),
             ],
             if (error != null)

@@ -168,62 +168,50 @@ void main() {
     },
   );
 
-  testWidgets('cancelled cash closing leaves the session open', (tester) async {
-    // The confirmation itself must not invoke the supplied state mutation.
-    // Its cancellation behavior is covered through the manager cash screen.
-    final folder = Directory.systemTemp.createTempSync('nohut-cash-');
-    final file = '${folder.path}/pos.sqlite3';
-    tester.view.physicalSize = const Size(1280, 900);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(() async {
-      await tester.pumpWidget(const SizedBox.shrink());
-      tester.view.resetPhysicalSize();
-      tester.view.resetDevicePixelRatio();
-      folder.deleteSync(recursive: true);
-    });
-    final store = PosStore(databaseFile: file);
-    final seed = emptyPosState();
-    seed['settings'] = {'autoPrint': false};
-    seed['localMenu'] = [
-      {'id': 0, 'name': 'Falafel Dürüm', 'price': 140, 'category': 'wrap'},
-    ];
-    store.replace(seed, 0);
-    store.dispose();
-    await tester.pumpWidget(
-      NohutFalafelApp(databaseFile: file, startServer: false),
-    );
-    await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Kasa & Ödemeler').first);
-    await tester.tap(find.text('Kasa & Ödemeler').first);
-    await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Kasayı Aç'));
-    await tester.tap(find.text('Kasayı Aç'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Kaydet').last);
-    await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Kasayı Kapat'));
-    await tester.tap(find.text('Kasayı Kapat'));
-    await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField).last, '0');
-    await tester.tap(find.text('Kaydet').last);
-    await tester.pumpAndSettle();
-    expect(find.text('Sayımı Onayla ve Kapat'), findsOneWidget);
-    await tester.tap(find.text('Vazgeç').last);
-    await tester.pumpAndSettle();
-    final saved = PosStore(databaseFile: file);
-    expect((saved.read().data['cashBook'] as Map?)?['sessions'], isNotNull);
-    saved.dispose();
-    expect(find.text('Kasayı Kapat'), findsOneWidget);
-    await tester.ensureVisible(find.text('Online Siparişler').first);
-    await tester.tap(find.text('Online Siparişler').first);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Örnek Online Kart'));
-    await tester.pumpAndSettle();
-    expect(find.textContaining('Kabul bekliyor'), findsWidgets);
-    final real = PosStore(databaseFile: file);
-    expect(real.read().data['orders'], isEmpty);
-    expect(real.read().data['printJobs'], isEmpty);
-    real.dispose();
-    expect(tester.takeException(), isNull);
-  });
+  testWidgets(
+    'daily shift controls are removed and online demo stays isolated',
+    (tester) async {
+      // The confirmation itself must not invoke the supplied state mutation.
+      // Its cancellation behavior is covered through the manager cash screen.
+      final folder = Directory.systemTemp.createTempSync('nohut-cash-');
+      final file = '${folder.path}/pos.sqlite3';
+      tester.view.physicalSize = const Size(1280, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(() async {
+        await tester.pumpWidget(const SizedBox.shrink());
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+        folder.deleteSync(recursive: true);
+      });
+      final store = PosStore(databaseFile: file);
+      final seed = emptyPosState();
+      seed['settings'] = {'autoPrint': false};
+      seed['localMenu'] = [
+        {'id': 0, 'name': 'Falafel Dürüm', 'price': 140, 'category': 'wrap'},
+      ];
+      store.replace(seed, 0);
+      store.dispose();
+      await tester.pumpWidget(
+        NohutFalafelApp(databaseFile: file, startServer: false),
+      );
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Kasa & Ödemeler').first);
+      await tester.tap(find.text('Kasa & Ödemeler').first);
+      await tester.pumpAndSettle();
+      expect(find.text('Kasayı Aç'), findsNothing);
+      expect(find.text('Kasayı Kapat'), findsNothing);
+      expect(find.text('Yazdırma Kuyruğu'), findsNothing);
+      await tester.ensureVisible(find.text('Online Siparişler').first);
+      await tester.tap(find.text('Online Siparişler').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Örnek Online Kart'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Kabul bekliyor'), findsWidgets);
+      final real = PosStore(databaseFile: file);
+      expect(real.read().data['orders'], isEmpty);
+      expect(real.read().data['printJobs'], isEmpty);
+      real.dispose();
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

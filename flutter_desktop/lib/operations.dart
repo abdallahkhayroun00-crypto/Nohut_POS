@@ -10,6 +10,10 @@ void requireLocal(Json o) {
 }
 
 void requireOpen(Json o) {
+  if (o['terminalPending'] != null)
+    throw const FormatException(
+      'Terminal sonucu bekleniyor; önce işlemi sorgulayın',
+    );
   if (o['closed'] == true || o['cancelled'] == true) {
     throw const FormatException('Hesap kapalı');
   }

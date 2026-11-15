@@ -1,4 +1,9 @@
 import 'order_reporting.dart';
+import 'order_actions.dart';
+import 'simple_settings.dart';
+import 'sales_reports.dart';
+import 'order_alerts.dart';
+import 'card_terminal.dart';
 
 import 'dart:async';
 
@@ -75,7 +80,9 @@ class NohutFalafelApp extends StatelessWidget {
     super.key,
     this.databaseFile,
     this.startServer = true,
+    this.inposGateway,
   });
+  final InposGateway? inposGateway;
   final String? databaseFile;
   final bool startServer;
   @override
@@ -83,12 +90,22 @@ class NohutFalafelApp extends StatelessWidget {
     debugShowCheckedModeBanner: false,
     title: 'Nohut Falafel · Yönetici Paneli',
     theme: NohutBrand.theme(),
-    home: ManagerDesktop(databaseFile: databaseFile, startServer: startServer),
+    home: ManagerDesktop(
+      databaseFile: databaseFile,
+      startServer: startServer,
+      inposGateway: inposGateway,
+    ),
   );
 }
 
 class ManagerDesktop extends StatefulWidget {
-  const ManagerDesktop({super.key, this.databaseFile, this.startServer = true});
+  const ManagerDesktop({
+    super.key,
+    this.databaseFile,
+    this.startServer = true,
+    this.inposGateway,
+  });
+  final InposGateway? inposGateway;
   final String? databaseFile;
   final bool startServer;
   @override
@@ -97,10 +114,15 @@ class ManagerDesktop extends StatefulWidget {
 
 class _ManagerDesktopState extends State<ManagerDesktop> {
   late final PosStore store;
+  late final InposPayments inpos;
+  bool terminalBusy = false;
   late final ReceiptPrinter receiptPrinter;
   late final PosLanServer lan;
   late final QrMenuAutoSync qrSync;
   Timer? _midnightTimer;
+  final Set<String> seenNotices = {};
+  Json? latestNotice;
+  bool orderModalOpen = false;
   String businessDay = istanbulDay(DateTime.now());
   List<Product> menu = const [];
   String page = 'dashboard';
@@ -120,7 +142,6 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     ('orders', Icons.receipt_long_outlined, 'Tüm Siparişler'),
     ('online', Icons.delivery_dining_outlined, 'Online Siparişler'),
     ('payments', Icons.point_of_sale_outlined, 'Kasa & Ödemeler'),
-    ('printer', Icons.print_outlined, 'Yazdırma Kuyruğu'),
     ('staff', Icons.people_alt_outlined, 'Personel Yönetimi'),
     ('reports', Icons.bar_chart_outlined, 'Raporlar'),
     ('wifi', Icons.wifi_tethering_outlined, 'Personel Wi-Fi'),
@@ -131,11 +152,22 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
   void initState() {
     super.initState();
     store = PosStore(databaseFile: widget.databaseFile);
+    final initial = store.read(), migrated = copyJson(initial.data);
+    final settings =
+        migrated.putIfAbsent('settings', () => <String, dynamic>{}) as Map;
+    settings['receiptPolicy'] = 'onPayment';
+    settings['autoPrint'] = false;
+    store.replace(migrated, initial.revision);
+    inpos = InposPayments(store, widget.inposGateway ?? UnavailableInpos());
     lan = PosLanServer(store);
     receiptPrinter = ReceiptPrinter(store);
     qrSync = QrMenuAutoSync(store);
     _scheduleIstanbulMidnight();
-    receiptPrinter.start();
+    seenNotices.addAll(
+      asMaps(store.read().data['staffNotices']).map((n) => '${n['id']}'),
+    );
+    store.addListener(_staffActivity);
+    // Migration completes before the print worker can inspect old jobs.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // Menu initialization precedes staff order acceptance.
       unawaited(_startLan());
@@ -205,6 +237,8 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       // The website sync supplies published prices when enabled.
       final printerSettings =
           next.putIfAbsent('settings', () => <String, dynamic>{}) as Map;
+      printerSettings['receiptPolicy'] = 'onPayment';
+      printerSettings['autoPrint'] = false;
       printerSettings['printerModel'] = 'XP-237B';
       printerSettings['paperWidthMm'] = 58;
       printerSettings['printableWidthMm'] = 48;
@@ -219,6 +253,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       );
       seedPlatformMenu(next, asMaps(next['localMenu']));
       store.replace(next, snap.revision);
+      receiptPrinter.start();
       if (mounted) setState(() => menu = products);
     } catch (e) {
       _notify('Menü dosyası okunamadı: $e', error: true);
@@ -231,6 +266,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     qrSync.dispose();
     receiptPrinter.dispose();
     lan.dispose();
+    store.removeListener(_staffActivity);
     store.dispose();
     super.dispose();
   }
@@ -286,6 +322,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       orderFilter = 'Tümü';
       orderSearch = orderStatus = orderStaff = '';
     });
+    _showOrder(order['id'] as int);
   }
 
   List<Product> _currentProducts() => asMaps(store.read().data['localMenu'])
@@ -368,17 +405,173 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     }
   }
 
+  void _staffActivity() {
+    if (!mounted) return;
+    final incoming = asMaps(
+      store.read().data['staffNotices'],
+    ).where((n) => !seenNotices.contains('${n['id']}')).toList();
+    if (incoming.isEmpty) return;
+    seenNotices.addAll(incoming.map((n) => '${n['id']}'));
+    setState(() => latestNotice = incoming.last);
+    if (store.read().data['settings']?['soundAlerts'] != false &&
+        incoming.any(
+          (n) => ['Yeni sipariş', 'Ek sipariş'].contains(n['action']),
+        ))
+      unawaited(playOrderAlert());
+  }
+
   void _onTable(int table) {
     if (floorEditing) return;
     final order = activeTable(store.read().data, table);
     if (order == null) {
       unawaited(_composer(table: table));
-    } else {
-      setState(() {
-        selectedTable = table;
-        selectedOrder = order['id'] as int;
-      });
+      return;
     }
+    setState(() {
+      selectedTable = table;
+      selectedOrder = order['id'] as int;
+    });
+    _showOrder(order['id'] as int);
+  }
+
+  void _showOrder(int id) {
+    if (orderModalOpen) return;
+    orderModalOpen = true;
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => Dialog(
+        child: SizedBox(
+          width: 900,
+          height: MediaQuery.sizeOf(ctx).height * .88,
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 12, 8, 0),
+                child: Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Hesap ve Sipariş',
+                        style: TextStyle(
+                          fontFamily: NohutBrand.headingFont,
+                          fontSize: 24,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Kapat',
+                      onPressed: () => Navigator.pop(ctx),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(12),
+                  child: AnimatedBuilder(
+                    animation: store,
+                    builder: (_, __) {
+                      final current = mutableOrder(store.read().data, id);
+                      return current == null
+                          ? const Text('Sipariş bulunamadı')
+                          : _orderDetail(current);
+                    },
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ).whenComplete(() => orderModalOpen = false);
+  }
+
+  Future<void> _moveOrder(Json order) async {
+    final values = await askFields(
+      context,
+      'Masayı Taşı',
+      [('Yeni masa', '${order['table']}')],
+      choices: {
+        0: [for (var i = 1; i <= 5; i++) '$i'],
+      },
+    );
+    if (values != null)
+      _edit(
+        (s) => moveLocalTable(
+          s,
+          mutableOrder(s, order['id'] as int)!,
+          int.parse(values[0]),
+          'Kasa (PC)',
+        ),
+      );
+  }
+
+  void _editProducts(Json order) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Ürünleri Düzenle'),
+        content: SizedBox(
+          width: 560,
+          child: AnimatedBuilder(
+            animation: store,
+            builder: (_, __) {
+              final current = mutableOrder(
+                store.read().data,
+                order['id'] as int,
+              )!;
+              return SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (final line in checkLines(current))
+                      ListTile(
+                        title: Text(
+                          '${line.line['qty']} × ${line.line['name']}',
+                        ),
+                        subtitle: Text('${line.line['note'] ?? ''}'),
+                        trailing: const Icon(Icons.edit_outlined),
+                        onTap: () async {
+                          final v = await askFields(ctx, 'Ürün Düzenle', [
+                            ('Adet (0 = kaldır)', '${line.line['qty']}'),
+                            ('Not', '${line.line['note'] ?? ''}'),
+                            (
+                              'Çıkarılacak malzemeler',
+                              (line.line['removed'] as List? ?? []).join(', '),
+                            ),
+                          ]);
+                          if (v != null)
+                            _edit(
+                              (s) => editLocalLine(
+                                mutableOrder(s, order['id'] as int)!,
+                                line.key,
+                                parseInteger(v[0]),
+                                v[1],
+                                v[2]
+                                    .split(',')
+                                    .map((x) => x.trim())
+                                    .where((x) => x.isNotEmpty)
+                                    .toList(),
+                                'Kasa (PC)',
+                              ),
+                            );
+                        },
+                      ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Kapat'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _pay(
@@ -397,6 +590,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       context: context,
       builder: (ctx) => PaymentEntryDialog(
         dueCents: due,
+        inposReady: inpos.gateway.ready && guestId == null,
         orderNumber: displayOrderNumber(order),
         guestName: guestName ?? '',
       ),
@@ -404,6 +598,34 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     if (!mounted) return;
     if (result == null) return;
     final (amountCents, methodName, receivedCents) = result;
+    if (methodName == 'inPOS m530') {
+      if (terminalBusy) return;
+      terminalBusy = true;
+      _notify('inPOS sonucu bekleniyor; kartı cihazda okutun.');
+      try {
+        final reply = await inpos.pay(
+          order['id'] as int,
+          amountCents,
+          'pos_${DateTime.now().microsecondsSinceEpoch}',
+        );
+        if (!mounted) return;
+        if (reply.status == TerminalStatus.approved) {
+          _notify('inPOS ödemesi onaylandı');
+          await _offerReceipt(order['id'] as int);
+        } else
+          _notify(
+            reply.status == TerminalStatus.unknown
+                ? 'Sonuç belirsiz. Tekrar tahsil etmeyin; işlemi sorgulayın.'
+                : 'inPOS: ${reply.status.name}',
+            error: true,
+          );
+      } catch (e) {
+        if (mounted) _notify('$e', error: true);
+      } finally {
+        terminalBusy = false;
+      }
+      return;
+    }
     final confirmed = await confirmAction(
       context,
       'Ödemeyi Onayla',
@@ -434,7 +656,29 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
         latest['guestName'] = guestName;
       }
     });
-    if (ok) _notify('Ödeme kaydedildi · ${formatTry(amountCents)}');
+    if (ok) {
+      _notify('Ödeme kaydedildi · ${formatTry(amountCents)}');
+      if (!mounted) return;
+      await _offerReceipt(order['id'] as int);
+    }
+  }
+
+  Future<void> _offerReceipt(int orderId) async {
+    if (!mounted) return;
+    final print = await confirmAction(
+      context,
+      'Fiş yazdırılsın mı?',
+      'Bu ödeme için hesap özeti yazdırabilirsiniz. Mali fiş inPOS cihazından alınır.',
+      confirm: 'Evet · Yazdır',
+    );
+    if (print)
+      _edit(
+        (data) => queuePaymentReceipt(
+          data,
+          mutableOrder(data, orderId)!,
+          requestId: 'pc_${DateTime.now().microsecondsSinceEpoch}',
+        ),
+      );
   }
 
   void _closeTable(Json order) {
@@ -537,6 +781,27 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                       ],
                     ),
                   ),
+                  if (latestNotice != null)
+                    MaterialBanner(
+                      content: Text(
+                        '${latestNotice!['staff']} · ${latestNotice!['action']} · ${latestNotice!['table'] == null ? 'Gel-Al' : 'Masa ${latestNotice!['table']}'}',
+                      ),
+                      leading: const Icon(
+                        Icons.notifications_active,
+                        color: dark,
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () =>
+                              _showOrder(latestNotice!['orderId'] as int),
+                          child: const Text('Siparişi Aç'),
+                        ),
+                        TextButton(
+                          onPressed: () => setState(() => latestNotice = null),
+                          child: const Text('Tamam'),
+                        ),
+                      ],
+                    ),
                   Expanded(
                     child: SingleChildScrollView(
                       padding: const EdgeInsets.all(24),
@@ -674,8 +939,6 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
         return _online(db);
       case 'payments':
         return _payments(db);
-      case 'printer':
-        return _printer(db);
       case 'staff':
         return _staff(db);
       case 'reports':
@@ -778,21 +1041,9 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
               onIstanbulDay(e.stamp, businessDay),
         )
         .fold<int>(0, (sum, entry) => sum + entry.amount);
-    final lastDailyReceipt = orders
-        .where((o) => o['numberDay'] == businessDay)
-        .fold<int>(0, (max, o) {
-          final n = o['dailyNumber'];
-          return n is int && n > max ? n : max;
-        });
     final active = orders
         .where((o) => o['closed'] != true && o['cancelled'] != true)
         .toList();
-    final waitingPrints = asMaps(
-      db['printJobs'],
-    ).where((j) => j['state'] == 'Bekliyor').length;
-    final failedPrints = asMaps(
-      db['printJobs'],
-    ).where((j) => j['state'] == 'Kontrol gerekli').length;
     final busy = List.generate(
       5,
       (i) => activeTable(db, i + 1),
@@ -844,9 +1095,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
           ),
         ),
         const SizedBox(height: 12),
-        Text(
-          'Açık sipariş: ${active.length} · Dolu masa: $busy / 5 · Yazdırma bekleyen: $waitingPrints · Kontrol gerekli: $failedPrints',
-        ),
+        Text('Açık sipariş: ${active.length} · Dolu masa: $busy / 5'),
         const SizedBox(height: 18),
         LayoutBuilder(
           builder: (context, c) {
@@ -872,11 +1121,6 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                   Icons.payments_outlined,
                 ),
                 _metric(
-                  'Günlük Son Fiş',
-                  lastDailyReceipt.toString().padLeft(4, '0'),
-                  Icons.confirmation_number_outlined,
-                ),
-                _metric(
                   'Açık Sipariş · Devreden Dahil',
                   '${active.length}',
                   Icons.pending_actions_outlined,
@@ -885,11 +1129,6 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                   'Dolu Masa · Devreden Dahil',
                   '$busy / 5',
                   Icons.table_restaurant_outlined,
-                ),
-                _metric(
-                  'Yazdırma Bekleyen · Devreden Dahil',
-                  '$waitingPrints',
-                  Icons.print_outlined,
                 ),
               ],
             );
@@ -1016,7 +1255,11 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
           }),
         ),
         const SizedBox(height: 17),
-        if (order != null && order['source'] == 'Masa') _orderDetail(order),
+        if (order != null && order['source'] == 'Masa')
+          OutlinedButton(
+            onPressed: () => _showOrder(order['id'] as int),
+            child: Text('Masa ${order['table']} · Hesabı Aç'),
+          ),
         if (order == null)
           Card(
             child: Padding(
@@ -1152,6 +1395,33 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                 ),
               ],
             ),
+            if (o['terminalPending'] != null) ...[
+              const Text(
+                'Terminal sonucu bekleniyor. Yeniden ödeme başlatmayın.',
+              ),
+              OutlinedButton(
+                onPressed: !inpos.gateway.ready || terminalBusy
+                    ? null
+                    : () async {
+                        terminalBusy = true;
+                        try {
+                          final reply = await inpos.reconcile(
+                            '${o['terminalPending']}',
+                          );
+                          if (mounted) {
+                            _notify('inPOS: ${reply.status.name}');
+                            if (reply.status == TerminalStatus.approved)
+                              await _offerReceipt(id);
+                          }
+                        } catch (e) {
+                          if (mounted) _notify('$e', error: true);
+                        } finally {
+                          terminalBusy = false;
+                        }
+                      },
+                child: const Text('Terminal Sonucunu Sorgula'),
+              ),
+            ],
             if (split.isNotEmpty) ...[
               const Divider(height: 24),
               const Text(
@@ -1212,6 +1482,17 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                       ],
                       child: const Chip(label: Text('⚖ Hesabı Eşit Böl')),
                     ),
+                  OutlinedButton.icon(
+                    onPressed: () => _editProducts(o),
+                    icon: const Icon(Icons.edit_outlined),
+                    label: const Text('Ürünleri Düzenle'),
+                  ),
+                  if (o['source'] == 'Masa')
+                    OutlinedButton.icon(
+                      onPressed: () => _moveOrder(o),
+                      icon: const Icon(Icons.swap_horiz),
+                      label: const Text('Masayı Taşı'),
+                    ),
                   if (o['source'] == 'Masa' && orderDueCents(o) == 0)
                     OutlinedButton.icon(
                       onPressed: () => _closeTable(o),
@@ -1270,9 +1551,6 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
           (orderFrom.isEmpty || date.compareTo(orderFrom) >= 0) &&
           (orderTo.isEmpty || date.compareTo(orderTo) <= 0);
     }).toList();
-    final focused = selectedOrder == null
-        ? null
-        : filtered.where((o) => o['id'] == selectedOrder).firstOrNull;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1284,6 +1562,38 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
             icon: const Icon(Icons.add),
             label: const Text('Sipariş Al'),
           ),
+        ),
+        TextField(
+          decoration: const InputDecoration(
+            labelText: 'Sipariş, masa, müşteri veya ürün ara',
+            prefixIcon: Icon(Icons.search),
+          ),
+          onChanged: (v) => setState(() => orderSearch = v),
+        ),
+        Wrap(
+          spacing: 8,
+          children: [
+            for (final status in [
+              '',
+              'Kalan',
+              'Hazırlanıyor',
+              'Hazır',
+              'Teslim Edildi',
+              'Kapalı',
+            ])
+              ChoiceChip(
+                label: Text(status.isEmpty ? 'Tümü' : status),
+                selected: orderStatus == status,
+                onSelected: (_) => setState(() => orderStatus = status),
+              ),
+            TextButton(
+              onPressed: () => setState(() {
+                orderFrom = '';
+                orderTo = '';
+              }),
+              child: const Text('Tüm Tarihler'),
+            ),
+          ],
         ),
         OutlinedButton(
           onPressed: () async {
@@ -1338,7 +1648,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
           ],
         ),
         const SizedBox(height: 12),
-        if (focused != null) _orderDetail(focused),
+
         Card(
           child: Column(
             children: [
@@ -1354,8 +1664,12 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                   subtitle: Text(
                     '${o['numberDay'] ?? ''} · ${o['created'] ?? ''} · ${o['closed'] == true ? 'Kapalı' : o['serviceStatus'] ?? 'Açık'}',
                   ),
-                  trailing: Text(formatTry(orderTotalCents(o))),
-                  onTap: () => setState(() => selectedOrder = o['id'] as int),
+                  trailing: Text(
+                    o['closed'] == true
+                        ? formatTry(orderTotalCents(o))
+                        : 'Kalan ${formatTry(orderDueCents(o))}',
+                  ),
+                  onTap: () => _showOrder(o['id'] as int),
                 ),
             ],
           ),
@@ -1452,16 +1766,13 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
           ),
         ),
         const SizedBox(height: 12),
-        CashPanel(state: db, edit: _edit),
       ],
     );
   }
 
-  Widget _printer(Json db) => PrinterPanel(state: db, edit: _edit);
-
   Widget _staff(Json db) => StaffPanel(state: db, edit: _edit);
 
-  Widget _reports(Json db) => ReportsPanel(
+  Widget _reports(Json db) => SalesReports(
     key: ValueKey('daily-reports-$businessDay'),
     state: db,
     edit: _edit,
@@ -1694,7 +2005,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
   }
 
   Widget _settings(Json db) =>
-      SettingsPanel(state: db, edit: _edit, store: store, qrSync: qrSync);
+      SimpleSettings(state: db, edit: _edit, store: store, qrSync: qrSync);
 
   Widget _notice(String text) => Container(
     padding: const EdgeInsets.all(15),

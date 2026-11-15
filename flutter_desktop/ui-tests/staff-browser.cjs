@@ -1,147 +1,61 @@
-const { chromium } = require('playwright');
-const fs = require('node:fs');
-const path = require('node:path');
-const assert = require('node:assert/strict');
-
-(async () => {
-  const original = {
-    employees: [{ id: 1, name: 'Ömer', active: true }],
-    localMenu: [
-      { id: 0, name: 'Falafel Dürüm', category: 'wrap', price: 140 },
-      { id: 1, name: 'Ayran', category: 'drink', price: 45 },
-      { id: 32, name: 'Şambali', category: 'dessert', price: 100, active: false },
-    ],
-    orders: [{ id: 1200, dailyNumber: 1, numberDay: '2026-11-14', source: 'Masa', table: 3,
-      serviceStatus: 'Hazırlanıyor', createdAt: '2026-11-14T10:00:00Z',
-      batches: [{ lines: [{ name: 'Falafel Dürüm', qty: 2, note: 'Sos ayrı', removed: ['Domates'] }] }] }],
-  };
-  let state, revision, posts, mode;
-  const html = fs.readFileSync(path.join(__dirname, '../assets/staff.html'));
-  async function handleRoute(route) {
-    const url = new URL(route.request().url());
-    if (url.pathname === '/api/bootstrap') {
-      return route.fulfill({ json: { state, revision } });
-    }
-    if (url.pathname === '/api/staff/orders') {
-      posts.push(route.request().postDataJSON());
-      if (mode === 'lost') return route.abort('failed');
-      if (mode === 'conflict') return route.fulfill({ status: 409, json: { error: 'conflict' } });
-      return route.fulfill({ json: { orderNumber: '0002', orderId: 1201, revision: ++revision } });
-    }
-    if (url.pathname.startsWith('/assets/fonts/')) {
-      const name = path.basename(url.pathname);
-      return route.fulfill({ contentType: 'font/ttf', body: fs.readFileSync(path.join(__dirname, '../assets/brand/fonts', name)) });
-    }
-    if (url.pathname === '/assets/nohut-logo.webp') {
-      return route.fulfill({ contentType: 'image/webp', body: fs.readFileSync(path.join(__dirname, '../assets/brand/nohut-logo.webp')) });
-    }
-    return route.fulfill({ contentType: 'text/html; charset=utf-8', body: html });
+const {chromium}=require('playwright');
+const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
+(async()=>{
+ const fixture={employees:[{id:1,name:'Ömer',active:true}],localMenu:[{id:0,name:'Falafel Dürüm',price:140,category:'wrap',image:'assets/real.webp'},{id:1,name:'Ayran',price:45,category:'drink'},{id:32,name:'Şambali',price:100,category:'dessert',active:false}],orders:[{id:1200,dailyNumber:1,numberDay:'2026-11-15',source:'Masa',table:3,serviceStatus:'Hazırlanıyor',totalCents:28000,paidCents:0,dueCents:28000,batches:[{id:1,lines:[{productId:0,name:'Falafel Dürüm',price:140,qty:2,note:'Sos ayrı',removed:['Domates']}]}]}]};
+ let state,revision,mode,posts,receipts,prints;
+ const html=fs.readFileSync(path.join(__dirname,'../assets/staff.html'));
+ function recalc(o){o.totalCents=o.batches.flatMap(b=>b.lines).filter(l=>!l.voided&&!l.correction).reduce((n,l)=>n+Math.round(l.price*100)*l.qty,0);o.dueCents=o.totalCents-o.paidCents;}
+ async function route(r){const u=new URL(r.request().url());
+  if(u.pathname==='/api/bootstrap')return r.fulfill({json:{state,revision}});
+  if(['/api/staff/orders','/api/staff/actions'].includes(u.pathname)){
+   const p=r.request().postDataJSON();posts.push(p);
+   if(mode==='conflict')return r.fulfill({status:409,json:{error:'conflict'}});
+   if(receipts.has(p.requestId))return r.fulfill({json:receipts.get(p.requestId)});
+   let o=state.orders.find(o=>p.orderId?o.id===p.orderId:p.source==='Masa'&&o.table===p.table);
+   if(u.pathname==='/api/staff/orders'){
+    if(!o){o={id:1201,dailyNumber:2,source:p.source,table:p.table,serviceStatus:'Hazırlanıyor',paidCents:0,batches:[]};state.orders.push(o);}
+    o.batches.push({id:o.batches.length+1,lines:p.lines.map(l=>({...l,name:state.localMenu.find(x=>x.id===l.productId).name,price:state.localMenu.find(x=>x.id===l.productId).price}))});o.serviceStatus='Hazırlanıyor';
+   }else{
+    if(p.action==='editLine'){const [batch,index]=p.key.split(':').map(Number),l=o.batches.find(b=>b.id===batch).lines[index];Object.assign(l,{qty:p.qty,note:p.note,removed:p.removed,voided:p.qty===0});}
+    if(p.action==='move')o.table=p.table;
+    if(p.action==='status')o.serviceStatus=p.status;
+    if(p.action==='pay'){o.paidCents+=p.amountCents;if(p.printReceipt)prints++;}
+    if(p.action==='close')o.closed=true;
+   }
+   recalc(o);const result={ok:true,orderId:o.id,orderNumber:String(o.dailyNumber).padStart(4,'0'),revision:++revision};receipts.set(p.requestId,result);
+   if(mode==='lost')return r.abort('failed');return r.fulfill({json:result});
   }
-  const localChrome = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
-  const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH ||
-    (process.platform === 'win32' && fs.existsSync(localChrome) ? localChrome : undefined);
-  const browser = await chromium.launch({ headless: true, executablePath });
-  try {
-    for (const width of [320, 390, 768, 1280]) {
-      state = structuredClone(original); revision = 1; posts = []; mode = 'success';
-      const context = await browser.newContext({ viewport: { width, height: 844 } });
-      const page = await context.newPage(); const errors = [];
-      await page.route('http://pos.test/**', handleRoute);
-      page.on('pageerror', error => errors.push(error.message));
-      await page.clock.install();
-      await page.goto('http://pos.test/');
-      await page.locator('#staff option[value="1"]').waitFor({ state: 'attached' });
-      await page.evaluate(async () => { await document.fonts.load('16px Bree'); await document.fonts.load('16px Barlow'); await document.fonts.load('600 16px Barlow'); await document.fonts.load('700 16px Barlow'); await document.fonts.ready; });
-      assert.equal(await page.evaluate(() => [...document.fonts].every(f => f.status === 'loaded')), true);
-      assert.equal(await page.locator('.brand-logo').getAttribute('src'), '/assets/nohut-logo.webp');
-      assert.equal(await page.locator('.mobile-cart').isVisible(), width <= 760);
-      assert.equal(await page.locator('#staff').inputValue(), '', 'staff is deliberately selected each visit');
-      assert.match(await page.locator('#orders').innerText(), /Sos ayrı/);
-      assert.match(await page.locator('#orders').innerText(), /Domates/);
-      assert.equal(await page.locator('#menu').getByText('Şambali', { exact: true }).count(), 0);
-      assert.match(await page.locator('#table option[value="3"]').innerText(), /Dolu/);
-      await page.locator('#staff').selectOption('1');
-      await page.locator('[data-table="3"]').click();
-      assert.match(await page.locator('#destination').innerText(), /Ek sipariş.*0001/);
-      await page.locator('[data-add="0"]').click();
-      await page.locator('[data-note]').fill('Sos ayrı');
-      await page.locator('[data-note]').focus();
-      await page.evaluate(() => { window.focusedNote = document.querySelector('[data-note]'); focusedNote.setSelectionRange(3, 3); });
-      revision++;
-      await page.clock.runFor(5100);
-      await page.waitForFunction(() => document.getElementById('connection').textContent.includes('Laptop bağlı'));
-      assert.equal(await page.evaluate(() => document.activeElement === window.focusedNote), true, 'polling preserves the focused input node');
-      assert.equal(await page.locator('[data-note]').inputValue(), 'Sos ayrı');
-      await page.locator('[data-custom="0"]').click();
-      await page.locator('#custom-note').fill('Acılı');
-      await page.locator('#custom-form button[type="submit"]').click();
-      assert.equal(await page.locator('.cart-line').count(), 2);
-      assert.equal(await page.locator('#cart-count').innerText(), '2');
-      assert.match(await page.locator('#dock-total').innerText(), /280,00/);
-      await page.locator('[data-category="drink"]').click();
-      assert.equal(await page.locator('.cart-line').count(), 2, 'cart persists across categories');
-      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'no page overflow');
-      if (width === 390 && process.env.NOHUT_UI_SCREENSHOT) {
-        await page.screenshot({ path: process.env.NOHUT_UI_SCREENSHOT, fullPage: true });
-      }
-      await page.locator('#submit').click();
-      await page.waitForFunction(() => document.getElementById('notice').textContent.includes('0002'));
-      assert.deepEqual(posts[0].lines.map(l => l.note), ['Sos ayrı', 'Acılı']);
-      assert.equal(posts[0].table, 3);
-      assert.equal(await page.locator('#cart-count').innerText(), '0');
-      assert.match(await page.locator('#dock-total').innerText(), /0,00/);
-      const success = await page.locator('#notice').innerText();
-      await page.clock.runFor(5100);
-      assert.equal(await page.locator('#notice').innerText(), success, 'success survives polling');
-      await page.locator('[data-category="wrap"]').click();
-      await page.locator('[data-add="0"]').click(); mode = 'conflict';
-      await page.locator('#submit').click();
-      await page.waitForFunction(() => document.getElementById('notice').textContent.includes('Sepet korundu'));
-      assert.equal(await page.locator('.cart-line').count(), 1);
-      mode = 'lost'; await page.locator('#submit').click();
-      await page.locator('#retry').waitFor({ state: 'visible' });
-      const requestId = posts.at(-1).requestId;
-      assert.equal(await page.locator('[data-add="0"]').isDisabled(), true, 'unconfirmed request freezes the cart');
-      mode = 'success'; await page.locator('#retry').click();
-      await page.waitForFunction(() => document.getElementById('notice').textContent.includes('kaydedildi'));
-      assert.equal(posts.at(-1).requestId, requestId, 'lost response retry uses the same idempotency key');
-      await page.locator('#source').selectOption('Gel-Al');
-      await page.locator('#pickup').selectOption('Telefon');
-      await page.locator('#customer-name').fill('Ayşe');
-      await page.locator('#customer-phone').fill('05551234567');
-      await page.locator('#customer-time').fill('18:30');
-      await page.locator('#search').fill('bulunmayan');
-      assert.match(await page.locator('#menu').innerText(), /Ürün bulunamadı/);
-      await page.locator('#search').fill('');
-      await page.locator('[data-custom="0"]').click();
-      await page.locator('#custom-cancel').click();
-      assert.equal(await page.locator('.cart-line').count(), 0);
-      await page.locator('[data-add="0"]').click();
-      await page.locator('[data-delta="1"]').click();
-      await page.locator('[data-delta="-1"]').click();
-      await page.locator('[data-removed]').fill('Domates');
-      await page.locator('#reload').click();
-      assert.equal(await page.locator('#customer-name').inputValue(), 'Ayşe');
-      await page.locator('#submit').click();
-      await page.waitForFunction(() => document.getElementById('notice').textContent.includes('kaydedildi'));
-      assert.equal(posts.at(-1).source, 'Gel-Al');
-      assert.equal(posts.at(-1).pickupChannel, 'Telefon');
-      assert.deepEqual(posts.at(-1).customer, { name: 'Ayşe', phone: '05551234567', time: '18:30' });
-      assert.deepEqual(posts.at(-1).lines[0].removed, ['Domates']);
-      assert.equal(posts.at(-1).lines[0].qty, 1);
-      await page.locator('#order-filter').selectOption('ready');
-      assert.match(await page.locator('#orders').innerText(), /Açık sipariş yok/);
-      await page.locator('#order-filter').selectOption('Masa');
-      assert.match(await page.locator('#orders').innerText(), /Masa 3/);
-      await page.locator('.page-nav a[href="#cart-panel"]').click();
-      await page.waitForFunction(() => document.querySelector('.page-nav a[aria-current="location"]')?.getAttribute('href') === '#cart-panel');
-      assert.equal(await page.locator('.page-nav a[aria-current="location"]').getAttribute('href'), '#cart-panel');
-      await page.locator('.page-nav a[href="#catalog-panel"]').click();
-      await page.waitForFunction(() => document.querySelector('.page-nav a[aria-current="location"]')?.getAttribute('href') === '#catalog-panel');
-      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-      assert.deepEqual(errors, []);
-      console.log(`PASS staff workflow at ${width}px`);
-      await context.close();
-    }
-  } finally { await browser.close(); }
-})().catch(error => { console.error(error); process.exitCode = 1; });
+  if(u.pathname.startsWith('/assets/fonts/'))return r.fulfill({contentType:'font/ttf',body:fs.readFileSync(path.join(__dirname,'../assets/brand/fonts',path.basename(u.pathname)))});
+  if(u.pathname==='/assets/nohut-logo.webp')return r.fulfill({contentType:'image/webp',body:fs.readFileSync(path.join(__dirname,'../assets/brand/nohut-logo.webp'))});
+  return r.fulfill({contentType:'text/html; charset=utf-8',body:html});
+ }
+ const browser=await chromium.launch({headless:true,executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH});
+ try{for(const width of [320,390,768,1280]){
+  state=structuredClone(fixture);revision=1;mode='ok';posts=[];receipts=new Map();prints=0;
+  const ctx=await browser.newContext({viewport:{width,height:844}}),page=await ctx.newPage(),errors=[];
+  await page.route('http://pos.test/**',route);page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.accept());
+  await page.goto('http://pos.test/');await page.locator('#staff option[value="1"]').waitFor({state:'attached'});await page.locator('#staff').selectOption('1');
+  assert.equal(await page.locator('#menu img').count(),0,'product images removed');
+  assert.equal(await page.locator('#menu').getByText('Şambali',{exact:true}).count(),0);
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollHeight<=innerHeight+1),true,'app itself needs no long page scrolling');
+  await page.locator('[data-add="0"]').click();await page.locator('[data-add="0"]').click();assert.equal(await page.locator('#cart-count').innerText(),'2');
+  await page.locator('[data-custom="0"]').click();await page.locator('#custom-note').fill('Acılı');await page.locator('#custom-form button[type=submit]').click();
+  await page.locator('.top-nav [data-view=cart]').click();assert.equal(await page.locator('.cart-line').count(),2,'different variants stay separate');
+  await page.locator('[data-note]').first().fill('Sos ayrı');await page.locator('[data-note]').first().focus();
+  await page.evaluate(()=>{window.noteNode=document.querySelector('[data-note]');});
+  await page.locator('#reload').click();await page.waitForFunction(()=>document.activeElement!==null);await page.locator('[data-note]').first().focus();
+  assert.equal(await page.evaluate(()=>window.noteNode===document.querySelector('[data-note]')),true,'refresh preserves input node');
+  mode='conflict';await page.locator('#submit').click();await page.waitForFunction(()=>document.querySelector('#notice').textContent.includes('Sepet korundu'));assert.equal(await page.locator('.cart-line').count(),2);
+  mode='lost';await page.locator('#submit').click();await page.locator('#retry').waitFor({state:'visible'});const id=posts.at(-1).requestId;mode='ok';await page.locator('#retry').click();await page.waitForFunction(()=>document.querySelector('#notice').textContent.includes('kaydedildi'));assert.equal(posts.at(-1).requestId,id);assert.equal(state.orders.length,2);
+  await page.locator('#orders [data-open="1200"]').click();await page.locator('[data-edit-line]').first().click();await page.locator('#custom-qty').fill('1');await page.locator('#custom-note').fill('Az sos');await page.locator('#custom-form button[type=submit]').click();await page.waitForFunction(()=>!document.querySelector('#customize').open);assert.equal(state.orders[0].batches[0].lines[0].qty,1);
+  await page.locator('#move-order').click();await page.locator('#move-table').selectOption('2');await page.locator('#move-form button[type=submit]').click();await page.waitForFunction(()=>!document.querySelector('#move-dialog').open);assert.equal(state.orders[0].table,2);assert.equal(state.orders[0].id,1200);
+  await page.locator('[data-existing-add]').click();await page.locator('[data-category=drink]').click();await page.locator('[data-add="1"]').click();await page.locator('.top-nav [data-view=cart]').click();await page.locator('#submit').click();await page.waitForFunction(()=>document.querySelector('[data-screen=orders]').hidden===false);assert.equal(state.orders.length,2,'additional batch keeps same order');
+  await page.locator('#orders [data-open="1200"]').click();await page.locator('#advance-status').click();await page.waitForFunction(()=>document.querySelector('#advance-status')?.textContent==='Teslim Edildi');await page.locator('#advance-status').click();await page.waitForFunction(()=>!document.querySelector('#advance-status'));
+  await page.locator('#pay-order').click();await page.locator('#pay-print').selectOption('yes');mode='lost';await page.locator('#payment-form button[type=submit]').click();await page.locator('#retry').waitFor({state:'visible'});await page.waitForFunction(()=>!document.querySelector('#payment-dialog').open);mode='ok';await page.locator('#retry').click();await page.waitForFunction(()=>document.querySelector('#notice').textContent.includes('kaydedildi'));assert.equal(prints,1);assert.equal(state.orders[0].dueCents,0);
+  await page.locator('#close-order').click();await page.waitForFunction(()=>document.querySelector('#order-detail').textContent.includes('Hesap kapalı'));assert.equal(state.orders[0].closed,true);
+  assert.deepEqual(errors,[]);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+  console.log(`PASS staff lifecycle at ${width}px: no photos, compact menu, variants, conflict, retry, edit, move, add, ready, delivered, payment, optional receipt, close`);
+  await ctx.close();
+ }}finally{await browser.close();}
+})().catch(e=>{console.error(e);process.exitCode=1});

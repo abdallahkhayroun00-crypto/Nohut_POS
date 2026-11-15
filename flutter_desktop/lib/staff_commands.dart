@@ -1,5 +1,7 @@
 import 'order_reporting.dart';
 import 'pos_logic.dart';
+import 'operations.dart';
+import 'order_actions.dart';
 import 'pos_store.dart';
 
 class StaffConflict implements Exception {
@@ -7,7 +9,7 @@ class StaffConflict implements Exception {
 }
 
 /// Server owns prices, active-worker checks, table merging and kitchen jobs.
-/// Phones submit intentions; no employee endpoint accepts financial state.
+/// Phones submit validated actions, never arbitrary state replacements.
 Json submitStaffOrder(PosStore store, Json payload) {
   final id = payload['requestId'];
   if (id is! String) throw const FormatException('İstek kimliği gerekli');
@@ -68,7 +70,24 @@ Json submitStaffOrder(PosStore store, Json payload) {
         'note': row['note'] ?? '',
       });
     }
-    final existing = source == 'Masa' ? activeTable(s, table as int) : null;
+    final requested = payload['orderId'];
+    if (requested != null && requested is! int)
+      throw const FormatException('Sipariş kimliği geçersiz');
+    final existing = requested != null
+        ? mutableOrder(s, requested as int)
+        : source == 'Masa'
+        ? activeTable(s, table as int)
+        : null;
+    if (requested != null && existing == null)
+      throw const FormatException('Sipariş artık yok');
+    if (existing != null) {
+      requireLocal(existing);
+      requireOpen(existing);
+      if (existing['source'] != source ||
+          source == 'Masa' && existing['table'] != table)
+        throw const FormatException('Siparişin masası değişti; yenileyin');
+    }
+
     Json order;
     if (existing != null) {
       addOrderBatch(
@@ -107,11 +126,105 @@ Json submitStaffOrder(PosStore store, Json payload) {
         };
       }
     }
+    recordStaffNotice(
+      s,
+      order,
+      id,
+      '${staff['name']}',
+      existing == null ? 'Yeni sipariş' : 'Ek sipariş',
+    );
     return {
       'ok': true,
       'orderId': order['id'],
       'orderNumber': displayOrderNumber(order),
       'requestId': id,
+    };
+  });
+}
+
+Json submitStaffAction(PosStore store, Json payload) {
+  final requestId = payload['requestId'];
+  if (requestId is! String)
+    throw const FormatException('İstek kimliği gerekli');
+  return store.command(requestId, payload, (s) {
+    if (payload['expectedRevision'] != store.read().revision)
+      throw const StaffConflict();
+    final staff = asMaps(s['employees'])
+        .where((e) => e['id'] == payload['staffId'] && e['active'] == true)
+        .firstOrNull;
+    if (staff == null) throw const FormatException('Aktif personel seçin');
+    final orderId = payload['orderId'];
+    if (orderId is! int) throw const FormatException('Sipariş seçin');
+    final order = mutableOrder(s, orderId);
+    if (order == null) throw const FormatException('Sipariş yok');
+    requireLocal(order);
+    requireOpen(order);
+    final by = '${staff['name']}', action = payload['action'];
+    switch (action) {
+      case 'editLine':
+        if (payload['key'] is! String ||
+            payload['qty'] is! int ||
+            payload['note'] is! String ||
+            payload['removed'] is! List ||
+            (payload['removed'] as List).any((v) => v is! String))
+          throw const FormatException('Ürün bilgisi geçersiz');
+        editLocalLine(
+          order,
+          payload['key'] as String,
+          payload['qty'] as int,
+          payload['note'] as String,
+          (payload['removed'] as List).cast<String>(),
+          by,
+        );
+      case 'move':
+        if (payload['table'] is! int) throw const FormatException('Masa seçin');
+        moveLocalTable(s, order, payload['table'] as int, by);
+      case 'status':
+        setLocalService(order, '${payload['status']}');
+      case 'pay':
+        if (payload['amountCents'] is! int ||
+            !['Nakit', 'Kart'].contains(payload['method']) ||
+            payload['confirmed'] != true ||
+            payload['receivedCents'] != null &&
+                payload['receivedCents'] is! int ||
+            payload['printReceipt'] is! bool)
+          throw const FormatException('Ödemeyi doğrulayın');
+        // Card here records an explicitly confirmed physical terminal payment.
+        // No phone endpoint can claim to be a bank callback.
+        recordPayment(
+          order,
+          payload['amountCents'] as int,
+          payload['method'] as String,
+          receivedCents: payload['receivedCents'] as int?,
+        );
+        ((order['payments'] as List).last as Map)['by'] = by;
+        if (payload['printReceipt'] == true)
+          queuePaymentReceipt(s, order, requestId: requestId);
+      case 'close':
+        closeLocalOrder(order);
+      default:
+        throw const FormatException('İşlem desteklenmiyor');
+    }
+    recordStaffNotice(
+      s,
+      order,
+      requestId,
+      by,
+      const {
+            'editLine': 'Ürün düzenlendi',
+            'move': 'Masa taşındı',
+            'status': 'Servis durumu güncellendi',
+            'pay': 'Ödeme alındı',
+            'close': 'Hesap kapatıldı',
+          }[action] ??
+          '$action',
+    );
+    return {
+      'ok': true,
+      'orderId': orderId,
+      'orderNumber': displayOrderNumber(order),
+      'requestId': requestId,
+      'action': action,
     };
   });
 }
