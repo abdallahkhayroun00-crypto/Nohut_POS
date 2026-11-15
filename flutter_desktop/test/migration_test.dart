@@ -78,20 +78,29 @@ void main() {
     'cash shift separates cash/card, refunds by event date, frozen close and later shift',
     () {
       final s = emptyPosState();
+      // Separate fixture events explicitly: fast runners may give multiple
+      // simulated human actions the same millisecond timestamp.
       openCash(s, 50000);
+      (cashBook(s)['sessions'] as List).first['openedAt'] = '2026-01-01T08:00:00Z';
       final o = local(s);
       recordPayment(o, 7000, 'Nakit', receivedCents: 10000);
+      (o['payments'] as List).first['createdAt'] = '2026-01-01T08:01:00Z';
       recordPayment(o, 3001, 'Kart');
+      (o['payments'] as List).last['createdAt'] = '2026-01-01T08:02:00Z';
       expect(expectedCash(s, activeCash(s)!), 57000);
       refundPayment(o, 0, 2000, 'Müşteri iadesi');
+      ((o['payments'] as List).first['refunds'] as List).first['createdAt'] = '2026-01-01T08:03:00Z';
       expect(expectedCash(s, activeCash(s)!), 55000);
       moveCash(s, -1000, 'Malzeme');
       expect(expectedCash(s, activeCash(s)!), 54000);
       closeCash(s, 53900);
       final closed = asMaps(cashBook(s)['sessions']).first;
       expect(closed['differenceCents'], -100);
+      (cashBook(s)['sessions'] as List).first['closedAt'] = '2026-01-01T08:04:00Z';
       openCash(s, 10000);
+      (cashBook(s)['sessions'] as List).last['openedAt'] = '2026-01-01T08:05:00Z';
       refundPayment(o, 0, 1000, 'Geç iade');
+      ((o['payments'] as List).first['refunds'] as List).last['createdAt'] = '2026-01-01T08:06:00Z';
       expect(expectedCash(s, activeCash(s)!), 9000);
       expect(asMaps(cashBook(s)['sessions']).first['expectedCents'], 54000);
       expect(() => openCash(s, 0), throwsFormatException);
