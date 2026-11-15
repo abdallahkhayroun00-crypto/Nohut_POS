@@ -1,4 +1,5 @@
 import 'order_reporting.dart';
+import 'receipt_preview.dart';
 
 import 'dart:io';
 
@@ -317,9 +318,11 @@ class OrderOperations extends StatelessWidget {
     required this.order,
     required this.edit,
     this.printerName = '',
+    this.printSettings,
   });
   final Json order;
   final String printerName;
+  final Map? printSettings;
   final EditState edit;
   @override
   Widget build(BuildContext context) {
@@ -335,16 +338,7 @@ class OrderOperations extends StatelessWidget {
             builder: (ctx) => AlertDialog(
               title: const Text('Hesap Özeti'),
               content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Image.asset(
-                      'assets/printing/nohut-receipt-logo.png',
-                      width: 150,
-                    ),
-                    SelectableText(billText(o)),
-                  ],
-                ),
+                child: ReceiptPreview(order: o, settings: printSettings),
               ),
               actions: [
                 TextButton(
@@ -361,7 +355,11 @@ class OrderOperations extends StatelessWidget {
             onPressed: () async {
               try {
                 final printer = printerName;
-                await windowsPrint(billText(o), printer);
+                await windowsPrint(
+                  billText(o),
+                  printer,
+                  settings: printSettings,
+                );
               } catch (e) {
                 if (context.mounted) {
                   ScaffoldMessenger.of(
@@ -483,34 +481,51 @@ class OrderOperations extends StatelessWidget {
                             line.total > allocatedTo(o, line.key))
                           PopupMenuButton<int>(
                             tooltip: 'Kalan ürün payını kişiye ata',
-                            onSelected: (guestId) => edit((s) {
-                              final current = mutableOrder(s, id)!;
-                              final currentLine = checkLines(
-                                current,
-                              ).firstWhere((l) => l.key == line.key);
-                              final remaining =
-                                  currentLine.total -
-                                  allocatedTo(current, line.key);
-                              if (remaining <= 0)
-                                throw const FormatException(
-                                  'Ürün zaten dağıtılmış.',
-                                );
-                              final guest = asMaps(
-                                current['guestChecks'],
-                              ).firstWhere((g) => g['id'] == guestId);
-                              final previous = asMaps(guest['allocations'])
-                                  .where((a) => a['key'] == line.key)
-                                  .fold<int>(
-                                    0,
-                                    (n, a) => n + (a['cents'] as int),
-                                  );
-                              allocateProduct(
-                                current,
-                                guestId,
-                                line.key,
-                                previous + remaining,
+                            onSelected: (guestId) async {
+                              final values = await askFields(
+                                context,
+                                'Ürün Payı',
+                                [('Bu kişiye verilecek adet', '1')],
                               );
-                            }),
+                              if (values == null) return;
+                              final units = double.tryParse(
+                                values[0].replaceAll(',', '.'),
+                              );
+                              if (units == null ||
+                                  !units.isFinite ||
+                                  units <= 0)
+                                return;
+                              edit((s) {
+                                final current = mutableOrder(s, id)!;
+                                final currentLine = checkLines(
+                                  current,
+                                ).firstWhere((l) => l.key == line.key);
+                                final remaining =
+                                    currentLine.total -
+                                    allocatedTo(current, line.key);
+                                if (remaining <= 0)
+                                  throw const FormatException(
+                                    'Ürün zaten dağıtılmış.',
+                                  );
+                                final guest = asMaps(
+                                  current['guestChecks'],
+                                ).firstWhere((g) => g['id'] == guestId);
+                                final previous = asMaps(guest['allocations'])
+                                    .where((a) => a['key'] == line.key)
+                                    .fold<int>(
+                                      0,
+                                      (n, a) => n + (a['cents'] as int),
+                                    );
+                                allocateProduct(
+                                  current,
+                                  guestId,
+                                  line.key,
+                                  previous +
+                                      (cents(currentLine.line['price']) * units)
+                                          .round(),
+                                );
+                              });
+                            },
                             itemBuilder: (context) => [
                               for (final g in asMaps(o['guestChecks']))
                                 PopupMenuItem(
@@ -1179,7 +1194,7 @@ class PrinterPanel extends StatelessWidget {
                               children: [
                                 Image.asset(
                                   'assets/printing/nohut-receipt-logo.png',
-                                  width: 150,
+                                  width: 70,
                                 ),
                                 SelectableText(text),
                               ],

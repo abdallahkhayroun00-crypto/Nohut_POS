@@ -1,5 +1,7 @@
 import 'order_reporting.dart';
 import 'order_actions.dart';
+import 'product_customization.dart';
+import 'service_metrics.dart';
 import 'simple_settings.dart';
 import 'sales_reports.dart';
 import 'order_alerts.dart';
@@ -120,6 +122,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
   late final PosLanServer lan;
   late final QrMenuAutoSync qrSync;
   Timer? _midnightTimer;
+  Timer? _serviceTimer;
   final Set<String> seenNotices = {};
   Json? latestNotice;
   bool orderModalOpen = false;
@@ -163,6 +166,9 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     receiptPrinter = ReceiptPrinter(store);
     qrSync = QrMenuAutoSync(store);
     _scheduleIstanbulMidnight();
+    _serviceTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) setState(() {});
+    });
     seenNotices.addAll(
       asMaps(store.read().data['staffNotices']).map((n) => '${n['id']}'),
     );
@@ -240,8 +246,14 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       printerSettings['receiptPolicy'] = 'onPayment';
       printerSettings['autoPrint'] = false;
       printerSettings['printerModel'] = 'XP-237B';
-      printerSettings['paperWidthMm'] = 58;
-      printerSettings['printableWidthMm'] = 48;
+      if (printerSettings['receiptLayoutVersion'] != 2) {
+        printerSettings['paperWidthMm'] = 56;
+        printerSettings['receiptLayoutVersion'] = 2;
+      }
+      printerSettings.putIfAbsent('receiptMarginMm', () => 4);
+      printerSettings.putIfAbsent('receiptOffsetMm', () => 0);
+      printerSettings.putIfAbsent('receiptLogoMm', () => 18);
+      printerSettings.putIfAbsent('printableWidthMm', () => 48);
       printerSettings['receiptScale'] = 'shrink';
       if ('${printerSettings['printerName'] ?? ''}'.trim().isEmpty) {
         printerSettings['printerName'] = 'XP-237B';
@@ -263,6 +275,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
   @override
   void dispose() {
     _midnightTimer?.cancel();
+    _serviceTimer?.cancel();
     qrSync.dispose();
     receiptPrinter.dispose();
     lan.dispose();
@@ -533,27 +546,29 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                         subtitle: Text('${line.line['note'] ?? ''}'),
                         trailing: const Icon(Icons.edit_outlined),
                         onTap: () async {
-                          final v = await askFields(ctx, 'Ürün Düzenle', [
-                            ('Adet (0 = kaldır)', '${line.line['qty']}'),
-                            ('Not', '${line.line['note'] ?? ''}'),
-                            (
-                              'Çıkarılacak malzemeler',
-                              (line.line['removed'] as List? ?? []).join(', '),
-                            ),
-                          ]);
-                          if (v != null)
+                          final result = await customizeLineDialog(
+                            ctx,
+                            line.line,
+                            description:
+                                _currentProducts()
+                                    .where(
+                                      (p) => p.id == line.line['productId'],
+                                    )
+                                    .firstOrNull
+                                    ?.descriptionTr ??
+                                '',
+                          );
+                          if (result != null)
                             _edit(
                               (s) => editLocalLine(
                                 mutableOrder(s, order['id'] as int)!,
                                 line.key,
-                                parseInteger(v[0]),
-                                v[1],
-                                v[2]
-                                    .split(',')
-                                    .map((x) => x.trim())
-                                    .where((x) => x.isNotEmpty)
-                                    .toList(),
+                                result['qty'] as int,
+                                '${result['note']}',
+                                (result['removed'] as List).cast<String>(),
                                 'Kasa (PC)',
+                                adjustmentCents:
+                                    result['adjustmentCents'] as int,
                               ),
                             );
                         },
@@ -630,8 +645,14 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       context,
       'Ödemeyi Onayla',
       'Sipariş #${displayOrderNumber(order)} · ${guestName ?? ''}\nTutar: ${formatTry(amountCents)}\nYöntem: $methodName\n'
-          '${receivedCents == null ? 'Banka terminalinde başarılı tahsilatı doğrulayın. Bu kayıt banka işlemi başlatmaz.' : 'Alınan: ${formatTry(receivedCents)} · Para üstü: ${formatTry(receivedCents - amountCents)}'}',
-      confirm: methodName == 'Kart'
+          '${methodName == 'Karışık'
+              ? 'Nakit: ${formatTry(receivedCents!)} · Kart: ${formatTry(amountCents - receivedCents)}. Terminalde kart tahsilatını doğrulayın.'
+              : receivedCents == null
+              ? 'Banka terminalinde başarılı tahsilatı doğrulayın. Bu kayıt banka işlemi başlatmaz.'
+              : 'Alınan: ${formatTry(receivedCents)} · Para üstü: ${formatTry(receivedCents - amountCents)}'}',
+      confirm: methodName == 'Karışık'
+          ? 'Nakit ve Kart Onaylandı · Kaydet'
+          : methodName == 'Kart'
           ? 'Terminalde Onaylandı · Kaydet'
           : 'Nakdi Aldım · Kaydet',
     );
@@ -642,13 +663,21 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       if (guestId != null && amountCents > (maximumCents ?? 0)) {
         throw const FormatException('Kişi bakiyesi aşıldı');
       }
-      recordPayment(
-        target,
-        amountCents,
-        methodName,
-        receivedCents: receivedCents,
-        guestId: guestId,
-      );
+      if (methodName == 'Karışık') {
+        recordMixedPayment(
+          target,
+          amountCents,
+          receivedCents!,
+          guestId: guestId,
+        );
+      } else
+        recordPayment(
+          target,
+          amountCents,
+          methodName,
+          receivedCents: receivedCents,
+          guestId: guestId,
+        );
       if (guestId != null) {
         final payments = target['payments'] as List;
         final latest = payments.last as Map;
@@ -1135,6 +1164,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
           },
         ),
         const SizedBox(height: 15),
+        StaffMetrics(state: db, day: businessDay),
         Card(
           child: Padding(
             padding: const EdgeInsets.all(18),
@@ -1501,7 +1531,36 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                     ),
                 ],
               ),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Text(elapsedService(o)),
+            ),
+            if (!isPlatform(o))
+              OutlinedButton.icon(
+                onPressed: () async {
+                  if (await confirmAction(
+                    context,
+                    'Siparişi kalıcı sil?',
+                    'Sipariş, ödemeleri ve rapor tutarları aktif veritabanından kaldırılır. Son günlük numara yeniden kullanılabilir; diğer numaralar değişmez.',
+                    confirm: 'Kalıcı Sil',
+                  )) {
+                    try {
+                      store.deleteOrder(
+                        o['id'] as int,
+                        store.read().revision,
+                        'delete_${DateTime.now().microsecondsSinceEpoch}',
+                      );
+                      if (mounted) Navigator.of(context).pop();
+                    } catch (e) {
+                      _notify('$e', error: true);
+                    }
+                  }
+                },
+                icon: const Icon(Icons.delete_forever),
+                label: const Text('Kalıcı Sil'),
+              ),
             OrderOperations(
+              printSettings: store.read().data['settings'] as Map?,
               order: o,
               edit: _edit,
               printerName:

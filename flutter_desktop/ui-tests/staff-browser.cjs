@@ -4,7 +4,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
  const fixture={employees:[{id:1,name:'Ömer',active:true}],localMenu:[{id:0,name:'Falafel Dürüm',price:140,category:'wrap',image:'assets/real.webp'},{id:1,name:'Ayran',price:45,category:'drink'},{id:32,name:'Şambali',price:100,category:'dessert',active:false}],orders:[{id:1200,dailyNumber:1,numberDay:'2026-11-15',source:'Masa',table:3,serviceStatus:'Hazırlanıyor',totalCents:28000,paidCents:0,dueCents:28000,batches:[{id:1,lines:[{productId:0,name:'Falafel Dürüm',price:140,qty:2,note:'Sos ayrı',removed:['Domates']}]}]}]};
  let state,revision,mode,posts,receipts,prints;
  const html=fs.readFileSync(path.join(__dirname,'../assets/staff.html'));
- function recalc(o){o.totalCents=o.batches.flatMap(b=>b.lines).filter(l=>!l.voided&&!l.correction).reduce((n,l)=>n+Math.round(l.price*100)*l.qty,0);o.dueCents=o.totalCents-o.paidCents;}
+ function recalc(o){o.totalCents=o.batches.flatMap(b=>b.lines).filter(l=>!l.voided&&!l.correction).reduce((n,l)=>n+Math.round(l.price*100)*l.qty,0);o.dueCents=o.totalCents-o.paidCents;for(const g of o.guestChecks||[])g.balanceCents=g.allocations.reduce((n,a)=>n+a.cents,0)-(o.testPayments||[]).filter(p=>p.guestId===g.id).reduce((n,p)=>n+p.amount,0);}
  async function route(r){const u=new URL(r.request().url());
   if(u.pathname==='/api/bootstrap')return r.fulfill({json:{state,revision}});
   if(['/api/staff/orders','/api/staff/actions'].includes(u.pathname)){
@@ -16,10 +16,15 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
     if(!o){o={id:1201,dailyNumber:2,source:p.source,table:p.table,serviceStatus:'Hazırlanıyor',paidCents:0,batches:[]};state.orders.push(o);}
     o.batches.push({id:o.batches.length+1,lines:p.lines.map(l=>({...l,name:state.localMenu.find(x=>x.id===l.productId).name,price:state.localMenu.find(x=>x.id===l.productId).price}))});o.serviceStatus='Hazırlanıyor';
    }else{
-    if(p.action==='editLine'){const [batch,index]=p.key.split(':').map(Number),l=o.batches.find(b=>b.id===batch).lines[index];Object.assign(l,{qty:p.qty,note:p.note,removed:p.removed,voided:p.qty===0});}
+    if(p.action==='editLine'){const [batch,index]=p.key.split(':').map(Number),l=o.batches.find(b=>b.id===batch).lines[index];Object.assign(l,{basePrice:l.basePrice??l.price,qty:p.qty,note:p.note,removed:p.removed,voided:p.qty===0,adjustmentCents:p.adjustmentCents||0});l.price=l.basePrice+l.adjustmentCents/100;}
     if(p.action==='move')o.table=p.table;
     if(p.action==='status')o.serviceStatus=p.status;
-    if(p.action==='pay'){o.paidCents+=p.amountCents;if(p.printReceipt)prints++;}
+    if(p.action==='pay'||p.action==='payMixed'){o.paidCents+=p.amountCents;(o.testPayments??=[]).push({guestId:p.guestId,amount:p.amountCents});if(p.printReceipt)prints++;}
+    if(p.action==='splitEqual')o.guestChecks=Array.from({length:p.count},(_,i)=>({id:i+1,name:'Kişi '+(i+1),allocations:[{key:'1:0',cents:o.totalCents/p.count}]}));
+    if(p.action==='addGuest')(o.guestChecks??=[]).push({id:(o.guestChecks||[]).length+1,name:p.name,allocations:[]});
+    if(p.action==='allocate'){const g=o.guestChecks.find(g=>g.id===p.guestId);g.allocations=g.allocations.filter(a=>a.key!==p.key);if(p.cents)g.allocations.push({key:p.key,cents:p.cents});}
+    if(p.action==='resetGuests')o.guestChecks=[];
+    if(p.action==='delete')state.orders=state.orders.filter(x=>x.id!==o.id);
     if(p.action==='close')o.closed=true;
    }
    recalc(o);const result={ok:true,orderId:o.id,orderNumber:String(o.dailyNumber).padStart(4,'0'),revision:++revision};receipts.set(p.requestId,result);
@@ -54,6 +59,14 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   await page.locator('#orders [data-open="1200"]').click();await page.locator('#advance-status').click();await page.waitForFunction(()=>document.querySelector('#advance-status')?.textContent==='Teslim Edildi');await page.locator('#advance-status').click();await page.waitForFunction(()=>!document.querySelector('#advance-status'));
   await page.locator('#pay-order').click();await page.locator('#pay-print').selectOption('yes');mode='lost';await page.locator('#payment-form button[type=submit]').click();await page.locator('#retry').waitFor({state:'visible'});await page.waitForFunction(()=>!document.querySelector('#payment-dialog').open);mode='ok';await page.locator('#retry').click();await page.waitForFunction(()=>document.querySelector('#notice').textContent.includes('kaydedildi'));assert.equal(prints,1);assert.equal(state.orders[0].dueCents,0);
   await page.locator('#close-order').click();await page.waitForFunction(()=>document.querySelector('#order-detail').textContent.includes('Hesap kapalı'));assert.equal(state.orders[0].closed,true);
+  state=structuredClone(fixture);revision++;receipts.clear();prints=0;mode='ok';await page.reload();await page.locator('#staff option[value="1"]').waitFor({state:'attached'});await page.locator('#staff').selectOption('1');
+  await page.locator('.top-nav [data-view=orders]').click();await page.locator('[data-open="1200"]').click();await page.locator('[data-edit-line]').click();
+  await page.locator('#custom-note').fill('Ek sembusek');await page.locator('#custom-adjustment').fill('+10');await page.locator('[data-ingredient="Domates"]').click();await page.locator('#custom-form button[type=submit]').click();await page.waitForFunction(()=>!document.querySelector('#customize').open);assert.equal(state.orders[0].totalCents,30000);assert.equal(state.orders[0].batches[0].lines[0].removed.includes('Domates'),false);
+  await page.locator('#split-order').click();await page.locator('#equal-split').click();await page.waitForFunction(()=>!document.querySelector('#split-dialog').open);assert.equal(state.orders[0].guestChecks.length,2);
+  await page.locator('[data-pay-guest="1"]').click();await page.locator('#pay-method').selectOption('Karışık');await page.locator('#mixed-cash').fill('50');await page.locator('#card-confirmed').check();await page.locator('#pay-print').selectOption('no');await page.locator('#payment-form button[type=submit]').click();await page.waitForFunction(()=>!document.querySelector('#payment-dialog').open);assert.equal(state.orders[0].guestChecks[0].balanceCents,0);assert.equal(posts.at(-1).cashCents,5000);
+  await page.locator('[data-pay-guest="2"]').click();await page.locator('#pay-print').selectOption('no');await page.locator('#payment-form button[type=submit]').click();await page.waitForFunction(()=>!document.querySelector('#payment-dialog').open);assert.equal(state.orders[0].dueCents,0);assert.equal(prints,0);
+  mode='lost';await page.locator('#delete-order').click();await page.locator('#retry').waitFor({state:'visible'});mode='ok';await page.locator('#retry').click();await page.waitForFunction(()=>document.querySelector('#order-detail').textContent.includes('Hesap kapalı'));assert.equal(state.orders.length,0);
+  console.log(`PASS modifiers, ingredient buttons, person split, mixed payment and deletion retry at ${width}px`);
   assert.deepEqual(errors,[]);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
   console.log(`PASS staff lifecycle at ${width}px: no photos, compact menu, variants, conflict, retry, edit, move, add, ready, delivered, payment, optional receipt, close`);
   await ctx.close();

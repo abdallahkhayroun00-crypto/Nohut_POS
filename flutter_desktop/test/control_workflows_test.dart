@@ -207,7 +207,8 @@ void main() {
             OrderOperations(order: asMaps(s['orders']).single, edit: edit),
       );
       await tap(t, 'Hesap Özeti Önizle');
-      expect(find.byType(SelectableText), findsWidgets);
+      expect(find.text('HESAP ÖZETİ'), findsOneWidget);
+      expect(find.text('TOPLAM'), findsOneWidget);
       await tap(t, 'Kapat');
       await tap(t, 'Kişi Ekle');
       await enter(t, 'Ad', 'Ali');
@@ -216,6 +217,7 @@ void main() {
       await t.tap(find.text('Ürünü Kişiye Ata ▾'));
       await t.pumpAndSettle();
       await tap(t, 'Ali · 140,00 ₺');
+      await tap(t, 'Kaydet');
       expect(
         allocatedTo(asMaps(key.currentState!.data['orders']).single, '1:0'),
         14000,

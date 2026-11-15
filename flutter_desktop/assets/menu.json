@@ -864,7 +864,7 @@
         "ar": "مشروب الشلغم التركي المخمّر، حار"
       },
       "image": "assets/drinks/doganay-spicy.webp",
-      "price": 35,
+      "price": 40,
       "active": true
     },
     {
@@ -882,7 +882,7 @@
         "ar": "مشروب الشلغم التركي المخمّر، غير حار"
       },
       "image": "assets/drinks/doganay-mild.webp",
-      "price": 35,
+      "price": 40,
       "active": true
     },
     {

@@ -138,7 +138,12 @@ void validateCashierDraft(Json state, List<Json> lines) {
     if (p == null ||
         p['active'] == false ||
         p['price'] is! num ||
-        cents(p['price']) != cents(line['price'])) {
+        cents(p['price']) != cents(line['basePrice'] ?? line['price']) ||
+        (line['adjustmentCents'] != null &&
+            (line['adjustmentCents'] is! int ||
+                cents(line['price']) !=
+                    cents(line['basePrice']) +
+                        (line['adjustmentCents'] as int)))) {
       throw const FormatException(
         'Menü fiyatı veya ürün durumu değişti. Güncel menüyü alın; sepetiniz korunuyor.',
       );
@@ -283,6 +288,9 @@ void addOrderBatch(
   });
   (order['events'] as List).add('${nowTime()} · $cashier · Ek sipariş');
   order['serviceStatus'] = 'Hazırlanıyor';
+  order['serviceStartedAt'] = DateTime.now().toUtc().toIso8601String();
+  order.remove('readyAt');
+  order.remove('deliveredAt');
   queueLocalKitchen(state, order, batches.last as Map);
 }
 

@@ -6,6 +6,7 @@ import 'pos_store.dart';
 import 'operations_ui.dart';
 import 'qr_menu_sync.dart';
 import 'qr_menu_preview.dart';
+import 'receipt_printer.dart';
 
 class SimpleSettings extends StatefulWidget {
   const SimpleSettings({
@@ -163,7 +164,9 @@ class _SimpleSettingsState extends State<SimpleSettings> {
               ListTile(
                 leading: const Icon(Icons.print_outlined),
                 title: Text('${settings['printerName'] ?? 'XP-237B'}'),
-                subtitle: const Text('Hesap özeti · Mali fiş değildir'),
+                subtitle: Text(
+                  '${settings['paperWidthMm'] ?? 56} mm · Büyük boyutlu sayfaları daralt · Ortalı hesap özeti',
+                ),
               ),
               OutlinedButton.icon(
                 icon: const Icon(Icons.settings_outlined),
@@ -177,13 +180,89 @@ class _SimpleSettingsState extends State<SimpleSettings> {
                         'Windows yazıcı adı',
                         '${settings['printerName'] ?? 'XP-237B'}',
                       ),
+                      (
+                        'Kağıt genişliği (mm)',
+                        '${settings['paperWidthMm'] ?? 56}',
+                      ),
+                      (
+                        'Baskı genişliği (mm)',
+                        '${settings['printableWidthMm'] ?? 48}',
+                      ),
+                      (
+                        'Üst / alt güvenli boşluk (mm)',
+                        '${settings['receiptMarginMm'] ?? 4}',
+                      ),
+                      (
+                        'Yatay kaydırma (mm, + sağa)',
+                        '${settings['receiptOffsetMm'] ?? 0}',
+                      ),
+                      (
+                        'Logo boyutu (mm)',
+                        '${settings['receiptLogoMm'] ?? 18}',
+                      ),
                     ],
-                    validate: (v) => v[0].isEmpty ? 'Yazıcı adı gerekli' : null,
+                    validate: (v) {
+                      final values = v
+                          .skip(1)
+                          .map((x) => double.tryParse(x.replaceAll(',', '.')))
+                          .toList();
+                      if (v[0].isEmpty ||
+                          values.any((x) => x == null || !x.isFinite))
+                        return 'Yazıcı adı ve sayısal ölçüler gerekli';
+                      final p = values.cast<double>();
+                      if (p[0] < 40 ||
+                          p[0] > 80 ||
+                          p[1] < 30 ||
+                          p[1] > p[0] ||
+                          p[2] < 2 ||
+                          p[2] > 10 ||
+                          p[3].abs() > 10 ||
+                          p[4] < 10 ||
+                          p[4] > 25)
+                        return 'Ölçüler: kağıt 40–80, baskı 30–kağıt, boşluk 2–10, kaydırma ±10, logo 10–25 mm';
+                      return null;
+                    },
                   );
                   if (v != null)
                     widget.edit((s) {
-                      (s['settings'] as Map)['printerName'] = v[0];
+                      final cfg = s['settings'] as Map;
+                      cfg['printerName'] = v[0];
+                      for (var i = 0; i < 5; i++)
+                        cfg[[
+                          'paperWidthMm',
+                          'printableWidthMm',
+                          'receiptMarginMm',
+                          'receiptOffsetMm',
+                          'receiptLogoMm',
+                        ][i]] = double.parse(
+                          v[i + 1].replaceAll(',', '.'),
+                        );
+                      cfg['receiptScale'] = 'shrink';
                     });
+                },
+              ),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.print_outlined),
+                label: const Text('Hizalama Testi Yazdır'),
+                onPressed: () async {
+                  try {
+                    await windowsPrint(
+                      'HİZALAMA TESTİ\nSol |--------------------| Sağ\nOrtalanmış baskı alanı\nKağıt: ${settings['paperWidthMm'] ?? 56} mm\nBu bir sipariş değildir.',
+                      '${settings['printerName'] ?? 'XP-237B'}',
+                      settings: settings,
+                    );
+                    if (context.mounted)
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Test yazıcı kuyruğuna gönderildi'),
+                        ),
+                      );
+                  } catch (e) {
+                    if (context.mounted)
+                      ScaffoldMessenger.of(
+                        context,
+                      ).showSnackBar(SnackBar(content: Text('$e')));
+                  }
                 },
               ),
               for (final j in asMaps(widget.state['printJobs']).where(

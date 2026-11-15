@@ -1,3 +1,4 @@
+import 'operations.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -191,7 +192,16 @@ class PosLanServer extends ChangeNotifier {
               'totalCents': orderTotalCents(o),
               'paidCents': orderPaidCents(o),
               'dueCents': orderDueCents(o),
-              'guestChecks': o['guestChecks'] ?? [],
+              'guestChecks': [
+                for (final guest in asMaps(o['guestChecks']))
+                  {
+                    ...guest,
+                    'balanceCents': guestBalance(o, guest['id'] as int),
+                  },
+              ],
+              'serviceStartedAt': o['serviceStartedAt'],
+              'readyAt': o['readyAt'],
+              'deliveredAt': o['deliveredAt'],
             },
           )
           .toList(),

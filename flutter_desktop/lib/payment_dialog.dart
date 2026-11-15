@@ -24,10 +24,12 @@ class _PaymentEntryDialogState extends State<PaymentEntryDialog> {
   late final received = TextEditingController(
     text: (widget.dueCents / 100).toStringAsFixed(2),
   );
+  final cashPart = TextEditingController();
   String method = 'Nakit';
   String? error;
   @override
   void dispose() {
+    cashPart.dispose();
     amount.dispose();
     received.dispose();
     super.dispose();
@@ -52,7 +54,9 @@ class _PaymentEntryDialogState extends State<PaymentEntryDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('Ödenecek en fazla ${formatTry(widget.dueCents)}'),
+            Text(
+              'Kalan ${formatTry(widget.dueCents)} · Kısmi veya Nakit + Kart ödeme alabilirsiniz.',
+            ),
             const SizedBox(height: 16),
             DropdownButtonFormField<String>(
               initialValue: method,
@@ -61,6 +65,7 @@ class _PaymentEntryDialogState extends State<PaymentEntryDialog> {
               items: [
                 'Nakit',
                 'Kart',
+                'Karışık',
                 if (widget.inposReady) 'inPOS m530',
               ].map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
               onChanged: (m) => setState(() {
@@ -78,6 +83,16 @@ class _PaymentEntryDialogState extends State<PaymentEntryDialog> {
               decoration: const InputDecoration(labelText: 'Tutar (₺)'),
               onChanged: (_) => setState(() => error = null),
             ),
+            if (method == 'Karışık')
+              TextField(
+                controller: cashPart,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(
+                  labelText: 'Nakit kısmı (₺) · kalan Kart',
+                ),
+              ),
             if (method == 'Nakit') ...[
               const SizedBox(height: 14),
               TextField(
@@ -130,12 +145,20 @@ class _PaymentEntryDialogState extends State<PaymentEntryDialog> {
         onPressed: () {
           try {
             final n = parseMoney(amount.text),
-                r = method == 'Nakit' ? parseMoney(received.text) : null;
+                r = method == 'Nakit'
+                    ? parseMoney(received.text)
+                    : method == 'Karışık'
+                    ? parseMoney(cashPart.text)
+                    : null;
             if (n <= 0 || n > widget.dueCents)
               throw const FormatException(
                 'Tutar kalan bakiyeyi aşamaz ve sıfır olamaz.',
               );
-            if (r != null && r < n)
+            if (method == 'Karışık' && (r == null || r <= 0 || r >= n))
+              throw const FormatException(
+                'Nakit kısmı toplamdan küçük ve sıfırdan büyük olmalı',
+              );
+            if (method == 'Nakit' && r != null && r < n)
               throw const FormatException('Alınan nakit tutarı yetersiz.');
             Navigator.pop(context, (n, method, r));
           } on FormatException catch (e) {

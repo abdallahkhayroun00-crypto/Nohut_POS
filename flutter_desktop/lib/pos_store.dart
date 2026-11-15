@@ -68,6 +68,9 @@ class PosStore extends ChangeNotifier {
     _db.execute(
       'CREATE TABLE IF NOT EXISTS command_receipts (request_id TEXT PRIMARY KEY, payload TEXT NOT NULL, result TEXT NOT NULL)',
     );
+    _db.execute(
+      'CREATE TABLE IF NOT EXISTS deleted_requests (request_id TEXT PRIMARY KEY)',
+    );
     final old = read();
     final migrated = copyJson(old.data);
     assignDailyNumbers(migrated);
@@ -256,6 +259,13 @@ class PosStore extends ChangeNotifier {
         'SELECT payload,result FROM command_receipts WHERE request_id=?',
         [requestId],
       );
+      if (_db.select(
+        'SELECT request_id FROM deleted_requests WHERE request_id=?',
+        [requestId],
+      ).isNotEmpty)
+        throw const FormatException(
+          'Bu istek silinmiş bir siparişe ait; tekrar oluşturulamaz',
+        );
       final encoded = jsonEncode(payload);
       if (receipt.isNotEmpty) {
         if (receipt.single['payload'] != encoded) {
@@ -289,6 +299,82 @@ class PosStore extends ChangeNotifier {
     }
     notifyListeners();
     return result;
+  }
+
+  Json deleteOrder(
+    int orderId,
+    int revision,
+    String requestId, {
+    int? staffId,
+  }) {
+    if (!RegExp(r'^[A-Za-z0-9_-]{8,100}$').hasMatch(requestId))
+      throw const FormatException('İstek kimliği geçersiz');
+    _db.execute(
+      'CREATE TABLE IF NOT EXISTS deleted_requests (request_id TEXT PRIMARY KEY)',
+    );
+    _db.execute('BEGIN IMMEDIATE');
+    try {
+      if (_db.select(
+        'SELECT request_id FROM deleted_requests WHERE request_id=?',
+        [requestId],
+      ).isNotEmpty) {
+        _db.execute('COMMIT');
+        return {'ok': true, 'revision': read().revision};
+      }
+      final snap = read();
+      if (snap.revision != revision)
+        throw const FormatException('Kayıtlar değişti; yenileyin');
+      final state = copyJson(snap.data), order = mutableOrder(state, orderId);
+      if (order == null) throw const FormatException('Sipariş yok');
+      requireLocal(order);
+      if (order['terminalPending'] != null ||
+          asMaps(
+            state['printJobs'],
+          ).any((j) => j['orderId'] == orderId && j['state'] == 'Gönderiliyor'))
+        throw const FormatException(
+          'Bekleyen ödeme / yazdırma sonucunu önce kontrol edin',
+        );
+      if (staffId != null &&
+          !asMaps(
+            state['employees'],
+          ).any((e) => e['id'] == staffId && e['active'] == true))
+        throw const FormatException('Aktif personel seçin');
+      (state['orders'] as List).removeWhere((o) => o['id'] == orderId);
+      for (final key in ['printJobs', 'staffNotices', 'terminalAttempts']) {
+        if (state[key] is List)
+          (state[key] as List).removeWhere((r) => r['orderId'] == orderId);
+      }
+      for (final r in _db.select(
+        'SELECT request_id,payload,result FROM command_receipts',
+      )) {
+        final p = jsonDecode(r['payload'] as String) as Map,
+            result = jsonDecode(r['result'] as String) as Map;
+        if (p['orderId'] == orderId || result['orderId'] == orderId) {
+          _db.execute(
+            'INSERT OR IGNORE INTO deleted_requests(request_id) VALUES(?)',
+            [r['request_id']],
+          );
+          _db.execute('DELETE FROM command_receipts WHERE request_id=?', [
+            r['request_id'],
+          ]);
+        }
+      }
+      validate(state);
+      _db.execute(
+        'UPDATE state_snapshot SET revision=?,payload=?,updated_at=? WHERE id=1',
+        [revision + 1, jsonEncode(state), utcNow()],
+      );
+      // Retain only an opaque retry key, never the deleted order contents/number.
+      _db.execute('INSERT INTO deleted_requests(request_id) VALUES(?)', [
+        requestId,
+      ]);
+      _db.execute('COMMIT');
+      notifyListeners();
+      return {'ok': true, 'revision': revision + 1};
+    } catch (_) {
+      _db.execute('ROLLBACK');
+      rethrow;
+    }
   }
 
   /// VACUUM INTO creates one consistent database even while WAL is active.

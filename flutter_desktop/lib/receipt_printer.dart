@@ -13,7 +13,13 @@ typedef PrintTransport = Future<void> Function(String text, String printer);
 /// One laptop owns the queue. A spool acknowledgement is not a paper sensor.
 class ReceiptPrinter {
   ReceiptPrinter(this.store, {PrintTransport? transport})
-    : transport = transport ?? windowsPrint;
+    : transport =
+          transport ??
+          ((text, printer) => windowsPrint(
+            text,
+            printer,
+            settings: store.read().data['settings'] as Map?,
+          ));
   final PosStore store;
   final PrintTransport transport;
   bool _busy = false, _disposed = false;
@@ -103,7 +109,7 @@ class ReceiptPrinter {
   }
 }
 
-Future<void> windowsPrint(String text, String printer) async {
+Future<void> windowsPrint(String text, String printer, {Map? settings}) async {
   if (!Platform.isWindows) {
     throw const FormatException('Windows yazıcısı gerekir');
   }
@@ -120,6 +126,11 @@ Future<void> windowsPrint(String text, String printer) async {
         'text': text,
         'printer': printer,
         'logo': '${dir.path}/logo.png',
+        'paperWidthMm': settings?['paperWidthMm'] ?? 56,
+        'printableWidthMm': settings?['printableWidthMm'] ?? 48,
+        'marginMm': settings?['receiptMarginMm'] ?? 4,
+        'offsetMm': settings?['receiptOffsetMm'] ?? 0,
+        'logoMm': settings?['receiptLogoMm'] ?? 18,
       }),
     );
     final executable =

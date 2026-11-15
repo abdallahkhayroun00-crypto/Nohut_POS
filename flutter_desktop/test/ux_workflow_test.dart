@@ -85,7 +85,10 @@ void main() {
       for (final note in ['Sos ayrı', 'Acılı']) {
         await tester.tap(find.text('Not / Malzeme').first);
         await tester.pumpAndSettle();
-        await tester.enterText(find.byType(TextField).at(1), note);
+        await tester.enterText(
+          find.byKey(const ValueKey('customization-note')),
+          note,
+        );
         await tester.tap(find.text('Kaydet').last);
         await tester.pumpAndSettle();
       }

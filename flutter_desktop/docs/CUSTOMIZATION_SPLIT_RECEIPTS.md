@@ -1,0 +1,12 @@
+# Requested restaurant updates
+
+- Staff phone and PC product customizations: ingredient toggle choices, free-text substitutions/removals and signed per-unit manual price changes. Adjusted prices are stored with the original base price, quantity and note. Notes/removals/price differences are included in account summaries.
+- Automatic priced preset substitutions remain deferred.
+- Both clients share equal/person-item allocations and partial or mixed cash/card payments. Mixed payments commit atomically; card capture remains manually confirmed on the physical terminal. A printed summary is requested once per successful payment command. Allocations and paid balances prevent invalid line reductions.
+- Phone guest allocations accept a quantity for each product/person, including half portions; overlapping allocations are rejected. PC supports choosing the number of units assigned.
+- Daily employee overview attributes an order to its first batch's employee. Additions do not count a second order. Table and pickup/package counts and order sales values are separate from receipt totals.
+- Ready and delivered timestamps are stored on transitions. Historical orders with missing timestamps show an unknown duration rather than invented data.
+- Permanent deletion is an explicit confirmed action. Removes the local order, payments, requested print jobs, notifications, terminal attempts and associated command contents from the active database. An opaque request-key set prevents retries from resurrecting deleted orders. Immutable internal IDs never repeat. A deleted final daily display number may repeat; middle deletion never renumbers surviving orders. Pending bank outcomes or in-flight printing block deletion. Deletion cannot recall paper already printed or erase old external backup files or SQLite storage remnants.
+- Receipt printing uses a compact centered layout, smaller logo, aligned product totals, prominent overall total, notes and manual differences. Default paper is 56 mm based on the supplied roll label; configurable printable width, horizontal offset, top/bottom margin and logo size are passed through to the Windows print transport. Oversized width fits within driver-reported printable bounds. Physical output still needs one on-site calibration print.
+- Public QR menu is not changed by this update. The already published 40 TL şalgam price continues through menu synchronization.
+- The ambiguous phrases “when 2 fried” / “change the fes” remain unspecified and have no additional guessed behavior.

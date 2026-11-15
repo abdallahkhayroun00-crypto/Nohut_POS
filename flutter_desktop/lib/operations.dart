@@ -169,8 +169,14 @@ String billText(Json o) => [
   'MALİ FİŞ DEĞİLDİR',
   '#${displayOrderNumber(o)} · ${o['source']} · ${o['table'] ?? ''}',
   istanbulStamp(o['createdAt']),
-  for (final l in checkLines(o))
+  for (final l in checkLines(o)) ...[
     '${l.line['qty']} × ${l.line['name']} · ${formatTry(l.total)}',
+    if ('${l.line['note'] ?? ''}'.isNotEmpty) 'Not: ${l.line['note']}',
+    if ((l.line['removed'] as List? ?? []).isNotEmpty)
+      'Çıkar: ${(l.line['removed'] as List).join(', ')}',
+    if ((l.line['adjustmentCents'] as int? ?? 0) != 0)
+      'Adet farkı: ${formatTry(l.line['adjustmentCents'] as int)}',
+  ],
   'Toplam ${formatTry(orderTotalCents(o))}',
   'Net tahsilat ${formatTry(orderPaidCents(o))}',
   'Kalan ${formatTry(orderDueCents(o))}',
@@ -344,6 +350,7 @@ void setLocalService(Json o, String status) {
     throw const FormatException('Geçersiz hizmet geçişi');
   }
   o['serviceStatus'] = status;
+  o[status == 'Hazır' ? 'readyAt' : 'deliveredAt'] = utcNow();
   (o['events'] as List).add('${utcNow()} · Hizmet: $status');
 }
 
