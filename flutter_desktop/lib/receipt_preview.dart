@@ -122,6 +122,10 @@ class ReceiptPreview extends StatelessWidget {
             row('TOPLAM', formatTry(orderTotalCents(order)), bold: true),
             row('Ödenen', formatTry(orderPaidCents(order))),
             row('Kalan', formatTry(orderDueCents(order))),
+            for (final payment in asMaps(order['payments']))
+              Text(
+                '${payment['method']} · ${formatTry(paymentNetCents(payment))} · ${payment['guestName'] ?? ''}',
+              ),
             const Divider(color: Colors.black),
             const Text(
               'Afiyet olsun!',

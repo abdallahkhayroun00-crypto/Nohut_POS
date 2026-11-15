@@ -39,7 +39,7 @@ try {
   # Conservative wrapped-row budget avoids shrinking the whole receipt by its height.
   $height = $margin*2 + $logoSize + 24
   foreach($row in $rows){ $height += 6 * [Math]::Max(1,[Math]::Ceiling($row.Length/22.0)) }
-  $doc.DefaultPageSettings.PaperSize = New-Object System.Drawing.Printing.PaperSize('Nohut Receipt', [int][Math]::Round($paper/0.254), [int][Math]::Ceiling($height/0.254))
+  $doc.DefaultPageSettings.PaperSize = New-Object System.Drawing.Printing.PaperSize('Nohut Receipt', [int][Math]::Round($paper/0.254), [int][Math]::Min(32000,[Math]::Ceiling($height/0.254)))
   $script:row = 0
   $script:first = $true
   $script:footer = $false
@@ -54,10 +54,11 @@ try {
     $area=$e.PageSettings.PrintableArea
     $safeLeft=$area.Left*0.254+0.5
     $safeRight=($area.Left+$area.Width)*0.254-0.5
-    $w=[Math]::Min($width,$safeRight-$safeLeft)
-    if($w -lt 25){throw 'Receipt driver printable area is too small'}
-    # Shrink oversized widths only; keep type readable and center the content block.
-    $x=[Math]::Max($safeLeft,[Math]::Min(($paper-$w)/2+$offset,$safeRight-$w))
+    if(($safeRight-$safeLeft) -lt 25){throw 'Receipt driver printable area is too small'}
+    # Center on physical paper even when the driver reports asymmetric hard margins.
+    $centerX=[Math]::Max($safeLeft+12.5,[Math]::Min($paper/2+$offset,$safeRight-12.5))
+    $w=[Math]::Min($width,2*[Math]::Min($centerX-$safeLeft,$safeRight-$centerX))
+    $x=$centerX-$w/2
     $y=[Math]::Max($margin,$hardY+1)
     $bottom=($area.Top+$area.Height)*0.254-$margin
     if($script:first){
