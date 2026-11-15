@@ -152,6 +152,12 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
   void initState() {
     super.initState();
     store = PosStore(databaseFile: widget.databaseFile);
+    final initial = store.read(), migrated = copyJson(initial.data);
+    final settings =
+        migrated.putIfAbsent('settings', () => <String, dynamic>{}) as Map;
+    settings['receiptPolicy'] = 'onPayment';
+    settings['autoPrint'] = false;
+    store.replace(migrated, initial.revision);
     inpos = InposPayments(store, widget.inposGateway ?? UnavailableInpos());
     lan = PosLanServer(store);
     receiptPrinter = ReceiptPrinter(store);

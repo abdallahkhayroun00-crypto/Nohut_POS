@@ -165,6 +165,7 @@ class _SalesReportsState extends State<SalesReports> {
                   width: 180,
                   child: DropdownButtonFormField<String>(
                     initialValue: source,
+                    isExpanded: true,
                     decoration: const InputDecoration(labelText: 'Kaynak'),
                     items:
                         ['Tümü', 'Masa', 'Gel-Al', 'Trendyol Go', 'Yemeksepeti']

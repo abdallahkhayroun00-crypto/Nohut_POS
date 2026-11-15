@@ -126,7 +126,7 @@ class InposPayments {
         throw const FormatException('Terminal işlemi zaten işlendi');
       o.remove('terminalPending');
       recordPayment(o, attempt['amountCents'] as int, 'Kart');
-      ((o['payments'] as List).last as Map).addAll({
+      ((o['payments'] as List).last as Map).addAll(<String, Object?>{
         'terminalReference': reference,
         'transactionId': reply.transactionId,
       });
