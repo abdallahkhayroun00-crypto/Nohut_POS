@@ -3,6 +3,7 @@ import 'order_actions.dart';
 import 'simple_settings.dart';
 import 'sales_reports.dart';
 import 'order_alerts.dart';
+import 'card_terminal.dart';
 
 import 'dart:async';
 
@@ -79,7 +80,9 @@ class NohutFalafelApp extends StatelessWidget {
     super.key,
     this.databaseFile,
     this.startServer = true,
+    this.inposGateway,
   });
+  final InposGateway? inposGateway;
   final String? databaseFile;
   final bool startServer;
   @override
@@ -87,12 +90,22 @@ class NohutFalafelApp extends StatelessWidget {
     debugShowCheckedModeBanner: false,
     title: 'Nohut Falafel · Yönetici Paneli',
     theme: NohutBrand.theme(),
-    home: ManagerDesktop(databaseFile: databaseFile, startServer: startServer),
+    home: ManagerDesktop(
+      databaseFile: databaseFile,
+      startServer: startServer,
+      inposGateway: inposGateway,
+    ),
   );
 }
 
 class ManagerDesktop extends StatefulWidget {
-  const ManagerDesktop({super.key, this.databaseFile, this.startServer = true});
+  const ManagerDesktop({
+    super.key,
+    this.databaseFile,
+    this.startServer = true,
+    this.inposGateway,
+  });
+  final InposGateway? inposGateway;
   final String? databaseFile;
   final bool startServer;
   @override
@@ -101,6 +114,8 @@ class ManagerDesktop extends StatefulWidget {
 
 class _ManagerDesktopState extends State<ManagerDesktop> {
   late final PosStore store;
+  late final InposPayments inpos;
+  bool terminalBusy = false;
   late final ReceiptPrinter receiptPrinter;
   late final PosLanServer lan;
   late final QrMenuAutoSync qrSync;
@@ -137,6 +152,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
   void initState() {
     super.initState();
     store = PosStore(databaseFile: widget.databaseFile);
+    inpos = InposPayments(store, widget.inposGateway ?? UnavailableInpos());
     lan = PosLanServer(store);
     receiptPrinter = ReceiptPrinter(store);
     qrSync = QrMenuAutoSync(store);
@@ -391,7 +407,10 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     if (incoming.isEmpty) return;
     seenNotices.addAll(incoming.map((n) => '${n['id']}'));
     setState(() => latestNotice = incoming.last);
-    if (store.read().data['settings']?['soundAlerts'] != false)
+    if (store.read().data['settings']?['soundAlerts'] != false &&
+        incoming.any(
+          (n) => ['Yeni sipariş', 'Ek sipariş'].contains(n['action']),
+        ))
       unawaited(playOrderAlert());
   }
 
@@ -565,6 +584,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       context: context,
       builder: (ctx) => PaymentEntryDialog(
         dueCents: due,
+        inposReady: inpos.gateway.ready && guestId == null,
         orderNumber: displayOrderNumber(order),
         guestName: guestName ?? '',
       ),
@@ -572,6 +592,34 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     if (!mounted) return;
     if (result == null) return;
     final (amountCents, methodName, receivedCents) = result;
+    if (methodName == 'inPOS m530') {
+      if (terminalBusy) return;
+      terminalBusy = true;
+      _notify('inPOS sonucu bekleniyor; kartı cihazda okutun.');
+      try {
+        final reply = await inpos.pay(
+          order['id'] as int,
+          amountCents,
+          'pos_${DateTime.now().microsecondsSinceEpoch}',
+        );
+        if (!mounted) return;
+        if (reply.status == TerminalStatus.approved) {
+          _notify('inPOS ödemesi onaylandı');
+          await _offerReceipt(order['id'] as int);
+        } else
+          _notify(
+            reply.status == TerminalStatus.unknown
+                ? 'Sonuç belirsiz. Tekrar tahsil etmeyin; işlemi sorgulayın.'
+                : 'inPOS: ${reply.status.name}',
+            error: true,
+          );
+      } catch (e) {
+        if (mounted) _notify('$e', error: true);
+      } finally {
+        terminalBusy = false;
+      }
+      return;
+    }
     final confirmed = await confirmAction(
       context,
       'Ödemeyi Onayla',
@@ -605,21 +653,26 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     if (ok) {
       _notify('Ödeme kaydedildi · ${formatTry(amountCents)}');
       if (!mounted) return;
-      final print = await confirmAction(
-        context,
-        'Fiş yazdırılsın mı?',
-        'Bu ödeme için hesap özeti yazdırabilirsiniz. Mali fiş inPOS cihazından alınır.',
-        confirm: 'Evet · Yazdır',
-      );
-      if (print)
-        _edit(
-          (data) => queuePaymentReceipt(
-            data,
-            mutableOrder(data, order['id'] as int)!,
-            requestId: 'pc_${DateTime.now().microsecondsSinceEpoch}',
-          ),
-        );
+      await _offerReceipt(order['id'] as int);
     }
+  }
+
+  Future<void> _offerReceipt(int orderId) async {
+    if (!mounted) return;
+    final print = await confirmAction(
+      context,
+      'Fiş yazdırılsın mı?',
+      'Bu ödeme için hesap özeti yazdırabilirsiniz. Mali fiş inPOS cihazından alınır.',
+      confirm: 'Evet · Yazdır',
+    );
+    if (print)
+      _edit(
+        (data) => queuePaymentReceipt(
+          data,
+          mutableOrder(data, orderId)!,
+          requestId: 'pc_${DateTime.now().microsecondsSinceEpoch}',
+        ),
+      );
   }
 
   void _closeTable(Json order) {
@@ -1336,6 +1389,33 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                 ),
               ],
             ),
+            if (o['terminalPending'] != null) ...[
+              const Text(
+                'Terminal sonucu bekleniyor. Yeniden ödeme başlatmayın.',
+              ),
+              OutlinedButton(
+                onPressed: !inpos.gateway.ready || terminalBusy
+                    ? null
+                    : () async {
+                        terminalBusy = true;
+                        try {
+                          final reply = await inpos.reconcile(
+                            '${o['terminalPending']}',
+                          );
+                          if (mounted) {
+                            _notify('inPOS: ${reply.status.name}');
+                            if (reply.status == TerminalStatus.approved)
+                              await _offerReceipt(id);
+                          }
+                        } catch (e) {
+                          if (mounted) _notify('$e', error: true);
+                        } finally {
+                          terminalBusy = false;
+                        }
+                      },
+                child: const Text('Terminal Sonucunu Sorgula'),
+              ),
+            ],
             if (split.isNotEmpty) ...[
               const Divider(height: 24),
               const Text(

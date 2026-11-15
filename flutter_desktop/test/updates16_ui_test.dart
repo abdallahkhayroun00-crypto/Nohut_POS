@@ -19,7 +19,7 @@ void main() {
       expect(find.text('Kasayı Aç'), findsNothing);
       expect(find.text('Kasayı Kapat'), findsNothing);
       await helpers.click(t, 'Raporlar');
-      for (final tab in ['Tahsilat', 'Ürünler', 'Özet']) {
+      for (final tab in ['Tahsilat', 'Ürünler', 'Mutabakat', 'Özet']) {
         await helpers.click(t, tab);
         expect(t.takeException(), isNull);
       }

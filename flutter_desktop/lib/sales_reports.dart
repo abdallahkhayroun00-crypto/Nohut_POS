@@ -100,6 +100,14 @@ class _SalesReportsState extends State<SalesReports> {
       final old = products[r.product] ?? (0, 0);
       products[r.product] = (old.$1 + r.quantity, old.$2 + r.amount);
     }
+    final finance =
+        asMaps((widget.state['integrations'] as Map?)?['settlements'])
+            .where(
+              (r) =>
+                  includes('${r['stamp']}') &&
+                  (source == 'Tümü' || r['source'] == source),
+            )
+            .toList();
     final sorted = products.entries.toList()
       ..sort((a, b) => b.value.$2.compareTo(a.value.$2));
     return Column(
@@ -194,7 +202,7 @@ class _SalesReportsState extends State<SalesReports> {
         Wrap(
           spacing: 8,
           children: [
-            for (final name in ['Özet', 'Tahsilat', 'Ürünler'])
+            for (final name in ['Özet', 'Tahsilat', 'Ürünler', 'Mutabakat'])
               ChoiceChip(
                 label: Text(name),
                 selected: tab == name,
@@ -332,6 +340,43 @@ class _SalesReportsState extends State<SalesReports> {
                       title: Text(e.key),
                       subtitle: Text('${e.value.$1} adet'),
                       trailing: Text(formatTry(e.value.$2)),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        if (tab == 'Mutabakat')
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    'Geçmiş platform kayıtları · Yalnızca görüntüleme',
+                  ),
+                  const SizedBox(height: 14),
+                  FilledButton.icon(
+                    onPressed: () => export(
+                      'nohut-mutabakat',
+                      '\uFEFF${[
+                        ['Sipariş', 'Kaynak', 'Brüt', 'İade', 'Komisyon', 'Net', 'Ödeme emri', 'Durum', 'Tarih'],
+                        ...finance.map((r) => [r['orderId'], r['source'], r['gross'], r['refund'], r['commission'], r['net'], r['paymentOrderId'], r['paymentStatus'], r['stamp']]),
+                      ].map((r) => r.map(csvCell).join(',')).join('\r\n')}\r\n',
+                    ),
+                    icon: const Icon(Icons.download),
+                    label: const Text('Mutabakat CSV'),
+                  ),
+                  if (finance.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.all(25),
+                      child: Text('Bu dönemde mutabakat kaydı yok.'),
+                    ),
+                  for (final r in finance)
+                    ListTile(
+                      title: Text('${r['source']} · ${r['paymentOrderId']}'),
+                      subtitle: Text('${r['paymentStatus']}'),
+                      trailing: Text(formatTry(cents(r['net']))),
                     ),
                 ],
               ),

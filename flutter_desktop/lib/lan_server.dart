@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'staff_commands.dart';
 import 'pos_logic.dart';
-import 'operations.dart';
 import 'pos_store.dart';
 
 /// Native Flutter Windows HTTP server for employee phones. No Python process.

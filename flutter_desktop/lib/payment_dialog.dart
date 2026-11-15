@@ -8,7 +8,9 @@ class PaymentEntryDialog extends StatefulWidget {
     required this.dueCents,
     required this.orderNumber,
     this.guestName = '',
+    this.inposReady = false,
   });
+  final bool inposReady;
   final int dueCents;
   final String orderNumber, guestName;
   @override
@@ -59,6 +61,7 @@ class _PaymentEntryDialogState extends State<PaymentEntryDialog> {
               items: [
                 'Nakit',
                 'Kart',
+                if (widget.inposReady) 'inPOS m530',
               ].map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
               onChanged: (m) => setState(() {
                 method = m!;

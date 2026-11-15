@@ -205,7 +205,20 @@ Json submitStaffAction(PosStore store, Json payload) {
       default:
         throw const FormatException('İşlem desteklenmiyor');
     }
-    recordStaffNotice(s, order, requestId, by, '${action}');
+    recordStaffNotice(
+      s,
+      order,
+      requestId,
+      by,
+      const {
+            'editLine': 'Ürün düzenlendi',
+            'move': 'Masa taşındı',
+            'status': 'Servis durumu güncellendi',
+            'pay': 'Ödeme alındı',
+            'close': 'Hesap kapatıldı',
+          }[action] ??
+          '$action',
+    );
     return {
       'ok': true,
       'orderId': orderId,
