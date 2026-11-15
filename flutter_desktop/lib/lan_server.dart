@@ -191,7 +191,15 @@ class PosLanServer extends ChangeNotifier {
               'totalCents': orderTotalCents(o),
               'paidCents': orderPaidCents(o),
               'dueCents': orderDueCents(o),
-              'guestChecks': o['guestChecks'] ?? [],
+              'guestChecks': [
+                for (final guest in asMaps(o['guestChecks']))
+                  {
+                    ...guest,
+                    'balanceCents': guestBalance(o, guest['id'] as int),
+                  },
+              ],
+              'readyAt': o['readyAt'],
+              'deliveredAt': o['deliveredAt'],
             },
           )
           .toList(),

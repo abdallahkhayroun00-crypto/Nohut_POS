@@ -1,5 +1,6 @@
 import 'pos_logic.dart';
 import 'operations.dart';
+import 'product_customization.dart';
 
 /// Applied only inside revision-checked SQLite commands.
 void editLocalLine(
@@ -8,8 +9,9 @@ void editLocalLine(
   int quantity,
   String note,
   List<String> removed,
-  String by,
-) {
+  String by, {
+  int? adjustmentCents,
+}) {
   requireLocal(order);
   requireOpen(order);
   if (quantity < 0 ||
@@ -34,11 +36,20 @@ void editLocalLine(
   final line = (batch['lines'] as List)[index] as Map;
   if (line['voided'] == true || line['correction'] == true)
     throw const FormatException('Ürün iptal edilmiş');
+  final customized = Map<String, dynamic>.from(line);
+  applyLineCustomization(
+    customized,
+    adjustmentCents ?? (line['adjustmentCents'] as int? ?? 0),
+    note,
+    removed,
+  );
   final previous = line['qty'] as int,
       nextTotal =
-          orderTotalCents(order) + cents(line['price']) * (quantity - previous);
+          orderTotalCents(order) -
+          cents(line['price']) * previous +
+          cents(customized['price']) * quantity;
   if (nextTotal < orderPaidCents(order) ||
-      allocatedTo(order, key) > cents(line['price']) * quantity) {
+      allocatedTo(order, key) > cents(customized['price']) * quantity) {
     throw const FormatException(
       'Önce fazla tahsilatı iade edin veya kişi payını azaltın',
     );
@@ -49,6 +60,7 @@ void editLocalLine(
     'by': by,
     'at': utcNow(),
   });
+  line.addAll(customized);
   line['qty'] = quantity;
   line['voided'] = quantity == 0;
   line['note'] = note;
@@ -126,4 +138,15 @@ void recordStaffNotice(
     'at': utcNow(),
   });
   if (notices.length > 100) notices.removeRange(0, notices.length - 100);
+}
+
+void recordMixedPayment(Json o, int total, int cash, {int? guestId}) {
+  requireLocal(o);
+  requireOpen(o);
+  if (cash <= 0 || cash >= total)
+    throw const FormatException('Nakit ve Kart kısmı sıfırdan büyük olmalı');
+  final trial = copyJson(o);
+  recordPayment(trial, cash, 'Nakit', receivedCents: cash, guestId: guestId);
+  recordPayment(trial, total - cash, 'Kart', guestId: guestId);
+  o.addAll(trial);
 }

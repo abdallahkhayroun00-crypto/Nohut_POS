@@ -66,26 +66,25 @@ class _OrderComposerState extends State<_OrderComposer> {
   }
 
   Future<void> customize(Product p, [Json? line]) async {
-    final v = await askFields(context, p.name, [
-      ('Ürün notu', '${line?['note'] ?? ''}'),
-      (
-        'Çıkarılacak malzemeler (virgülle)',
-        (line?['removed'] as List? ?? []).join(', '),
-      ),
-    ]);
-    if (v == null || !mounted) return;
+    final original =
+        line ??
+        <String, dynamic>{
+          'name': p.name,
+          'price': p.price,
+          'note': '',
+          'removed': <String>[],
+        };
+    final result = await customizeLineDialog(
+      context,
+      original,
+      description: p.descriptionTr ?? '',
+    );
+    if (result == null || !mounted) return;
     if (line == null) {
-      add(p, note: v[0], removed: v[1]);
-      return;
-    }
-    setState(() {
-      line['note'] = v[0];
-      line['removed'] = v[1]
-          .split(',')
-          .map((s) => s.trim())
-          .where((s) => s.isNotEmpty)
-          .toList();
-    });
+      add(p);
+      setState(() => draft.last.addAll(result));
+    } else
+      setState(() => line.addAll(result));
   }
 
   Widget productList() {
@@ -464,7 +463,11 @@ class _OrderComposerState extends State<_OrderComposer> {
                           !product.active ||
                           product.price == null;
                       if (product != null && product.price != null) {
-                        line['price'] = product.price;
+                        line['basePrice'] = product.price;
+                        line['price'] = fromCents(
+                          cents(product.price) +
+                              (line['adjustmentCents'] as int? ?? 0),
+                        );
                         line['name'] = product.name;
                       }
                     }
