@@ -67,127 +67,145 @@ Future<Json?> customizeLineDialog(
   BuildContext context,
   Json line, {
   String description = '',
-}) {
-  final note = TextEditingController(text: '${line['note'] ?? ''}');
-  final extra = TextEditingController(
-    text:
-        (line['adjustmentCents'] is int
-                ? (line['adjustmentCents'] as int) / 100
-                : 0)
-            .toString(),
-  );
-  final qty = TextEditingController(text: '${line['qty'] ?? 1}');
-  final other = TextEditingController();
-  final removed = Set<String>.from(
-    (line['removed'] as List? ?? []).cast<String>(),
-  );
-  final choices = {
-    ...ingredientChoices('${line['name']}', description),
-    ...removed,
-  };
+}) => showDialog<Json>(
+  context: context,
+  builder: (_) => _CustomizationDialog(line: line, description: description),
+);
+
+class _CustomizationDialog extends StatefulWidget {
+  const _CustomizationDialog({required this.line, required this.description});
+  final Json line;
+  final String description;
+  @override
+  State<_CustomizationDialog> createState() => _CustomizationDialogState();
+}
+
+class _CustomizationDialogState extends State<_CustomizationDialog> {
+  Json get line => widget.line;
+  String get description => widget.description;
+  late final TextEditingController note, extra, qty, other;
+  late final Set<String> removed, choices;
   String? error;
-  return showDialog<Json>(
-    context: context,
-    builder: (ctx) => StatefulBuilder(
-      builder: (ctx, set) => AlertDialog(
-        title: Text('${line['name']}'),
-        content: SizedBox(
-          width: 480,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                TextField(
-                  controller: qty,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    labelText: 'Adet (0 = kaldır)',
-                  ),
-                ),
-                const Text('Çıkarmak için dokunun'),
-                Wrap(
-                  spacing: 6,
-                  children: [
-                    for (final name in choices)
-                      FilterChip(
-                        label: Text(name),
-                        selected: removed.contains(name),
-                        onSelected: (v) => set(
-                          () => v ? removed.add(name) : removed.remove(name),
-                        ),
-                      ),
-                  ],
-                ),
-                TextField(
-                  controller: other,
-                  decoration: const InputDecoration(
-                    labelText: 'Diğer çıkarılacaklar (virgülle)',
-                  ),
-                ),
-                TextField(
-                  key: const ValueKey('customization-note'),
-                  controller: note,
-                  maxLines: 3,
-                  maxLength: 500,
-                  decoration: const InputDecoration(
-                    labelText: 'Değişiklik / özel istek notu',
-                  ),
-                ),
-                TextField(
-                  controller: extra,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    signed: true,
-                    decimal: true,
-                  ),
-                  decoration: const InputDecoration(
-                    labelText: 'Her adet için fark (₺): + ekle / − indir',
-                  ),
-                ),
-                if (error != null)
-                  Text(error!, style: const TextStyle(color: Colors.red)),
-              ],
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Vazgeç'),
-          ),
-          FilledButton(
-            onPressed: () {
-              try {
-                final raw = extra.text.trim();
-                final negative = raw.startsWith('-');
-                final amount =
-                    parseMoney(raw.replaceFirst(RegExp(r'^[+−-]'), '')) *
-                    (negative || raw.startsWith('−') ? -1 : 1);
-                final count = int.tryParse(qty.text);
-                if (count == null || count < 0 || count > 1000)
-                  throw const FormatException('Adet 0–1000');
-                final result = copyJson(line)..['qty'] = count;
-                applyLineCustomization(result, amount, note.text, [
-                  ...removed,
-                  ...other.text
-                      .split(',')
-                      .map((s) => s.trim())
-                      .where((s) => s.isNotEmpty),
-                ]);
-                Navigator.pop(ctx, result);
-              } catch (e) {
-                set(() => error = '$e');
-              }
-            },
-            child: const Text('Kaydet'),
-          ),
-        ],
-      ),
-    ),
-  ).whenComplete(() {
+  @override
+  void initState() {
+    super.initState();
+    note = TextEditingController(text: '${line['note'] ?? ''}');
+    extra = TextEditingController(
+      text:
+          (line['adjustmentCents'] is int
+                  ? (line['adjustmentCents'] as int) / 100
+                  : 0)
+              .toString(),
+    );
+    qty = TextEditingController(text: '${line['qty'] ?? 1}');
+    other = TextEditingController();
+    removed = Set<String>.from((line['removed'] as List? ?? []).cast<String>());
+    choices = {
+      ...ingredientChoices('${line['name']}', description),
+      ...removed,
+    };
+  }
+
+  @override
+  void dispose() {
     note.dispose();
     extra.dispose();
-    other.dispose();
     qty.dispose();
-  });
+    other.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: Text('${line['name']}'),
+    content: SizedBox(
+      width: 480,
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextField(
+              controller: qty,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(labelText: 'Adet (0 = kaldır)'),
+            ),
+            const Text('Çıkarmak için dokunun'),
+            Wrap(
+              spacing: 6,
+              children: [
+                for (final name in choices)
+                  FilterChip(
+                    label: Text(name),
+                    selected: removed.contains(name),
+                    onSelected: (v) => setState(
+                      () => v ? removed.add(name) : removed.remove(name),
+                    ),
+                  ),
+              ],
+            ),
+            TextField(
+              controller: other,
+              decoration: const InputDecoration(
+                labelText: 'Diğer çıkarılacaklar (virgülle)',
+              ),
+            ),
+            TextField(
+              key: const ValueKey('customization-note'),
+              controller: note,
+              maxLines: 3,
+              maxLength: 500,
+              decoration: const InputDecoration(
+                labelText: 'Değişiklik / özel istek notu',
+              ),
+            ),
+            TextField(
+              controller: extra,
+              keyboardType: const TextInputType.numberWithOptions(
+                signed: true,
+                decimal: true,
+              ),
+              decoration: const InputDecoration(
+                labelText: 'Her adet için fark (₺): + ekle / − indir',
+              ),
+            ),
+            if (error != null)
+              Text(error!, style: const TextStyle(color: Colors.red)),
+          ],
+        ),
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text('Vazgeç'),
+      ),
+      FilledButton(
+        onPressed: () {
+          try {
+            final raw = extra.text.trim();
+            final negative = raw.startsWith('-');
+            final amount =
+                parseMoney(raw.replaceFirst(RegExp(r'^[+−-]'), '')) *
+                (negative || raw.startsWith('−') ? -1 : 1);
+            final count = int.tryParse(qty.text);
+            if (count == null || count < 0 || count > 1000)
+              throw const FormatException('Adet 0–1000');
+            final result = copyJson(line)..['qty'] = count;
+            applyLineCustomization(result, amount, note.text, [
+              ...removed,
+              ...other.text
+                  .split(',')
+                  .map((s) => s.trim())
+                  .where((s) => s.isNotEmpty),
+            ]);
+            Navigator.pop(context, result);
+          } catch (e) {
+            setState(() => error = '$e');
+          }
+        },
+        child: const Text('Kaydet'),
+      ),
+    ],
+  );
 }

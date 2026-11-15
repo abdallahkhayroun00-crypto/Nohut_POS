@@ -62,6 +62,7 @@ void main() {
             productLines: [row()],
           );
       s['orders'] = [o];
+      s['nextId'] = 1201;
       splitEqually(o, 2);
       expect(guestBalance(o, 1), 14000);
       recordMixedPayment(o, 14000, 4000, guestId: 1);
