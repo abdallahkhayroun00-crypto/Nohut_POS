@@ -54,8 +54,6 @@ void main() {
   testWidgets(
     'centered receipt preview and staff overview render actual modifiers and counts',
     (t) async {
-      final semantics = t.ensureSemantics();
-      addTearDown(semantics.dispose);
       t.view.physicalSize = const Size(1440, 1000);
       t.view.devicePixelRatio = 1;
       addTearDown(t.view.resetPhysicalSize);
@@ -94,8 +92,13 @@ void main() {
       expect(find.textContaining('Bassil · 1 sipariş'), findsOneWidget);
 
       expect(
-        find.bySemanticsLabel(
-          RegExp('HESAP ÖZETİ.*Not: Ek sembusek', dotAll: true),
+        find.byWidgetPredicate(
+          (w) =>
+              w is Semantics &&
+              RegExp(
+                'HESAP ÖZETİ.*Not: Ek sembusek',
+                dotAll: true,
+              ).hasMatch(w.properties.label ?? ''),
         ),
         findsOneWidget,
       );
