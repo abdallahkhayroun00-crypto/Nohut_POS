@@ -96,7 +96,10 @@ jobs:
       - name: Upload receipt artwork proof
         uses: actions/upload-artifact@v4
         with:
-          name: NohutFalafel-Receipt-Brand-Proof
-          path: flutter_desktop/build/receipt-brand-proof.png
+          name: NohutFalafel-Brand-Previews
+          path: |
+            flutter_desktop/build/receipt-brand-proof.png
+            flutter_desktop/build/desktop-brand-proof.png
+            flutter_desktop/build/staff-brand-*.png
           if-no-files-found: error
           retention-days: 14

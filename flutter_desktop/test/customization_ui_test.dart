@@ -69,7 +69,7 @@ void main() {
         productLines: [line],
         cashier: 'Bassil',
       );
-      await t.runAsync(()=>renderReceipt(billText(o),settings:const {'paperWidthMm':56,'printableWidthMm':48,'receiptLogoMm':18}));
+      await t.runAsync(()=>renderReceipt(billText(o),settings:const {'paperWidthMm':56,'printableWidthMm':48,'receiptLogoMm':18}).timeout(const Duration(seconds:30)));
       await t.pumpWidget(
         MaterialApp(
           home: Scaffold(

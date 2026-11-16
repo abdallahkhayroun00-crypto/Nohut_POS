@@ -916,6 +916,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                   child: Tooltip(
                     message: item.$3,
                     child: ListTile(
+                      key:ValueKey('navigation-${item.$1}'),
                       contentPadding: EdgeInsets.symmetric(
                         horizontal: condensed ? 15 : 12,
                       ),

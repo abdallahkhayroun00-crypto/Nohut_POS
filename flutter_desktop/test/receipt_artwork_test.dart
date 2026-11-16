@@ -52,7 +52,7 @@ void main() {
     (t) async {
       final text =
           'NOHUT FALAFEL · HESAP ÖZETİ\nMALİ FİŞ DEĞİLDİR\n#0001 · Masa · 3\n16.11.2026 12:00\n1 × 2’li Menü · 300,00 ₺\n  Falafel Dürüm · Çıkar: Domates\n  Falafel Dürüm · Sos ayrı\n  Küçük Ayran\n  Küçük Ayran\n${List.generate(18, (i) => '1 × Ispanaklı Sembusek · 40,00 ₺').join('\n')}\nToplam 1020,00 ₺\nNet tahsilat 1020,00 ₺\nKalan 0,00 ₺';
-      final art = await t.runAsync(() => renderReceipt(text));
+      final art = await t.runAsync(() => renderReceipt(text).timeout(const Duration(seconds:30)));
       expect(art, isNotNull);
       expect(art!.width, 384);
       expect(art.height, greaterThan(960));

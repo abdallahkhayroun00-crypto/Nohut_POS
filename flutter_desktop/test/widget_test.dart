@@ -77,7 +77,7 @@ void main() {
           expect(find.text(label), findsAtLeastNWidgets(2));
         }
         for(final tab in ['Personel','Bağlantı']) {
-          await tester.ensureVisible(find.text(tab).first);await tester.tap(find.text(tab).first);await tester.pumpAndSettle();expect(tester.takeException(),isNull,reason:tab);
+          await tester.ensureVisible(find.text(tab).first);await tester.tap(find.text(tab).last);await tester.pumpAndSettle();expect(tester.takeException(),isNull,reason:tab);
         }
         await tester.ensureVisible(find.text('Siparişler').first);await tester.tap(find.text('Siparişler').first);await tester.pumpAndSettle();
         await tester.tap(find.text('Online Siparişler').first);await tester.pumpAndSettle();
@@ -90,7 +90,7 @@ void main() {
           'Senkronizasyon',
           'Siparişler',
         ]) {
-          await tester.tap(find.text(tab).first);
+          await tester.tap(find.text(tab).last);
           await tester.pumpAndSettle();
           expect(tester.takeException(), isNull, reason: tab);
         }
