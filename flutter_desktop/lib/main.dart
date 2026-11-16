@@ -916,7 +916,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                   child: Tooltip(
                     message: item.$3,
                     child: ListTile(
-                      key:ValueKey('navigation-${item.$1}'),
+                      key: ValueKey('navigation-${item.$1}'),
                       contentPadding: EdgeInsets.symmetric(
                         horizontal: condensed ? 15 : 12,
                       ),
@@ -1897,15 +1897,17 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                             color: lan.running ? Colors.green : Colors.orange,
                           ),
                           const SizedBox(width: 10),
-                          Expanded(child:Text(
-                            lan.running
-                                ? 'Personel bağlantısı hazır'
-                                : 'Personel bağlantısı kapalı',
-                            style: const TextStyle(
-                              fontSize: 17,
-                              fontWeight: FontWeight.w800,
-                            )),
-                          )),
+                          Expanded(
+                            child: Text(
+                              lan.running
+                                  ? 'Personel bağlantısı hazır'
+                                  : 'Personel bağlantısı kapalı',
+                              style: const TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
                         ],
                       ),
                       const SizedBox(height: 16),
