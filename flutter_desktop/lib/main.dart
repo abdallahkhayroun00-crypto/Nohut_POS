@@ -1141,7 +1141,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                     ),
                     SizedBox(height: 6),
                     Text(
-                      'Windows Flutter · Lokal SQLite · Telefon siparişleri QR üzerinden',
+                      'Masalar, siparişler ve ödemeler tek yerde.',
                       style: TextStyle(color: Color(0xffbddec6), fontSize: 12),
                     ),
                   ],
@@ -1210,7 +1210,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                 const SizedBox(height: 13),
                 if (todayOrders.isEmpty)
                   const Text(
-                    'Bugün henüz sipariş yok. Eski kayıtlar Tüm Siparişler bölümünde saklanır.',
+                    'Bugün henüz sipariş yok. Eski kayıtlar Siparişler bölümünde saklanır.',
                   ),
                 for (final o in todayOrders.reversed.take(6))
                   ListTile(
