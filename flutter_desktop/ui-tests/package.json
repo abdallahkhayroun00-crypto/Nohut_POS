@@ -1,1 +1,1 @@
-{"name":"nohut-staff-ux-checks","private":true,"version":"1.0.0","scripts":{"test":"node staff-browser.cjs"},"devDependencies":{"playwright":"1.62.1"}}
+{"name":"nohut-staff-ux-checks","private":true,"version":"1.0.0","scripts":{"test":"node staff-browser.cjs && node campaign-browser.cjs"},"devDependencies":{"playwright":"1.62.1"}}

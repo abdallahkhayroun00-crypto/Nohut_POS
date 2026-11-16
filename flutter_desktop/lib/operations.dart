@@ -1,5 +1,6 @@
 import 'order_reporting.dart';
 import 'pos_logic.dart';
+import 'campaign_menu.dart';
 
 String utcNow() => DateTime.now().toUtc().toIso8601String();
 bool isPlatform(Json o) => ['Yemeksepeti', 'Trendyol Go'].contains(o['source']);
@@ -50,12 +51,10 @@ int guestBalance(Json o, int id) {
     (g) => g['id'] == id,
     orElse: () => throw const FormatException('Kişi bulunamadı'),
   );
-  final allocated = asMaps(
-    g['allocations'],
-  ).fold<int>(0, (n, a) => n + (a['cents'] as int));
-  final paid = asMaps(
-    o['payments'],
-  ).fold<int>(0, (n, p) => n + paymentGuestCents(p, id));
+  final allocated = asMaps(g['allocations'])
+      .fold<int>(0, (n, a) => n + (a['cents'] as int));
+  final paid = asMaps(o['payments'])
+      .fold<int>(0, (n, p) => n + paymentGuestCents(p, id));
   return allocated - paid;
 }
 
@@ -70,9 +69,8 @@ void addGuest(Json o, String name) {
   if (name.trim().isEmpty) throw const FormatException('Kişi adı gerekli');
   final guests = o.putIfAbsent('guestChecks', () => <dynamic>[]) as List;
   final id =
-      asMaps(
-        guests,
-      ).fold<int>(0, (n, g) => (g['id'] as int) > n ? g['id'] as int : n) +
+      asMaps(guests)
+          .fold<int>(0, (n, g) => (g['id'] as int) > n ? g['id'] as int : n) +
       1;
   guests.add({'id': id, 'name': name.trim(), 'allocations': <dynamic>[]});
 }
@@ -171,6 +169,11 @@ String billText(Json o) => [
   istanbulStamp(o['createdAt']),
   for (final l in checkLines(o)) ...[
     '${l.line['qty']} × ${l.line['name']} · ${formatTry(l.total)}',
+    for (final component in asMaps(l.line['components']))
+      '  ' +
+          component['name'].toString() +
+          ' · ' +
+          campaignComponentDetails(component),
     if ('${l.line['note'] ?? ''}'.isNotEmpty) 'Not: ${l.line['note']}',
     if ((l.line['removed'] as List? ?? []).isNotEmpty)
       'Çıkar: ${(l.line['removed'] as List).join(', ')}',
@@ -226,9 +229,8 @@ void refundPayment(Json o, int index, int amount, String reason) {
   if (amount > paymentNetCents(p)) {
     throw const FormatException('Tahsilattan fazla iade edilemez');
   }
-  if (asMaps(
-        p['guestAllocations'],
-      ).fold<int>(0, (n, a) => n + cents(a['amount'])) >
+  if (asMaps(p['guestAllocations'])
+          .fold<int>(0, (n, a) => n + cents(a['amount'])) >
       paymentNetCents(p) - amount) {
     throw const FormatException('Önce geçmiş ödeme kişi eşlemesini azaltın');
   }
@@ -282,9 +284,8 @@ void cancelProduct(
   l['voided'] = l['qty'] == 0;
   final batches = o['batches'] as List;
   final id =
-      asMaps(
-        batches,
-      ).fold<int>(0, (n, b) => (b['id'] as int) > n ? b['id'] as int : n) +
+      asMaps(batches)
+          .fold<int>(0, (n, b) => (b['id'] as int) > n ? b['id'] as int : n) +
       1;
   batches.add({
     'id': id,
@@ -365,20 +366,14 @@ void closePickup(Json o) {
   o['closed'] = true;
 }
 
-Json cashBook(Json s) =>
-    (s.putIfAbsent(
-              'cashBook',
-              () => {
-                'sessions': <dynamic>[],
-                'movements': <dynamic>[],
-                'next': 1,
-              },
-            )
-            as Map)
-        .cast<String, dynamic>();
-Json? activeCash(Json s) => asMaps(
-  cashBook(s)['sessions'],
-).where((c) => c['closedAt'] == null).firstOrNull;
+Json cashBook(Json s) => (s.putIfAbsent(
+  'cashBook',
+  () => {'sessions': <dynamic>[], 'movements': <dynamic>[], 'next': 1},
+) as Map).cast<String, dynamic>();
+Json? activeCash(Json s) =>
+    asMaps(cashBook(s)['sessions'])
+        .where((c) => c['closedAt'] == null)
+        .firstOrNull;
 void openCash(Json s, int opening) {
   if (opening < 0 || activeCash(s) != null) {
     throw const FormatException('Açık kasa var veya tutar geçersiz');
@@ -573,9 +568,8 @@ void saveEmployee(Json state, int? id, String name, String role, bool active) {
   }
   if (id == null) {
     id =
-        asMaps(
-          employees,
-        ).fold<int>(0, (n, e) => (e['id'] as int) > n ? e['id'] as int : n) +
+        asMaps(employees)
+            .fold<int>(0, (n, e) => (e['id'] as int) > n ? e['id'] as int : n) +
         1;
     employees.add({
       'id': id,
@@ -599,9 +593,9 @@ String receiptText(Json state, Json job) {
   if (o == null) throw const FormatException('Sipariş bulunamadı');
   final batch = snapshot is Map && snapshot['batch'] is Map
       ? Map<String, dynamic>.from(snapshot['batch'] as Map)
-      : asMaps(
-          o['batches'],
-        ).where((b) => b['id'] == job['batchId']).firstOrNull;
+      : asMaps(o['batches'])
+            .where((b) => b['id'] == job['batchId'])
+            .firstOrNull;
   if (batch == null) throw const FormatException('Mutfak partisi bulunamadı');
   return [
     'NOHUT FALAFEL · MUTFAK',
@@ -612,6 +606,6 @@ String receiptText(Json state, Json job) {
       if (l['voided'] != true || l['correction'] == true)
         '${l['qty']} × ${l['name'] ?? l['productKey']}\n'
             '${(l['removed'] as List? ?? []).isEmpty ? '' : 'Çıkar: ${(l['removed'] as List).join(', ')}\n'}'
-            '${l['note'] ?? ''}',
+            '${l['note'] ?? ''}\n' + asMaps(l['components']).map((c)=>c['name'].toString()+' · '+campaignComponentDetails(c)).join('\n'),
   ].join('\n');
 }

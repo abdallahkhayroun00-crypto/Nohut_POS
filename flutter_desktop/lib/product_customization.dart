@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+
 import 'pos_logic.dart';
+import 'campaign_menu.dart';
 import 'operations_ui.dart';
 
 List<String> ingredientChoices(String name, [String description = '']) {
@@ -48,8 +50,9 @@ void applyLineCustomization(
   List<String> removed,
 ) {
   final base = cents(line['basePrice'] ?? line['price']);
+  final componentDelta = componentExtraCents(line);
   if (adjustment.abs() > 10000000 ||
-      base + adjustment < 0 ||
+      base + adjustment + componentDelta < 0 ||
       note.length > 500 ||
       removed.length > 50 ||
       removed.any((s) => s.length > 100))
@@ -58,7 +61,7 @@ void applyLineCustomization(
     throw const FormatException('Fiyat farkının nedenini not edin');
   line['basePrice'] = fromCents(base);
   line['adjustmentCents'] = adjustment;
-  line['price'] = fromCents(base + adjustment);
+  line['price'] = fromCents(base + adjustment + componentDelta);
   line['note'] = note;
   line['removed'] = removed;
 }
@@ -67,14 +70,24 @@ Future<Json?> customizeLineDialog(
   BuildContext context,
   Json line, {
   String description = '',
+  bool fixedQuantity = false,
 }) => showDialog<Json>(
   context: context,
-  builder: (_) => _CustomizationDialog(line: line, description: description),
+  builder: (_) => _CustomizationDialog(
+    line: line,
+    description: description,
+    fixedQuantity: fixedQuantity,
+  ),
 );
 
 class _CustomizationDialog extends StatefulWidget {
-  const _CustomizationDialog({required this.line, required this.description});
+  const _CustomizationDialog({
+    required this.line,
+    required this.description,
+    this.fixedQuantity = false,
+  });
   final Json line;
+  final bool fixedQuantity;
   final String description;
   @override
   State<_CustomizationDialog> createState() => _CustomizationDialogState();
@@ -86,9 +99,11 @@ class _CustomizationDialogState extends State<_CustomizationDialog> {
   late final TextEditingController note, extra, qty, other;
   late final Set<String> removed, choices;
   String? error;
+  late List<Json> components;
   @override
   void initState() {
     super.initState();
+    components = asMaps(line['components']).map(copyJson).toList();
     note = TextEditingController(text: '${line['note'] ?? ''}');
     extra = TextEditingController(
       text:
@@ -125,8 +140,27 @@ class _CustomizationDialogState extends State<_CustomizationDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            for (var i = 0; i < components.length; i++)
+              ListTile(
+                title: Text(
+                  (i + 1).toString() + '. ' + components[i]['name'].toString(),
+                ),
+                subtitle: Text(campaignComponentDetails(components[i])),
+                trailing: const Icon(Icons.tune),
+                onTap: () async {
+                  final result = await customizeLineDialog(
+                    context,
+                    components[i],
+                    description: campaignText(components[i]['description']),
+                    fixedQuantity: true,
+                  );
+                  if (result != null && mounted)
+                    setState(() => components[i] = result);
+                },
+              ),
             TextField(
               controller: qty,
+              enabled: !widget.fixedQuantity,
               keyboardType: TextInputType.number,
               decoration: const InputDecoration(labelText: 'Adet (0 = kaldır)'),
             ),
@@ -192,6 +226,11 @@ class _CustomizationDialogState extends State<_CustomizationDialog> {
             if (count == null || count < 0 || count > 1000)
               throw const FormatException('Adet 0–1000');
             final result = copyJson(line)..['qty'] = count;
+            if (components.isNotEmpty)
+              result['components'] = mergeCampaignComponents(
+                asMaps(line['components']),
+                components,
+              );
             applyLineCustomization(result, amount, note.text, [
               ...removed,
               ...other.text

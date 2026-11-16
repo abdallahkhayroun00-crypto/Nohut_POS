@@ -1,6 +1,7 @@
 import 'order_reporting.dart';
 import 'product_customization.dart';
 import 'pos_logic.dart';
+import 'campaign_menu.dart';
 import 'operations.dart';
 import 'order_actions.dart';
 import 'pos_store.dart';
@@ -40,7 +41,7 @@ Json submitStaffOrder(PosStore store, Json payload) {
     }
     final lines = <Json>[];
     for (final row in asMaps(payload['lines'])) {
-      final p = asMaps(s['localMenu'])
+      final p = orderingProducts(s)
           .where(
             (p) =>
                 p['id'] == row['productId'] &&
@@ -62,6 +63,13 @@ Json submitStaffOrder(PosStore store, Json payload) {
         throw const FormatException('Not çok uzun');
       }
       lines.add({
+        if (p['campaignId'] != null) ...{
+          'campaignId': p['campaignId'],
+          'components': mergeCampaignComponents(
+            asMaps(p['components']),
+            row['components'],
+          ),
+        },
         'productId': p['id'],
         'productKey': p['name'],
         'name': p['name'],
@@ -207,6 +215,7 @@ Json submitStaffAction(PosStore store, Json payload) {
           (payload['removed'] as List).cast<String>(),
           by,
           adjustmentCents: payload['adjustmentCents'] as int?,
+          components: payload['components'],
         );
       case 'splitEqual':
         if (payload['count'] is! int)

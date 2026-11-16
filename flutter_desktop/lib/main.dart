@@ -23,6 +23,7 @@ import 'payment_dialog.dart';
 import 'floor_plan.dart';
 import 'lan_server.dart';
 import 'pos_logic.dart';
+import 'campaign_menu.dart';
 import 'pos_store.dart';
 import 'operations.dart';
 import 'operations_ui.dart';
@@ -51,7 +52,9 @@ class Product {
     this.descriptionTr,
     this.displayNameAr,
     this.displayNameEn,
+    this.campaignData,
   });
+  final Json? campaignData;
   final int id;
   final String name;
   final String category;
@@ -338,19 +341,21 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     _showOrder(order['id'] as int);
   }
 
-  List<Product> _currentProducts() => asMaps(store.read().data['localMenu'])
-      .where((p) => p['active'] != false)
-      .map(
-        (p) => Product(
-          id: p['id'] as int,
-          name: p['name'] as String,
-          category: p['category'] as String,
-          price: (p['price'] as num?)?.toDouble(),
-          image: p['image'] as String?,
-          descriptionTr: (p['description'] as Map?)?['tr'] as String?,
-        ),
-      )
-      .toList();
+  List<Product> _currentProducts() =>
+      orderingProducts(store.read().data)
+          .where((p) => p['active'] != false)
+          .map(
+            (p) => Product(
+              id: p['id'] as int,
+              campaignData: p['campaignId'] != null ? p : null,
+              name: p['name'] as String,
+              category: p['category'] as String,
+              price: (p['price'] as num?)?.toDouble(),
+              image: p['image'] as String?,
+              descriptionTr: (p['description'] as Map?)?['tr'] as String?,
+            ),
+          )
+          .toList();
 
   Future<void> _composer({int? table, int? addToOrder}) async {
     menu = _currentProducts();
@@ -420,9 +425,9 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
 
   void _staffActivity() {
     if (!mounted) return;
-    final incoming = asMaps(
-      store.read().data['staffNotices'],
-    ).where((n) => !seenNotices.contains('${n['id']}')).toList();
+    final incoming = asMaps(store.read().data['staffNotices'])
+        .where((n) => !seenNotices.contains('${n['id']}'))
+        .toList();
     if (incoming.isEmpty) return;
     seenNotices.addAll(incoming.map((n) => '${n['id']}'));
     setState(() => latestNotice = incoming.last);
@@ -569,6 +574,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                                 'Kasa (PC)',
                                 adjustmentCents:
                                     result['adjustmentCents'] as int,
+                                components: result['components'],
                               ),
                             );
                         },
@@ -1201,9 +1207,9 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
   Widget _tables(Json db) {
     final order = selectedOrder == null
         ? null
-        : asMaps(
-            db['orders'],
-          ).where((o) => o['id'] == selectedOrder).firstOrNull;
+        : asMaps(db['orders'])
+              .where((o) => o['id'] == selectedOrder)
+              .firstOrNull;
     final positions = floorEditing
         ? draftFloor
         : positionsFromJson(db['floorPositions']);
@@ -1461,9 +1467,8 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
               for (final guest in split)
                 Builder(
                   builder: (context) {
-                    final allocated = asMaps(
-                      guest['allocations'],
-                    ).fold<int>(0, (sum, a) => sum + (a['cents'] as int));
+                    final allocated = asMaps(guest['allocations'])
+                        .fold<int>(0, (sum, a) => sum + (a['cents'] as int));
                     final rest = guestBalance(
                       o,
                       guest['id'] as int,
@@ -1593,9 +1598,10 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       final text =
           '${o['id']} ${displayOrderNumber(o)} ${o['numberDay'] ?? ''} ${o['table'] ?? ''} ${o['customer']} ${activeLines(o).map((l) => l['name']).join(' ')}'
               .toLowerCase();
-      final staff = asMaps(
-        o['batches'],
-      ).map((b) => b['staff']).join(' ').toLowerCase();
+      final staff = asMaps(o['batches'])
+          .map((b) => b['staff'])
+          .join(' ')
+          .toLowerCase();
       return (orderFilter == 'Tümü' || o['source'] == orderFilter) &&
           text.contains(orderSearch.toLowerCase()) &&
           staff.contains(orderStaff.toLowerCase()) &&
@@ -1742,9 +1748,9 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     platformDemo ??= {...emptyPosState(), 'localMenu': asMaps(db['localMenu'])};
     seedPlatformMenu(
       platformDemo!,
-      asMaps(
-        platformDemo!['localMenu'],
-      ).where((p) => p['active'] != false).toList(),
+      asMaps(platformDemo!['localMenu'])
+          .where((p) => p['active'] != false)
+          .toList(),
     );
     return PlatformPanel(
       state: platformDemo!,
