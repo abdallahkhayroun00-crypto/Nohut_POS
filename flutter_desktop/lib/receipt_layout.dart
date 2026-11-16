@@ -108,7 +108,7 @@ Future<ReceiptArtwork> _renderReceipt(String text, {Map? settings}) async {
     ),
     textDirection: TextDirection.ltr,
     textAlign: align,
-  )..layout(maxWidth: width);
+  )..layout(minWidth: width, maxWidth: width);
   void line(
     String value, {
     double size = 23,

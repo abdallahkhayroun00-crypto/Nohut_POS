@@ -35,7 +35,9 @@ void main() {
         final heading = FontLoader(
           NohutBrand.headingFont,
         )..addFont(rootBundle.load('assets/brand/fonts/BreeSerif-Regular.ttf'));
-        await Future.wait([body.load(), heading.load()]);
+        final icons = FontLoader('MaterialIcons')
+          ..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'));
+        await Future.wait([body.load(), heading.load(), icons.load()]);
       });
       await t.pumpWidget(
         RepaintBoundary(
@@ -55,6 +57,13 @@ void main() {
       );
       expect(find.text('Personel Yönetimi'), findsNothing);
       expect(find.text('Online Siparişler'), findsNothing);
+      await t.runAsync(
+        () => precacheImage(
+          const AssetImage('assets/brand/nohut-logo.webp'),
+          t.element(find.byType(NohutFalafelApp)),
+        ),
+      );
+      await t.pumpAndSettle();
       final boundary = t.renderObject<RenderRepaintBoundary>(
         find.byKey(const ValueKey('brand-capture')),
       );

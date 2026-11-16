@@ -66,6 +66,21 @@ void main() {
     expect(art.png.sublist(0, 8), [137, 80, 78, 71, 13, 10, 26, 10]);
     expect(art.rgba.sublist(0, 384 * 24 * 4), everyElement(255));
     expect(art.rgba.sublist(art.rgba.length - 384 * 24 * 4), everyElement(255));
+    var left = art.width, right = 0;
+    for (var y = 190; y < 230; y++)
+      for (var x = 0; x < art.width; x++) {
+        final pixel = (y * art.width + x) * 4;
+        if (art.rgba[pixel] < 128) {
+          if (x < left) left = x;
+          if (x > right) right = x;
+        }
+      }
+    expect(right, greaterThan(left));
+    expect(
+      ((left + right) / 2 - (art.width - 1) / 2).abs(),
+      lessThan(4),
+      reason: 'HESAP ÖZETİ must be centered on the physical print width',
+    );
     final file = File('build/receipt-brand-proof.png');
     file.parent.createSync(recursive: true);
     file.writeAsBytesSync(art.png);
