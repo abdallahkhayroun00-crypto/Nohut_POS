@@ -1,3 +1,6 @@
+import 'package:flutter/services.dart';
+import 'package:nohut_falafel_desktop/brand.dart';
+
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -48,6 +51,12 @@ void main() {
     expect(bytes.sublist(at), [27, 100, 3, 27, 97, 0]);
   });
   test('real logo and offline brand fonts render complete long Turkish receipt with white safety margins', () async {
+    final body = FontLoader(NohutBrand.bodyFont)
+      ..addFont(rootBundle.load('assets/brand/fonts/Barlow-Regular.ttf'))
+      ..addFont(rootBundle.load('assets/brand/fonts/Barlow-Bold.ttf'));
+    final heading = FontLoader(NohutBrand.headingFont)
+      ..addFont(rootBundle.load('assets/brand/fonts/BreeSerif-Regular.ttf'));
+    await Future.wait([body.load(), heading.load()]);
     final text =
         'NOHUT FALAFEL · HESAP ÖZETİ\nMALİ FİŞ DEĞİLDİR\n#0001 · Masa · 3\n16.11.2026 12:00\n1 × 2’li Menü · 300,00 ₺\n  Falafel Dürüm · Çıkar: Domates\n  Falafel Dürüm · Sos ayrı\n  Küçük Ayran\n  Küçük Ayran\n${List.generate(18, (i) => '1 × Ispanaklı Sembusek · 40,00 ₺').join('\n')}\nToplam 1020,00 ₺\nNet tahsilat 1020,00 ₺\nKalan 0,00 ₺';
     final art = await renderReceipt(text).timeout(const Duration(seconds: 30));
