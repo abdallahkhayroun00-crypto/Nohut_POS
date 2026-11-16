@@ -1120,11 +1120,20 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
           ),
           child: Row(
             children: [
-              Image.asset(
-                'assets/brand/nohut-logo.webp',
+              Container(
                 width: 64,
                 height: 64,
-                semanticLabel: 'Nohut Falafel',
+                padding: const EdgeInsets.all(5),
+                decoration: const BoxDecoration(
+                  color: NohutBrand.cream,
+                  shape: BoxShape.circle,
+                ),
+                child: Image.asset(
+                  'assets/brand/nohut-logo.webp',
+                  width: 54,
+                  height: 54,
+                  semanticLabel: 'Nohut Falafel',
+                ),
               ),
               const SizedBox(width: 16),
               const Expanded(
