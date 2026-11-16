@@ -1897,15 +1897,15 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                             color: lan.running ? Colors.green : Colors.orange,
                           ),
                           const SizedBox(width: 10),
-                          Text(
+                          Expanded(child:Text(
                             lan.running
                                 ? 'Personel bağlantısı hazır'
                                 : 'Personel bağlantısı kapalı',
                             style: const TextStyle(
                               fontSize: 17,
                               fontWeight: FontWeight.w800,
-                            ),
-                          ),
+                            )),
+                          )),
                         ],
                       ),
                       const SizedBox(height: 16),
@@ -1995,10 +1995,10 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                       const SizedBox(height: 10),
                       const Text(
                         '1. Laptop ve personel telefonları aynı Wi-Fi\n'
-                        '2. Flutter uygulaması açık ve sunucu çalışır\n'
+                        '2. Nohut programını açık tutun\n'
                         '3. Personel QR kodunu tarar, adını seçer\n'
-                        '4. 5 masanın siparişleri ortak SQLite veritabanına kaydedilir\n'
-                        '5. Kasa ve ödeme yalnızca laptopta',
+                        '4. Siparişler telefon ve kasada birlikte görünür\n'
+                        '5. Ödeme ve teslim durumunu aynı hesaptan takip edin',
                         style: TextStyle(height: 1.8, fontSize: 12),
                       ),
                       const SizedBox(height: 11),

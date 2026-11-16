@@ -60,7 +60,7 @@ class _ReceiptPreviewState extends State<ReceiptPreview> {
             if (!snapshot.hasData)
               return const Padding(
                 padding: EdgeInsets.all(24),
-                child: Center(child: CircularProgressIndicator()),
+                child: Text('Fiş hazırlanıyor…', textAlign: TextAlign.center),
               );
             return Image.memory(
               snapshot.data!.png,

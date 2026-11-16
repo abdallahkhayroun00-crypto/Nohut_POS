@@ -1,4 +1,5 @@
 import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nohut_falafel_desktop/main.dart';
@@ -76,11 +77,17 @@ void main() {
           expect(tester.takeException(), isNull, reason: label);
           expect(find.text(label), findsAtLeastNWidgets(2));
         }
-        for(final tab in ['Personel','Bağlantı']) {
-          await tester.ensureVisible(find.text(tab).first);await tester.tap(find.text(tab).last);await tester.pumpAndSettle();expect(tester.takeException(),isNull,reason:tab);
+        for (final tab in ['Personel', 'Bağlantı']) {
+          await tester.ensureVisible(find.text(tab).first);
+          await tester.tap(find.text(tab).last);
+          await tester.pumpAndSettle();
+          expect(tester.takeException(), isNull, reason: tab);
         }
-        await tester.ensureVisible(find.text('Siparişler').first);await tester.tap(find.text('Siparişler').first);await tester.pumpAndSettle();
-        await tester.tap(find.text('Online Siparişler').first);await tester.pumpAndSettle();
+        await tester.ensureVisible(find.text('Siparişler').first);
+        await tester.tap(find.text('Siparişler').first);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Online Siparişler').first);
+        await tester.pumpAndSettle();
         for (final tab in [
           'Mağaza',
           'Menü',
@@ -100,4 +107,3 @@ void main() {
     );
   }
 }
-

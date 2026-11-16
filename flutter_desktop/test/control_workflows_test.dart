@@ -1,4 +1,5 @@
 import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nohut_falafel_desktop/brand.dart';
@@ -11,6 +12,7 @@ import 'package:nohut_falafel_desktop/pos_logic.dart';
 import 'package:nohut_falafel_desktop/pos_store.dart';
 import 'package:nohut_falafel_desktop/payment_dialog.dart';
 import 'package:nohut_falafel_desktop/qr_menu_sync.dart';
+
 import 'qr_catalog_fixtures.dart';
 
 Json fixture() {
@@ -207,8 +209,14 @@ void main() {
             OrderOperations(order: asMaps(s['orders']).single, edit: edit),
       );
       await tap(t, 'Hesap Özeti Önizle');
-      expect(find.text('HESAP ÖZETİ'), findsOneWidget);
-      expect(find.text('TOPLAM'), findsOneWidget);
+      expect(
+        find.byWidgetPredicate(
+          (w) =>
+              w is Semantics &&
+              (w.properties.label ?? '').contains('Toplam 140,00 ₺'),
+        ),
+        findsOneWidget,
+      );
       await tap(t, 'Kapat');
       await tap(t, 'Kişi Ekle');
       await enter(t, 'Ad', 'Ali');
@@ -457,9 +465,8 @@ void main() {
       await tap(t, 'Değerlendirmeler');
       await tap(t, 'Test: APPROVED');
       expect(
-        asMaps(
-          platformHub(key.currentState!.data)['reviews'],
-        ).single['replyStatus'],
+        asMaps(platformHub(key.currentState!.data)['reviews'])
+            .single['replyStatus'],
         'APPROVED',
       );
       expect(t.takeException(), isNull);
@@ -505,9 +512,8 @@ void main() {
       await tap(t, 'Senkronizasyon');
       await tap(t, 'Test: Başarılı Sonuç');
       expect(
-        asMaps(
-          platformHub(key.currentState!.data)['menu']['Trendyol Go'],
-        ).first['price'],
+        asMaps(platformHub(key.currentState!.data)['menu']['Trendyol Go'])
+            .first['price'],
         150,
       );
       await tap(t, 'Mağaza');
@@ -518,9 +524,8 @@ void main() {
       await tap(t, 'Senkronizasyon');
       await tap(t, 'Test: Başarılı Sonuç');
       expect(
-        asMaps(
-          storeConfig(key.currentState!.data, 'Trendyol Go')['hours'],
-        ).last['start'],
+        asMaps(storeConfig(key.currentState!.data, 'Trendyol Go')['hours'])
+            .last['start'],
         '12:00',
       );
       await tap(t, 'Faturalar');
@@ -535,9 +540,8 @@ void main() {
       await tap(t, 'Senkronizasyon');
       await tap(t, 'Test: Başarılı Sonuç');
       expect(
-        asMaps(
-          platformHub(key.currentState!.data)['invoices'],
-        ).single['status'],
+        asMaps(platformHub(key.currentState!.data)['invoices'])
+            .single['status'],
         'Silindi (demo)',
       );
       await tap(t, 'İade Talepleri');
@@ -559,9 +563,8 @@ void main() {
       await tap(t, '#${displayOrderNumber(o)} Örnek Finans Kaydı Al');
       await tap(t, 'Örnek Ödeme Emri Eşleştir');
       expect(
-        asMaps(
-          platformHub(key.currentState!.data)['settlements'],
-        ).single['paymentStatus'],
+        asMaps(platformHub(key.currentState!.data)['settlements'])
+            .single['paymentStatus'],
         'Eşleşti (demo)',
       );
       expect(

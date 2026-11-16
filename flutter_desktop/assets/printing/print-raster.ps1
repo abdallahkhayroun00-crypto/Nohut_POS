@@ -1,5 +1,6 @@
 param([Parameter(Mandatory=$true)][string]$JobPath)
 $ErrorActionPreference='Stop'
+$ProgressPreference='SilentlyContinue'
 Add-Type -AssemblyName System.Drawing
 $job=Get-Content -LiteralPath $JobPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $name=[string]$job.printer
@@ -8,7 +9,8 @@ if($installed -notcontains $name -and $name -eq 'XP-237B'){
   $found=@($installed|Where-Object {$_ -match '(?i)XP[ -]?237B(?:$|[^A-Z0-9])'})
   if($found.Count -eq 1){$name=[string]$found[0]}else{throw 'Select the exact installed XP-237B printer name.'}
 }
-if($installed -notcontains $name -or $name -match 'Print to PDF|XPS Document'){throw 'Select the physical receipt printer.'}
+if($installed -notcontains $name){throw 'Yazıcı yüklü değil (not installed). Windows yazıcı adını kontrol edin.'}
+if($name -match 'Print to PDF|XPS Document'){throw 'Fiziksel fiş yazıcısını seçin.'}
 if($job.transport -eq 'escpos'){
   Add-Type -TypeDefinition @'
 using System;

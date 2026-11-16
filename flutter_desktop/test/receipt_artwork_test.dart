@@ -47,31 +47,25 @@ void main() {
     expect(decoded.sublist(1, 299), everyElement(0));
     expect(bytes.sublist(at), [27, 100, 3, 27, 97, 0]);
   });
-  testWidgets(
-    'real logo and offline brand fonts render complete long Turkish receipt with white safety margins',
-    (t) async {
-      final text =
-          'NOHUT FALAFEL · HESAP ÖZETİ\nMALİ FİŞ DEĞİLDİR\n#0001 · Masa · 3\n16.11.2026 12:00\n1 × 2’li Menü · 300,00 ₺\n  Falafel Dürüm · Çıkar: Domates\n  Falafel Dürüm · Sos ayrı\n  Küçük Ayran\n  Küçük Ayran\n${List.generate(18, (i) => '1 × Ispanaklı Sembusek · 40,00 ₺').join('\n')}\nToplam 1020,00 ₺\nNet tahsilat 1020,00 ₺\nKalan 0,00 ₺';
-      final art = await t.runAsync(() => renderReceipt(text).timeout(const Duration(seconds:30)));
-      expect(art, isNotNull);
-      expect(art!.width, 384);
-      expect(art.height, greaterThan(960));
-      expect(art.png.sublist(0, 8), [137, 80, 78, 71, 13, 10, 26, 10]);
-      expect(art.rgba.sublist(0, 384 * 24 * 4), everyElement(255));
-      expect(
-        art.rgba.sublist(art.rgba.length - 384 * 24 * 4),
-        everyElement(255),
-      );
-      final file = File('build/receipt-brand-proof.png');
-      file.parent.createSync(recursive: true);
-      file.writeAsBytesSync(art.png);
-      expect(
-        identical(await renderReceipt(text), art),
-        true,
-        reason: 'preview and spool reuse identical artwork',
-      );
-      final payload = escPosReceipt(art);
-      expect(payload.length, greaterThan(art.width * art.height ~/ 8));
-    },
-  );
+  test('real logo and offline brand fonts render complete long Turkish receipt with white safety margins', () async {
+    final text =
+        'NOHUT FALAFEL · HESAP ÖZETİ\nMALİ FİŞ DEĞİLDİR\n#0001 · Masa · 3\n16.11.2026 12:00\n1 × 2’li Menü · 300,00 ₺\n  Falafel Dürüm · Çıkar: Domates\n  Falafel Dürüm · Sos ayrı\n  Küçük Ayran\n  Küçük Ayran\n${List.generate(18, (i) => '1 × Ispanaklı Sembusek · 40,00 ₺').join('\n')}\nToplam 1020,00 ₺\nNet tahsilat 1020,00 ₺\nKalan 0,00 ₺';
+    final art = await renderReceipt(text).timeout(const Duration(seconds: 30));
+    expect(art, isNotNull);
+    expect(art.width, 384);
+    expect(art.height, greaterThan(960));
+    expect(art.png.sublist(0, 8), [137, 80, 78, 71, 13, 10, 26, 10]);
+    expect(art.rgba.sublist(0, 384 * 24 * 4), everyElement(255));
+    expect(art.rgba.sublist(art.rgba.length - 384 * 24 * 4), everyElement(255));
+    final file = File('build/receipt-brand-proof.png');
+    file.parent.createSync(recursive: true);
+    file.writeAsBytesSync(art.png);
+    expect(
+      identical(await renderReceipt(text), art),
+      true,
+      reason: 'preview and spool reuse identical artwork',
+    );
+    final payload = escPosReceipt(art);
+    expect(payload.length, greaterThan(art.width * art.height ~/ 8));
+  });
 }
