@@ -224,7 +224,6 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
         final p = item as Map;
         return Product(
           id: p['id'] as int,
-          campaignData: p['campaignId'] != null ? p : null,
           name: p['name'] as String,
           category: p['category'] as String,
           price: p['price'] is num ? (p['price'] as num).toDouble() : null,
@@ -348,6 +347,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
           .map(
             (p) => Product(
               id: p['id'] as int,
+              campaignData: p['campaignId'] != null ? p : null,
               name: p['name'] as String,
               category: p['category'] as String,
               price: (p['price'] as num?)?.toDouble(),
