@@ -113,7 +113,7 @@ List<Json> mergeCampaignComponents(List<Json> baseline, Object? requested) {
         row['note'] != null && row['note'] is! String ||
         row['removed'] is! List ||
         (row['removed'] as List).any(
-          (r) => r is! String || (r as String).length > 100,
+          (r) => r is! String || r.length > 100,
         ))
       throw const FormatException('Kampanya bileşeni geçersiz');
     final delta = row['adjustmentCents'] as int? ?? 0;
@@ -155,7 +155,12 @@ Json prepareCampaignLine(Json state, Json request) {
     asMaps(product['components']),
     request['components'],
   );
+  if (request['adjustmentCents'] != null && request['adjustmentCents'] is! int)
+    throw const FormatException('Fiyat farkı geçersiz');
   final delta = request['adjustmentCents'] as int? ?? 0;
+  if (delta.abs() > 10000000 ||
+      delta != 0 && (request['note'] ?? '').toString().trim().isEmpty)
+    throw const FormatException('Farkın nedenini not edin');
   final total =
       cents(product['price']) +
       delta +

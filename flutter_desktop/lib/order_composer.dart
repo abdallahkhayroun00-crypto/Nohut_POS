@@ -478,6 +478,13 @@ class _OrderComposerState extends State<_OrderComposer> {
                           !product.active ||
                           product.price == null;
                       if (product != null && product.price != null) {
+                        if(product.campaignData!=null) {
+                          try {
+                            line['components']=mergeCampaignComponents(asMaps(product.campaignData!['components']),line['components']);
+                          } on FormatException {
+                            line['_unavailable']=true;
+                          }
+                        }
                         line['basePrice'] = product.price;
                         line['price'] = fromCents(
                           cents(product.price) +
