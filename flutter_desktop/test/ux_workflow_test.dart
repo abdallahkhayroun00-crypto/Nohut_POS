@@ -204,6 +204,9 @@ void main() {
       expect(find.text('Kasayı Aç'), findsNothing);
       expect(find.text('Kasayı Kapat'), findsNothing);
       expect(find.text('Yazdırma Kuyruğu'), findsNothing);
+      await tester.ensureVisible(find.text('Siparişler').first);
+      await tester.tap(find.text('Siparişler').first);
+      await tester.pumpAndSettle();
       await tester.ensureVisible(find.text('Online Siparişler').first);
       await tester.tap(find.text('Online Siparişler').first);
       await tester.pumpAndSettle();
@@ -218,3 +221,4 @@ void main() {
     },
   );
 }
+

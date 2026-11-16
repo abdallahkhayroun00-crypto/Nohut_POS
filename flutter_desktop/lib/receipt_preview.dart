@@ -1,152 +1,90 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 import 'operations.dart';
 import 'pos_logic.dart';
-import 'campaign_menu.dart';
-import 'order_reporting.dart';
+import 'receipt_layout.dart';
 
-class ReceiptPreview extends StatelessWidget {
+/// The same artwork is submitted to the physical printer.
+class ReceiptPreview extends StatefulWidget {
   const ReceiptPreview({super.key, required this.order, this.settings});
   final Json order;
   final Map? settings;
   @override
+  State<ReceiptPreview> createState() => _ReceiptPreviewState();
+}
+
+class _ReceiptPreviewState extends State<ReceiptPreview> {
+  late Future<ReceiptArtwork> artwork;
+  late String signature;
+  String? configurationError;
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  void _load() {
+    signature = jsonEncode([widget.order, widget.settings]);
+    try {
+      ReceiptDimensions(widget.settings);
+      configurationError = null;
+      artwork = renderReceipt(
+        billText(widget.order),
+        settings: widget.settings,
+      );
+    } on FormatException catch (e) {
+      configurationError = e.message;
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant ReceiptPreview oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (signature != jsonEncode([widget.order, widget.settings])) _load();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final paper = (settings?['paperWidthMm'] as num? ?? 56).toDouble(),
-        content = (settings?['printableWidthMm'] as num? ?? 48)
-            .toDouble()
-            .clamp(30, paper - 2),
-        offset = (settings?['receiptOffsetMm'] as num? ?? 0).toDouble();
-    final left = ((paper - content) / 2 + offset)
-        .clamp(1, paper - content - 1)
-        .toDouble();
-    Widget row(String label, String value, {bool bold = false}) => Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: bold ? 18 : 14,
-                fontWeight: bold ? FontWeight.bold : FontWeight.normal,
-              ),
-            ),
-          ),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: bold ? 18 : 14,
-              fontWeight: bold ? FontWeight.bold : FontWeight.normal,
-            ),
-          ),
-        ],
-      ),
-    );
-    return DefaultTextStyle(
-      style: const TextStyle(
-        fontFamily: 'Arial',
-        fontSize: 14,
-        color: Colors.black,
-      ),
+    if (configurationError != null)
+      return Padding(
+        padding: const EdgeInsets.all(16),
+        child: Text('Ayarlar → Yazıcı: $configurationError'),
+      );
+    final cfg = ReceiptDimensions(widget.settings);
+    final left = (cfg.paper - cfg.width) / 2 + cfg.offset;
+    return Semantics(
+      label: 'HESAP ÖZETİ\n${billText(widget.order)}\nAfiyet olsun!',
+      image: true,
       child: Container(
-        width: paper * 5,
+        width: cfg.paper * 5,
         color: Colors.white,
-        padding: EdgeInsets.fromLTRB(
-          left * 5,
-          20,
-          (paper - content - left) * 5,
-          20,
+        padding: EdgeInsets.only(
+          left: left * 5,
+          right: (cfg.paper - cfg.width - left) * 5,
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Center(
-              child: Image.asset(
-                'assets/printing/nohut-receipt-logo.png',
-                width: (settings?['receiptLogoMm'] as num? ?? 18) * 5,
-              ),
-            ),
-            const SizedBox(height: 10),
-            const Text(
-              'HESAP ÖZETİ',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 12),
-            row(
-              '#${displayOrderNumber(order)}',
-              order['source'] == 'Masa' ? 'Masa ${order['table']}' : 'Gel-Al',
-            ),
-            Text(istanbulStamp(order['createdAt'])),
-            const Divider(color: Colors.black),
-            for (final l in checkLines(order)) ...[
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 5),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SizedBox(
-                      width: 25,
-                      child: Text(
-                        '${l.line['qty']}',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                    Expanded(
-                      child: Text(
-                        '${l.line['name']}',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    SizedBox(
-                      width: 89,
-                      child: Text(
-                        formatTry(l.total),
-                        textAlign: TextAlign.right,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              for (final component in asMaps(l.line['components']))
-                Text(
-                  component['name'].toString() +
-                      ' · ' +
-                      campaignComponentDetails(component),
-                ),
-              if ('${l.line['note'] ?? ''}'.isNotEmpty)
-                Text('Not: ${l.line['note']}'),
-              if ((l.line['removed'] as List? ?? []).isNotEmpty)
-                Text('Çıkar: ${(l.line['removed'] as List).join(', ')}'),
-              if ((l.line['adjustmentCents'] as int? ?? 0) != 0)
-                Text(
-                  'Adet farkı: ${formatTry(l.line['adjustmentCents'] as int)}',
-                ),
-            ],
-            const Divider(color: Colors.black),
-            row('TOPLAM', formatTry(orderTotalCents(order)), bold: true),
-            row('Ödenen', formatTry(orderPaidCents(order))),
-            row('Kalan', formatTry(orderDueCents(order))),
-            for (final payment in asMaps(order['payments']))
-              Text(
-                '${payment['method']} · ${formatTry(paymentNetCents(payment))} · ${payment['guestName'] ?? ''}',
-              ),
-            const Divider(color: Colors.black),
-            const Text(
-              'Afiyet olsun!',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 19),
-            ),
-            const SizedBox(height: 10),
-            const Text(
-              'MALİ FİŞ DEĞİLDİR',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 11),
-            ),
-          ],
+        child: FutureBuilder<ReceiptArtwork>(
+          future: artwork,
+          builder: (context, snapshot) {
+            if (snapshot.hasError)
+              return Padding(
+                padding: const EdgeInsets.all(12),
+                child: Text('Fiş hazırlanamadı: ${snapshot.error}'),
+              );
+            if (!snapshot.hasData)
+              return const Padding(
+                padding: EdgeInsets.all(24),
+                child: Text('Fiş hazırlanıyor…', textAlign: TextAlign.center),
+              );
+            return Image.memory(
+              snapshot.data!.png,
+              key: const ValueKey('receipt-artwork'),
+              width: cfg.width * 5,
+              fit: BoxFit.fitWidth,
+              excludeFromSemantics: true,
+            );
+          },
         ),
       ),
     );

@@ -4,6 +4,7 @@ import 'package:nohut_falafel_desktop/product_customization.dart';
 import 'package:nohut_falafel_desktop/receipt_preview.dart';
 import 'package:nohut_falafel_desktop/service_metrics.dart';
 import 'package:nohut_falafel_desktop/pos_logic.dart';
+
 import 'updates16_test.dart' show fixture, row;
 
 void main() {
@@ -89,9 +90,18 @@ void main() {
       );
       await t.pumpAndSettle();
       expect(find.textContaining('Bassil · 1 sipariş'), findsOneWidget);
-      expect(find.text('TOPLAM'), findsOneWidget);
-      expect(find.text('300,00 ₺'), findsWidgets);
-      expect(find.text('Not: Ek sembusek'), findsOneWidget);
+
+      expect(
+        find.byWidgetPredicate(
+          (w) =>
+              w is Semantics &&
+              RegExp(
+                'HESAP ÖZETİ.*Not: Ek sembusek',
+                dotAll: true,
+              ).hasMatch(w.properties.label ?? ''),
+        ),
+        findsOneWidget,
+      );
       expect(t.takeException(), isNull);
     },
   );

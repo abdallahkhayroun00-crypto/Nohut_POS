@@ -132,6 +132,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
   String businessDay = istanbulDay(DateTime.now());
   List<Product> menu = const [];
   String page = 'dashboard';
+  bool onlineOrders = false;
   int? selectedTable, selectedOrder;
   bool floorEditing = false;
   Map<int, Rect> draftFloor = {...floorDefaults};
@@ -145,12 +146,9 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
   static const sections = [
     ('dashboard', Icons.dashboard_outlined, 'Genel Bakış'),
     ('tables', Icons.table_restaurant_outlined, 'Masalar'),
-    ('orders', Icons.receipt_long_outlined, 'Tüm Siparişler'),
-    ('online', Icons.delivery_dining_outlined, 'Online Siparişler'),
+    ('orders', Icons.receipt_long_outlined, 'Siparişler'),
     ('payments', Icons.point_of_sale_outlined, 'Kasa & Ödemeler'),
-    ('staff', Icons.people_alt_outlined, 'Personel Yönetimi'),
     ('reports', Icons.bar_chart_outlined, 'Raporlar'),
-    ('wifi', Icons.wifi_tethering_outlined, 'Personel Wi-Fi'),
     ('settings', Icons.settings_outlined, 'Ayarlar'),
   ];
 
@@ -257,7 +255,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       printerSettings.putIfAbsent('receiptOffsetMm', () => 0);
       printerSettings.putIfAbsent('receiptLogoMm', () => 18);
       printerSettings.putIfAbsent('printableWidthMm', () => 48);
-      printerSettings['receiptScale'] = 'shrink';
+      printerSettings['receiptScale'] = 'actual';
       if ('${printerSettings['printerName'] ?? ''}'.trim().isEmpty) {
         printerSettings['printerName'] = 'XP-237B';
       }
@@ -323,6 +321,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
   void _switch(String next) {
     setState(() {
       page = next;
+      if (next == 'orders') onlineOrders = false;
       selectedOrder = null;
       if (next != 'tables') selectedTable = null;
       floorEditing = false;
@@ -336,6 +335,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       page = order['source'] == 'Masa' ? 'tables' : 'orders';
       orderFrom = orderTo = '${order['numberDay'] ?? ''}';
       orderFilter = 'Tümü';
+      onlineOrders = false;
       orderSearch = orderStatus = orderStaff = '';
     });
     _showOrder(order['id'] as int);
@@ -783,8 +783,10 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                               Text(
                                 sections.firstWhere((s) => s.$1 == page).$3,
                                 style: const TextStyle(
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.w800,
+                                  fontSize: 24,
+                                  fontFamily: NohutBrand.headingFont,
+                                  color: NohutBrand.green,
+                                  fontWeight: FontWeight.w400,
                                 ),
                               ),
                             ],
@@ -796,9 +798,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          lan.running
-                              ? 'Yerel sunucu açık'
-                              : 'Yerel sunucu kapalı',
+                          lan.running ? 'Personel bağlı' : 'Bağlantı kapalı',
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w800,
@@ -863,11 +863,18 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
           padding: const EdgeInsets.fromLTRB(14, 24, 14, 20),
           child: Row(
             children: [
-              Image.asset(
-                'assets/brand/nohut-logo.webp',
-                width: 44,
-                height: 44,
-                semanticLabel: 'Nohut Falafel',
+              Container(
+                padding: const EdgeInsets.all(5),
+                decoration: const BoxDecoration(
+                  color: NohutBrand.cream,
+                  shape: BoxShape.circle,
+                ),
+                child: Image.asset(
+                  'assets/brand/nohut-logo.webp',
+                  width: 46,
+                  height: 46,
+                  semanticLabel: 'Nohut Falafel',
+                ),
               ),
               if (!condensed) ...[
                 const SizedBox(width: 10),
@@ -876,15 +883,16 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'NOHUT FALAFEL',
+                        'Nohut Falafel',
                         style: TextStyle(
+                          fontFamily: NohutBrand.headingFont,
                           color: Colors.white,
                           fontSize: 16,
                           fontWeight: FontWeight.w900,
                         ),
                       ),
                       Text(
-                        'WINDOWS İŞLETME PANELİ',
+                        'İŞLETME PANELİ',
                         style: TextStyle(
                           color: Color(0xffb4cebc),
                           fontSize: 9,
@@ -908,6 +916,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                   child: Tooltip(
                     message: item.$3,
                     child: ListTile(
+                      key: ValueKey('navigation-${item.$1}'),
                       contentPadding: EdgeInsets.symmetric(
                         horizontal: condensed ? 15 : 12,
                       ),
@@ -952,7 +961,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
           const Padding(
             padding: EdgeInsets.fromLTRB(18, 0, 18, 24),
             child: Text(
-              'SQLite · Yalnızca güvenilir personel Wi-Fi\nBanka POS / ÖKC / API entegrasyonu yok',
+              'Nohut Falafel · Afiyet olsun',
               style: TextStyle(
                 color: Color(0xffa4c4af),
                 fontSize: 10,
@@ -969,17 +978,34 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       case 'tables':
         return _tables(db);
       case 'orders':
-        return _orders(db);
-      case 'online':
-        return _online(db);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SegmentedButton<bool>(
+              segments: const [
+                ButtonSegment(
+                  value: false,
+                  label: Text('Sipariş Listesi'),
+                  icon: Icon(Icons.receipt_long_outlined),
+                ),
+                ButtonSegment(
+                  value: true,
+                  label: Text('Online Siparişler'),
+                  icon: Icon(Icons.delivery_dining_outlined),
+                ),
+              ],
+              selected: {onlineOrders},
+              onSelectionChanged: (v) =>
+                  setState(() => onlineOrders = v.single),
+            ),
+            const SizedBox(height: 18),
+            onlineOrders ? _online(db) : _orders(db),
+          ],
+        );
       case 'payments':
         return _payments(db);
-      case 'staff':
-        return _staff(db);
       case 'reports':
         return _reports(db);
-      case 'wifi':
-        return _wifi(db);
       case 'settings':
         return _settings(db);
       default:
@@ -1094,11 +1120,20 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
           ),
           child: Row(
             children: [
-              Image.asset(
-                'assets/brand/nohut-logo.webp',
+              Container(
                 width: 64,
                 height: 64,
-                semanticLabel: 'Nohut Falafel',
+                padding: const EdgeInsets.all(5),
+                decoration: const BoxDecoration(
+                  color: NohutBrand.cream,
+                  shape: BoxShape.circle,
+                ),
+                child: Image.asset(
+                  'assets/brand/nohut-logo.webp',
+                  width: 54,
+                  height: 54,
+                  semanticLabel: 'Nohut Falafel',
+                ),
               ),
               const SizedBox(width: 16),
               const Expanded(
@@ -1115,7 +1150,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                     ),
                     SizedBox(height: 6),
                     Text(
-                      'Windows Flutter · Lokal SQLite · Telefon siparişleri QR üzerinden',
+                      'Masalar, siparişler ve ödemeler tek yerde.',
                       style: TextStyle(color: Color(0xffbddec6), fontSize: 12),
                     ),
                   ],
@@ -1184,7 +1219,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                 const SizedBox(height: 13),
                 if (todayOrders.isEmpty)
                   const Text(
-                    'Bugün henüz sipariş yok. Eski kayıtlar Tüm Siparişler bölümünde saklanır.',
+                    'Bugün henüz sipariş yok. Eski kayıtlar Siparişler bölümünde saklanır.',
                   ),
                 for (final o in todayOrders.reversed.take(6))
                   ListTile(
@@ -1620,7 +1655,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _sectionTitle(
-          'Tüm Siparişler',
+          'Siparişler',
           'Varsayılan: Bugün ($businessDay). Geçmiş siparişler tarih filtresiyle açılır.',
           action: FilledButton.icon(
             onPressed: () => _composer(),
@@ -1785,7 +1820,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       children: [
         _sectionTitle(
           'Kasa & Ödemeler',
-          'Bütün ödemeler Kasa (PC) tarafından işlenir. Telefonlarda ödeme ekranı yoktur.',
+          'Nakit, kart ve kişi hesaplarını tek yerden takip edin.',
         ),
         Row(
           children: [
@@ -1849,8 +1884,8 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _sectionTitle(
-          'Personel Wi-Fi · Yerel Sunucu',
-          'Windows Flutter programı laptop üzerinde SQLite ve HTTP sunucusunu başlatır. Personel Chrome QR ile bağlanır.',
+          'Personel Bağlantısı',
+          'Telefonları aynı Wi-Fi ağına bağlayın ve personel QR kodunu okutun.',
         ),
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1871,13 +1906,15 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                             color: lan.running ? Colors.green : Colors.orange,
                           ),
                           const SizedBox(width: 10),
-                          Text(
-                            lan.running
-                                ? 'Local Server çalışıyor'
-                                : 'Local Server kapalı',
-                            style: const TextStyle(
-                              fontSize: 17,
-                              fontWeight: FontWeight.w800,
+                          Expanded(
+                            child: Text(
+                              lan.running
+                                  ? 'Personel bağlantısı hazır'
+                                  : 'Personel bağlantısı kapalı',
+                              style: const TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w800,
+                              ),
                             ),
                           ),
                         ],
@@ -1969,10 +2006,10 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                       const SizedBox(height: 10),
                       const Text(
                         '1. Laptop ve personel telefonları aynı Wi-Fi\n'
-                        '2. Flutter uygulaması açık ve sunucu çalışır\n'
+                        '2. Nohut programını açık tutun\n'
                         '3. Personel QR kodunu tarar, adını seçer\n'
-                        '4. 5 masanın siparişleri ortak SQLite veritabanına kaydedilir\n'
-                        '5. Kasa ve ödeme yalnızca laptopta',
+                        '4. Siparişler telefon ve kasada birlikte görünür\n'
+                        '5. Ödeme ve teslim durumunu aynı hesaptan takip edin',
                         style: TextStyle(height: 1.8, fontSize: 12),
                       ),
                       const SizedBox(height: 11),
@@ -2069,8 +2106,14 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     );
   }
 
-  Widget _settings(Json db) =>
-      SimpleSettings(state: db, edit: _edit, store: store, qrSync: qrSync);
+  Widget _settings(Json db) => SimpleSettings(
+    state: db,
+    edit: _edit,
+    store: store,
+    qrSync: qrSync,
+    staffPanel: _staff(db),
+    wifiPanel: _wifi(db),
+  );
 
   Widget _notice(String text) => Container(
     padding: const EdgeInsets.all(15),
