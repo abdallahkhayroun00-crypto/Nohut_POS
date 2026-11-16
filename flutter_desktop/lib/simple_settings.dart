@@ -1,5 +1,7 @@
 import 'dart:io';
+
 import 'package:flutter/material.dart';
+
 import 'brand.dart';
 import 'pos_logic.dart';
 import 'pos_store.dart';
@@ -15,11 +17,14 @@ class SimpleSettings extends StatefulWidget {
     required this.edit,
     required this.store,
     required this.qrSync,
+    this.staffPanel,
+    this.wifiPanel,
   });
   final Json state;
   final EditState edit;
   final PosStore store;
   final QrMenuAutoSync qrSync;
+  final Widget? staffPanel, wifiPanel;
   @override
   State<SimpleSettings> createState() => _SimpleSettingsState();
 }
@@ -60,7 +65,15 @@ class _SimpleSettingsState extends State<SimpleSettings> {
         Wrap(
           spacing: 8,
           children: [
-            for (final name in ['Genel', 'Menü', 'Yazıcı', 'inPOS', 'Yedek'])
+            for (final name in [
+              'Genel',
+              'Menü',
+              'Yazıcı',
+              if (widget.staffPanel != null) 'Personel',
+              if (widget.wifiPanel != null) 'Bağlantı',
+              'inPOS',
+              'Yedek',
+            ])
               ChoiceChip(
                 label: Text(name),
                 selected: tab == name,
@@ -69,6 +82,8 @@ class _SimpleSettingsState extends State<SimpleSettings> {
           ],
         ),
         const SizedBox(height: 16),
+        if (tab == 'Personel' && widget.staffPanel != null) widget.staffPanel!,
+        if (tab == 'Bağlantı' && widget.wifiPanel != null) widget.wifiPanel!,
         if (tab == 'Genel')
           section(
             'Bildirimler',
@@ -165,9 +180,41 @@ class _SimpleSettingsState extends State<SimpleSettings> {
                 leading: const Icon(Icons.print_outlined),
                 title: Text('${settings['printerName'] ?? 'XP-237B'}'),
                 subtitle: Text(
-                  '${settings['paperWidthMm'] ?? 56} mm · Büyük boyutlu sayfaları daralt · Ortalı hesap özeti',
+                  '${settings['paperWidthMm'] ?? 56} mm kağıt · ${settings['printableWidthMm'] ?? 48} mm baskı · Aynı fiş tasarımı',
                 ),
               ),
+              DropdownButtonFormField<String>(
+                key: ValueKey(
+                  'receipt-transport-${settings['receiptTransport'] ?? 'windows'}',
+                ),
+                initialValue: '${settings['receiptTransport'] ?? 'windows'}',
+                decoration: const InputDecoration(
+                  labelText: 'Yazdırma yöntemi',
+                ),
+                items: const [
+                  DropdownMenuItem(
+                    value: 'windows',
+                    child: Text('Windows · Fiş görseli'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'escpos',
+                    child: Text('ESC/POS · Fiş modu'),
+                  ),
+                ],
+                onChanged: (v) {
+                  if (v != null)
+                    widget.edit((s) {
+                      final cfg = s['settings'] as Map;
+                      cfg['receiptTransport'] = v;
+                      if (v == 'escpos') cfg['receiptOffsetMm'] = 0;
+                    });
+                },
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'XP-237B: Önce yazıcının fiş modunda olduğunu doğrulayın. ESC/POS, sayfa uzunluğu sınırını kullanmaz. Etiket modunda seçmeyin.',
+              ),
+              const SizedBox(height: 12),
               OutlinedButton.icon(
                 icon: const Icon(Icons.settings_outlined),
                 label: const Text('Yazıcı Ayarı'),
@@ -213,13 +260,14 @@ class _SimpleSettingsState extends State<SimpleSettings> {
                       if (p[0] < 40 ||
                           p[0] > 80 ||
                           p[1] < 30 ||
+                          p[1] > 48 ||
                           p[1] > p[0] ||
                           p[2] < 2 ||
                           p[2] > 10 ||
                           p[3].abs() > 10 ||
                           p[4] < 10 ||
                           p[4] > 25)
-                        return 'Ölçüler: kağıt 40–80, baskı 30–kağıt, boşluk 2–10, kaydırma ±10, logo 10–25 mm';
+                        return 'Ölçüler: kağıt 40–80, baskı 30–48, boşluk 2–10, kaydırma ±10, logo 10–25 mm';
                       return null;
                     },
                   );
@@ -237,7 +285,7 @@ class _SimpleSettingsState extends State<SimpleSettings> {
                         ][i]] = double.parse(
                           v[i + 1].replaceAll(',', '.'),
                         );
-                      cfg['receiptScale'] = 'shrink';
+                      cfg['receiptScale'] = 'actual';
                     });
                 },
               ),
@@ -259,9 +307,8 @@ class _SimpleSettingsState extends State<SimpleSettings> {
                       );
                   } catch (e) {
                     if (context.mounted)
-                      ScaffoldMessenger.of(
-                        context,
-                      ).showSnackBar(SnackBar(content: Text('$e')));
+                      ScaffoldMessenger.of(context)
+                          .showSnackBar(SnackBar(content: Text('$e')));
                   }
                 },
               ),
@@ -340,9 +387,8 @@ class _SimpleSettingsState extends State<SimpleSettings> {
                         );
                     } catch (e) {
                       if (context.mounted)
-                        ScaffoldMessenger.of(
-                          context,
-                        ).showSnackBar(SnackBar(content: Text('$e')));
+                        ScaffoldMessenger.of(context)
+                            .showSnackBar(SnackBar(content: Text('$e')));
                     }
                   }
                 },

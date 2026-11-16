@@ -65,12 +65,10 @@ void main() {
         expect(find.byType(MaterialApp), findsOneWidget);
         for (final label in [
           'Masalar',
-          'Tüm Siparişler',
+          'Siparişler',
           'Kasa & Ödemeler',
-          'Personel Yönetimi',
           'Raporlar',
           'Ayarlar',
-          'Online Siparişler',
         ]) {
           await tester.ensureVisible(find.text(label).first);
           await tester.tap(find.text(label).first);
@@ -78,6 +76,11 @@ void main() {
           expect(tester.takeException(), isNull, reason: label);
           expect(find.text(label), findsAtLeastNWidgets(2));
         }
+        for(final tab in ['Personel','Bağlantı']) {
+          await tester.ensureVisible(find.text(tab).first);await tester.tap(find.text(tab).first);await tester.pumpAndSettle();expect(tester.takeException(),isNull,reason:tab);
+        }
+        await tester.ensureVisible(find.text('Siparişler').first);await tester.tap(find.text('Siparişler').first);await tester.pumpAndSettle();
+        await tester.tap(find.text('Online Siparişler').first);await tester.pumpAndSettle();
         for (final tab in [
           'Mağaza',
           'Menü',
@@ -97,3 +100,4 @@ void main() {
     );
   }
 }
+

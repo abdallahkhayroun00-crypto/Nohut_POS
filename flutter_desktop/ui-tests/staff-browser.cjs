@@ -40,6 +40,8 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   const ctx=await browser.newContext({viewport:{width,height:844}}),page=await ctx.newPage(),errors=[];
   await page.route('http://pos.test/**',route);page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.accept());
   await page.goto('http://pos.test/');await page.locator('#staff option[value="1"]').waitFor({state:'attached'});await page.locator('#staff').selectOption('1');
+  fs.mkdirSync(path.join(__dirname,'../build'),{recursive:true});
+  await page.screenshot({path:path.join(__dirname,`../build/staff-brand-${width}.png`),fullPage:true});
   assert.equal(await page.locator('#menu img').count(),0,'product images removed');
   assert.equal(await page.locator('#menu').getByText('Şambali',{exact:true}).count(),0);
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
@@ -72,3 +74,4 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   await ctx.close();
  }}finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1});
+

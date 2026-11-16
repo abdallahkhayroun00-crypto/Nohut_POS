@@ -66,8 +66,14 @@ jobs:
         run: |
           $tokens = $null
           $parseErrors = $null
-          [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD 'flutter_desktop/assets/printing/print-receipt.ps1'), [ref]$tokens, [ref]$parseErrors) | Out-Null
-          if ($parseErrors.Count) { throw ($parseErrors | Out-String) }
+          foreach ($file in @('print-receipt.ps1','print-raster.ps1')) {
+            [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD "flutter_desktop/assets/printing/$file"), [ref]$tokens, [ref]$parseErrors) | Out-Null
+            if ($parseErrors.Count) { throw ($parseErrors | Out-String) }
+          }
+          $source = Get-Content 'flutter_desktop/assets/printing/print-raster.ps1' -Raw
+          $native = [regex]::Match($source, "(?s)Add-Type -TypeDefinition @'\r?\n(.*?)\r?\n'@").Groups[1].Value
+          if (!$native) { throw 'RAW spooler C# code missing' }
+          Add-Type -TypeDefinition $native
       - name: Compile Windows desktop release
         working-directory: flutter_desktop
         run: flutter build windows --release
@@ -84,5 +90,13 @@ jobs:
         with:
           name: NohutFalafel-Windows-Flutter
           path: flutter_desktop/build/windows/x64/runner/Release/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload receipt artwork proof
+        uses: actions/upload-artifact@v4
+        with:
+          name: NohutFalafel-Receipt-Brand-Proof
+          path: flutter_desktop/build/receipt-brand-proof.png
           if-no-files-found: error
           retention-days: 14

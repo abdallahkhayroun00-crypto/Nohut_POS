@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'operations.dart';
 import 'pos_logic.dart';
 import 'pos_store.dart';
+import 'receipt_layout.dart';
 
 typedef PrintTransport = Future<void> Function(String text, String printer);
 
@@ -115,28 +116,35 @@ Future<void> windowsPrint(String text, String printer, {Map? settings}) async {
   }
   final dir = await Directory.systemTemp.createTemp('nohut-receipt-');
   try {
-    final logo = await rootBundle.load(
-      'assets/printing/nohut-receipt-logo.png',
-    );
-    await File('${dir.path}/logo.png').writeAsBytes(
-      logo.buffer.asUint8List(logo.offsetInBytes, logo.lengthInBytes),
-    );
+    final cfg = ReceiptDimensions(settings);
+    final transport = settings?['receiptTransport'] ?? 'windows';
+    if (!['windows', 'escpos'].contains(transport))
+      throw const FormatException('Yazdırma yöntemi geçersiz');
+    if (transport == 'escpos' && cfg.offset != 0)
+      throw const FormatException(
+        'ESC/POS için yatay kaydırma 0 olmalı; kağıdı ortalayın',
+      );
+    final artwork = await renderReceipt(text, settings: settings);
+    await File('${dir.path}/receipt.png').writeAsBytes(artwork.png);
+    if (transport == 'escpos')
+      await File('${dir.path}/receipt.bin')
+          .writeAsBytes(escPosReceipt(artwork));
     await File('${dir.path}/job.json').writeAsString(
       jsonEncode({
-        'text': text,
         'printer': printer,
-        'logo': '${dir.path}/logo.png',
-        'paperWidthMm': settings?['paperWidthMm'] ?? 56,
-        'printableWidthMm': settings?['printableWidthMm'] ?? 48,
-        'marginMm': settings?['receiptMarginMm'] ?? 4,
-        'offsetMm': settings?['receiptOffsetMm'] ?? 0,
-        'logoMm': settings?['receiptLogoMm'] ?? 18,
+        'transport': transport,
+        'imagePath': '${dir.path}/receipt.png',
+        'rawPath': '${dir.path}/receipt.bin',
+        'paperWidthMm': cfg.paper,
+        'printableWidthMm': cfg.width,
+        'marginMm': cfg.margin,
+        'offsetMm': cfg.offset,
       }),
     );
     final executable =
         '${Platform.environment['SystemRoot'] ?? r'C:\Windows'}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe';
     final script = await rootBundle.loadString(
-      'assets/printing/print-receipt.ps1',
+      'assets/printing/print-raster.ps1',
     );
     final body = script.replaceFirst(
       RegExp(r'^param[^\n]*\n'),

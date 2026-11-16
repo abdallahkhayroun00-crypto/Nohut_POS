@@ -1,3 +1,5 @@
+import 'package:nohut_falafel_desktop/receipt_layout.dart';
+import 'package:nohut_falafel_desktop/operations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nohut_falafel_desktop/product_customization.dart';
@@ -53,6 +55,7 @@ void main() {
   testWidgets(
     'centered receipt preview and staff overview render actual modifiers and counts',
     (t) async {
+      final semantics=t.ensureSemantics();addTearDown(semantics.dispose);
       t.view.physicalSize = const Size(1440, 1000);
       t.view.devicePixelRatio = 1;
       addTearDown(t.view.resetPhysicalSize);
@@ -66,6 +69,7 @@ void main() {
         productLines: [line],
         cashier: 'Bassil',
       );
+      await t.runAsync(()=>renderReceipt(billText(o),settings:const {'paperWidthMm':56,'printableWidthMm':48,'receiptLogoMm':18}));
       await t.pumpWidget(
         MaterialApp(
           home: Scaffold(
@@ -89,10 +93,10 @@ void main() {
       );
       await t.pumpAndSettle();
       expect(find.textContaining('Bassil · 1 sipariş'), findsOneWidget);
-      expect(find.text('TOPLAM'), findsOneWidget);
-      expect(find.text('300,00 ₺'), findsWidgets);
-      expect(find.text('Not: Ek sembusek'), findsOneWidget);
+      expect(find.byKey(const ValueKey('receipt-artwork')),findsOneWidget);
+      expect(find.bySemanticsLabel(RegExp('HESAP ÖZETİ.*',dotAll:true)),findsOneWidget);
       expect(t.takeException(), isNull);
     },
   );
 }
+
