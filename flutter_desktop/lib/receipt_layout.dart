@@ -44,16 +44,6 @@ class ReceiptDimensions {
   int get dots => (width * 8).round();
 }
 
-Future<void>? _fonts;
-Future<void> _loadReceiptFonts() => _fonts ??= () async {
-  final body = FontLoader(NohutBrand.bodyFont)
-    ..addFont(rootBundle.load('assets/brand/fonts/Barlow-Regular.ttf'))
-    ..addFont(rootBundle.load('assets/brand/fonts/Barlow-Bold.ttf'));
-  final heading = FontLoader(NohutBrand.headingFont)
-    ..addFont(rootBundle.load('assets/brand/fonts/BreeSerif-Regular.ttf'));
-  await Future.wait([body.load(), heading.load()]);
-}();
-
 List<String> receiptBody(String text) => text.split('\n').where((line) {
   final normal = line
       .toUpperCase()
@@ -86,7 +76,6 @@ Future<ReceiptArtwork> renderReceipt(String text, {Map? settings}) {
 
 Future<ReceiptArtwork> _renderReceipt(String text, {Map? settings}) async {
   final cfg = ReceiptDimensions(settings);
-  await _loadReceiptFonts();
   final logoData = await rootBundle.load(
     'assets/printing/nohut-receipt-logo.png',
   );
