@@ -1,10 +1,14 @@
 import 'operations.dart';
+
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+
 import 'staff_commands.dart';
 import 'pos_logic.dart';
+import 'campaign_menu.dart';
 import 'pos_store.dart';
 
 /// Native Flutter Windows HTTP server for employee phones. No Python process.
@@ -164,9 +168,9 @@ class PosLanServer extends ChangeNotifier {
             },
           )
           .toList(),
-      'localMenu': asMaps(
-        source['localMenu'],
-      ).where((p) => p['active'] != false).toList(),
+      'localMenu': orderingProducts(source)
+          .where((p) => p['active'] != false)
+          .toList(),
       'orders': asMaps(source['orders'])
           .where(
             (o) =>

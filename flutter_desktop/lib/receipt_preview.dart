@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+
 import 'operations.dart';
 import 'pos_logic.dart';
+import 'campaign_menu.dart';
 import 'order_reporting.dart';
 
 class ReceiptPreview extends StatelessWidget {
@@ -109,6 +111,12 @@ class ReceiptPreview extends StatelessWidget {
                   ],
                 ),
               ),
+              for (final component in asMaps(l.line['components']))
+                Text(
+                  component['name'].toString() +
+                      ' · ' +
+                      campaignComponentDetails(component),
+                ),
               if ('${l.line['note'] ?? ''}'.isNotEmpty)
                 Text('Not: ${l.line['note']}'),
               if ((l.line['removed'] as List? ?? []).isNotEmpty)

@@ -49,6 +49,7 @@ class _OrderComposerState extends State<_OrderComposer> {
     }
     setState(
       () => draft.add({
+        if (p.campaignData != null) ...copyJson(p.campaignData!),
         '_draftId': nextLine++,
         'productId': p.id,
         'productKey': p.name,
@@ -69,6 +70,7 @@ class _OrderComposerState extends State<_OrderComposer> {
     final original =
         line ??
         <String, dynamic>{
+          if (p.campaignData != null) ...copyJson(p.campaignData!),
           'name': p.name,
           'price': p.price,
           'note': '',
@@ -116,6 +118,7 @@ class _OrderComposerState extends State<_OrderComposer> {
           child: Row(
             children: [
               for (final x in [
+                ('campaign', 'Kampanyalar'),
                 ('all', 'Tümü'),
                 ('wrap', 'Dürümler'),
                 ('plate', 'Porsiyonlar'),
@@ -242,6 +245,12 @@ class _OrderComposerState extends State<_OrderComposer> {
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
+                            for (final component in asMaps(line['components']))
+                              Text(
+                                component['name'].toString() +
+                                    ' · ' +
+                                    campaignComponentDetails(component),
+                              ),
                             if ('${line['note']}'.isNotEmpty)
                               Text('Not: ${line['note']}'),
                             if ((line['removed'] as List).isNotEmpty)
@@ -472,13 +481,13 @@ class _OrderComposerState extends State<_OrderComposer> {
                         line['basePrice'] = product.price;
                         line['price'] = fromCents(
                           cents(product.price) +
-                              (line['adjustmentCents'] as int? ?? 0),
+                              (line['adjustmentCents'] as int? ?? 0) +
+                              componentExtraCents(line),
                         );
                         line['name'] = product.name;
                       }
                     }
-                    saveError =
-                        'Güncel fiyatlar ve masalar yüklendi. Sepeti kontrol edip kaydedin.';
+                    saveError = 'Güncel fiyatlar ve masalar yüklendi. Sepeti kontrol edip kaydedin.';
                   }),
                   icon: const Icon(Icons.refresh),
                   label: const Text('Güncel Menü ve Masaları Al'),
@@ -524,8 +533,7 @@ class _OrderComposerState extends State<_OrderComposer> {
                               Navigator.pop(context, request);
                             } else {
                               setState(
-                                () => saveError =
-                                    'Kaydedilemedi. Güncel menü ve masaları alın; sepetiniz korunuyor.',
+                                () => saveError = 'Kaydedilemedi. Güncel menü ve masaları alın; sepetiniz korunuyor.',
                               );
                             }
                           },

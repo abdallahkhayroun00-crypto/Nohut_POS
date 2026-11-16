@@ -1,3 +1,4 @@
+import 'campaign_menu.dart';
 import 'order_reporting.dart';
 
 import 'dart:convert';
@@ -58,15 +59,13 @@ int orderPaidCents(Json order) {
         (payment['reversed'] == true
             ? 0
             : cents(payment['amount']) -
-                  asMaps(
-                    payment['refunds'],
-                  ).fold<int>(0, (n, r) => n + cents(r['amount']))),
+                  asMaps(payment['refunds'])
+                      .fold<int>(0, (n, r) => n + cents(r['amount']))),
   );
   return paid +
       (['Yemeksepeti', 'Trendyol Go'].contains(order['source'])
-          ? asMaps(
-              order['platformAdjustments'],
-            ).fold<int>(0, (n, a) => n + cents(a['amount']))
+          ? asMaps(order['platformAdjustments'])
+                .fold<int>(0, (n, a) => n + cents(a['amount']))
           : 0);
 }
 
@@ -120,6 +119,9 @@ void validateVisibleProductLines(Json state, List<Json> lines) {
       .map((p) => p['id'] as int)
       .toSet();
   for (final line in lines) {
+    if (line['campaignId'] != null ||
+        (line['productId'] is int && (line['productId'] as int) < 0))
+      prepareCampaignLine(state, line);
     if (hiddenIds.contains(line['productId'])) {
       throw const FormatException(
         'Ürün artık satışta değil; menüyü yenileyin.',
@@ -132,9 +134,21 @@ void validateVisibleProductLines(Json state, List<Json> lines) {
 /// stale drafts after sync or a local price/availability change.
 void validateCashierDraft(Json state, List<Json> lines) {
   validateProductLines(lines);
-  final menu = asMaps(state['localMenu']);
+  final menu = orderingProducts(state);
   for (final line in lines) {
     final p = menu.where((p) => p['id'] == line['productId']).firstOrNull;
+    if (p?['campaignId'] != null) {
+      if (cents(p!['price']) != cents(line['basePrice'] ?? line['price']))
+        throw const FormatException(
+          'Kampanya fiyatı değişti; menüyü yenileyin',
+        );
+      final next = prepareCampaignLine(state, line);
+      if (cents(line['price']) != cents(next['price']))
+        throw const FormatException(
+          'Kampanya fiyatı değişti; menüyü yenileyin',
+        );
+      line.addAll(next);
+    }
     if (p == null ||
         p['active'] == false ||
         p['price'] is! num ||
@@ -143,7 +157,8 @@ void validateCashierDraft(Json state, List<Json> lines) {
             (line['adjustmentCents'] is! int ||
                 cents(line['price']) !=
                     cents(line['basePrice']) +
-                        (line['adjustmentCents'] as int)))) {
+                        (line['adjustmentCents'] as int) +
+                        componentExtraCents(line)))) {
       throw const FormatException(
         'Menü fiyatı veya ürün durumu değişti. Güncel menüyü alın; sepetiniz korunuyor.',
       );
@@ -179,9 +194,9 @@ bool correctionKitchenJob(Json state, Map job) {
   final batch = snapshot is Map ? snapshot['batch'] : null;
   final source = batch is Map
       ? batch
-      : asMaps(
-          mutableOrder(state, job['orderId'] as int)?['batches'],
-        ).where((b) => b['id'] == job['batchId']).firstOrNull;
+      : asMaps(mutableOrder(state, job['orderId'] as int)?['batches'])
+            .where((b) => b['id'] == job['batchId'])
+            .firstOrNull;
   return source is Map &&
       asMaps(source['lines']).any((l) => l['correction'] == true);
 }
@@ -330,24 +345,20 @@ void recordPayment(
           (n, p) =>
               n +
               cents(p['amount']) -
-              asMaps(
-                p['refunds'],
-              ).fold<int>(0, (v, r) => v + cents(r['amount'])) -
-              asMaps(
-                p['guestAllocations'],
-              ).fold<int>(0, (v, a) => v + cents(a['amount'])),
+              asMaps(p['refunds'])
+                  .fold<int>(0, (v, r) => v + cents(r['amount'])) -
+              asMaps(p['guestAllocations'])
+                  .fold<int>(0, (v, a) => v + cents(a['amount'])),
         );
     if (unmatched > 0) {
       throw const FormatException('Önce geçmiş tahsilatı kişilere eşleştirin');
     }
     final guest = guests.where((g) => g['id'] == guestId).firstOrNull;
     if (guest == null) throw const FormatException('Kişi hesabını seçin');
-    final allocation = asMaps(
-      guest['allocations'],
-    ).fold<int>(0, (n, a) => n + (a['cents'] as int));
-    final paid = asMaps(
-      order['payments'],
-    ).fold<int>(0, (n, p) => n + paymentGuestCents(p, guestId!));
+    final allocation = asMaps(guest['allocations'])
+        .fold<int>(0, (n, a) => n + (a['cents'] as int));
+    final paid = asMaps(order['payments'])
+        .fold<int>(0, (n, p) => n + paymentGuestCents(p, guestId!));
     if (amountCents > allocation - paid) {
       throw const FormatException('Kişi bakiyesi aşıldı');
     }

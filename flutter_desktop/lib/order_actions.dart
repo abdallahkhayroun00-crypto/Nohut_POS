@@ -1,4 +1,5 @@
 import 'pos_logic.dart';
+import 'campaign_menu.dart';
 import 'operations.dart';
 import 'product_customization.dart';
 
@@ -11,6 +12,7 @@ void editLocalLine(
   List<String> removed,
   String by, {
   int? adjustmentCents,
+  Object? components,
 }) {
   requireLocal(order);
   requireOpen(order);
@@ -37,6 +39,15 @@ void editLocalLine(
   if (line['voided'] == true || line['correction'] == true)
     throw const FormatException('Ürün iptal edilmiş');
   final customized = Map<String, dynamic>.from(line);
+  if (line['campaignId'] != null) {
+    customized['components'] = mergeCampaignComponents(
+      asMaps(line['components']),
+      components,
+    );
+  } else if (components != null &&
+      (components is! List || components.isNotEmpty)) {
+    throw const FormatException('Ürün kampanya değil');
+  }
   applyLineCustomization(
     customized,
     adjustmentCents ?? (line['adjustmentCents'] as int? ?? 0),
