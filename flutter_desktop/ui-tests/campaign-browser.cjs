@@ -31,6 +31,8 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   assert.equal(await page.locator('.cart-line').count(),1);assert.deepEqual(errors,[]);
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
   if(width===390)await page.screenshot({path:path.join(__dirname,'campaign-phone.png'),fullPage:true});
+  await page.locator('[data-cart-custom]').click();await page.locator('#custom-qty').fill('0');await page.locator('#custom-form button[type=submit]').click();assert.equal(await page.locator('.cart-line').count(),0);
+  await page.locator('.top-nav [data-view=menu]').click();await page.locator('[data-add="-100"]').click();await page.locator('.top-nav [data-view=cart]').click();await page.locator('[data-cart-custom]').click();fixture.localMenu.shift();revision++;await page.evaluate(()=>refresh());await page.locator('#custom-form button[type=submit]').click();assert.match(await page.locator('#custom-error').innerText(),/sepet korundu/);assert.equal(await page.locator('.cart-line').count(),1);await page.locator('#custom-cancel').click();
   console.log(`PASS campaign category, component customization, independent wraps, no double charge and conflict at ${width}px`);await ctx.close();
  }}finally{await browser.close()}
 })().catch(e=>{console.error(e);process.exitCode=1});
