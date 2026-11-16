@@ -110,7 +110,7 @@ void main() {
       expect(billText(o), contains('Ek falafel'));
       splitEqually(o, 2);
       expect(guestBalance(o, 1), 31000);
-      recordPayment(o, 31000, 'Nakit', guestId: 1);
+      recordPayment(o, 31000, 'Nakit', guestId: 1, receivedCents: 31000);
       expect(orderDueCents(o), 31000);
     },
   );
