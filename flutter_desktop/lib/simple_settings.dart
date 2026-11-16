@@ -9,6 +9,7 @@ import 'operations_ui.dart';
 import 'qr_menu_sync.dart';
 import 'qr_menu_preview.dart';
 import 'receipt_printer.dart';
+import 'receipt_layout.dart';
 
 class SimpleSettings extends StatefulWidget {
   const SimpleSettings({
@@ -257,6 +258,20 @@ class _SimpleSettingsState extends State<SimpleSettings> {
                           values.any((x) => x == null || !x.isFinite))
                         return 'Yazıcı adı ve sayısal ölçüler gerekli';
                       final p = values.cast<double>();
+                      try {
+                        ReceiptDimensions({
+                          'paperWidthMm': p[0],
+                          'printableWidthMm': p[1],
+                          'receiptMarginMm': p[2],
+                          'receiptOffsetMm': p[3],
+                          'receiptLogoMm': p[4],
+                        });
+                      } on FormatException catch (e) {
+                        return e.message;
+                      }
+                      if (settings['receiptTransport'] == 'escpos' && p[3] != 0)
+                        return 'ESC/POS için yatay kaydırma 0 olmalı';
+
                       if (p[0] < 40 ||
                           p[0] > 80 ||
                           p[1] < 30 ||

@@ -18,6 +18,7 @@ class ReceiptPreview extends StatefulWidget {
 class _ReceiptPreviewState extends State<ReceiptPreview> {
   late Future<ReceiptArtwork> artwork;
   late String signature;
+  String? configurationError;
   @override
   void initState() {
     super.initState();
@@ -26,7 +27,16 @@ class _ReceiptPreviewState extends State<ReceiptPreview> {
 
   void _load() {
     signature = jsonEncode([widget.order, widget.settings]);
-    artwork = renderReceipt(billText(widget.order), settings: widget.settings);
+    try {
+      ReceiptDimensions(widget.settings);
+      configurationError = null;
+      artwork = renderReceipt(
+        billText(widget.order),
+        settings: widget.settings,
+      );
+    } on FormatException catch (e) {
+      configurationError = e.message;
+    }
   }
 
   @override
@@ -37,6 +47,11 @@ class _ReceiptPreviewState extends State<ReceiptPreview> {
 
   @override
   Widget build(BuildContext context) {
+    if (configurationError != null)
+      return Padding(
+        padding: const EdgeInsets.all(16),
+        child: Text('Ayarlar → Yazıcı: $configurationError'),
+      );
     final cfg = ReceiptDimensions(widget.settings);
     final left = (cfg.paper - cfg.width) / 2 + cfg.offset;
     return Semantics(
