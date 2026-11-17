@@ -11,7 +11,15 @@ class TgoSettingsPanel extends StatefulWidget {
 }
 class _TgoSettingsPanelState extends State<TgoSettingsPanel> {
   late final TextEditingController supplier, apiKey, apiSecret, email;
-  bool visible = false, saving = false;
+  bool visible = false, saving = false, prefilled = false;
+  void _hydrateCredentials() {
+    if (prefilled || !mounted) return;
+    final c = widget.integration.credentials;
+    if (c == null) return;
+    if (supplier.text.isEmpty) supplier.text = c.supplierId;
+    if (email.text.isEmpty) email.text = c.email;
+    prefilled = true;
+  }
   @override
   void initState() {
     super.initState();
@@ -20,9 +28,12 @@ class _TgoSettingsPanelState extends State<TgoSettingsPanel> {
     apiKey = TextEditingController();
     apiSecret = TextEditingController();
     email = TextEditingController(text: c?.email ?? '');
+    prefilled = c != null;
+    widget.integration.addListener(_hydrateCredentials);
   }
   @override
   void dispose() {
+    widget.integration.removeListener(_hydrateCredentials);
     supplier.dispose(); apiKey.dispose(); apiSecret.dispose(); email.dispose();
     super.dispose();
   }
