@@ -1093,6 +1093,8 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     final orders = asMaps(db['orders']);
     final remoteToday = tgoOrders(db).where((o) =>
         onIstanbulDay(o['createdAt'], businessDay)).toList();
+    final remoteValid = remoteToday.where((o) => o['testPackage'] != true &&
+        !['Cancelled', 'UnSupplied'].contains(o['status'])).toList();
     final remoteSales = remoteToday.where(tgoCountsAsSale).toList();
     final remoteAmount = remoteSales.fold<int>(0,
         (sum, o) => sum + (o['totalCents'] as int? ?? 0));
@@ -1193,7 +1195,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
               children: [
                 _metric(
                   'Bugünün Siparişleri · $businessDay',
-                  '${todayOrders.length + remoteSales.length}',
+                  '${todayOrders.length + remoteValid.length}',
                   Icons.receipt_outlined,
                 ),
                 _metric(
@@ -1220,7 +1222,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
         Card(child: Padding(padding: const EdgeInsets.all(16),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             const Text('Trendyol Go · Online Satışlar', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
-            Text('Bugün: ${remoteSales.length} sipariş · ${formatTry(remoteAmount)}'),
+            Text('Bugün: ${remoteValid.length} sipariş · ${remoteSales.length} teslim · ${formatTry(remoteAmount)} tamamlanan satış'),
             const Text('Platform satışı, restoranın Nakit/Kart tahsilatı değildir.'),
             Text('Bağlantı: ' + tgo.status),
             TextButton(onPressed: () => setState(() { page = 'orders'; onlineOrders = true; }),
