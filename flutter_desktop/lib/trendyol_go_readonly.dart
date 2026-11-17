@@ -68,8 +68,9 @@ String tgoTime(Object? v) {
       : DateTime.fromMillisecondsSinceEpoch(n, isUtc: true).toIso8601String();
 }
 List<Json> tgoOrders(Json s) => asMaps(s['trendyolGoOrders']).toList();
-bool tgoCountsAsSale(Json o) => o['testPackage'] != true &&
-    !['Cancelled','UnSupplied'].contains(o['status']);
+/// Only fully delivered, non-test packages count as completed sales.
+bool tgoCountsAsSale(Json o) =>
+    o['testPackage'] != true && o['status'] == 'Delivered';
 Json normalizeTgoPackage(Json p) {
   final id = '${p['id'] ?? ''}', number = '${p['orderNumber'] ?? p['orderId'] ?? ''}';
   if (id.isEmpty || number.isEmpty) throw const FormatException('Geçersiz platform paketi.');
