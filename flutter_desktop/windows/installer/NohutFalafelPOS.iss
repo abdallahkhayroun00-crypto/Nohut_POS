@@ -22,12 +22,15 @@ AppVersion={#SetupVersion}
 VersionInfoVersion={#SetupVersion}
 DefaultDirName={localappdata}\Programs\Nohut Falafel POS
 UsePreviousAppDir=yes
+DisableWelcomePage=no
 DisableDirPage=auto
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 WizardStyle=modern
+WizardImageFile=wizard-panel.png
+WizardSmallImageFile=wizard-logo.png
 OutputDir={#InstallerDir}
 OutputBaseFilename=NohutFalafelPOS-Setup
 SetupIconFile=..\runner\resources\app_icon.ico
@@ -41,6 +44,14 @@ RestartApplications=no
 Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "french"; MessagesFile: "compiler:Languages\French.isl"
 Name: "turkish"; MessagesFile: "compiler:Languages\Turkish.isl"
+
+[Messages]
+english.WelcomeLabel1=Welcome to Nohut Falafel POS
+english.WelcomeLabel2=This wizard installs or updates the point of sale. It keeps your existing orders and settings. Click Next to continue.
+french.WelcomeLabel1=Bienvenue dans Nohut Falafel POS
+french.WelcomeLabel2=Cet assistant installe ou met à jour le logiciel de caisse. Vos commandes et vos réglages sont conservés. Cliquez sur Suivant pour continuer.
+turkish.WelcomeLabel1=Nohut Falafel POS'a hoş geldiniz
+turkish.WelcomeLabel2=Bu sihirbaz kasa uygulamasını kurar veya günceller. Mevcut siparişleriniz ve ayarlarınız korunur. Devam etmek için İleri'ye tıklayın.
 
 [Files]
 Source: "{#ReleaseDir}\{#AppExe}"; DestDir: "{app}"; Flags: ignoreversion
