@@ -42,6 +42,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   await page.goto('http://pos.test/');await page.locator('#staff option[value="1"]').waitFor({state:'attached'});await page.locator('#staff').selectOption('1');
   fs.mkdirSync(path.join(__dirname,'../build'),{recursive:true});
   await page.screenshot({path:path.join(__dirname,`../build/staff-brand-${width}.png`),fullPage:true});
+  await page.locator('[data-floor-table="1"]').click();
   assert.equal(await page.locator('#menu img').count(),0,'product images removed');
   assert.equal(await page.locator('#menu').getByText('Şambali',{exact:true}).count(),0);
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
@@ -58,7 +59,8 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   await page.locator('#orders [data-open="1200"]').click();await page.locator('[data-edit-line]').first().click();await page.locator('#custom-qty').fill('1');await page.locator('#custom-note').fill('Az sos');await page.locator('#custom-form button[type=submit]').click();await page.waitForFunction(()=>!document.querySelector('#customize').open);assert.equal(state.orders[0].batches[0].lines[0].qty,1);
   await page.locator('#move-order').click();await page.locator('#move-table').selectOption('2');await page.locator('#move-form button[type=submit]').click();await page.waitForFunction(()=>!document.querySelector('#move-dialog').open);assert.equal(state.orders[0].table,2);assert.equal(state.orders[0].id,1200);
   await page.locator('[data-existing-add]').click();await page.locator('[data-category=drink]').click();await page.locator('[data-add="1"]').click();await page.locator('.top-nav [data-view=cart]').click();await page.locator('#submit').click();await page.waitForFunction(()=>document.querySelector('[data-screen=orders]').hidden===false);assert.equal(state.orders.length,2,'additional batch keeps same order');
-  await page.locator('#orders [data-open="1200"]').click();await page.locator('#advance-status').click();await page.waitForFunction(()=>document.querySelector('#advance-status')?.textContent==='Teslim Edildi');await page.locator('#advance-status').click();await page.waitForFunction(()=>!document.querySelector('#advance-status'));
+  await page.locator('#orders [data-open="1200"]').click();
+  assert.equal(await page.locator('#advance-status').count(),0,'table orders have no delivery status');
   await page.locator('#pay-order').click();await page.locator('#pay-print').selectOption('yes');mode='lost';await page.locator('#payment-form button[type=submit]').click();await page.locator('#retry').waitFor({state:'visible'});await page.waitForFunction(()=>!document.querySelector('#payment-dialog').open);mode='ok';await page.locator('#retry').click();await page.waitForFunction(()=>document.querySelector('#notice').textContent.includes('kaydedildi'));assert.equal(prints,1);assert.equal(state.orders[0].dueCents,0);
   await page.locator('#close-order').click();await page.waitForFunction(()=>document.querySelector('#order-detail').textContent.includes('Hesap kapalı'));assert.equal(state.orders[0].closed,true);
   state=structuredClone(fixture);revision++;receipts.clear();prints=0;mode='ok';await page.reload();await page.locator('#staff option[value="1"]').waitFor({state:'attached'});await page.locator('#staff').selectOption('1');
@@ -70,7 +72,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   mode='lost';await page.locator('#delete-order').click();await page.locator('#retry').waitFor({state:'visible'});mode='ok';await page.locator('#retry').click();await page.waitForFunction(()=>document.querySelector('#order-detail').textContent.includes('Hesap kapalı'));assert.equal(state.orders.length,0);
   console.log(`PASS modifiers, ingredient buttons, person split, mixed payment and deletion retry at ${width}px`);
   assert.deepEqual(errors,[]);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
-  console.log(`PASS staff lifecycle at ${width}px: no photos, compact menu, variants, conflict, retry, edit, move, add, ready, delivered, payment, optional receipt, close`);
+  console.log(`PASS staff lifecycle at ${width}px: no photos, compact menu, variants, conflict, retry, edit, move, add, payment, optional receipt, close`);
   await ctx.close();
  }}finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1});

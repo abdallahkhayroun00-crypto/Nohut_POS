@@ -56,7 +56,7 @@ void main() {
         findsNWidgets(6),
       );
       expect(find.text('Personel Yönetimi'), findsNothing);
-      expect(find.text('Online Siparişler'), findsNothing);
+      expect(find.text('Online Siparişler'), findsOneWidget);
       await t.runAsync(
         () => precacheImage(
           const AssetImage('assets/brand/nohut-logo.webp'),
@@ -75,9 +75,9 @@ void main() {
         proof.writeAsBytesSync(bytes!.buffer.asUint8List());
         image.dispose();
       });
-      await t.tap(find.byKey(const ValueKey('navigation-orders')));
+      await t.tap(find.byKey(const ValueKey('navigation-online')));
       await t.pumpAndSettle();
-      expect(find.text('Online Siparişler'), findsOneWidget);
+      expect(find.text('Uber Eats'), findsOneWidget);
       await t.tap(find.byKey(const ValueKey('navigation-settings')));
       await t.pumpAndSettle();
       for (final tab in ['Personel', 'Bağlantı', 'Yazıcı']) {

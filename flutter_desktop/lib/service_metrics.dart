@@ -30,6 +30,21 @@ class StaffMetrics extends StatelessWidget {
       final name = '${first?['staff'] ?? 'Kasa (PC)'}';
       groups.putIfAbsent(name, () => []).add(o);
     }
+    final additions = <String, int>{};
+    for (final order in asMaps(state['orders'])) {
+      if (isPlatform(order) || order['cancelled'] == true) continue;
+      for (final batch in asMaps(order['batches']).skip(1)) {
+        if (!onIstanbulDay(batch['createdAt'], day) ||
+            !asMaps(batch['lines']).any(
+              (line) => line['correction'] != true && line['voided'] != true,
+            )) {
+          continue;
+        }
+        final name = '${batch['staff'] ?? 'Kasa (PC)'}';
+        additions.update(name, (count) => count + 1, ifAbsent: () => 1);
+        groups.putIfAbsent(name, () => []);
+      }
+    }
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(18),
@@ -48,7 +63,7 @@ class StaffMetrics extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 10),
                 child: Text(
-                  '${e.key} · ${e.value.length} sipariş · Masa ${e.value.where((o) => o['source'] == 'Masa').length} · Paket / Gel-Al ${e.value.where((o) => o['source'] == 'Gel-Al').length} · ${formatTry(e.value.fold<int>(0, (n, o) => n + orderTotalCents(o)))}',
+                  '${e.key} · ${e.value.length} sipariş · Ek ${additions[e.key] ?? 0} · Masa ${e.value.where((o) => o['source'] == 'Masa').length} · Paket / Gel-Al ${e.value.where((o) => o['source'] == 'Gel-Al').length} · ${formatTry(e.value.fold<int>(0, (n, o) => n + orderTotalCents(o)))}',
                 ),
               ),
           ],
