@@ -39,7 +39,8 @@ void main() {
 
   test('Cancelled or test orders are not counted as sales', () {
     final order = normalizeTgoPackage(payload);
-    expect(tgoCountsAsSale(order), true);
+    expect(tgoCountsAsSale(order), false); // Picking is not a completed sale.
+    expect(tgoCountsAsSale({...order, 'status': 'Delivered'}), true);
     expect(tgoCountsAsSale({...order, 'status': 'Cancelled'}), false);
     expect(tgoCountsAsSale({...order, 'testPackage': true}), false);
   });
