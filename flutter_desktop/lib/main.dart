@@ -30,7 +30,6 @@ import 'pos_store.dart';
 import 'operations.dart';
 import 'operations_ui.dart';
 import 'platform_workflows.dart';
-import 'platform_ui.dart';
 
 part 'order_composer.dart';
 
@@ -1811,7 +1810,6 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     );
   }
 
-  Json? platformDemo;
   Widget _online(Json db) => TgoOrdersPanel(
     orders: tgoOrders(db), integration: tgo,
   );
