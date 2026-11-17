@@ -39,7 +39,15 @@ function updateProductCounts(){for(const el of document.querySelectorAll('[data-
 function addLine(id,qty=1,note='',removed=[],adjustmentCents=0,components=null){if(cart.size>=200){notice('Bir sipariş en fazla 200 ayrı satır içerebilir.');return}const p=product(id);if(!p||p.price==null||busy||pending)return;components=structuredClone(components??p.components??[]);const same=[...cart.values()].find(r=>r.productId===id&&JSON.stringify(r.components||[])===JSON.stringify(components)&&r.note===note&&(r.adjustmentCents||0)===adjustmentCents&&r.removed.join(',')===removed.join(','));if(same){if(same.qty+qty>1000){notice('Adet en fazla 1000 olabilir');return}same.qty+=qty}else cart.set(++lineId,{productId:id,qty,note,removed,adjustmentCents,name:p.name,campaignId:p.campaignId,components});renderCart();total()}
 function renderCart(){$('cart').innerHTML=[...cart].map(([key,r])=>`<article class="cart-line"><div class="cart-line-title"><strong>${esc(r.name)}</strong><button class="ghost danger" data-delete="${key}">Kaldır</button></div><div class="quantity"><button data-delta="-1" data-key="${key}" aria-label="Adedi azalt">−</button><b>${r.qty}</b><button data-delta="1" data-key="${key}" aria-label="Adedi artır">+</button></div><label>Not<input data-note="${key}" maxlength="500" value="${esc(r.note)}"></label><label>Çıkarılacak malzemeler<input data-removed="${key}" maxlength="500" value="${esc(r.removed.join(', '))}"></label>${componentSummary(r)}<button data-cart-custom="${key}">Not / Malzeme / Fark</button><p data-line-status="${key}"></p></article>`).join('')||'<div class="empty"><strong>Sepet boş</strong><p>Menüden ürün ekle.</p></div>';controls()}
 function total(){let sum=0;for(const[key,r]of cart){const p=product(r.productId);sum+=(Math.round((p?.price||0)*100)+(r.adjustmentCents||0)+componentExtra(r))*r.qty;const warning=document.querySelector(`[data-line-status="${key}"]`);if(warning)warning.textContent=!p||p.price==null?'Ürün satış dışı. Kaldırın.':money((Math.round(p.price*100)+(r.adjustmentCents||0)+componentExtra(r))*r.qty)}const count=[...cart.values()].reduce((n,r)=>n+r.qty,0);$('total').textContent='Toplam '+money(sum);$('cart-count').textContent=count;$('dock-caption').textContent='Sipariş sepeti · '+count+' ürün';$('dock-total').textContent=money(sum);updateProductCounts();controls()}
+let knownTrendyolOrderNumbers=null;
 function renderOrders(){
+  const latestPlatform=state?.trendyolGoOrders||[];
+  const currentNumbers=new Set(latestPlatform.map(o=>String(o.orderNumber)));
+  if(knownTrendyolOrderNumbers!==null){
+    const fresh=[...currentNumbers].filter(n=>!knownTrendyolOrderNumbers.has(n));
+    if(fresh.length) notice('🔔 Trendyol Go · '+fresh.length+' yeni sipariş geldi. Siparişler bölümünde görüntüleyin.');
+  }
+  knownTrendyolOrderNumbers=currentNumbers;
   const filter=$('order-filter').value, all=openOrders();
   const rows=all.filter(o=>filter==='all'||filter==='ready'&&o.serviceStatus==='Hazır'||o.source===filter)
     .sort((a,b)=>(a.serviceStatus==='Hazır'?-1:0)-(b.serviceStatus==='Hazır'?-1:0)||
