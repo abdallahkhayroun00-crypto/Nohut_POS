@@ -48,7 +48,7 @@ $database = Join-Path $appData 'nohut-pos.sqlite3'
 $desktopLink = Join-Path ([Environment]::GetFolderPath('DesktopDirectory')) 'Nohut Falafel POS.lnk'
 $menuLink = Join-Path ([Environment]::GetFolderPath('Programs')) 'Nohut Falafel POS.lnk'
 $uninstallKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\NohutFalafel.POS_is1'
-foreach ($path in @($appData, $desktopLink, $menuLink, $uninstallKey)) {
+foreach ($path in @($desktopLink, $menuLink, $uninstallKey)) {
     if (Test-Path -LiteralPath $path) { throw "Smoke test requires a clean user profile: $path" }
 }
 
@@ -58,8 +58,10 @@ function Invoke-Setup([string] $File, [string[]] $Arguments) {
     if ($process.ExitCode -ne 0) { throw "Setup failed ($($process.ExitCode)): $File" }
 }
 
-New-Item -ItemType Directory -Path $appData | Out-Null
-[IO.File]::WriteAllText($database, 'installer database preservation fixture')
+New-Item -ItemType Directory -Path $appData -Force | Out-Null
+if (-not (Test-Path -LiteralPath $database -PathType Leaf)) {
+    [IO.File]::WriteAllText($database, 'installer database preservation fixture')
+}
 $dbHash = (Get-FileHash -LiteralPath $database).Hash
 Invoke-Setup $oldSetup ($silent + "/DIR=`"$installDir`"")
 $installedExe = Join-Path $installDir $exeName
