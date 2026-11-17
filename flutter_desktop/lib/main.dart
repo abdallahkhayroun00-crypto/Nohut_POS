@@ -3,6 +3,8 @@ import 'order_actions.dart';
 import 'product_customization.dart';
 import 'service_metrics.dart';
 import 'simple_settings.dart';
+import 'trendyol_go_readonly.dart';
+import 'trendyol_go_ui.dart';
 import 'sales_reports.dart';
 import 'order_alerts.dart';
 import 'card_terminal.dart';
@@ -124,6 +126,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
   late final ReceiptPrinter receiptPrinter;
   late final PosLanServer lan;
   late final QrMenuAutoSync qrSync;
+  late final TrendyolGoReadonly tgo;
   Timer? _midnightTimer;
   Timer? _serviceTimer;
   final Set<String> seenNotices = {};
@@ -166,6 +169,8 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     lan = PosLanServer(store);
     receiptPrinter = ReceiptPrinter(store);
     qrSync = QrMenuAutoSync(store);
+    tgo = TrendyolGoReadonly(store);
+    unawaited(tgo.start());
     _scheduleIstanbulMidnight();
     _serviceTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (mounted) setState(() {});
@@ -277,6 +282,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
   void dispose() {
     _midnightTimer?.cancel();
     _serviceTimer?.cancel();
+    tgo.dispose();
     qrSync.dispose();
     receiptPrinter.dispose();
     lan.dispose();
@@ -738,7 +744,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
 
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
-    animation: Listenable.merge([store, lan]),
+    animation: Listenable.merge([store, lan, tgo]),
     builder: (ctx, _) {
       final data = store.read().data;
       final width = MediaQuery.sizeOf(context).width;
@@ -1085,6 +1091,11 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
 
   Widget _dashboard(Json db) {
     final orders = asMaps(db['orders']);
+    final remoteToday = tgoOrders(db).where((o) =>
+        onIstanbulDay(o['createdAt'], businessDay)).toList();
+    final remoteSales = remoteToday.where(tgoCountsAsSale).toList();
+    final remoteAmount = remoteSales.fold<int>(0,
+        (sum, o) => sum + (o['totalCents'] as int? ?? 0));
     final todayOrders = orders
         .where(
           (o) =>
@@ -1182,7 +1193,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
               children: [
                 _metric(
                   'Bugünün Siparişleri · $businessDay',
-                  '${todayOrders.length}',
+                  '${todayOrders.length + remoteSales.length}',
                   Icons.receipt_outlined,
                 ),
                 _metric(
@@ -1206,6 +1217,15 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
         ),
         const SizedBox(height: 15),
         StaffMetrics(state: db, day: businessDay),
+        Card(child: Padding(padding: const EdgeInsets.all(16),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('Trendyol Go · Online Satışlar', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+            Text('Bugün: ${remoteSales.length} sipariş · ${formatTry(remoteAmount)}'),
+            const Text('Platform satışı, restoranın Nakit/Kart tahsilatı değildir.'),
+            Text('Bağlantı: ' + tgo.status),
+            TextButton(onPressed: () => setState(() { page = 'orders'; onlineOrders = true; }),
+                child: const Text('Online Siparişleri Gör')),
+          ]))),
         Card(
           child: Padding(
             padding: const EdgeInsets.all(18),
@@ -1774,35 +1794,25 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
             ],
           ),
         ),
+        if (orderFilter == 'Tümü' || orderFilter == 'Trendyol Go')
+          TgoOrdersPanel(orders: tgoOrders(db).where((o) {
+            final raw = '${o['createdAt'] ?? ''}';
+            final date = raw.length >= 10 ? raw.substring(0, 10) : '';
+            return (orderSearch.isEmpty ||
+                '${o['orderNumber']} ${o['customerNote']} ${o['lines']}'
+                    .toLowerCase().contains(orderSearch.toLowerCase())) &&
+                (orderFrom.isEmpty || date.compareTo(orderFrom) >= 0) &&
+                (orderTo.isEmpty || date.compareTo(orderTo) <= 0) &&
+                (orderStatus.isEmpty || o['status'] == orderStatus);
+          }).toList(), limit: 25),
       ],
     );
   }
 
   Json? platformDemo;
-  Widget _online(Json db) {
-    platformDemo ??= {...emptyPosState(), 'localMenu': asMaps(db['localMenu'])};
-    seedPlatformMenu(
-      platformDemo!,
-      asMaps(platformDemo!['localMenu'])
-          .where((p) => p['active'] != false)
-          .toList(),
-    );
-    return PlatformPanel(
-      state: platformDemo!,
-      edit: (change) {
-        try {
-          final next = copyJson(platformDemo!);
-          change(next);
-          PosStore.validate(next);
-          setState(() => platformDemo = next);
-          return true;
-        } catch (e) {
-          _notify('$e', error: true);
-          return false;
-        }
-      },
-    );
-  }
+  Widget _online(Json db) => TgoOrdersPanel(
+    orders: tgoOrders(db), integration: tgo,
+  );
 
   Widget _payments(Json db) {
     final locals = asMaps(db['orders'])
@@ -2111,6 +2121,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     edit: _edit,
     store: store,
     qrSync: qrSync,
+    tgoIntegration: tgo,
     staffPanel: _staff(db),
     wifiPanel: _wifi(db),
   );
