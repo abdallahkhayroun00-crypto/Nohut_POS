@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'brand.dart';
 import 'pos_logic.dart';
 import 'order_reporting.dart';
+import 'compact_review_card.dart';
 import 'review_display.dart';
 import 'trendyol_go_readonly.dart';
 
@@ -644,6 +645,7 @@ class _TgoReviewsPanelState extends State<TgoReviewsPanel> {
   bool loading = false, loaded = false, hasNextPage = false;
   int ratingFilter = 0;
   bool newestFirst = true, answering = false;
+  final Map<String, String> pendingReplies = {};
 
   @override
   void initState() {
@@ -682,6 +684,14 @@ class _TgoReviewsPanelState extends State<TgoReviewsPanel> {
         hasNextPage = result.hasNextPage;
         page = index;
         loaded = true;
+        // Only clear a local unverified submission after the platform GET
+        // actually includes an answer for that review.
+        for (final row in result.reviews) {
+          final comment = row['comment'];
+          if (comment is Map && comment['restaurantAnswer'] is Map) {
+            pendingReplies.remove(row['reviewId'].toString());
+          }
+        }
       });
     } on FormatException catch (e) {
       if (mounted) setState(() => error = e.message);
@@ -709,7 +719,8 @@ class _TgoReviewsPanelState extends State<TgoReviewsPanel> {
 
   Future<void> _reply(Json review) async {
     final reviewId = '${review['reviewId'] ?? ''}';
-    if (reviewId.isEmpty || answering || loading) return;
+    if (reviewId.isEmpty || answering || loading ||
+        pendingReplies.containsKey(reviewId)) return;
     final answer = await showDialog<String>(
       context: context,
       builder: (_) => const _TgoReplyDialog(),
@@ -723,9 +734,12 @@ class _TgoReviewsPanelState extends State<TgoReviewsPanel> {
         text: answer,
       );
       if (!mounted) return;
+      // API accepted the submission, but the reply is NOT claimed approved
+      // until the subsequent review GET supplies restaurantAnswer.
+      setState(() => pendingReplies[reviewId] = answer);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text(
-          'Yanıt platforma gönderildi. Onay durumunu tekrar kontrol edin.',
+          'Yanıt isteği gönderildi. Platform onayı kontrol ediliyor.',
         )),
       );
       await loadPage(page);
@@ -941,106 +955,39 @@ class _TgoReviewsPanelState extends State<TgoReviewsPanel> {
     final rating = review['rating'];
     final comment = review['comment'];
     final score = rating is Map ? rating['average'] : null;
-    final message = comment is Map ? comment['text'] : null;
+    final text = comment is Map ? comment['text'] : null;
     final answer = comment is Map && comment['restaurantAnswer'] is Map
         ? comment['restaurantAnswer'] as Map : null;
-    final answerText = '${answer?['text'] ?? ''}'.trim();
-    final answerStatus = '${answer?['status'] ?? ''}'.trim();
-    final orderNo = '${review['orderParentId'] ?? ''}'.trim();
+    final reviewId = (review['reviewId'] ?? '').toString();
+    final pending = pendingReplies[reviewId];
     final customer = reviewCustomerName(review);
     final orderCustomer = customer == null ? _orderCustomer(review) : null;
-    final products = reviewProductNames(review);
-    final canReply = review['reviewId'] != null &&
-        answer == null &&
-        message is String &&
-        message.trim().isNotEmpty;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 17, vertical: 15),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Wrap(
-              spacing: 12,
-              runSpacing: 7,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                const Icon(Icons.star, color: NohutBrand.gold, size: 21),
-                Text('${score is num ? score : '—'} / 5',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w800,
-                      color: NohutBrand.green, fontSize: 16)),
-                Text(customer ?? 'Müşteri adı paylaşılmıyor',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: NohutBrand.ink)),
-                const Text('Trendyol Go',
-                  style: TextStyle(
-                    color: Color(0xffD66A12), fontWeight: FontWeight.w700)),
-                Text(reviewDateText(review['createdDate']),
-                  style: const TextStyle(
-                    color: NohutBrand.muted, fontSize: 12)),
-                if (reviewRelativeAge(review['createdDate']).isNotEmpty)
-                  Text('· ${reviewRelativeAge(review['createdDate'])}',
-                    style: const TextStyle(
-                      color: NohutBrand.muted, fontSize: 12)),
-              ],
-            ),
-            if (orderCustomer != null) ...[
-              const SizedBox(height: 5),
-              Text('Sipariş müşterisi: $orderCustomer',
-                style: const TextStyle(
-                    color: NohutBrand.muted, fontSize: 12)),
-            ],
-            if (orderNo.isNotEmpty || products.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 12,
-                runSpacing: 5,
-                children: [
-                  if (orderNo.isNotEmpty)
-                    Text('Sipariş: #$orderNo',
-                      style: const TextStyle(
-                        color: NohutBrand.ink,
-                        fontWeight: FontWeight.w600, fontSize: 12)),
-                  if (review['orderCreatedDate'] != null)
-                    Text('Sipariş tarihi: ${reviewDateText(review['orderCreatedDate'])}',
-                      style: const TextStyle(
-                        color: NohutBrand.muted, fontSize: 12)),
-                ],
-              ),
-              if (products.isNotEmpty) ...[
-                const SizedBox(height: 7),
-                Text('Ürünler: ${products.join(', ')}',
-                  style: const TextStyle(color: NohutBrand.ink, fontSize: 13)),
-              ],
-            ],
-            if (message is String && message.trim().isNotEmpty) ...[
-              const SizedBox(height: 10),
-              SelectableText(message),
-            ],
-            if (answer != null) ...[
-              const Divider(height: 23),
-              Text('İşletme yanıtı · ${answerStatus.isEmpty ? 'Durum bilinmiyor' : answerStatus}',
-                style: const TextStyle(
-                    color: NohutBrand.green,
-                    fontWeight: FontWeight.w700)),
-              if (answerText.isNotEmpty) SelectableText(answerText),
-              if (answer['rejectedReason'] is Map)
-                Text('${(answer['rejectedReason'] as Map)['reason'] ?? ''}',
-                  style: const TextStyle(color: Color(0xffA14335))),
-            ],
-            if (canReply) ...[
-              const SizedBox(height: 9),
-              OutlinedButton.icon(
-                onPressed: answering || loading ? null : () => _reply(review),
-                icon: const Icon(Icons.reply_outlined, size: 18),
-                label: const Text('Yanıtla'),
-              ),
-            ],
-          ],
-        ),
-      ),
+    final orderNumber = (review['orderParentId'] ?? '').toString();
+    final rejected = answer?['rejectedReason'];
+    final reason = rejected is Map
+        ? (rejected['reason'] ?? '').toString() : null;
+    return CompactReviewCard(
+      key: ValueKey('tgo-review-' + reviewId),
+      platform: 'Trendyol Go',
+      score: score is num ? score : null,
+      customerName: customer,
+      dateLabel: reviewDateText(review['createdDate']) + ' · ' +
+          reviewRelativeAge(review['createdDate']),
+      comment: text is String ? text : null,
+      orderNumber: orderNumber.isEmpty ? null : orderNumber,
+      orderDate: review['orderCreatedDate'] == null
+          ? null : reviewDateText(review['orderCreatedDate']),
+      orderCustomer: orderCustomer,
+      products: reviewProductNames(review),
+      answerText: answer?['text'] is String
+          ? answer!['text'] as String : pending,
+      answerStatus: answer?['status']?.toString(),
+      rejectedReason: reason,
+      awaitingVerification: pending != null && answer == null,
+      replyBusy: answering || loading,
+      onReply: reviewId.isNotEmpty && answer == null && pending == null &&
+              text is String && text.trim().isNotEmpty
+          ? () => _reply(review) : null,
     );
   }
 
