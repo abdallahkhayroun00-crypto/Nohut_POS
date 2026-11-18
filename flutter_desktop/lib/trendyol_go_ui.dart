@@ -202,9 +202,17 @@ class _TgoSettingsPanelState extends State<TgoSettingsPanel> {
 }
 
 class TgoOrderCard extends StatelessWidget {
-  const TgoOrderCard({super.key, required this.order, this.onKitchenPrint});
+  const TgoOrderCard({
+    super.key,
+    required this.order,
+    this.onKitchenPrint,
+    this.onAction,
+    this.canWrite = false,
+  });
   final Json order;
   final VoidCallback? onKitchenPrint;
+  final void Function(Json order, String action)? onAction;
+  final bool canWrite;
 
   @override
   Widget build(BuildContext context) {
@@ -247,6 +255,12 @@ class TgoOrderCard extends StatelessWidget {
       _ => payment.replaceAll('_', ' '),
     };
     final note = '${order['customerNote'] ?? ''}'.trim();
+    final customer = '${order['customerName'] ?? ''}'.trim();
+    final contact = '${order['customerPhone'] ?? ''}'.trim();
+    final email = '${order['customerEmail'] ?? ''}'.trim();
+    final address = '${order['deliveryAddress'] ?? ''}'.trim();
+    final duration = order['preparationMinutes'];
+    final deliveryEta = '${order['deliveryEta'] ?? ''}'.trim();
     final reason = '${order['cancelReason'] ?? ''}'.trim();
     final eta = {
       for (final key in ['courierEtaFrom', 'courierEtaTo'])
@@ -309,10 +323,39 @@ class TgoOrderCard extends StatelessWidget {
               ],
             ),
             const Divider(height: 20),
+            if (customer.isNotEmpty || contact.isNotEmpty || email.isNotEmpty || address.isNotEmpty)
+              Container(
+                padding: const EdgeInsets.all(12),
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: const Color(0xffF3F7F3),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Müşteri ve Teslimat', style: TextStyle(
+                      color: NohutBrand.green, fontWeight: FontWeight.w800)),
+                    if (customer.isNotEmpty) SelectableText('Müşteri: $customer'),
+                    if (contact.isNotEmpty) SelectableText('Telefon: $contact'),
+                    if (email.isNotEmpty) SelectableText('E-posta: $email'),
+                    if (address.isNotEmpty) SelectableText('Adres: $address'),
+                  ],
+                ),
+              ),
+            if (duration is num && duration > 0)
+              Text('Hazırlık süresi: ${duration.toInt()} dk'),
             if (showCourier && order['courierNearby'] == true)
-              const Text('Kurye yakında'),
+              const Text('🛵 Kurye restorana yaklaştı.',
+                  style: TextStyle(color: NohutBrand.green,
+                      fontWeight: FontWeight.w800)),
             if (showCourier && eta.isNotEmpty)
               Text('Tahmini kurye varışı: $eta'),
+            if (showCourier && eta.isEmpty)
+              const Text('Kurye varış zamanı henüz bildirilmedi.',
+                  style: TextStyle(color: NohutBrand.muted, fontSize: 12)),
+            if (deliveryEta.isNotEmpty)
+              Text('Tahmini teslimat: $deliveryEta'),
             if (reason.isNotEmpty) Text('İptal nedeni: $reason'),
             for (final line in lines)
               Padding(
@@ -368,35 +411,42 @@ class TgoOrderCard extends StatelessWidget {
                 ),
               ],
             ),
-            if (onKitchenPrint != null && tgoKitchenActive(order))
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Wrap(
-                  children: [
-                    if (status == 'Created' || status == 'Picking')
-                      TextButton.icon(
-                        onPressed: () => openExternalPage(
-                          context,
-                          'https://partner.tgoyemek.com/',
-                        ),
-                        icon: const Icon(Icons.open_in_new, size: 16),
-                        label: Text(
-                          status == 'Created'
-                              ? 'Kabul Et · Panel'
-                              : 'Hazır · Panel',
-                        ),
-                      ),
-                    TextButton.icon(
-                      onPressed: () => openExternalPage(
-                        context,
-                        'https://partner.tgoyemek.com/',
-                      ),
-                      icon: const Icon(Icons.open_in_new, size: 16),
-                      label: const Text('İptal Et · Panel'),
+            if (onAction != null && tgoKitchenActive(order)) ...[
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 9,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  if (status == 'Created')
+                    FilledButton.icon(
+                      onPressed: canWrite ? () => onAction!(order, 'accept') : null,
+                      icon: const Icon(Icons.check_circle_outline, size: 17),
+                      label: const Text('Kabul Et'),
                     ),
-                  ],
-                ),
+                  if (status == 'Picking')
+                    FilledButton.icon(
+                      onPressed: canWrite ? () => onAction!(order, 'ready') : null,
+                      icon: const Icon(Icons.restaurant_outlined, size: 17),
+                      label: const Text('Hazır'),
+                    ),
+                  OutlinedButton.icon(
+                    onPressed: canWrite ? () => onAction!(order, 'cancel') : null,
+                    icon: const Icon(Icons.cancel_outlined, size: 17),
+                    label: const Text('Siparişi İptal Et'),
+                  ),
+                  if (!canWrite)
+                    const Text('API işlem yetkisi etkin değil',
+                      style: TextStyle(fontSize: 12, color: NohutBrand.muted)),
+                  TextButton.icon(
+                    onPressed: () => openExternalPage(
+                      context, 'https://partner.tgoyemek.com/'),
+                    icon: const Icon(Icons.open_in_new, size: 16),
+                    label: const Text('Partner Paneli'),
+                  ),
+                ],
               ),
+            ],
             if (printState != null)
               Text(
                 'Mutfak fişi · $printState',
