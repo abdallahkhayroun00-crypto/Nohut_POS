@@ -6,6 +6,7 @@ import 'brand.dart';
 import 'google_business.dart';
 import 'order_reporting.dart';
 import 'review_display.dart';
+import 'compact_review_card.dart';
 import 'pos_logic.dart';
 import 'trendyol_go_ui.dart' show openExternalPage;
 
@@ -453,46 +454,25 @@ class _GoogleBusinessPanelState extends State<GoogleBusinessPanel> {
       ),
       if (rows.isEmpty) const ListTile(title: Text('Gösterilecek yorum yok.')),
       for (final row in rows)
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '${_map(row['reviewer'])['displayName'] ?? 'Google kullanıcısı'} · ${stars[row['starRating']] ?? '—'}/5',
-                  style: Theme.of(context).textTheme.titleSmall,
-                ),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 4,
-                  children: [
-                    Text(reviewDateText(row['createTime'] ?? row['updateTime'])),
-                    Text(reviewRelativeAge(row['createTime'] ?? row['updateTime']),
-                      style: const TextStyle(color: NohutBrand.muted)),
-                    const Text('Google Maps',
-                      style: TextStyle(color: NohutBrand.green,
-                          fontWeight: FontWeight.w600)),
-                  ],
-                ),
-                if (row['comment'] case final String comment
-                    when comment.isNotEmpty)
-                  SelectableText(comment),
-                if (_map(row['reviewReply'])['comment']
-                    case final String comment) ...[
-                  const Divider(),
-                  const Text('İşletme yanıtı'),
-                  SelectableText(comment),
-                ],
-                TextButton(
-                  onPressed: busy ? null : () => _reply(row),
-                  child: Text(
-                    row['reviewReply'] == null ? 'Yanıtla' : 'Yanıtı Düzenle',
-                  ),
-                ),
-              ],
-            ),
-          ),
+        CompactReviewCard(
+          key: ValueKey('google-review-' +
+              (row['reviewId'] ?? row['name'] ?? '').toString()),
+          platform: 'Google Maps',
+          score: stars[row['starRating']],
+          customerName: _map(row['reviewer'])['displayName']?.toString(),
+          dateLabel: reviewDateText(
+                row['createTime'] ?? row['updateTime']) +
+              ' · ' + reviewRelativeAge(
+                row['createTime'] ?? row['updateTime']),
+          comment: row['comment'] is String
+              ? row['comment'] as String : null,
+          answerText: _map(row['reviewReply'])['comment']?.toString(),
+          answerStatus: row['reviewReply'] == null
+              ? null : 'Yanıtlandı',
+          replyBusy: busy,
+          onReply: busy ? null : () => _reply(row),
+          replyLabel: row['reviewReply'] == null
+              ? 'Yanıtla' : 'Yanıtı Düzenle',
         ),
       if (current['nextPageToken'] case final String token
           when token.isNotEmpty)
