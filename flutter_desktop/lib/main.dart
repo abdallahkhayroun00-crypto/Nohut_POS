@@ -151,6 +151,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     ('dashboard', Icons.dashboard_outlined, 'Genel Bakış'),
     ('tables', Icons.table_restaurant_outlined, 'Masalar & Siparişler'),
     ('online', Icons.delivery_dining_outlined, 'Online Siparişler'),
+    ('reviews', Icons.star_outline, 'Değerlendirmeler'),
     ('payments', Icons.point_of_sale_outlined, 'Kasa & Ödemeler'),
     ('reports', Icons.bar_chart_outlined, 'Raporlar'),
     ('settings', Icons.settings_outlined, 'Ayarlar'),
@@ -1164,6 +1165,8 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
         );
       case 'online':
         return _online(db);
+      case 'reviews':
+        return TgoReviewsPanel(orders: tgoOrders(db), integration: tgo);
       case 'payments':
         return _payments(db);
       case 'reports':
@@ -2080,7 +2083,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
   }
 
   Json? platformDemo;
-  String onlinePlatform = 'Yemeksepeti';
+  String onlinePlatform = 'Trendyol Go';
 
   void _showTrendyolOrders() => setState(() {
     page = 'online';
@@ -2093,20 +2096,20 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       children: [
         SegmentedButton<String>(
           segments: const [
+            ButtonSegment(
+              value: 'Trendyol Go',
+              label: Text('Trendyol Go'),
+              icon: Icon(Icons.delivery_dining_outlined),
+            ),
             ButtonSegment(value: 'Yemeksepeti', label: Text('Yemeksepeti')),
-            ButtonSegment(value: 'Uber Eats', label: Text('Uber Eats')),
-            ButtonSegment(value: 'Trendyol Go', label: Text('Trendyol Go')),
           ],
           selected: {onlinePlatform},
           onSelectionChanged: (value) =>
               setState(() => onlinePlatform = value.single),
         ),
         const SizedBox(height: 16),
-        if (onlinePlatform == 'Trendyol Go') ...[
-          TgoReviewsPanel(orders: tgoOrders(db), integration: tgo),
-          TgoOrdersPanel(orders: tgoOrders(db), integration: tgo),
-        ] else if (onlinePlatform == 'Uber Eats')
-          _notice('Uber Eats · Bağlı değil')
+        if (onlinePlatform == 'Trendyol Go')
+          TgoOrdersPanel(orders: tgoOrders(db), integration: tgo)
         else ...[
           _notice('Yemeksepeti · Bağlı değil'),
           const SizedBox(height: 12),

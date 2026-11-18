@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'brand.dart';
 import 'pos_logic.dart';
 import 'order_reporting.dart';
 import 'trendyol_go_readonly.dart';
@@ -194,114 +195,202 @@ class _TgoSettingsPanelState extends State<TgoSettingsPanel> {
 }
 
 class TgoOrdersPanel extends StatelessWidget {
-  const TgoOrdersPanel({
-    super.key,
-    required this.orders,
-    this.integration,
-    this.limit,
-  });
+  const TgoOrdersPanel({super.key, required this.orders, required this.integration});
+
   final List<Json> orders;
-  final TrendyolGoReadonly? integration;
-  final int? limit;
+  final TrendyolGoReadonly integration;
+
   @override
   Widget build(BuildContext context) {
-    final sorted = [...orders]
-      ..sort((a, b) {
-        final day = '${b['numberDay'] ?? ''}'.compareTo(
-          '${a['numberDay'] ?? ''}',
-        );
-        if (day != 0) return day;
-        return (b['dailyNumber'] as int? ?? 0).compareTo(
-          a['dailyNumber'] as int? ?? 0,
-        );
-      });
-    final shown = limit == null ? sorted : sorted.take(limit!).toList();
+    final theme = Theme.of(context);
+    final sorted = [...orders]..sort((a, b) {
+      final byDate = '${b['createdAt'] ?? ''}'.compareTo('${a['createdAt'] ?? ''}');
+      return byDate != 0
+          ? byDate
+          : (b['dailyNumber'] as int? ?? 0).compareTo(a['dailyNumber'] as int? ?? 0);
+    });
+    final connected = integration.status.startsWith('Bağlı ·');
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (integration != null)
-          Wrap(
-            spacing: 12,
-            crossAxisAlignment: WrapCrossAlignment.center,
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+          decoration: BoxDecoration(
+            color: NohutBrand.green,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Row(
             children: [
-              Text(
-                'Trendyol Go · ' + integration!.status,
-                style: const TextStyle(fontWeight: FontWeight.w700),
+              const Icon(Icons.delivery_dining_outlined, color: NohutBrand.cream),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Trendyol Go', style: theme.textTheme.titleLarge?.copyWith(
+                      color: NohutBrand.cream,
+                    )),
+                    Text(
+                      connected ? 'Bağlı · Salt okunur' : integration.status,
+                      style: const TextStyle(color: NohutBrand.cream),
+                    ),
+                    if (integration.error.isNotEmpty)
+                      Text(integration.error,
+                          style: const TextStyle(color: NohutBrand.cream)),
+                  ],
+                ),
               ),
-              TextButton.icon(
-                onPressed: !TrendyolGoReadonly.liveSyncEnabled || integration!.syncing
+              IconButton(
+                tooltip: 'Siparişleri yenile',
+                style: IconButton.styleFrom(
+                  foregroundColor: NohutBrand.cream,
+                  disabledForegroundColor: NohutBrand.cream.withAlpha(140),
+                ),
+                onPressed: integration.syncing ||
+                    !TrendyolGoReadonly.liveSyncEnabled ||
+                    integration.credentials?.valid != true
                     ? null
-                    : () => integration!.sync(),
+                    : integration.sync,
                 icon: const Icon(Icons.refresh),
-                label: const Text('Yenile'),
               ),
             ],
           ),
+        ),
+        if (integration.syncing) const LinearProgressIndicator(),
+        const SizedBox(height: 12),
         if (sorted.isEmpty)
-          const Card(
-            child: Padding(
-              padding: EdgeInsets.all(20),
-              child: Text(
-                'Trendyol Go siparişi yok. Ayarlar bölümünden bağlantı kurun.',
-              ),
-            ),
-          ),
-        for (final o in shown)
           Card(
             child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Wrap(
-                    spacing: 10,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      Text(
-                        '#${displayOrderNumber(o)} · Trendyol Go',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                        ),
-                      ),
-                      Chip(label: Text('${o['status']}')),
-                      if (o['testPackage'] == true)
-                        const Chip(label: Text('TEST')),
-                    ],
-                  ),
-                  Text(
-                    'Trendyol sipariş no: ${o['orderNumber']} · ${o['createdAt']} · ${o['pickup'] == true ? 'Platform Gel-Al' : 'Paket Servis'}',
-                  ),
-                  for (final line in asMaps(o['lines']))
-                    ListTile(
-                      dense: true,
-                      title: Text('${line['qty']} × ${line['name']}'),
-                      subtitle: Text(
-                        (line['options'] as List? ?? []).join(', '),
-                      ),
-                      trailing: Text(
-                        formatTry(line['unitPriceCents'] as int? ?? 0),
-                      ),
-                    ),
-                  if ('${o['customerNote'] ?? ''}'.trim().isNotEmpty)
-                    Text('Müşteri notu: ${o['customerNote']}'),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Platform toplamı: ' +
-                        formatTry(o['totalCents'] as int? ?? 0) +
-                        ' · ' +
-                        '${o['paymentType'] ?? ''}',
-                    style: const TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                  const Text(
-                    'Salt okunur · Yönetim Trendyol Go Partner Panelinde',
-                    style: TextStyle(fontSize: 12),
-                  ),
-                ],
-              ),
+              padding: const EdgeInsets.all(18),
+              child: Text(connected
+                  ? 'Bu dönemde sipariş yok.'
+                  : 'Bağlantıyı Ayarlar → Trendyol Go bölümünden kontrol edin.'),
             ),
+          )
+        else
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final width = constraints.maxWidth >= 820
+                  ? (constraints.maxWidth - 12) / 2
+                  : constraints.maxWidth;
+              return Wrap(
+                spacing: 12,
+                runSpacing: 8,
+                children: [
+                  for (final order in sorted)
+                    SizedBox(width: width, child: _TgoOrderCard(order: order)),
+                ],
+              );
+            },
           ),
       ],
+    );
+  }
+}
+
+class _TgoOrderCard extends StatelessWidget {
+  const _TgoOrderCard({required this.order});
+  final Json order;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final status = '${order['status'] ?? ''}';
+    final (statusLabel, statusColor, statusBg) = switch (status) {
+      'Created' => ('Yeni', const Color(0xff325577), const Color(0xffe9f0f5)),
+      'Picking' => ('Hazırlanıyor', const Color(0xff765720), const Color(0xfff7ecd4)),
+      'Invoiced' => ('Hazırlandı', NohutBrand.green, const Color(0xffe5ebdf)),
+      'Shipped' => ('Yolda', const Color(0xff325577), const Color(0xffe9f0f5)),
+      'Delivered' => ('Teslim Edildi', NohutBrand.green, const Color(0xffe5ebdf)),
+      'Cancelled' => ('İptal', const Color(0xff8d3930), const Color(0xfff6e6e3)),
+      'UnSupplied' => ('Karşılanamadı', const Color(0xff8d3930), const Color(0xfff6e6e3)),
+      _ => (status.isEmpty ? 'Durum bilinmiyor' : status, NohutBrand.muted,
+          const Color(0xffeeeeea)),
+    };
+    final payment = '${order['paymentType'] ?? ''}';
+    final paymentLabel = switch (payment) {
+      'PAY_WITH_CARD' => 'Kart',
+      'PAY_WITH_CASH' => 'Nakit',
+      _ => payment.replaceAll('_', ' '),
+    };
+    final note = '${order['customerNote'] ?? ''}'.trim();
+    final lines = asMaps(order['lines']);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Text('#${displayOrderNumber(order)}',
+                    style: theme.textTheme.titleLarge),
+                ),
+                const SizedBox(width: 8),
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: statusBg, borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    child: Text(statusLabel, style: TextStyle(
+                      color: statusColor, fontWeight: FontWeight.w700,
+                    )),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 12,
+              runSpacing: 4,
+              children: [
+                Text('Platform no: ${order['orderNumber']}'),
+                Text(istanbulStamp(order['createdAt'])),
+                Text(order['pickup'] == true ? 'Gel-Al' : 'Paket Servis'),
+                if (order['testPackage'] == true) const Text('Test siparişi'),
+              ],
+            ),
+            const Divider(height: 20),
+            for (final line in lines)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 5),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(width: 34, child: Text('${line['qty']}×',
+                        style: const TextStyle(fontWeight: FontWeight.w700))),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('${line['name']}'),
+                          if (line['options'] case final List options when options.isNotEmpty)
+                            Text(options.join(', '), style: theme.textTheme.bodySmall),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            if (note.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 5),
+                child: Text('Müşteri notu: $note', style: theme.textTheme.bodySmall),
+              ),
+            const Divider(height: 20),
+            Row(
+              children: [
+                Expanded(child: Text(paymentLabel.isEmpty ? 'Platform toplamı' : paymentLabel)),
+                Text(formatTry(order['totalCents'] as int? ?? 0),
+                    style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -367,33 +456,54 @@ class _TgoReviewsPanelState extends State<TgoReviewsPanel> {
   }
 
   @override
-  Widget build(BuildContext context) => Card(
-    child: ExpansionTile(
-      leading: const Icon(Icons.star_outline),
-      title: const Text('Değerlendirmeler'),
-      childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-      expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        TextField(
-          controller: storeId,
-          enabled: !loading,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(labelText: 'Şube ID (Store ID)'),
-          onChanged: (_) => setState(() {
-            reviews = [];
-            loaded = false;
-            error = '';
-          }),
-        ),
-        const SizedBox(height: 8),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: OutlinedButton.icon(
-            onPressed: loading ? null : () => loadPage(0),
-            icon: const Icon(Icons.refresh),
-            label: const Text('Değerlendirmeleri Getir'),
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      Card(
+        child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.star_outline, color: NohutBrand.green),
+                  const SizedBox(width: 10),
+                  Expanded(child: Text('Trendyol Go',
+                      style: Theme.of(context).textTheme.titleLarge)),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Wrap(
+                spacing: 12,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  SizedBox(
+                    width: 210,
+                    child: TextField(
+                      controller: storeId,
+                      enabled: !loading,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(labelText: 'Şube ID (Store ID)'),
+                      onChanged: (_) => setState(() {
+                        reviews = [];
+                        loaded = false;
+                        error = '';
+                      }),
+                    ),
+                  ),
+                  FilledButton.icon(
+                    onPressed: loading ? null : () => loadPage(0),
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Değerlendirmeleri Getir'),
+                  ),
+                ],
+              ),
+            ],
           ),
         ),
+      ),
         if (loading) const LinearProgressIndicator(),
         if (error.isNotEmpty)
           Text(error, style: TextStyle(color: Theme.of(context).colorScheme.error)),
@@ -415,8 +525,7 @@ class _TgoReviewsPanelState extends State<TgoReviewsPanel> {
               ),
             ],
           ),
-      ],
-    ),
+    ],
   );
 
   Widget _reviewTile(Json review) {
@@ -429,14 +538,13 @@ class _TgoReviewsPanelState extends State<TgoReviewsPanel> {
         ? DateTime.fromMillisecondsSinceEpoch(timestamp.toInt(), isUtc: true)
             .add(const Duration(hours: 3)).toIso8601String().split('T').first
         : null;
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      leading: const Icon(Icons.star_outline),
-      title: Text('${score is num ? score : '—'} / 5'),
-      subtitle: Text([
-        if (date != null) date,
-        if (message is String) message,
-      ].join('\n')),
+    return Card(
+      child: ListTile(
+        leading: const Icon(Icons.star, color: NohutBrand.gold),
+        title: Text('${score is num ? score : '—'} / 5'),
+        subtitle: message is String && message.trim().isNotEmpty ? Text(message) : null,
+        trailing: date == null ? null : Text(date),
+      ),
     );
   }
 

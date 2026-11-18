@@ -86,6 +86,8 @@ void main() {
         await tester.ensureVisible(find.text('Online Siparişler').first);
         await tester.tap(find.text('Online Siparişler').first);
         await tester.pumpAndSettle();
+        await tester.tap(find.text('Yemeksepeti').first);
+        await tester.pumpAndSettle();
         for (final tab in [
           'Mağaza',
           'Menü',

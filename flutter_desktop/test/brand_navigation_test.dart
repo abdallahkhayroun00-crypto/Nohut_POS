@@ -11,13 +11,24 @@ import 'package:nohut_falafel_desktop/pos_store.dart';
 
 void main() {
   testWidgets(
-    'six branded destinations retain online orders, employee management and pairing',
+    'seven branded destinations include separate orders and reviews',
     (t) async {
       final dir = Directory.systemTemp.createTempSync('nohut-brand-');
       final file = '${dir.path}/db';
       final db = PosStore(databaseFile: file);
       final state = emptyPosState();
       state['settings'] = {'qrAutoSync': false, 'autoPrint': false};
+      state['trendyolGoOrders'] = [
+        {
+          'source': 'Trendyol Go',
+          'orderNumber': 'PLATFORM-99',
+          'createdAt': '2026-11-18T09:18:24.000Z',
+          'status': 'Delivered',
+          'paymentType': 'PAY_WITH_CARD',
+          'totalCents': 80000,
+          'lines': [{'qty': 2, 'name': 'Vegan Özel Tabağı'}],
+        },
+      ];
       db.replace(state, db.read().revision);
       db.dispose();
       t.view.physicalSize = const Size(1440, 1000);
@@ -53,7 +64,7 @@ void main() {
               w.key is ValueKey<String> &&
               (w.key as ValueKey<String>).value.startsWith('navigation-'),
         ),
-        findsNWidgets(6),
+        findsNWidgets(7),
       );
       expect(find.text('Personel Yönetimi'), findsNothing);
       expect(find.text('Online Siparişler'), findsOneWidget);
@@ -77,7 +88,16 @@ void main() {
       });
       await t.tap(find.byKey(const ValueKey('navigation-online')));
       await t.pumpAndSettle();
-      expect(find.text('Uber Eats'), findsOneWidget);
+      expect(find.text('Uber Eats'), findsNothing);
+      expect(find.text('Yemeksepeti'), findsOneWidget);
+      expect(find.text('Değerlendirmeleri Getir'), findsNothing);
+      expect(find.text('Teslim Edildi'), findsOneWidget);
+      expect(find.text('2026-11-18 12:18'), findsOneWidget);
+      expect(find.text('PAY_WITH_CARD'), findsNothing);
+      await t.tap(find.byKey(const ValueKey('navigation-reviews')));
+      await t.pumpAndSettle();
+      expect(find.text('Değerlendirmeleri Getir'), findsOneWidget);
+      expect(find.text('Şube ID (Store ID)'), findsOneWidget);
       await t.tap(find.byKey(const ValueKey('navigation-settings')));
       await t.pumpAndSettle();
       for (final tab in ['Personel', 'Bağlantı', 'Yazıcı']) {

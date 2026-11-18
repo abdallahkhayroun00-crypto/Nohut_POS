@@ -207,6 +207,8 @@ void main() {
       await tester.ensureVisible(find.text('Online Siparişler').first);
       await tester.tap(find.text('Online Siparişler').first);
       await tester.pumpAndSettle();
+      await tester.tap(find.text('Yemeksepeti').first);
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Örnek Online Kart'));
       await tester.pumpAndSettle();
       expect(find.textContaining('Kabul bekliyor'), findsWidgets);
