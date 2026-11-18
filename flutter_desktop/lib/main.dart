@@ -151,7 +151,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     ('dashboard', Icons.dashboard_outlined, 'Genel Bakış'),
     ('tables', Icons.table_restaurant_outlined, 'Masalar & Siparişler'),
     ('online', Icons.delivery_dining_outlined, 'Online Siparişler'),
-    ('reviews', Icons.star_outline, 'Değerlendirmeler'),
+    ('reviews', Icons.star_outline, 'Geri Bildirimler'),
     ('payments', Icons.point_of_sale_outlined, 'Kasa & Ödemeler'),
     ('reports', Icons.bar_chart_outlined, 'Raporlar'),
     ('settings', Icons.settings_outlined, 'Ayarlar'),
