@@ -35,11 +35,6 @@ class _OrderComposerState extends State<_OrderComposer> {
   String? saveError;
   late List<Product> products;
   late Map<int, Json> tableOrders;
-  /// A newly opened PC order must be attributed to a real, active employee.
-  /// An addition to an existing account stays credited to its first owner.
-  bool get needsEmployee => !widget.adding &&
-      !(source == 'Masa' && tableOrders[table] != null);
-
   @override
   void initState() {
     super.initState();
@@ -433,8 +428,7 @@ class _OrderComposerState extends State<_OrderComposer> {
                         onChanged: (v) => setState(() => source = v!),
                       ),
                     ),
-                  if (needsEmployee)
-                    SizedBox(
+                  SizedBox(
                       width: 225,
                       child: DropdownButtonFormField<int>(
                         isExpanded: true,
@@ -458,7 +452,8 @@ class _OrderComposerState extends State<_OrderComposer> {
                             : (id) => setState(() => selectedEmployeeId = id),
                       ),
                     )
-                  else
+                  if (widget.adding ||
+                      (source == 'Masa' && tableOrders[table] != null))
                     Container(
                       constraints: const BoxConstraints(maxWidth: 280),
                       padding: const EdgeInsets.symmetric(
@@ -483,6 +478,11 @@ class _OrderComposerState extends State<_OrderComposer> {
                           ),
                         ],
                       ),
+                    ),
+                  if (widget.employees.isEmpty)
+                    const Text(
+                      'Aktif personel yok. Ayarlar → Personel bölümünden ekleyin.',
+                      style: TextStyle(color: Color(0xff9E4A38), fontSize: 12),
                     ),
                   if (source == 'Masa')
                     SizedBox(
@@ -636,7 +636,7 @@ class _OrderComposerState extends State<_OrderComposer> {
                         draft.isEmpty ||
                             draft.any((l) => l['_unavailable'] == true) ||
                             (source == 'Masa' && table == null) ||
-                            (needsEmployee && selectedEmployeeId == null)
+                            selectedEmployeeId == null
                         ? null
                         : () {
                             final request = OrderRequest(
@@ -644,7 +644,7 @@ class _OrderComposerState extends State<_OrderComposer> {
                               table: source == 'Masa' ? table : null,
                               pickupChannel: pickup,
                               customer: pickupCustomer,
-                              staffId: needsEmployee ? selectedEmployeeId : null,
+                              staffId: selectedEmployeeId,
                               expectedTableOrderId:
                                   tableOrders[table]?['id'] as int?,
                               lines: draft
