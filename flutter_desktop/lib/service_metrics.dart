@@ -27,13 +27,16 @@ class StaffMetrics extends StatelessWidget {
           o['cancelled'] != true &&
           onIstanbulDay(o['createdAt'], day),
     )) {
-      final first = asMaps(o['batches']).firstOrNull;
-      final name = '${first?['staff'] ?? 'Kasa (PC)'}';
+      final name = orderOwnerName(o);
       groups.putIfAbsent(name, () => []).add(o);
     }
     final additions = <String, int>{};
     for (final order in asMaps(state['orders'])) {
-      if (isPlatform(order) || order['cancelled'] == true) continue;
+      if (isPlatform(order) ||
+          order['cancelled'] == true ||
+          !onIstanbulDay(order['createdAt'], day)) {
+        continue;
+      }
       for (final batch in asMaps(order['batches']).skip(1)) {
         if (!onIstanbulDay(batch['createdAt'], day) ||
             !asMaps(batch['lines']).any(
@@ -41,7 +44,7 @@ class StaffMetrics extends StatelessWidget {
             )) {
           continue;
         }
-        final name = '${batch['staff'] ?? 'Kasa (PC)'}';
+        final name = orderOwnerName(order);
         additions.update(name, (count) => count + 1, ifAbsent: () => 1);
         groups.putIfAbsent(name, () => []);
       }
@@ -206,9 +209,8 @@ List<StaffOrderSummary> staffOrderSummaries(Json state, String day) {
     final staffRecord = staffId is int
         ? employees.where((e) => e['id'] == staffId).firstOrNull
         : null;
-    final storedName = '${first?['staff'] ?? ''}'.trim();
-    final assigned = (staffId is int || storedName.isNotEmpty) &&
-        storedName != 'Kasa (PC)';
+    final storedName = orderOwnerName(order);
+    final assigned = storedName != 'Atanmamış';
     final name = assigned
         ? '${staffRecord?['name'] ?? storedName}'.trim()
         : 'Atanmamış';
