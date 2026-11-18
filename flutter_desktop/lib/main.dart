@@ -171,7 +171,16 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     lan = PosLanServer(store);
     receiptPrinter = ReceiptPrinter(store);
     qrSync = QrMenuAutoSync(store);
-    tgo = TrendyolGoReadonly(store);
+    tgo = TrendyolGoReadonly(store, onNewOrders: (orders) {
+      if (!mounted) return;
+      final message = orders.length == 1
+          ? "Trendyol Go · Yeni sipariş ${orders.single['orderNumber']}"
+          : 'Trendyol Go · ${orders.length} yeni sipariş';
+      _notify(message);
+      if (store.read().data['settings']?['soundAlerts'] != false) {
+        unawaited(playOrderAlert());
+      }
+    });
     if (widget.startServer) unawaited(tgo.start());
     _scheduleIstanbulMidnight();
     _serviceTimer = Timer.periodic(const Duration(seconds: 30), (_) {
@@ -2118,6 +2127,22 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
             businessDay: businessDay,
             showHistory: onlineHistory,
             onPeriodChanged: () => setState(() => onlineHistory = !onlineHistory),
+            autoKitchen: db['settings']?['tgoAutoKitchen'] == true,
+            onAutoKitchenChanged: (value) {
+              _edit((data) => (data['settings'] as Map)['tgoAutoKitchen'] = value);
+            },
+            onKitchenPrint: (order) {
+              final key = tgoOrderKey(order);
+              _edit((data) {
+                for (final current in tgoOrders(data)) {
+                  if (tgoOrderKey(current) == key &&
+                      current['kitchenPrintState'] == null &&
+                      tgoKitchenActive(current)) {
+                    current['kitchenPrintState'] = 'Bekliyor';
+                  }
+                }
+              });
+            },
           )
         else ...[
           _notice('Yemeksepeti · Bağlı değil'),

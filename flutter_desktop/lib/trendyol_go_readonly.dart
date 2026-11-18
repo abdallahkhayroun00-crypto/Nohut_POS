@@ -187,14 +187,48 @@ Json normalizeTgoPackage(Json p) {
     'totalCents': tgoCents(p['totalPrice']),
     'paymentType': '${payment['paymentType'] ?? ''}',
     'customerNote': '${p['customerNote'] ?? ''}',
+    'cancelReason': '${p['cancelInfo'] is Map ? (p['cancelInfo'] as Map)['reason'] ?? '' : ''}',
+    'courierNearby': p['isCourierNearby'] == true,
+    if (p['estimatedPickupTimeMin'] is num && (p['estimatedPickupTimeMin'] as num) > 0)
+      'courierEtaFrom': tgoTime(p['estimatedPickupTimeMin']),
+    if (p['estimatedPickupTimeMax'] is num && (p['estimatedPickupTimeMax'] as num) > 0)
+      'courierEtaTo': tgoTime(p['estimatedPickupTimeMax']),
     'pickup': p['storePickupSelected'] == true,
     'testPackage': p['testPackage'] == true,
     'lines': lines,
   };
 }
 
+String tgoOrderKey(Json order) =>
+    '${order['supplierId']}:${order['storeId']}:${order['orderNumber']}';
+
+bool tgoKitchenActive(Json order) =>
+    order['testPackage'] != true &&
+    const ['Created', 'Picking', 'Invoiced'].contains(order['status']);
+
+String tgoKitchenTicket(Json order) {
+  final note = '${order['customerNote'] ?? ''}'.trim();
+  return [
+    'TRENDYOL GO / MUTFAK',
+    'Sipariş: ${order['orderNumber']}',
+    if ('${order['orderCode'] ?? ''}'.isNotEmpty) 'Kod: ${order['orderCode']}',
+    istanbulStamp(order['createdAt']),
+    order['pickup'] == true ? 'Gel-Al' : 'Paket Servis',
+    '------------------------',
+    for (final line in asMaps(order['lines'])) ...[
+      '${line['qty']} × ${line['name']}',
+      if (line['options'] case final List options when options.isNotEmpty)
+        '  ${options.join(', ')}',
+    ],
+    if (note.isNotEmpty) 'Not: $note',
+  ].join('\n');
+}
+
 class TrendyolGoReadonly extends ChangeNotifier {
-  TrendyolGoReadonly(this.store) : vault = TgoWindowsVault(store.filePath);
+  TrendyolGoReadonly(this.store, {this.onNewOrders})
+    : vault = TgoWindowsVault(store.filePath);
+
+  final void Function(List<Json>)? onNewOrders;
   static const liveSyncEnabled = bool.fromEnvironment(
     'NOHUT_TRENDYOL_LIVE_SYNC',
     defaultValue: true,
@@ -361,30 +395,43 @@ class TrendyolGoReadonly extends ChangeNotifier {
       }
       if (_closed) return;
       var saved = false;
+      var newOrders = <Json>[];
       for (var i = 0; i < 4 && !saved; i++) {
         final snapshot = store.read(), next = copyJson(snapshot.data);
-        final merged = <String, Json>{};
-        for (final o in tgoOrders(next)) {
-          merged['${o['supplierId']}:${o['storeId']}:${o['orderNumber']}'] = o;
-        }
+        final merged = {for (final o in tgoOrders(next)) tgoOrderKey(o): o};
+        final previouslyKnown = merged.keys.toSet();
+        final sameAccount = meta is Map && meta['supplierId'] == c.supplierId;
+        final autoKitchen = next['settings']?['tgoAutoKitchen'] == true;
         for (final o in fresh) {
-          final key = '${o['supplierId']}:${o['storeId']}:${o['orderNumber']}';
+          final key = tgoOrderKey(o);
           final prior = merged[key];
           // Do not allocate a different display number when platform status changes.
-          merged[key] = prior == null
-              ? o
-              : {
-                  ...o,
-                  if (prior['dailyNumber'] is int)
-                    'dailyNumber': prior['dailyNumber'],
-                  if (prior['numberDay'] is String)
-                    'numberDay': prior['numberDay'],
-                };
+          merged[key] = {
+            ...o,
+            if (prior?['dailyNumber'] is int) 'dailyNumber': prior!['dailyNumber'],
+            if (prior?['numberDay'] is String) 'numberDay': prior!['numberDay'],
+            if (prior?['kitchenPrintState'] is String)
+              'kitchenPrintState': prior!['kitchenPrintState'],
+          };
+        }
+        newOrders = [
+          if (last != null && sameAccount)
+            for (final entry in merged.entries)
+              if (!previouslyKnown.contains(entry.key) &&
+                  tgoKitchenActive(entry.value) &&
+                  onIstanbulDay(entry.value['createdAt'], istanbulDay(end)))
+                entry.value,
+        ];
+        if (autoKitchen) {
+          for (final order in newOrders) {
+            order['kitchenPrintState'] = 'Bekliyor';
+          }
         }
         next['trendyolGoOrders'] = merged.values.toList();
         assignDailyNumbers(next);
         next['tgoSyncInfo'] = {
-          'lastSync': DateTime.now().toUtc().toIso8601String(),
+          'supplierId': c.supplierId,
+          'lastSync': end.toIso8601String(),
         };
         saved = store.replace(next, snapshot.revision).ok;
       }
@@ -392,6 +439,7 @@ class TrendyolGoReadonly extends ChangeNotifier {
         throw const FormatException('Veritabanı güncellemesi çakıştı.');
       lastSync = DateTime.now().toLocal().toIso8601String();
       status = 'Bağlı · Salt okunur';
+      if (newOrders.isNotEmpty) onNewOrders?.call(newOrders);
     } on FormatException catch (e) {
       error = e.message;
       status = 'Bağlantı hatası';

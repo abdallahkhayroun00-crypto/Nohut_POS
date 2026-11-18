@@ -196,7 +196,7 @@ class _TgoSettingsPanelState extends State<TgoSettingsPanel> {
   );
 }
 
-class TgoOrdersPanel extends StatelessWidget {
+class TgoOrdersPanel extends StatefulWidget {
   const TgoOrdersPanel({
     super.key,
     required this.orders,
@@ -204,6 +204,9 @@ class TgoOrdersPanel extends StatelessWidget {
     required this.businessDay,
     required this.showHistory,
     required this.onPeriodChanged,
+    required this.autoKitchen,
+    required this.onAutoKitchenChanged,
+    required this.onKitchenPrint,
   });
 
   final List<Json> orders;
@@ -211,15 +214,53 @@ class TgoOrdersPanel extends StatelessWidget {
   final String businessDay;
   final bool showHistory;
   final VoidCallback onPeriodChanged;
+  final bool autoKitchen;
+  final ValueChanged<bool> onAutoKitchenChanged;
+  final ValueChanged<Json> onKitchenPrint;
+
+  @override
+  State<TgoOrdersPanel> createState() => _TgoOrdersPanelState();
+}
+
+class _TgoOrdersPanelState extends State<TgoOrdersPanel> {
+  String query = '';
+  String? dayFilter;
+  String status = '';
+
+  Future<void> _pickDate() async {
+    final yesterday = DateTime.parse(widget.businessDay)
+        .subtract(const Duration(days: 1));
+    final date = await showDatePicker(
+      context: context,
+      firstDate: DateTime(2000),
+      lastDate: yesterday,
+      initialDate: dayFilter == null ? yesterday : DateTime.parse(dayFilter!),
+    );
+    if (date != null && mounted) {
+      setState(() => dayFilter = date.toIso8601String().substring(0, 10));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final TgoOrdersPanel(
+      :orders, :integration, :businessDay, :showHistory, :onPeriodChanged,
+    ) = widget;
     final theme = Theme.of(context);
     final datedOrders = <(DateTime, Json)>[];
     for (final order in orders) {
       final createdAt = DateTime.tryParse('${order['createdAt'] ?? ''}');
       if (createdAt == null) continue;
       final day = istanbulDay(createdAt);
+      if (showHistory) {
+        if (dayFilter != null && day != dayFilter) continue;
+        if (status.isNotEmpty && order['status'] != status) continue;
+        if (query.isNotEmpty &&
+            ![order['orderNumber'], order['orderCode'], displayOrderNumber(order)]
+                .any((value) => '${value ?? ''}'.toLowerCase().contains(query))) {
+          continue;
+        }
+      }
       if (showHistory ? day.compareTo(businessDay) < 0 : day == businessDay) {
         datedOrders.add((createdAt, order));
       }
@@ -288,12 +329,68 @@ class TgoOrdersPanel extends StatelessWidget {
               ),
             ),
             OutlinedButton.icon(
-              onPressed: onPeriodChanged,
+              onPressed: () {
+                setState(() => query = '');
+                onPeriodChanged();
+              },
               icon: Icon(showHistory ? Icons.today_outlined : Icons.history),
               label: Text(showHistory ? 'Bugüne Dön' : 'Geçmiş'),
             ),
           ],
         ),
+        const SizedBox(height: 8),
+        if (showHistory)
+          Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              SizedBox(
+                width: 230,
+                child: TextField(
+                  onChanged: (value) =>
+                      setState(() => query = value.trim().toLowerCase()),
+                  decoration: const InputDecoration(labelText: 'Sipariş No / Kod'),
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed: _pickDate,
+                icon: const Icon(Icons.calendar_today_outlined),
+                label: Text(dayFilter ?? 'Tarih Seç'),
+              ),
+              if (dayFilter != null)
+                TextButton(
+                  onPressed: () => setState(() => dayFilter = null),
+                  child: const Text('Tarihi Temizle'),
+                ),
+              DropdownButton<String>(
+                value: status,
+                items: [
+                  const DropdownMenuItem(value: '', child: Text('Tüm Durumlar')),
+                  for (final (value, label) in const [
+                    ('Created', 'Yeni'),
+                    ('Picking', 'Hazırlanıyor'),
+                    ('Invoiced', 'Hazırlandı'),
+                    ('Shipped', 'Yolda'),
+                    ('Delivered', 'Teslim Edildi'),
+                    ('Cancelled', 'İptal'),
+                    ('UnSupplied', 'Karşılanamadı'),
+                  ])
+                    DropdownMenuItem(value: value, child: Text(label)),
+                ],
+                onChanged: (value) => setState(() => status = value ?? ''),
+              ),
+            ],
+          )
+        else
+          Align(
+            alignment: Alignment.centerLeft,
+            child: FilterChip(
+              label: const Text('Otomatik Mutfak Fişi'),
+              selected: widget.autoKitchen,
+              onSelected: widget.onAutoKitchenChanged,
+            ),
+          ),
         const SizedBox(height: 8),
         if (datedOrders.isEmpty)
           Card(
@@ -319,7 +416,15 @@ class TgoOrdersPanel extends StatelessWidget {
                 runSpacing: 8,
                 children: [
                   for (final (_, order) in datedOrders)
-                    SizedBox(width: width, child: _TgoOrderCard(order: order)),
+                    SizedBox(
+                      width: width,
+                      child: _TgoOrderCard(
+                        order: order,
+                        onKitchenPrint: showHistory
+                            ? null
+                            : () => widget.onKitchenPrint(order),
+                      ),
+                    ),
                 ],
               );
             },
@@ -330,8 +435,9 @@ class TgoOrdersPanel extends StatelessWidget {
 }
 
 class _TgoOrderCard extends StatelessWidget {
-  const _TgoOrderCard({required this.order});
+  const _TgoOrderCard({required this.order, this.onKitchenPrint});
   final Json order;
+  final VoidCallback? onKitchenPrint;
 
   @override
   Widget build(BuildContext context) {
@@ -355,6 +461,14 @@ class _TgoOrderCard extends StatelessWidget {
       _ => payment.replaceAll('_', ' '),
     };
     final note = '${order['customerNote'] ?? ''}'.trim();
+    final reason = '${order['cancelReason'] ?? ''}'.trim();
+    final eta = {
+      for (final key in ['courierEtaFrom', 'courierEtaTo'])
+        if (order[key] is String) istanbulStamp(order[key]).split(' ').last,
+    }.join('–');
+    final printState = order['kitchenPrintState'] as String?;
+    final showCourier = order['pickup'] != true &&
+        const ['Created', 'Picking', 'Invoiced'].contains(status);
     final lines = asMaps(order['lines']);
     return Card(
       child: Padding(
@@ -391,10 +505,16 @@ class _TgoOrderCard extends StatelessWidget {
                 Text('Platform no: ${order['orderNumber']}'),
                 Text(istanbulStamp(order['createdAt'])),
                 Text(order['pickup'] == true ? 'Gel-Al' : 'Paket Servis'),
+                if ('${order['orderCode'] ?? ''}'.isNotEmpty)
+                  Text("Sipariş kodu: ${order['orderCode']}"),
                 if (order['testPackage'] == true) const Text('Test siparişi'),
               ],
             ),
             const Divider(height: 20),
+            if (showCourier && order['courierNearby'] == true)
+              const Text('Kurye yakında'),
+            if (showCourier && eta.isNotEmpty) Text('Tahmini kurye varışı: $eta'),
+            if (reason.isNotEmpty) Text('İptal nedeni: $reason'),
             for (final line in lines)
               Padding(
                 padding: const EdgeInsets.only(bottom: 5),
@@ -429,6 +549,29 @@ class _TgoOrderCard extends StatelessWidget {
                     style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
               ],
             ),
+            if (onKitchenPrint != null && tgoKitchenActive(order))
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: () => _openExternalPage(
+                    context,
+                    'https://partner.tgoyemek.com/',
+                  ),
+                  icon: const Icon(Icons.open_in_new),
+                  label: const Text('Siparişi GO Yemek Panelinde Yönet'),
+                ),
+              ),
+            if (printState != null)
+              Text('Mutfak fişi · $printState', style: theme.textTheme.bodySmall)
+            else if (onKitchenPrint != null && tgoKitchenActive(order))
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: onKitchenPrint,
+                  icon: const Icon(Icons.print_outlined),
+                  label: const Text('Mutfak Fişi Yazdır'),
+                ),
+              ),
           ],
         ),
       ),
@@ -505,6 +648,30 @@ class _FeedbackPanelState extends State<FeedbackPanel> {
   }
 }
 
+Future<void> _openExternalPage(BuildContext context, String url) async {
+  try {
+    final ProcessResult result;
+    if (Platform.isWindows) {
+      result = await Process.run('rundll32.exe', [
+        'url.dll,FileProtocolHandler',
+        url,
+      ]);
+    } else {
+      result = await Process.run(
+        Platform.isMacOS ? 'open' : 'xdg-open',
+        [url],
+      );
+    }
+    if (result.exitCode == 0) return;
+  } on ProcessException {
+    // Offer the address for manual opening if the browser cannot be launched.
+  }
+  if (!context.mounted) return;
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(content: SelectableText('Tarayıcı açılamadı. $url')),
+  );
+}
+
 class _ExternalReviewsCard extends StatelessWidget {
   const _ExternalReviewsCard({
     required this.icon,
@@ -516,30 +683,6 @@ class _ExternalReviewsCard extends StatelessWidget {
 
   final IconData icon;
   final String title, description, action, url;
-
-  Future<void> _open(BuildContext context) async {
-    try {
-      final ProcessResult result;
-      if (Platform.isWindows) {
-        result = await Process.run('rundll32.exe', [
-          'url.dll,FileProtocolHandler',
-          url,
-        ]);
-      } else {
-        result = await Process.run(
-          Platform.isMacOS ? 'open' : 'xdg-open',
-          [url],
-        );
-      }
-      if (result.exitCode == 0) return;
-    } on ProcessException {
-      // Offer the address for manual opening if the browser cannot be launched.
-    }
-    if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: SelectableText('Tarayıcı açılamadı. $url')),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -560,7 +703,7 @@ class _ExternalReviewsCard extends StatelessWidget {
             Text(description),
             const SizedBox(height: 12),
             OutlinedButton.icon(
-              onPressed: () => _open(context),
+              onPressed: () => _openExternalPage(context, url),
               icon: const Icon(Icons.open_in_new),
               label: Text(action),
             ),

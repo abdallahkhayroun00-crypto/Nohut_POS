@@ -109,6 +109,18 @@ void main() {
       await t.pumpAndSettle();
       expect(find.text('Platform no: PLATFORM-98'), findsOneWidget);
       expect(find.text('Platform no: PLATFORM-99'), findsNothing);
+      await t.enterText(
+        find.widgetWithText(TextField, 'Sipariş No / Kod'),
+        'no-match',
+      );
+      await t.pumpAndSettle();
+      expect(find.text('Platform no: PLATFORM-98'), findsNothing);
+      await t.enterText(
+        find.widgetWithText(TextField, 'Sipariş No / Kod'),
+        'PLATFORM-98',
+      );
+      await t.pumpAndSettle();
+      expect(find.text('Platform no: PLATFORM-98'), findsOneWidget);
       await t.tap(find.text('Bugüne Dön'));
       await t.pumpAndSettle();
       expect(find.text('Platform no: PLATFORM-99'), findsOneWidget);
