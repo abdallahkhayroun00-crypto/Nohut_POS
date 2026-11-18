@@ -25,6 +25,7 @@ class SimpleSettings extends StatefulWidget {
     required this.qrSync,
     required this.tgoIntegration,
     required this.onOpenGoogle,
+    this.onTestOnlineSound,
     this.staffPanel,
     this.wifiPanel,
   });
@@ -34,6 +35,7 @@ class SimpleSettings extends StatefulWidget {
   final QrMenuAutoSync qrSync;
   final TrendyolGoReadonly tgoIntegration;
   final VoidCallback onOpenGoogle;
+  final ValueChanged<String>? onTestOnlineSound;
   final Widget? staffPanel, wifiPanel;
   @override
   State<SimpleSettings> createState() => _SimpleSettingsState();
@@ -151,6 +153,7 @@ class _SimpleSettingsState extends State<SimpleSettings> {
           children: [
             for (final name in [
               'Genel',
+              'Bildirimler',
               'Menü',
               'Yazıcı',
               'Entegrasyonlar',
@@ -163,6 +166,7 @@ class _SimpleSettingsState extends State<SimpleSettings> {
                 avatar: Icon(
                   switch (name) {
                     'Genel' => Icons.dashboard_customize_outlined,
+                    'Bildirimler' => Icons.notifications_active_outlined,
                     'Menü' => Icons.menu_book_outlined,
                     'Yazıcı' => Icons.print_outlined,
                     'Entegrasyonlar' => Icons.hub_outlined,
@@ -204,6 +208,66 @@ class _SimpleSettingsState extends State<SimpleSettings> {
               ),
             ],
           ),
+        if (tab == 'Bildirimler') ...[
+          section(
+            'Online Sipariş Alarm 2.0',
+            'Trendyol Go, Yemeksepeti ve Migros Yemek için ortak kuyruk. '
+            'Canlı ses sadece doğrulanmış online siparişle başlar.',
+            [
+              SwitchListTile.adaptive(
+                title: const Text('Online sipariş sesi'),
+                subtitle: const Text(
+                  'Personel (masa) siparişi sesinden bağımsızdır. '
+                  'Kapalıyken bekleyen online sipariş uyarısı ekranda kalır.',
+                ),
+                value: settings['onlineOrderSound'] != false,
+                onChanged: (value) => widget.edit((s) =>
+                    (s.putIfAbsent('settings', () => <String, dynamic>{})
+                        as Map)['onlineOrderSound'] = value),
+              ),
+              const ListTile(
+                leading: Icon(Icons.timer_outlined),
+                title: Text('10 sn ses · 15 sn aralık'),
+                subtitle: Text('10 saniyelik özgün melodi + 5 saniye sessizlik. '
+                    '45 saniye sonra hızlanır; 90 saniyede kırmızı acil uyarı.'),
+              ),
+              const ListTile(
+                leading: Icon(Icons.verified_outlined),
+                title: Text('Platform onayı gerekli'),
+                subtitle: Text('Ses yalnızca API tarafından doğrulanan kabul, '
+                    'iptal veya kapanış durumundan sonra durur. '
+                    'Siparişi açmak sesi durdurmaz.'),
+              ),
+              const SizedBox(height: 8),
+              const Text('Sesleri dene',
+                  style: TextStyle(fontWeight: FontWeight.w800)),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final provider in const [
+                    'Trendyol Go', 'Yemeksepeti', 'Migros Yemek',
+                  ])
+                    OutlinedButton.icon(
+                      onPressed: widget.onTestOnlineSound == null
+                          ? null
+                          : () => widget.onTestOnlineSound!(provider),
+                      icon: const Icon(Icons.volume_up_outlined, size: 18),
+                      label: Text('$provider · Test Sesi'),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Ses düzeyi Windows mikserinden ayarlanır. '
+                'Yemeksepeti ve Migros Yemek canlı sipariş bildirimleri '
+                'yetkili API bağlantısı kurulana kadar çalışmaz.',
+                style: TextStyle(fontSize: 12, color: NohutBrand.muted),
+              ),
+            ],
+          ),
+        ],
         if (tab == 'Entegrasyonlar') ...[
           TgoSettingsPanel(integration: widget.tgoIntegration),
           const SizedBox(height: 12),
