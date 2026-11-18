@@ -22,6 +22,12 @@ Secrets are stored separately from the SQLite database, encrypted using Windows 
 
 The latest normalized external packages live in separate SQLite JSON fields `trendyolGoOrders` and `tgoSyncInfo` (not the editable local `orders` list). Distinct external packages are deduplicated by supplier/store/order number. Platform product prices are never overwritten by the shop's QR menu or local POS price table.
 
+## Unified daily POS order numbering
+
+**One sequence** is used for all local and Trendyol Go tickets on the restaurant PC, regardless of channel. For example, `#0001 Masa`, `#0002 Trendyol Go`, `#0003 Gel-Al`. The number resets for new orders every Turkish calendar day at midnight (`UTC+03:00`), with the old orders retaining their numbers and dates. SQLite internal IDs and original external `orderNumber` remain unchanged.
+
+The sequence represents the **order in which the POS first records the tickets for that business day**. Online orders fetched late or in the initial seven-day historical backfill receive the next available number of their original Turkish business day; the app **never renumbers an already issued local ticket** simply to reorder historic arrivals. Repeated API sync/status updates preserve the platform ticket number. The manager, Online Siparişler and employee screens show the Nohut number prominently and original Trendyol reference separately.
+
 ## Technical behavior and limitations
 
 - Endpoint: `GET https://api.tgoapis.com/integrator/order/meal/suppliers/{supplierid}/packages`
