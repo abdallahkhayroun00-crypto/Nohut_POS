@@ -242,7 +242,8 @@ class TrendyolGoReadonly extends ChangeNotifier {
     defaultValue: false,
   );
   bool get canWrite => writeEnabled &&
-      liveSyncEnabled && credentials?.valid == true;
+      liveSyncEnabled && credentials?.valid == true &&
+      status.startsWith('Bağlı ·');
   bool writing = false;
   static const pausedStatus = 'Senkronizasyon geçici olarak kapalı';
   final PosStore store;
