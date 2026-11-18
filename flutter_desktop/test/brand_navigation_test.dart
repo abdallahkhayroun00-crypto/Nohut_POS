@@ -109,6 +109,9 @@ void main() {
       );
       expect(find.widgetWithText(FilterChip, 'Yemeksepeti'), findsOneWidget);
       expect(find.text('Değerlendirmeleri Getir'), findsNothing);
+      expect(find.textContaining('Tamamlanan ve iptal edilenler'), findsOneWidget);
+      await t.tap(find.textContaining('Tamamlanan ve iptal edilenler'));
+      await t.pumpAndSettle();
       expect(find.text('Teslim Edildi'), findsOneWidget);
       expect(find.text(istanbulStamp(today.toIso8601String())), findsOneWidget);
       expect(find.text('Platform no: PLATFORM-98'), findsNothing);
@@ -117,13 +120,13 @@ void main() {
       expect(find.text('Platform no: PLATFORM-98'), findsOneWidget);
       expect(find.text('Platform no: PLATFORM-99'), findsNothing);
       await t.enterText(
-        find.widgetWithText(TextField, 'Sipariş No / Kod'),
+        find.byType(TextField).first,
         'no-match',
       );
       await t.pumpAndSettle();
       expect(find.text('Platform no: PLATFORM-98'), findsNothing);
       await t.enterText(
-        find.widgetWithText(TextField, 'Sipariş No / Kod'),
+        find.byType(TextField).first,
         'PLATFORM-98',
       );
       await t.pumpAndSettle();
