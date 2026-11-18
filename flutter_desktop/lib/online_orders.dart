@@ -8,7 +8,7 @@ import 'trendyol_go_ui.dart';
 
 const onlinePartners = {
   'Trendyol Go': (
-    label: 'Uber Eats Trendyol Go',
+    label: 'Trendyol Go',
     url: 'https://partner.tgoyemek.com/',
   ),
   'Yemeksepeti': (
@@ -249,13 +249,24 @@ class _OnlineOrdersState extends State<OnlineOrders> {
               children: [
                 Wrap(
                   spacing: 8,
-                  runSpacing: 8,
+                  runSpacing: 9,
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     for (final (value, label) in [(false, 'Bugün'), (true, 'Geçmiş')])
                       ChoiceChip(
-                        avatar: Icon(value ? Icons.history : Icons.today, size: 16),
-                        label: Text(label),
+                        showCheckmark: false,
+                        avatar: Icon(value ? Icons.history : Icons.today,
+                            size: 16,
+                            color: history == value
+                                ? Colors.white : NohutBrand.green),
+                        label: Text(label,
+                            style: TextStyle(
+                              color: history == value
+                                  ? Colors.white : NohutBrand.ink,
+                              fontWeight: FontWeight.w700,
+                            )),
+                        selectedColor: NohutBrand.green,
+                        backgroundColor: Colors.white,
                         selected: history == value,
                         onSelected: (selected) {
                           if (!selected) return;
@@ -265,7 +276,15 @@ class _OnlineOrdersState extends State<OnlineOrders> {
                     const SizedBox(width: 8),
                     for (final key in ['Tümü', ...onlinePartners.keys])
                       FilterChip(
-                        label: Text(onlinePartners[key]?.label ?? key),
+                        showCheckmark: false,
+                        label: Text(onlinePartners[key]?.label ?? key,
+                            style: TextStyle(
+                              color: source == key
+                                  ? Colors.white : NohutBrand.ink,
+                              fontWeight: FontWeight.w600,
+                            )),
+                        selectedColor: NohutBrand.green,
+                        backgroundColor: Colors.white,
                         selected: source == key,
                         onSelected: (_) => setState(() => source = key),
                       ),
