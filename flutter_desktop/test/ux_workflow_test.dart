@@ -8,6 +8,7 @@ import 'package:nohut_falafel_desktop/main.dart';
 import 'package:nohut_falafel_desktop/pos_store.dart';
 import 'package:nohut_falafel_desktop/pos_logic.dart';
 import 'package:nohut_falafel_desktop/floor_plan.dart';
+import 'package:nohut_falafel_desktop/trendyol_go_readonly.dart';
 
 void main() {
   setUpAll(() async {
@@ -172,10 +173,8 @@ void main() {
   );
 
   testWidgets(
-    'daily shift controls are removed and online demo stays isolated',
+    'online orders stay read-only and isolated from local payments and print jobs',
     (tester) async {
-      // The confirmation itself must not invoke the supplied state mutation.
-      // Its cancellation behavior is covered through the manager cash screen.
       final folder = Directory.systemTemp.createTempSync('nohut-cash-');
       final file = '${folder.path}/pos.sqlite3';
       tester.view.physicalSize = const Size(1280, 900);
@@ -191,6 +190,18 @@ void main() {
       seed['settings'] = {'autoPrint': false};
       seed['localMenu'] = [
         {'id': 0, 'name': 'Falafel Dürüm', 'price': 140, 'category': 'wrap'},
+      ];
+      seed['trendyolGoOrders'] = [
+        normalizeTgoPackage({
+          'id': 'package-101',
+          'orderNumber': 'ORDER-101',
+          'packageStatus': 'Picking',
+          'packageCreationDate': 1794740400000,
+          'totalPrice': 140,
+          'lines': [
+            {'name': 'Falafel Dürüm', 'unitSellingPrice': 140},
+          ],
+        }),
       ];
       store.replace(seed, 0);
       store.dispose();
@@ -210,12 +221,15 @@ void main() {
       await tester.ensureVisible(find.text('Online Siparişler').first);
       await tester.tap(find.text('Online Siparişler').first);
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Örnek Online Kart'));
-      await tester.pumpAndSettle();
-      expect(find.textContaining('Kabul bekliyor'), findsWidgets);
+      expect(find.textContaining('Trendyol sipariş no: ORDER-101'), findsOneWidget);
+      expect(find.text('1 × Falafel Dürüm'), findsOneWidget);
+      expect(find.textContaining('Salt okunur · Yönetim'), findsOneWidget);
+      expect(find.text('Kabul Et'), findsNothing);
       final real = PosStore(databaseFile: file);
-      expect(real.read().data['orders'], isEmpty);
-      expect(real.read().data['printJobs'], isEmpty);
+      final persisted = real.read().data;
+      expect(persisted['orders'], isEmpty);
+      expect(persisted['printJobs'], isEmpty);
+      expect(tgoOrders(persisted).single['status'], 'Picking');
       real.dispose();
       expect(tester.takeException(), isNull);
     },
