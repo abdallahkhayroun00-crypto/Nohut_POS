@@ -2009,7 +2009,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                                 }
                               },
                               child: const Text('Gelişmiş Filtreler'),
-                            ),,
+                            ),
                   ],
                 ),
                 const SizedBox(height: 12),
