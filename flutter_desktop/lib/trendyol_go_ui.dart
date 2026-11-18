@@ -636,7 +636,7 @@ class _TgoReviewsPanelState extends State<TgoReviewsPanel> {
     int scoreOf(Json review) {
       final raw = review['rating'];
       final score = raw is Map ? raw['average'] : null;
-      return score is num ? score.round().clamp(1, 5) : 0;
+      return score is num ? score.round().clamp(1, 5).toInt() : 0;
     }
     final ratings = [for (var score = 5; score >= 1; score--)
       reviews.where((review) => scoreOf(review) == score).length];
