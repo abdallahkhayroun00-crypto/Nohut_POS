@@ -73,10 +73,33 @@ class _SalesBucket {
 class _DashboardSalesState extends State<DashboardSales> {
   _SalesPeriod period = _SalesPeriod.daily;
   bool countsMode = false;
+  /// 0 is the current period, -1 the previous, and so on.
+  int periodOffset = 0;
   final Set<int> visible = {0, 1, 2, 3, 4};
 
-  DateTime get anchor =>
-      DateTime.tryParse(widget.businessDay) ?? DateTime.now().toUtc();
+  DateTime get anchor {
+    final selected = DateTime.tryParse(widget.businessDay) ?? DateTime.now().toUtc();
+    return switch (period) {
+      _SalesPeriod.daily => DateTime.utc(
+          selected.year, selected.month, selected.day + periodOffset),
+      _SalesPeriod.weekly => DateTime.utc(
+          selected.year, selected.month,
+          selected.day - selected.weekday + 1 + periodOffset * 7),
+      _SalesPeriod.monthly => DateTime.utc(
+          selected.year, selected.month + periodOffset, 1),
+    };
+  }
+
+  void _movePeriod(int step) {
+    if (periodOffset + step > 0) return;
+    setState(() => periodOffset += step);
+  }
+
+  void _onSwipe(DragEndDetails details) {
+    final velocity = details.primaryVelocity ?? 0;
+    if (velocity.abs() < 110) return;
+    _movePeriod(velocity > 0 ? -1 : 1);
+  }
 
   DateTime? _turkeyLocal(Object? timestamp) {
     if (timestamp is! String) return null;
@@ -143,11 +166,12 @@ class _DashboardSalesState extends State<DashboardSales> {
           return _SalesBucket('${names[i]} ${day.day}');
         });
       case _SalesPeriod.monthly:
-        const months = [
-          'Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz',
-          'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara',
-        ];
-        buckets = List.generate(12, (i) => _SalesBucket(months[i]));
+        // One bar per date in the selected month, not twelve fixed
+        // month labels that never let operators inspect previous months.
+        final days = DateTime.utc(target.year, target.month + 1, 0).day;
+        buckets = List.generate(
+          days, (i) => _SalesBucket('${i + 1}'),
+        );
     }
     final weekStart = DateTime.utc(
       target.year, target.month, target.day - target.weekday + 1,
@@ -167,7 +191,9 @@ class _DashboardSalesState extends State<DashboardSales> {
           final offset = date.difference(weekStart).inDays;
           if (offset >= 0 && offset < 7) bucket = offset;
         case _SalesPeriod.monthly:
-          if (time.year == target.year) bucket = time.month - 1;
+          if (time.year == target.year && time.month == target.month) {
+            bucket = time.day - 1;
+          }
       }
       if (bucket != null) buckets[bucket].add(record);
     }
@@ -178,17 +204,20 @@ class _DashboardSalesState extends State<DashboardSales> {
     final day = anchor;
     switch (period) {
       case _SalesPeriod.daily:
-        return widget.businessDay + ' · 00:00–23:59';
+        return '${day.day.toString().padLeft(2, '0')}.' 
+            '${day.month.toString().padLeft(2, '0')}.${day.year} · 00:00–23:59';
       case _SalesPeriod.weekly:
-        final start = DateTime.utc(
-          day.year, day.month, day.day - day.weekday + 1,
-        );
+        final start = DateTime.utc(day.year, day.month, day.day);
         final end = start.add(const Duration(days: 6));
         String short(DateTime date) =>
             '${date.day.toString().padLeft(2, '0')}.${date.month.toString().padLeft(2, '0')}';
         return '${short(start)} – ${short(end)} · Pazartesi–Pazar';
       case _SalesPeriod.monthly:
-        return '${day.year} · Ocak–Aralık';
+        const months = [
+          'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
+          'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık',
+        ];
+        return '${months[day.month - 1]} ${day.year} · Günlere göre';
     }
   }
 
@@ -301,7 +330,7 @@ class _DashboardSalesState extends State<DashboardSales> {
         final minWidth = switch (period) {
           _SalesPeriod.daily => 24 * 45.0,
           _SalesPeriod.weekly => 7 * 96.0,
-          _SalesPeriod.monthly => 12 * 76.0,
+          _SalesPeriod.monthly => buckets.length * 40.0,
         };
         final width = math.max(constraints.maxWidth, minWidth);
         return SingleChildScrollView(
@@ -474,16 +503,20 @@ class _DashboardSalesState extends State<DashboardSales> {
                   alignment: WrapAlignment.spaceBetween,
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Satış Grafiği',
-                            style: Theme.of(context).textTheme.titleLarge),
-                        const SizedBox(height: 4),
-                        Text(_periodDescription(),
-                            style: const TextStyle(color: NohutBrand.muted,
-                                fontSize: 12)),
-                      ],
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onHorizontalDragEnd: _onSwipe,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Satış Grafiği',
+                              style: Theme.of(context).textTheme.titleLarge),
+                          const SizedBox(height: 4),
+                          Text(_periodDescription(),
+                              style: const TextStyle(color: NohutBrand.muted,
+                                  fontSize: 12)),
+                        ],
+                      ),
                     ),
                     SegmentedButton<_SalesPeriod>(
                       showSelectedIcon: false,
@@ -496,8 +529,10 @@ class _DashboardSalesState extends State<DashboardSales> {
                         ButtonSegment(value: _SalesPeriod.monthly,
                             label: Text('Aylık')),
                       ],
-                      onSelectionChanged: (value) =>
-                          setState(() => period = value.first),
+                      onSelectionChanged: (value) => setState(() {
+                        period = value.first;
+                        periodOffset = 0;
+                      }),
                     ),
                     SegmentedButton<bool>(
                       showSelectedIcon: false,
@@ -511,7 +546,48 @@ class _DashboardSalesState extends State<DashboardSales> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 18),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    IconButton(
+                      key: const ValueKey('chart-previous-period'),
+                      tooltip: 'Önceki dönem',
+                      onPressed: () => _movePeriod(-1),
+                      icon: const Icon(Icons.chevron_left),
+                    ),
+                    Expanded(
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onHorizontalDragEnd: _onSwipe,
+                        child: Column(
+                          children: [
+                            Text(_periodDescription(),
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    color: NohutBrand.ink)),
+                            const Text('Geçmişe kaydırın veya okları kullanın',
+                                style: TextStyle(fontSize: 11,
+                                    color: NohutBrand.muted)),
+                          ],
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      key: const ValueKey('chart-next-period'),
+                      tooltip: 'Sonraki dönem',
+                      onPressed: periodOffset >= 0
+                          ? null : () => _movePeriod(1),
+                      icon: const Icon(Icons.chevron_right),
+                    ),
+                    TextButton(
+                      onPressed: periodOffset == 0
+                          ? null : () => setState(() => periodOffset = 0),
+                      child: const Text('Bugüne dön'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
                 Row(
                   children: [
                     Text(countsMode ? '$selectedTotal sipariş' : formatTry(selectedTotal),
@@ -525,7 +601,11 @@ class _DashboardSalesState extends State<DashboardSales> {
                   ],
                 ),
                 const SizedBox(height: 8),
-                _chart(buckets),
+                GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onHorizontalDragEnd: _onSwipe,
+                  child: _chart(buckets),
+                ),
                 const SizedBox(height: 12),
                 Wrap(
                   spacing: 8,
@@ -538,8 +618,23 @@ class _DashboardSalesState extends State<DashboardSales> {
                           radius: 5,
                           backgroundColor: _channels[i].color,
                         ),
-                        label: Text(_channels[i].name),
+                        label: Text(
+                          _channels[i].name,
+                          style: TextStyle(
+                            color: visible.contains(i)
+                                ? Colors.white : NohutBrand.ink,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
                         selected: visible.contains(i),
+                        selectedColor: NohutBrand.green,
+                        backgroundColor: Colors.white,
+                        showCheckmark: false,
+                        side: BorderSide(
+                          color: visible.contains(i)
+                              ? NohutBrand.green
+                              : const Color(0xffC8D6CD),
+                        ),
                         onSelected: (selected) {
                           if (!selected && visible.length == 1) return;
                           setState(() {
