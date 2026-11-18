@@ -645,6 +645,7 @@ class _TgoReviewsPanelState extends State<TgoReviewsPanel> {
   bool loading = false, loaded = false, hasNextPage = false;
   int ratingFilter = 0;
   bool newestFirst = true, answering = false;
+  bool starsOnly = false;
   final Map<String, String> pendingReplies = {};
 
   @override
@@ -769,7 +770,8 @@ class _TgoReviewsPanelState extends State<TgoReviewsPanel> {
         : rated.fold<int>(0, (sum, review) => sum + scoreOf(review)) / rated.length;
     final visible = sortReviewsByDate(
       reviews.where((review) =>
-          ratingFilter == 0 || scoreOf(review) == ratingFilter),
+          (ratingFilter == 0 || scoreOf(review) == ratingFilter) &&
+          (!starsOnly || !reviewHasWrittenComment(review))),
       newestFirst: newestFirst,
     );
     return Column(
@@ -812,7 +814,7 @@ class _TgoReviewsPanelState extends State<TgoReviewsPanel> {
                         ),
                         onChanged: (_) => setState(() {
                           reviews = []; loaded = false; error = '';
-                          ratingFilter = 0;
+                          ratingFilter = 0; starsOnly = false;
                         }),
                       ),
                     ),
@@ -910,6 +912,17 @@ class _TgoReviewsPanelState extends State<TgoReviewsPanel> {
                   selected: ratingFilter == star,
                   onSelected: (_) => setState(() => ratingFilter = star),
                 ),
+              FilterChip(
+                label: const Text('Sadece puan'),
+                selected: starsOnly,
+                showCheckmark: false,
+                selectedColor: NohutBrand.green,
+                labelStyle: TextStyle(
+                  color: starsOnly ? Colors.white : NohutBrand.ink,
+                  fontWeight: FontWeight.w600,
+                ),
+                onSelected: (v) => setState(() => starsOnly = v),
+              ),
               const SizedBox(width: 8),
               DropdownButton<bool>(
                 value: newestFirst,
