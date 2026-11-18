@@ -223,6 +223,7 @@ class _OnlineOrdersState extends State<OnlineOrders> {
     final partners = source == 'Tümü' ? onlinePartners.keys : [source];
     final canSync = integration.credentials?.valid == true &&
         TrendyolGoReadonly.liveSyncEnabled;
+    final tgoConnected = integration.status.startsWith('Bağlı ·');
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -357,7 +358,7 @@ class _OnlineOrdersState extends State<OnlineOrders> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(
-                        partner == 'Trendyol Go' && canSync
+                        partner == 'Trendyol Go' && tgoConnected
                             ? Icons.check_circle_outline
                             : Icons.info_outline,
                         size: 17,
