@@ -92,7 +92,8 @@ void main() {
     (db['orders'] as List).add(gelAl);
     assignDailyNumbers(db);
     expect(displayOrderNumber(gelAl), '0003');
-    expect((db['orders'] as List).map(displayOrderNumber).toList(), ['0001', '0003']);
+    final orders = (db['orders'] as List).cast<Map>();
+    expect(orders.map(displayOrderNumber).toList(), ['0001', '0003']);
 
     trendyol['status'] = 'Delivered';
     assignDailyNumbers(db);
