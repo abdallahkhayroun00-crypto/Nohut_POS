@@ -15,10 +15,12 @@ class DashboardSales extends StatefulWidget {
     super.key,
     required this.state,
     required this.businessDay,
+    this.onlineWarning,
   });
 
   final Json state;
   final String businessDay;
+  final String? onlineWarning;
 
   @override
   State<DashboardSales> createState() => _DashboardSalesState();
@@ -440,6 +442,12 @@ class _DashboardSalesState extends State<DashboardSales> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (widget.onlineWarning != null)
+          Card(child: ListTile(
+            leading: const Icon(Icons.info_outline, color: NohutBrand.gold),
+            title: const Text('Online satış verileri eksik olabilir'),
+            subtitle: Text(widget.onlineWarning!),
+          )),
         Card(
           child: Padding(
             padding: const EdgeInsets.all(19),
