@@ -127,3 +127,74 @@ class OnlineOrderSoundPlayer {
     return data.buffer.asUint8List();
   }
 }
+
+
+/// Phone-to-PC staff orders: play the user-provided shop notification TWICE.
+/// Separate from online delivery-platform alarm loops (10s every 15s).
+Future<void> _staffSoundQueue = Future<void>.value();
+
+void queueStaffPhoneOrderSoundTwice() {
+  _staffSoundQueue = _staffSoundQueue
+      .then((_) => _playStaffPhoneOrderTwice())
+      .catchError((Object error) {
+        // The persistent desktop popup is still shown without working audio.
+      });
+}
+
+Future<void> _playStaffPhoneOrderTwice() async {
+  if (!Platform.isWindows) {
+    await SystemSound.play(SystemSoundType.alert);
+    await Future<void>.delayed(const Duration(milliseconds: 2350));
+    await SystemSound.play(SystemSoundType.alert);
+    return;
+  }
+
+  try {
+    final asset = await rootBundle.load('assets/notifications/staff-order.mp3');
+    final directory = Directory(paths.join(
+      Platform.environment['TEMP'] ?? Directory.systemTemp.path,
+      'NohutFalafel',
+    ));
+    await directory.create(recursive: true);
+    final audio = File(paths.join(directory.path, 'staff-order.mp3'));
+    await audio.writeAsBytes(
+      asset.buffer.asUint8List(asset.offsetInBytes, asset.lengthInBytes),
+      flush: true,
+    );
+
+    // PresentationCore MediaPlayer decodes MP3 using built-in Windows codecs.
+    // Two plays of the 2.12-second clip, no continuous/repeating alarm.
+    final powershell = paths.join(
+      Platform.environment['SystemRoot'] ?? r'C:\Windows',
+      'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe',
+    );
+    final escaped = audio.path.replaceAll("'", "''");
+    final script = '''
+\$ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName PresentationCore
+\$sound = New-Object System.Windows.Media.MediaPlayer
+try {
+  \$sound.Open([Uri]::new('$escaped'))
+  Start-Sleep -Milliseconds 350
+  for (\$i=0; \$i -lt 2; \$i++) {
+    \$sound.Position = [TimeSpan]::Zero
+    \$sound.Play()
+    Start-Sleep -Milliseconds 2400
+    \$sound.Stop()
+  }
+} finally {
+  \$sound.Close()
+}
+''';
+    final reply = await Process.run(powershell, [
+      '-NoProfile', '-NonInteractive', '-STA', '-WindowStyle', 'Hidden',
+      '-Command', script,
+    ]).timeout(const Duration(seconds: 15));
+    if (reply.exitCode == 0) return;
+  } catch (_) {
+    // On a machine with MP3 playback restricted, preserve an audible fallback.
+  }
+  await playOrderAlert();
+  await Future<void>.delayed(const Duration(milliseconds: 600));
+  await playOrderAlert();
+}
