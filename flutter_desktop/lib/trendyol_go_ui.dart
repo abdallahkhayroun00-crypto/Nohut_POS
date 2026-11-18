@@ -581,6 +581,7 @@ class _TgoReviewsPanelState extends State<TgoReviewsPanel> {
   String error = '';
   int page = 0;
   bool loading = false, loaded = false, hasNextPage = false;
+  int ratingFilter = 0;
 
   @override
   void initState() {
@@ -631,87 +632,171 @@ class _TgoReviewsPanelState extends State<TgoReviewsPanel> {
   }
 
   @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      Card(
-        child: Padding(
-          padding: const EdgeInsets.all(18),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.star_outline, color: NohutBrand.green),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      'Trendyol Go',
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 14),
-              Wrap(
-                spacing: 12,
-                runSpacing: 8,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  SizedBox(
-                    width: 210,
-                    child: TextField(
-                      controller: storeId,
-                      enabled: !loading,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'Şube ID (Store ID)',
+  Widget build(BuildContext context) {
+    int scoreOf(Json review) {
+      final raw = review['rating'];
+      final score = raw is Map ? raw['average'] : null;
+      return score is num ? score.round().clamp(1, 5) : 0;
+    }
+    final ratings = [for (var score = 5; score >= 1; score--)
+      reviews.where((review) => scoreOf(review) == score).length];
+    final rated = reviews.where((review) => scoreOf(review) > 0).toList();
+    final average = rated.isEmpty
+        ? null
+        : rated.fold<int>(0, (sum, review) => sum + scoreOf(review)) / rated.length;
+    final visible = ratingFilter == 0
+        ? reviews
+        : reviews.where((review) => scoreOf(review) == ratingFilter).toList();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.star_outline, color: NohutBrand.green),
+                    const SizedBox(width: 10),
+                    Expanded(child: Text('Trendyol Go · Değerlendirmeler',
+                        style: Theme.of(context).textTheme.titleLarge)),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                const Text('Yalnızca yorumları görüntüler. Platformda yanıt veya değişiklik yapmaz.'),
+                const SizedBox(height: 14),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    SizedBox(
+                      width: 210,
+                      child: TextField(
+                        controller: storeId,
+                        enabled: !loading,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'Şube ID (Store ID)',
+                          prefixIcon: Icon(Icons.storefront_outlined),
+                        ),
+                        onChanged: (_) => setState(() {
+                          reviews = []; loaded = false; error = '';
+                          ratingFilter = 0;
+                        }),
                       ),
-                      onChanged: (_) => setState(() {
-                        reviews = [];
-                        loaded = false;
-                        error = '';
-                      }),
                     ),
-                  ),
-                  FilledButton.icon(
-                    onPressed: loading ? null : () => loadPage(0),
-                    icon: const Icon(Icons.refresh),
-                    label: const Text('Değerlendirmeleri Getir'),
-                  ),
-                ],
-              ),
-            ],
+                    FilledButton.icon(
+                      onPressed: loading ? null : () => loadPage(0),
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Değerlendirmeleri Getir'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
-      ),
-      if (loading) const LinearProgressIndicator(),
-      if (error.isNotEmpty)
-        Text(
-          error,
-          style: TextStyle(color: Theme.of(context).colorScheme.error),
-        ),
-      if (loaded && reviews.isEmpty && error.isEmpty)
-        const Text('Bu sayfada değerlendirme yok.'),
-      for (final review in reviews) _reviewTile(review),
-      if (loaded && (page > 0 || hasNextPage))
-        Wrap(
-          spacing: 8,
-          children: [
-            TextButton(
-              onPressed: loading || page == 0 ? null : () => loadPage(page - 1),
-              child: const Text('Önceki'),
+        if (loading) const LinearProgressIndicator(),
+        if (error.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.all(10),
+            child: Text(error, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+          ),
+        if (loaded) ...[
+          const SizedBox(height: 12),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Wrap(
+                alignment: WrapAlignment.start,
+                spacing: 28,
+                runSpacing: 18,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(average == null ? '—' : average.toStringAsFixed(1),
+                          style: const TextStyle(color: NohutBrand.green,
+                              fontWeight: FontWeight.w800, fontSize: 35)),
+                      const Text('★ ★ ★ ★ ★', style: TextStyle(color: NohutBrand.gold)),
+                      Text('${reviews.length} yorum · Sayfa ${page + 1}',
+                          style: const TextStyle(fontSize: 12, color: NohutBrand.muted)),
+                    ],
+                  ),
+                  SizedBox(
+                    width: 240,
+                    child: Column(
+                      children: [
+                        for (var i = 0; i < 5; i++)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 3),
+                            child: Row(
+                              children: [
+                                SizedBox(width: 35, child: Text('${5-i} ★')),
+                                Expanded(
+                                  child: LinearProgressIndicator(
+                                    value: reviews.isEmpty ? 0 : ratings[i] / reviews.length,
+                                    minHeight: 7,
+                                    borderRadius: BorderRadius.circular(8),
+                                    color: NohutBrand.gold,
+                                    backgroundColor: const Color(0xffECEFE9),
+                                  ),
+                                ),
+                                SizedBox(width: 30,
+                                    child: Text('${ratings[i]}', textAlign: TextAlign.end)),
+                              ],
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  const Text('Özet yalnızca yüklenen sayfaya aittir.',
+                    style: TextStyle(color: NohutBrand.muted, fontSize: 12)),
+                ],
+              ),
             ),
-            TextButton(
-              onPressed: loading || !hasNextPage
-                  ? null
-                  : () => loadPage(page + 1),
-              child: const Text('Sonraki'),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final star in [0, 5, 4, 3, 2, 1])
+                ChoiceChip(
+                  label: Text(star == 0 ? 'Tüm Yorumlar' : '$star ★'),
+                  selected: ratingFilter == star,
+                  onSelected: (_) => setState(() => ratingFilter = star),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (visible.isEmpty)
+            const Card(child: ListTile(leading: Icon(Icons.inbox_outlined),
+                title: Text('Bu filtrede değerlendirme yok.'))),
+          for (final review in visible) _reviewTile(review),
+          if (page > 0 || hasNextPage)
+            Wrap(
+              spacing: 8,
+              children: [
+                TextButton(
+                  onPressed: loading || page == 0 ? null : () => loadPage(page - 1),
+                  child: const Text('Önceki'),
+                ),
+                TextButton(
+                  onPressed: loading || !hasNextPage
+                      ? null : () => loadPage(page + 1),
+                  child: const Text('Sonraki'),
+                ),
+              ],
             ),
-          ],
-        ),
-    ],
-  );
+        ],
+      ],
+    );
+  }
 
   Widget _reviewTile(Json review) {
     final rating = review['rating'];
@@ -727,13 +812,30 @@ class _TgoReviewsPanelState extends State<TgoReviewsPanel> {
           ).add(const Duration(hours: 3)).toIso8601String().split('T').first
         : null;
     return Card(
-      child: ListTile(
-        leading: const Icon(Icons.star, color: NohutBrand.gold),
-        title: Text('${score is num ? score : '—'} / 5'),
-        subtitle: message is String && message.trim().isNotEmpty
-            ? Text(message)
-            : null,
-        trailing: date == null ? null : Text(date),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 17, vertical: 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Wrap(
+              spacing: 12,
+              runSpacing: 6,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                const Icon(Icons.star, color: NohutBrand.gold, size: 21),
+                Text('${score is num ? score : '—'} / 5',
+                    style: const TextStyle(fontWeight: FontWeight.w800,
+                        color: NohutBrand.green, fontSize: 16)),
+                if (date != null) Text(date,
+                    style: const TextStyle(color: NohutBrand.muted, fontSize: 12)),
+              ],
+            ),
+            if (message is String && message.trim().isNotEmpty) ...[
+              const SizedBox(height: 10),
+              SelectableText(message),
+            ],
+          ],
+        ),
       ),
     );
   }
