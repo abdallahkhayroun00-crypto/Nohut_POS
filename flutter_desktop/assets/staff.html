@@ -242,9 +242,12 @@ $('internal-item-form').onsubmit=event=>{
   }catch(error){$('internal-item-error').textContent=error.message}
 };
 function total(){persistDraft();let sum=0;for(const[key,r]of cart){const p=cartProduct(r);sum+=(Math.round((p?.price||0)*100)+(r.adjustmentCents||0)+componentExtra(r))*r.qty;const warning=document.querySelector(`[data-line-status="${key}"]`);if(warning)warning.textContent=!p||p.price==null?'Ürün satış dışı. Kaldırın.':money((Math.round(p.price*100)+(r.adjustmentCents||0)+componentExtra(r))*r.qty)}const count=[...cart.values()].reduce((n,r)=>n+r.qty,0);$('total').textContent='Toplam '+money(sum);$('cart-count').textContent=count;$('dock-caption').textContent='Sipariş sepeti · '+count+' ürün';$('dock-total').textContent=money(sum);updateProductCounts();controls()}
+const openTrendyolStatuses=new Set(['created','picking','invoiced','shipped']);
 let knownTrendyolOrderNumbers=null;
 function renderOrders(){
-  const platform=state?.trendyolGoOrders||[];
+  const platform=(state?.trendyolGoOrders||[]).filter(o=>
+    openTrendyolStatuses.has(String(o.status??'').trim().toLowerCase()));
+
   const currentNumbers=new Set(platform.map(o=>String(o.orderNumber)));
   if(knownTrendyolOrderNumbers!==null){
     const fresh=[...currentNumbers].filter(n=>!knownTrendyolOrderNumbers.has(n));
@@ -277,7 +280,7 @@ function renderOrders(){
   }));
   const cards=[...localCards,...remoteCards]
     .sort((a,b)=>b.day.localeCompare(a.day)||b.number-a.number);
-  $('orders').innerHTML=cards.map(card=>card.html).join('')||'<p class="empty">Sipariş yok.</p>';
+  $('orders').innerHTML=cards.map(card=>card.html).join('')||'<p class="empty">Açık sipariş yok.</p>';
   controls();
 }
 function renderDetail(){const o=order(focusedOrder);if(!o){$('order-detail').innerHTML='<div class="empty"><strong>Hesap kapalı veya güncellendi</strong><button data-view="orders">Siparişlere dön</button></div>';return}const paid=o.paidCents??0;$('order-detail').innerHTML=`<div class="row spread"><button data-view="orders" class="ghost">← Geri</button><span class="badge">${esc(o.serviceStatus||'Hazırlanıyor')}</span></div><h2>#${number(o)} · ${o.table?'Masa '+o.table:esc(o.source)}</h2><div class="detail-actions"><button data-existing-add="${o.id}">+ Ek ürün</button>${o.source==='Masa'?'<button id="move-order">Masayı taşı</button>':''}</div>${keyedLines(o).map(l=>`<div class="detail-line"><div class="grow"><strong>${l.qty} × ${esc(l.name||l.productKey)}</strong><p class="muted">${esc(l.note||'')}${l.removed?.length?' · Çıkar: '+esc(l.removed.join(', ')):''}</p>${componentSummary(l)}<span class="line-price">${money(Math.round(l.price*100)*l.qty)}</span></div><button data-edit-line="${esc(l.key)}" aria-label="${esc(l.name)} düzenle">Düzenle</button><button data-remove-line="${esc(l.key)}" class="ghost danger" aria-label="${esc(l.name)} kaldır">×</button></div>`).join('')||'<p class="empty">Ürün yok</p>'}<div class="history-note">${serviceTime(o)}</div><div class="row"><button id="split-order">Hesabı Böl / Ürün Paylaştır</button><button id="delete-order" class="danger">Kalıcı Sil</button></div>${(o.guestChecks||[]).map(g=>`<div class="row spread"><span>${esc(g.name)} · Kalan ${money(g.balanceCents??0)}</span><button data-pay-guest="${g.id}" data-locked="${(g.balanceCents??0)<=0}">Ödeme Al</button></div>`).join('')}<div class="detail-totals"><p><span>Toplam</span><strong>${money(orderTotal(o))}</strong></p><p><span>Alınan</span><strong>${money(paid)}</strong></p><p><span>Kalan</span><strong>${money(orderDue(o))}</strong></p></div><div class="detail-actions">${o.source==='Gel-Al'&&o.serviceStatus!=='Teslim Edildi'?`<button id="advance-status">Teslim Edildi</button>`:''}${orderDue(o)>0&&paymentRows(o).length?`<button id="pay-products">Ürün seçerek öde</button>`:''}<button id="pay-order" class="primary" data-locked="${orderDue(o)<=0||(o.guestChecks||[]).length>0}">Nakit / Kart</button>${o.source==='Masa'?`<button id="close-order" data-locked="${orderDue(o)>0}">Hesabı Kapat</button>`:''}</div><p class="muted history-note">Değişiklikler aynı sipariş numarasına kaydedilir.</p>`;controls()}

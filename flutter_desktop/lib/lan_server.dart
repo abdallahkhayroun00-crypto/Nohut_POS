@@ -184,7 +184,8 @@ class PosLanServer extends ChangeNotifier {
       // Send only sanitized order information to the staff panel.
       // API credentials, customer address, contact and financial internals stay on the laptop.
       'trendyolGoOrders': asMaps(source['trendyolGoOrders']).reversed
-          .take(50)
+          .where((order) => const {'created', 'picking', 'invoiced', 'shipped'}
+              .contains('${order['status'] ?? ''}'.trim().toLowerCase()))
           .map(
             (o) => {
               for (final key in [

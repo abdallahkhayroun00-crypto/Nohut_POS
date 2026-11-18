@@ -84,6 +84,24 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   await page.locator('[data-pay-guest="2"]').click();await page.locator('#pay-print').selectOption('no');await page.locator('#payment-form button[type=submit]').click();await page.waitForFunction(()=>!document.querySelector('#payment-dialog').open);assert.equal(state.orders[0].dueCents,0);assert.equal(prints,0);
   mode='lost';await page.locator('#delete-order').click();await page.locator('#retry').waitFor({state:'visible'});mode='ok';await page.locator('#retry').click();await page.waitForFunction(()=>document.querySelector('#order-detail').textContent.includes('Hesap kapalı'));assert.equal(state.orders.length,0);
   console.log(`PASS modifiers, ingredient buttons, person split, mixed payment and deletion retry at ${width}px`);
+  state.trendyolGoOrders=[
+    {orderNumber:'OPEN-OLD',dailyNumber:2,numberDay:'2026-10-02',status:'Picking',lines:[]},
+    {orderNumber:'DELIVERED',dailyNumber:3,numberDay:'2026-11-18',status:'Delivered',lines:[]},
+    {orderNumber:'CANCELLED',dailyNumber:4,numberDay:'2026-11-18',status:'Cancelled',lines:[]},
+    {orderNumber:'UNSUPPLIED',dailyNumber:5,numberDay:'2026-11-18',status:'UnSupplied',lines:[]},
+  ];
+  revision++;
+  await page.locator('.top-nav [data-view=orders]').click();
+  await page.locator('#order-filter').selectOption('Trendyol Go');
+  await page.locator('#reload').click();
+  await page.locator('#orders .platform-order').filter({hasText:'OPEN-OLD'}).waitFor();
+  assert.equal(await page.locator('#orders .platform-order').count(),1,'only active platform orders appear');
+  assert.equal(await page.locator('#order-count').innerText(),'1');
+  state.trendyolGoOrders[0].status='Delivered';
+  revision++;
+  await page.locator('#reload').click();
+  await page.locator('#orders').getByText('Açık sipariş yok.').waitFor();
+  assert.equal(await page.locator('#order-count').innerText(),'0');
   assert.deepEqual(errors,[]);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
   console.log(`PASS staff lifecycle at ${width}px: no photos, compact menu, variants, conflict, retry, edit, move, add, payment, optional receipt, close`);
   await ctx.close();
