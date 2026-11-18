@@ -12,7 +12,7 @@ import 'package:nohut_falafel_desktop/order_reporting.dart';
 
 void main() {
   testWidgets(
-    'seven branded destinations include separate orders and reviews',
+    'eight branded destinations include separate orders and reviews',
     (t) async {
       final dir = Directory.systemTemp.createTempSync('nohut-brand-');
       final file = '${dir.path}/db';
@@ -29,7 +29,9 @@ void main() {
           'status': 'Delivered',
           'paymentType': 'PAY_WITH_CARD',
           'totalCents': 80000,
-          'lines': [{'qty': 2, 'name': 'Vegan Özel Tabağı'}],
+          'lines': [
+            {'qty': 2, 'name': 'Vegan Özel Tabağı'},
+          ],
         },
         {
           'source': 'Trendyol Go',
@@ -37,7 +39,9 @@ void main() {
           'createdAt': yesterday.toIso8601String(),
           'status': 'Delivered',
           'totalCents': 4500,
-          'lines': [{'qty': 1, 'name': 'Çay'}],
+          'lines': [
+            {'qty': 1, 'name': 'Çay'},
+          ],
         },
       ];
       db.replace(state, db.read().revision);
@@ -75,7 +79,7 @@ void main() {
               w.key is ValueKey<String> &&
               (w.key as ValueKey<String>).value.startsWith('navigation-'),
         ),
-        findsNWidgets(7),
+        findsNWidgets(8),
       );
       expect(find.text('Personel Yönetimi'), findsNothing);
       expect(find.text('Online Siparişler'), findsOneWidget);
@@ -99,8 +103,11 @@ void main() {
       });
       await t.tap(find.byKey(const ValueKey('navigation-online')));
       await t.pumpAndSettle();
-      expect(find.text('Uber Eats'), findsNothing);
-      expect(find.text('Yemeksepeti'), findsOneWidget);
+      expect(
+        find.widgetWithText(FilterChip, 'Uber Eats Trendyol Go'),
+        findsOneWidget,
+      );
+      expect(find.widgetWithText(FilterChip, 'Yemeksepeti'), findsOneWidget);
       expect(find.text('Değerlendirmeleri Getir'), findsNothing);
       expect(find.text('Teslim Edildi'), findsOneWidget);
       expect(find.text(istanbulStamp(today.toIso8601String())), findsOneWidget);
@@ -121,7 +128,7 @@ void main() {
       );
       await t.pumpAndSettle();
       expect(find.text('Platform no: PLATFORM-98'), findsOneWidget);
-      await t.tap(find.text('Bugüne Dön'));
+      await t.tap(find.widgetWithText(ChoiceChip, 'Bugün'));
       await t.pumpAndSettle();
       expect(find.text('Platform no: PLATFORM-99'), findsOneWidget);
       expect(find.text('Platform no: PLATFORM-98'), findsNothing);
@@ -129,7 +136,7 @@ void main() {
       await t.tap(find.text('Migros Yemek'));
       await t.pumpAndSettle();
       expect(find.text('Migros Yemek · Bağlı değil'), findsOneWidget);
-      expect(find.text('Migros Restoran Panelini Aç'), findsOneWidget);
+      expect(find.text('Migros Yemek paneli'), findsOneWidget);
       expect(find.text('Platform no: PLATFORM-99'), findsNothing);
       await t.tap(find.byKey(const ValueKey('navigation-reviews')));
       await t.pumpAndSettle();
@@ -137,8 +144,15 @@ void main() {
       expect(find.text('Şube ID (Store ID)'), findsOneWidget);
       await t.tap(find.text('Google Maps'));
       await t.pumpAndSettle();
-      expect(find.text('Google Maps’te Aç'), findsOneWidget);
-      expect(find.text('Değerlendirmeleri Getir'), findsNothing);
+      await t.tap(find.widgetWithText(Card, 'Google İşletme Profili'));
+      await t.pumpAndSettle();
+      expect(find.text('Google Hesabını Bağla'), findsOneWidget);
+      expect(find.widgetWithText(ChoiceChip, 'Performans'), findsOneWidget);
+      expect(find.widgetWithText(ChoiceChip, 'İzinler'), findsOneWidget);
+      await t.tap(find.byKey(const ValueKey('navigation-reviews')));
+      await t.pumpAndSettle();
+      await t.tap(find.text('Google Maps'));
+      await t.pumpAndSettle();
       await t.tap(find.text('Yemeksepeti'));
       await t.pumpAndSettle();
       expect(find.text('Partner Panelini Aç'), findsOneWidget);

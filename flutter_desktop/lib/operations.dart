@@ -337,6 +337,8 @@ void cancelLocalOrder(Json state, int id, String reason) {
   }
   o['closed'] = true;
   o['cancelled'] = true;
+  o['cancelledAt'] = utcNow();
+  o['cancelReason'] = reason.trim();
   o['tableReleased'] = true;
   for (final job in (state['printJobs'] as List).whereType<Map>()) {
     if (job['orderId'] == id &&

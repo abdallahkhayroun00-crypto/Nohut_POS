@@ -4,6 +4,7 @@ import 'package:nohut_falafel_desktop/order_reporting.dart';
 import 'package:nohut_falafel_desktop/pos_logic.dart';
 import 'package:nohut_falafel_desktop/pos_store.dart';
 import 'package:nohut_falafel_desktop/receipt_printer.dart';
+import 'package:nohut_falafel_desktop/report_activity.dart';
 
 List<Json> productLines() => [
   {
@@ -83,6 +84,29 @@ void main() {
     expect(counts[0], 1);
     expect(counts.reduce((a, b) => a + b), 1);
     expect(hourlyOrderCounts(orders, source: 'Gel-Al')[23], 1);
+  });
+  test('reports use Istanbul half-hours and separate delivered platform sales', () {
+    final local = {'source': 'Masa', 'createdAt': '2026-10-27T21:29:00Z'};
+    final delivered = {
+      'source': 'Trendyol Go', 'status': 'Delivered', 'totalCents': 24000,
+      'createdAt': '2026-10-27T21:30:00Z', 'modifiedAt': '2026-10-27T22:10:00Z',
+      'serviceStartedAt': '2026-10-27T21:32:00Z', 'readyAt': '2026-10-27T21:50:00Z',
+      'lines': [{'name': 'Falafel', 'qty': 2}],
+    };
+    final state = {
+      'orders': [local, {...local, 'cancelled': true, 'cancelledAt': '2026-10-27T22:15:00Z'}],
+      'trendyolGoOrders': [delivered, {...delivered, 'testPackage': true}],
+    };
+    bool includes(String stamp) => onIstanbulDay(stamp, '2026-10-28');
+    final all = ReportActivity(state, includes, 'Tümü');
+    expect(all.halfHours.take(3), [1, 1, 0]);
+    expect(all.weekdays[2][0], 2);
+    expect(all.cancellations.length, 1);
+    expect(all.prepAverage, 18);
+    expect(all.onlineSales, 24000);
+    expect(all.onlineProducts, {'Falafel': 2});
+    expect(ReportActivity(state, includes, 'Masa').onlineSales, 0);
+    expect(ReportActivity(state, includes, 'Migros Yemek').orderCount, 0);
   });
   for (final fail in [false, true]) {
     test('one persistent printer job, failure=$fail', () async {

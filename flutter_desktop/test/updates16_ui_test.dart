@@ -19,15 +19,40 @@ void main() {
       expect(find.text('Kasayı Aç'), findsNothing);
       expect(find.text('Kasayı Kapat'), findsNothing);
       await helpers.click(t, 'Raporlar');
-      for (final tab in ['Tahsilat', 'Ürünler', 'Mutabakat', 'Özet']) {
-        await helpers.click(t, tab);
+      for (final tab in [
+        'Satışlar',
+        'Ürünler',
+        'Mutabakat',
+        'Hazırlık Süresi',
+        'İptaller',
+        'Yoğunluk',
+        'Genel Bakış',
+      ]) {
+        final chip = find.widgetWithText(ChoiceChip, tab);
+        await t.ensureVisible(chip);
+        await t.tap(chip);
+        await t.pumpAndSettle();
+        if (tab == 'Yoğunluk') {
+          expect(find.text('30 dakikalık sipariş yoğunluğu'), findsOneWidget);
+          expect(
+            find.text('Haftanın günü ve saate göre yoğunluk'),
+            findsOneWidget,
+          );
+        }
         expect(t.takeException(), isNull);
       }
       await helpers.click(t, 'Ayarlar');
-      for (final tab in ['Menü', 'Yazıcı', 'inPOS', 'Yedek', 'Genel']) {
+      for (final tab in [
+        'Menü',
+        'Yazıcı',
+        'Entegrasyonlar',
+        'Yedek',
+        'Genel',
+      ]) {
         await helpers.click(t, tab);
         expect(t.takeException(), isNull);
       }
+      expect(find.text('inPOS'), findsNothing);
       expect(find.text('Yeni sipariş sesi'), findsOneWidget);
     },
   );

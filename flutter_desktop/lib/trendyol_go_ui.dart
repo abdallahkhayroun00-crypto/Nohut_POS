@@ -71,8 +71,9 @@ class _TgoSettingsPanelState extends State<TgoSettingsPanel> {
       }
     } on FormatException catch (e) {
       if (mounted)
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.message)));
     } catch (_) {
       if (mounted)
         ScaffoldMessenger.of(context).showSnackBar(
@@ -103,7 +104,9 @@ class _TgoSettingsPanelState extends State<TgoSettingsPanel> {
                 'Salt okunur bağlantı · Siparişler alınır; platformda kabul, iptal, fiyat veya durum değişikliği yapılmaz.',
               ),
               if (!TrendyolGoReadonly.liveSyncEnabled)
-                const Text('Ayarları kaydedebilirsiniz. Canlı sipariş eşitlemesi bu sürümde geçici olarak kapalı.'),
+                const Text(
+                  'Ayarları kaydedebilirsiniz. Canlı sipariş eşitlemesi bu sürümde geçici olarak kapalı.',
+                ),
               const SizedBox(height: 16),
               TextField(
                 controller: supplier,
@@ -165,8 +168,10 @@ class _TgoSettingsPanelState extends State<TgoSettingsPanel> {
                     label: const Text('Güvenli Kaydet'),
                   ),
                   OutlinedButton.icon(
-                    onPressed: !TrendyolGoReadonly.liveSyncEnabled ||
-                            s.syncing || s.credentials?.valid != true
+                    onPressed:
+                        !TrendyolGoReadonly.liveSyncEnabled ||
+                            s.syncing ||
+                            s.credentials?.valid != true
                         ? null
                         : () => s.sync(),
                     icon: const Icon(Icons.sync),
@@ -196,246 +201,8 @@ class _TgoSettingsPanelState extends State<TgoSettingsPanel> {
   );
 }
 
-class TgoOrdersPanel extends StatefulWidget {
-  const TgoOrdersPanel({
-    super.key,
-    required this.orders,
-    required this.integration,
-    required this.businessDay,
-    required this.showHistory,
-    required this.onPeriodChanged,
-    required this.autoKitchen,
-    required this.onAutoKitchenChanged,
-    required this.onKitchenPrint,
-  });
-
-  final List<Json> orders;
-  final TrendyolGoReadonly integration;
-  final String businessDay;
-  final bool showHistory;
-  final VoidCallback onPeriodChanged;
-  final bool autoKitchen;
-  final ValueChanged<bool> onAutoKitchenChanged;
-  final ValueChanged<Json> onKitchenPrint;
-
-  @override
-  State<TgoOrdersPanel> createState() => _TgoOrdersPanelState();
-}
-
-class _TgoOrdersPanelState extends State<TgoOrdersPanel> {
-  String query = '';
-  String? dayFilter;
-  String status = '';
-
-  Future<void> _pickDate() async {
-    final yesterday = DateTime.parse(widget.businessDay)
-        .subtract(const Duration(days: 1));
-    final date = await showDatePicker(
-      context: context,
-      firstDate: DateTime(2000),
-      lastDate: yesterday,
-      initialDate: dayFilter == null ? yesterday : DateTime.parse(dayFilter!),
-    );
-    if (date != null && mounted) {
-      setState(() => dayFilter = date.toIso8601String().substring(0, 10));
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final TgoOrdersPanel(
-      :orders, :integration, :businessDay, :showHistory, :onPeriodChanged,
-    ) = widget;
-    final theme = Theme.of(context);
-    final datedOrders = <(DateTime, Json)>[];
-    for (final order in orders) {
-      final createdAt = DateTime.tryParse('${order['createdAt'] ?? ''}');
-      if (createdAt == null) continue;
-      final day = istanbulDay(createdAt);
-      if (showHistory) {
-        if (dayFilter != null && day != dayFilter) continue;
-        if (status.isNotEmpty && order['status'] != status) continue;
-        if (query.isNotEmpty &&
-            ![order['orderNumber'], order['orderCode'], displayOrderNumber(order)]
-                .any((value) => '${value ?? ''}'.toLowerCase().contains(query))) {
-          continue;
-        }
-      }
-      if (showHistory ? day.compareTo(businessDay) < 0 : day == businessDay) {
-        datedOrders.add((createdAt, order));
-      }
-    }
-    datedOrders.sort((a, b) {
-      final byDate = b.$1.compareTo(a.$1);
-      if (byDate != 0) return byDate;
-      return (b.$2['dailyNumber'] as int? ?? 0)
-          .compareTo(a.$2['dailyNumber'] as int? ?? 0);
-    });
-    final connected = integration.status.startsWith('Bağlı ·');
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-          decoration: BoxDecoration(
-            color: NohutBrand.green,
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Row(
-            children: [
-              const Icon(Icons.delivery_dining_outlined, color: NohutBrand.cream),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Trendyol Go', style: theme.textTheme.titleLarge?.copyWith(
-                      color: NohutBrand.cream,
-                    )),
-                    Text(
-                      connected ? 'Bağlı · Salt okunur' : integration.status,
-                      style: const TextStyle(color: NohutBrand.cream),
-                    ),
-                    if (integration.error.isNotEmpty)
-                      Text(integration.error,
-                          style: const TextStyle(color: NohutBrand.cream)),
-                  ],
-                ),
-              ),
-              IconButton(
-                tooltip: 'Siparişleri yenile',
-                style: IconButton.styleFrom(
-                  foregroundColor: NohutBrand.cream,
-                  disabledForegroundColor: NohutBrand.cream.withAlpha(140),
-                ),
-                onPressed: integration.syncing ||
-                    !TrendyolGoReadonly.liveSyncEnabled ||
-                    integration.credentials?.valid != true
-                    ? null
-                    : integration.sync,
-                icon: const Icon(Icons.refresh),
-              ),
-            ],
-          ),
-        ),
-        if (integration.syncing) const LinearProgressIndicator(),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                showHistory ? 'Geçmiş Siparişler' : 'Bugünün Siparişleri',
-                style: theme.textTheme.titleMedium,
-              ),
-            ),
-            OutlinedButton.icon(
-              onPressed: () {
-                setState(() => query = '');
-                onPeriodChanged();
-              },
-              icon: Icon(showHistory ? Icons.today_outlined : Icons.history),
-              label: Text(showHistory ? 'Bugüne Dön' : 'Geçmiş'),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        if (showHistory)
-          Wrap(
-            spacing: 12,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              SizedBox(
-                width: 230,
-                child: TextField(
-                  onChanged: (value) =>
-                      setState(() => query = value.trim().toLowerCase()),
-                  decoration: const InputDecoration(labelText: 'Sipariş No / Kod'),
-                ),
-              ),
-              OutlinedButton.icon(
-                onPressed: _pickDate,
-                icon: const Icon(Icons.calendar_today_outlined),
-                label: Text(dayFilter ?? 'Tarih Seç'),
-              ),
-              if (dayFilter != null)
-                TextButton(
-                  onPressed: () => setState(() => dayFilter = null),
-                  child: const Text('Tarihi Temizle'),
-                ),
-              DropdownButton<String>(
-                value: status,
-                items: [
-                  const DropdownMenuItem(value: '', child: Text('Tüm Durumlar')),
-                  for (final (value, label) in const [
-                    ('Created', 'Yeni'),
-                    ('Picking', 'Hazırlanıyor'),
-                    ('Invoiced', 'Hazırlandı'),
-                    ('Shipped', 'Yolda'),
-                    ('Delivered', 'Teslim Edildi'),
-                    ('Cancelled', 'İptal'),
-                    ('UnSupplied', 'Karşılanamadı'),
-                  ])
-                    DropdownMenuItem(value: value, child: Text(label)),
-                ],
-                onChanged: (value) => setState(() => status = value ?? ''),
-              ),
-            ],
-          )
-        else
-          Align(
-            alignment: Alignment.centerLeft,
-            child: FilterChip(
-              label: const Text('Otomatik Mutfak Fişi'),
-              selected: widget.autoKitchen,
-              onSelected: widget.onAutoKitchenChanged,
-            ),
-          ),
-        const SizedBox(height: 8),
-        if (datedOrders.isEmpty)
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(18),
-              child: Text(
-                showHistory
-                    ? 'Kayıtlı geçmiş sipariş bulunamadı.'
-                    : connected
-                        ? 'Bugün için sipariş yok.'
-                        : 'Bağlantıyı Ayarlar → Trendyol Go bölümünden kontrol edin.',
-              ),
-            ),
-          )
-        else
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final width = constraints.maxWidth >= 820
-                  ? (constraints.maxWidth - 12) / 2
-                  : constraints.maxWidth;
-              return Wrap(
-                spacing: 12,
-                runSpacing: 8,
-                children: [
-                  for (final (_, order) in datedOrders)
-                    SizedBox(
-                      width: width,
-                      child: _TgoOrderCard(
-                        order: order,
-                        onKitchenPrint: showHistory
-                            ? null
-                            : () => widget.onKitchenPrint(order),
-                      ),
-                    ),
-                ],
-              );
-            },
-          ),
-      ],
-    );
-  }
-}
-
-class _TgoOrderCard extends StatelessWidget {
-  const _TgoOrderCard({required this.order, this.onKitchenPrint});
+class TgoOrderCard extends StatelessWidget {
+  const TgoOrderCard({super.key, required this.order, this.onKitchenPrint});
   final Json order;
   final VoidCallback? onKitchenPrint;
 
@@ -445,14 +212,33 @@ class _TgoOrderCard extends StatelessWidget {
     final status = '${order['status'] ?? ''}';
     final (statusLabel, statusColor, statusBg) = switch (status) {
       'Created' => ('Yeni', const Color(0xff325577), const Color(0xffe9f0f5)),
-      'Picking' => ('Hazırlanıyor', const Color(0xff765720), const Color(0xfff7ecd4)),
+      'Picking' => (
+        'Hazırlanıyor',
+        const Color(0xff765720),
+        const Color(0xfff7ecd4),
+      ),
       'Invoiced' => ('Hazırlandı', NohutBrand.green, const Color(0xffe5ebdf)),
       'Shipped' => ('Yolda', const Color(0xff325577), const Color(0xffe9f0f5)),
-      'Delivered' => ('Teslim Edildi', NohutBrand.green, const Color(0xffe5ebdf)),
-      'Cancelled' => ('İptal', const Color(0xff8d3930), const Color(0xfff6e6e3)),
-      'UnSupplied' => ('Karşılanamadı', const Color(0xff8d3930), const Color(0xfff6e6e3)),
-      _ => (status.isEmpty ? 'Durum bilinmiyor' : status, NohutBrand.muted,
-          const Color(0xffeeeeea)),
+      'Delivered' => (
+        'Teslim Edildi',
+        NohutBrand.green,
+        const Color(0xffe5ebdf),
+      ),
+      'Cancelled' => (
+        'İptal',
+        const Color(0xff8d3930),
+        const Color(0xfff6e6e3),
+      ),
+      'UnSupplied' => (
+        'Karşılanamadı',
+        const Color(0xff8d3930),
+        const Color(0xfff6e6e3),
+      ),
+      _ => (
+        status.isEmpty ? 'Durum bilinmiyor' : status,
+        NohutBrand.muted,
+        const Color(0xffeeeeea),
+      ),
     };
     final payment = '${order['paymentType'] ?? ''}';
     final paymentLabel = switch (payment) {
@@ -467,7 +253,8 @@ class _TgoOrderCard extends StatelessWidget {
         if (order[key] is String) istanbulStamp(order[key]).split(' ').last,
     }.join('–');
     final printState = order['kitchenPrintState'] as String?;
-    final showCourier = order['pickup'] != true &&
+    final showCourier =
+        order['pickup'] != true &&
         const ['Created', 'Picking', 'Invoiced'].contains(status);
     final lines = asMaps(order['lines']);
     return Card(
@@ -480,19 +267,29 @@ class _TgoOrderCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
-                  child: Text('#${displayOrderNumber(order)}',
-                    style: theme.textTheme.titleLarge),
+                  child: Text(
+                    '#${displayOrderNumber(order)}',
+                    style: theme.textTheme.titleLarge,
+                  ),
                 ),
                 const SizedBox(width: 8),
                 DecoratedBox(
                   decoration: BoxDecoration(
-                    color: statusBg, borderRadius: BorderRadius.circular(16),
+                    color: statusBg,
+                    borderRadius: BorderRadius.circular(16),
                   ),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    child: Text(statusLabel, style: TextStyle(
-                      color: statusColor, fontWeight: FontWeight.w700,
-                    )),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
+                    child: Text(
+                      statusLabel,
+                      style: TextStyle(
+                        color: statusColor,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -502,6 +299,7 @@ class _TgoOrderCard extends StatelessWidget {
               spacing: 12,
               runSpacing: 4,
               children: [
+                const Text('Uber Eats Trendyol Go'),
                 Text('Platform no: ${order['orderNumber']}'),
                 Text(istanbulStamp(order['createdAt'])),
                 Text(order['pickup'] == true ? 'Gel-Al' : 'Paket Servis'),
@@ -513,7 +311,8 @@ class _TgoOrderCard extends StatelessWidget {
             const Divider(height: 20),
             if (showCourier && order['courierNearby'] == true)
               const Text('Kurye yakında'),
-            if (showCourier && eta.isNotEmpty) Text('Tahmini kurye varışı: $eta'),
+            if (showCourier && eta.isNotEmpty)
+              Text('Tahmini kurye varışı: $eta'),
             if (reason.isNotEmpty) Text('İptal nedeni: $reason'),
             for (final line in lines)
               Padding(
@@ -521,15 +320,24 @@ class _TgoOrderCard extends StatelessWidget {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    SizedBox(width: 34, child: Text('${line['qty']}×',
-                        style: const TextStyle(fontWeight: FontWeight.w700))),
+                    SizedBox(
+                      width: 34,
+                      child: Text(
+                        '${line['qty']}×',
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text('${line['name']}'),
-                          if (line['options'] case final List options when options.isNotEmpty)
-                            Text(options.join(', '), style: theme.textTheme.bodySmall),
+                          if (line['options'] case final List options
+                              when options.isNotEmpty)
+                            Text(
+                              options.join(', '),
+                              style: theme.textTheme.bodySmall,
+                            ),
                         ],
                       ),
                     ),
@@ -539,34 +347,61 @@ class _TgoOrderCard extends StatelessWidget {
             if (note.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 5),
-                child: Text('Müşteri notu: $note', style: theme.textTheme.bodySmall),
+                child: Text(
+                  'Müşteri notu: $note',
+                  style: theme.textTheme.bodySmall,
+                ),
               ),
             const Divider(height: 20),
             Row(
               children: [
-                Expanded(child: Text(paymentLabel.isEmpty ? 'Platform toplamı' : paymentLabel)),
-                Text(formatTry(order['totalCents'] as int? ?? 0),
-                    style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+                Expanded(
+                  child: Text(
+                    paymentLabel.isEmpty ? 'Platform toplamı' : paymentLabel,
+                  ),
+                ),
+                Text(
+                  formatTry(order['totalCents'] as int? ?? 0),
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
               ],
             ),
             if (onKitchenPrint != null && tgoKitchenActive(order))
               Align(
                 alignment: Alignment.centerLeft,
-                child: TextButton.icon(
-                  onPressed: () => _openExternalPage(
-                    context,
-                    'https://partner.tgoyemek.com/',
-                  ),
-                  icon: const Icon(Icons.open_in_new),
-                  label: Text(switch (status) {
-                    'Created' => 'Kabul Et · GO Yemek Paneli',
-                    'Picking' => 'Hazır · GO Yemek Paneli',
-                    _ => 'GO Yemek Panelini Aç',
-                  }),
+                child: Wrap(
+                  children: [
+                    if (status == 'Created' || status == 'Picking')
+                      TextButton.icon(
+                        onPressed: () => openExternalPage(
+                          context,
+                          'https://partner.tgoyemek.com/',
+                        ),
+                        icon: const Icon(Icons.open_in_new, size: 16),
+                        label: Text(
+                          status == 'Created'
+                              ? 'Kabul Et · Panel'
+                              : 'Hazır · Panel',
+                        ),
+                      ),
+                    TextButton.icon(
+                      onPressed: () => openExternalPage(
+                        context,
+                        'https://partner.tgoyemek.com/',
+                      ),
+                      icon: const Icon(Icons.open_in_new, size: 16),
+                      label: const Text('İptal Et · Panel'),
+                    ),
+                  ],
                 ),
               ),
             if (printState != null)
-              Text('Mutfak fişi · $printState', style: theme.textTheme.bodySmall)
+              Text(
+                'Mutfak fişi · $printState',
+                style: theme.textTheme.bodySmall,
+              )
             else if (onKitchenPrint != null && tgoKitchenActive(order))
               Align(
                 alignment: Alignment.centerLeft,
@@ -583,46 +418,17 @@ class _TgoOrderCard extends StatelessWidget {
   }
 }
 
-class MigrosOrdersPanel extends StatelessWidget {
-  const MigrosOrdersPanel({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Migros Yemek · Bağlı değil',
-              style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 8),
-            const Text('Nohut POS için Migros Yemek entegrasyon erişimi gerekli.'),
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              onPressed: () => _openExternalPage(
-                context,
-                'https://restoran.migrosonline.com/login',
-              ),
-              icon: const Icon(Icons.open_in_new),
-              label: const Text('Migros Restoran Panelini Aç'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class FeedbackPanel extends StatefulWidget {
   const FeedbackPanel({
     super.key,
     required this.integration,
     required this.orders,
+    required this.onOpenGoogle,
   });
 
   final TrendyolGoReadonly integration;
   final List<Json> orders;
+  final VoidCallback onOpenGoogle;
 
   @override
   State<FeedbackPanel> createState() => _FeedbackPanelState();
@@ -663,18 +469,21 @@ class _FeedbackPanelState extends State<FeedbackPanel> {
           ),
         ),
         if (source == _FeedbackSource.google)
-          const _ExternalReviewsCard(
-            icon: Icons.place_outlined,
-            title: 'Google Maps',
-            description: 'Nohut Falafel yorumlarını Google Maps’te okuyun.',
-            action: 'Google Maps’te Aç',
-            url: 'https://www.google.com/maps/place/Nohut+Falafel/@40.7650391,30.3602224,17z/data=!4m8!3m7!1s0x14ccb3cd4595bcab:0xd28ffffa342dbede!8m2!3d40.7650391!4d30.3602224!9m1!1b1!16s%2Fg%2F11wjq__p26?hl=tr',
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.place_outlined),
+              title: const Text('Google İşletme Profili'),
+              subtitle: const Text('Yorumlar, yanıtlar ve işletme performansı'),
+              trailing: const Icon(Icons.arrow_forward),
+              onTap: widget.onOpenGoogle,
+            ),
           ),
         if (source == _FeedbackSource.yemeksepeti)
           const _ExternalReviewsCard(
             icon: Icons.restaurant_outlined,
             title: 'Yemeksepeti',
-            description: 'Yorumları görmek için restoran hesabınızla Partner Paneli’ne giriş yapın.',
+            description:
+                'Yorumları görmek için restoran hesabınızla Partner Paneli’ne giriş yapın.',
             action: 'Partner Panelini Aç',
             url: 'https://partner-app.yemeksepeti.com/',
           ),
@@ -683,7 +492,7 @@ class _FeedbackPanelState extends State<FeedbackPanel> {
   }
 }
 
-Future<void> _openExternalPage(BuildContext context, String url) async {
+Future<bool> openExternalPage(BuildContext context, String url) async {
   try {
     final ProcessResult result;
     if (Platform.isWindows) {
@@ -692,19 +501,17 @@ Future<void> _openExternalPage(BuildContext context, String url) async {
         url,
       ]);
     } else {
-      result = await Process.run(
-        Platform.isMacOS ? 'open' : 'xdg-open',
-        [url],
-      );
+      result = await Process.run(Platform.isMacOS ? 'open' : 'xdg-open', [url]);
     }
-    if (result.exitCode == 0) return;
+    if (result.exitCode == 0) return true;
   } on ProcessException {
     // Offer the address for manual opening if the browser cannot be launched.
   }
-  if (!context.mounted) return;
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(content: SelectableText('Tarayıcı açılamadı. $url')),
-  );
+  if (!context.mounted) return false;
+  ScaffoldMessenger.of(
+    context,
+  ).showSnackBar(SnackBar(content: SelectableText('Tarayıcı açılamadı. $url')));
+  return false;
 }
 
 class _ExternalReviewsCard extends StatelessWidget {
@@ -731,14 +538,19 @@ class _ExternalReviewsCard extends StatelessWidget {
               children: [
                 Icon(icon, color: NohutBrand.green),
                 const SizedBox(width: 8),
-                Expanded(child: Text(title, style: Theme.of(context).textTheme.titleLarge)),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 8),
             Text(description),
             const SizedBox(height: 12),
             OutlinedButton.icon(
-              onPressed: () => _openExternalPage(context, url),
+              onPressed: () => openExternalPage(context, url),
               icon: const Icon(Icons.open_in_new),
               label: Text(action),
             ),
@@ -751,7 +563,9 @@ class _ExternalReviewsCard extends StatelessWidget {
 
 class TgoReviewsPanel extends StatefulWidget {
   const TgoReviewsPanel({
-    super.key, required this.integration, required this.orders,
+    super.key,
+    required this.integration,
+    required this.orders,
   });
 
   final TrendyolGoReadonly integration;
@@ -772,7 +586,10 @@ class _TgoReviewsPanelState extends State<TgoReviewsPanel> {
   void initState() {
     super.initState();
     final stores = widget.orders
-        .where((order) => order['supplierId'] == widget.integration.credentials?.supplierId)
+        .where(
+          (order) =>
+              order['supplierId'] == widget.integration.credentials?.supplierId,
+        )
         .map((order) => '${order['storeId'] ?? ''}')
         .where((id) => id.isNotEmpty)
         .toSet();
@@ -792,7 +609,10 @@ class _TgoReviewsPanelState extends State<TgoReviewsPanel> {
       error = '';
     });
     try {
-      final result = await widget.integration.readReviews(storeId.text.trim(), index);
+      final result = await widget.integration.readReviews(
+        storeId.text.trim(),
+        index,
+      );
       if (!mounted) return;
       setState(() {
         reviews = result.reviews;
@@ -803,7 +623,8 @@ class _TgoReviewsPanelState extends State<TgoReviewsPanel> {
     } on FormatException catch (e) {
       if (mounted) setState(() => error = e.message);
     } catch (_) {
-      if (mounted) setState(() => error = 'Yorumlar alınamadı. Bağlantıyı kontrol edin.');
+      if (mounted)
+        setState(() => error = 'Yorumlar alınamadı. Bağlantıyı kontrol edin.');
     } finally {
       if (mounted) setState(() => loading = false);
     }
@@ -823,8 +644,12 @@ class _TgoReviewsPanelState extends State<TgoReviewsPanel> {
                 children: [
                   const Icon(Icons.star_outline, color: NohutBrand.green),
                   const SizedBox(width: 10),
-                  Expanded(child: Text('Trendyol Go',
-                      style: Theme.of(context).textTheme.titleLarge)),
+                  Expanded(
+                    child: Text(
+                      'Trendyol Go',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 14),
@@ -839,7 +664,9 @@ class _TgoReviewsPanelState extends State<TgoReviewsPanel> {
                       controller: storeId,
                       enabled: !loading,
                       keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(labelText: 'Şube ID (Store ID)'),
+                      decoration: const InputDecoration(
+                        labelText: 'Şube ID (Store ID)',
+                      ),
                       onChanged: (_) => setState(() {
                         reviews = [];
                         loaded = false;
@@ -858,27 +685,31 @@ class _TgoReviewsPanelState extends State<TgoReviewsPanel> {
           ),
         ),
       ),
-        if (loading) const LinearProgressIndicator(),
-        if (error.isNotEmpty)
-          Text(error, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-        if (loaded && reviews.isEmpty && error.isEmpty)
-          const Text('Bu sayfada değerlendirme yok.'),
-        for (final review in reviews)
-          _reviewTile(review),
-        if (loaded && (page > 0 || hasNextPage))
-          Wrap(
-            spacing: 8,
-            children: [
-              TextButton(
-                onPressed: loading || page == 0 ? null : () => loadPage(page - 1),
-                child: const Text('Önceki'),
-              ),
-              TextButton(
-                onPressed: loading || !hasNextPage ? null : () => loadPage(page + 1),
-                child: const Text('Sonraki'),
-              ),
-            ],
-          ),
+      if (loading) const LinearProgressIndicator(),
+      if (error.isNotEmpty)
+        Text(
+          error,
+          style: TextStyle(color: Theme.of(context).colorScheme.error),
+        ),
+      if (loaded && reviews.isEmpty && error.isEmpty)
+        const Text('Bu sayfada değerlendirme yok.'),
+      for (final review in reviews) _reviewTile(review),
+      if (loaded && (page > 0 || hasNextPage))
+        Wrap(
+          spacing: 8,
+          children: [
+            TextButton(
+              onPressed: loading || page == 0 ? null : () => loadPage(page - 1),
+              child: const Text('Önceki'),
+            ),
+            TextButton(
+              onPressed: loading || !hasNextPage
+                  ? null
+                  : () => loadPage(page + 1),
+              child: const Text('Sonraki'),
+            ),
+          ],
+        ),
     ],
   );
 
@@ -888,18 +719,22 @@ class _TgoReviewsPanelState extends State<TgoReviewsPanel> {
     final score = rating is Map ? rating['average'] : null;
     final message = comment is Map ? comment['text'] : null;
     final timestamp = review['createdDate'];
-    final date = timestamp is num && timestamp >= 0 && timestamp <= 8640000000000000
-        ? DateTime.fromMillisecondsSinceEpoch(timestamp.toInt(), isUtc: true)
-            .add(const Duration(hours: 3)).toIso8601String().split('T').first
+    final date =
+        timestamp is num && timestamp >= 0 && timestamp <= 8640000000000000
+        ? DateTime.fromMillisecondsSinceEpoch(
+            timestamp.toInt(),
+            isUtc: true,
+          ).add(const Duration(hours: 3)).toIso8601String().split('T').first
         : null;
     return Card(
       child: ListTile(
         leading: const Icon(Icons.star, color: NohutBrand.gold),
         title: Text('${score is num ? score : '—'} / 5'),
-        subtitle: message is String && message.trim().isNotEmpty ? Text(message) : null,
+        subtitle: message is String && message.trim().isNotEmpty
+            ? Text(message)
+            : null,
         trailing: date == null ? null : Text(date),
       ),
     );
   }
-
 }

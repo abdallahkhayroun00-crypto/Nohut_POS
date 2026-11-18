@@ -5,6 +5,7 @@ import 'operations.dart';
 import 'operations_ui.dart';
 import 'pos_logic.dart';
 import 'order_reporting.dart';
+import 'report_activity.dart';
 
 class SalesReports extends StatefulWidget {
   const SalesReports({super.key, required this.state, required this.edit});
@@ -15,10 +16,19 @@ class SalesReports extends StatefulWidget {
 }
 
 class _SalesReportsState extends State<SalesReports> {
+  static const tabs = [
+    'Genel Bakış',
+    'Yoğunluk',
+    'Satışlar',
+    'Ürünler',
+    'Hazırlık Süresi',
+    'İptaller',
+    'Mutabakat',
+  ];
   String from = istanbulDay(DateTime.now()),
       to = istanbulDay(DateTime.now()),
       source = 'Tümü',
-      tab = 'Özet';
+      tab = 'Genel Bakış';
   bool includes(String stamp) {
     final d = DateTime.tryParse(stamp);
     if (d == null) return false;
@@ -76,21 +86,21 @@ class _SalesReportsState extends State<SalesReports> {
   Widget build(BuildContext context) {
     final entries = ledger(widget.state)
         .where(
-          (e) => includes(e.stamp) && (source == 'Tümü' || e.source == source),
+          (e) =>
+              includes(e.stamp) &&
+              const ['Masa', 'Gel-Al'].contains(e.source) &&
+              (source == 'Tümü' || e.source == source),
         )
         .toList();
     final sold = sales(widget.state)
         .where(
-          (e) => includes(e.stamp) && (source == 'Tümü' || e.source == source),
+          (e) =>
+              includes(e.stamp) &&
+              const ['Masa', 'Gel-Al'].contains(e.source) &&
+              (source == 'Tümü' || e.source == source),
         )
         .toList();
-    final counts = hourlyOrderCounts(
-      asMaps(widget.state['orders']),
-      from: from,
-      to: to,
-      source: source,
-      staff: '',
-    );
+    final activity = ReportActivity(widget.state, includes, source);
     final net = entries.fold<int>(0, (n, e) => n + e.amount),
         refund = entries
             .where((e) => e.amount < 0)
@@ -110,13 +120,13 @@ class _SalesReportsState extends State<SalesReports> {
             .toList();
     final sorted = products.entries.toList()
       ..sort((a, b) => b.value.$2.compareTo(a.value.$2));
+    final onlineProducts = activity.onlineProducts.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         panelTitle('Raporlar'),
-        const Text(
-          'Satış, tahsilat ve yoğunluğu anlaşılır bir özetle takip et.',
-        ),
+        const Text('Tarih aralığı ve sipariş kaynağı seçin.'),
         const SizedBox(height: 16),
         Card(
           child: Padding(
@@ -168,7 +178,14 @@ class _SalesReportsState extends State<SalesReports> {
                     isExpanded: true,
                     decoration: const InputDecoration(labelText: 'Kaynak'),
                     items:
-                        ['Tümü', 'Masa', 'Gel-Al', 'Trendyol Go', 'Yemeksepeti']
+                        [
+                              'Tümü',
+                              'Masa',
+                              'Gel-Al',
+                              'Trendyol Go',
+                              'Yemeksepeti',
+                              'Migros Yemek',
+                            ]
                             .map(
                               (s) => DropdownMenuItem(value: s, child: Text(s)),
                             )
@@ -185,16 +202,25 @@ class _SalesReportsState extends State<SalesReports> {
           spacing: 10,
           runSpacing: 10,
           children: [
-            metric('Net tahsilat', formatTry(net), Icons.payments_outlined),
-            metric('İadeler', formatTry(refund), Icons.undo),
             metric(
-              'Satılan ürün',
+              'Yerel net tahsilat',
+              formatTry(net),
+              Icons.payments_outlined,
+            ),
+            metric(
+              'Trendyol Go satışları',
+              formatTry(activity.onlineSales),
+              Icons.delivery_dining_outlined,
+            ),
+            metric('Yerel iadeler', formatTry(refund), Icons.undo),
+            metric(
+              'Yerel ürün adedi',
               '${sold.fold<int>(0, (n, e) => n + e.quantity)}',
               Icons.restaurant_outlined,
             ),
             metric(
               'Sipariş sayısı',
-              '${counts.fold<int>(0, (a, b) => a + b)}',
+              '${activity.orderCount}',
               Icons.receipt_long_outlined,
             ),
           ],
@@ -203,7 +229,7 @@ class _SalesReportsState extends State<SalesReports> {
         Wrap(
           spacing: 8,
           children: [
-            for (final name in ['Özet', 'Tahsilat', 'Ürünler', 'Mutabakat'])
+            for (final name in tabs)
               ChoiceChip(
                 label: Text(name),
                 selected: tab == name,
@@ -212,87 +238,98 @@ class _SalesReportsState extends State<SalesReports> {
           ],
         ),
         const SizedBox(height: 16),
-        if (tab == 'Özet')
+        if (tab == 'Genel Bakış')
           Card(
             child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+              padding: const EdgeInsets.all(18),
+              child: Wrap(
+                spacing: 24,
                 children: [
-                  panelTitle('Saatlik yoğunluk'),
-                  const Text('Yeni sipariş sayısı · İstanbul saati'),
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    height: 150,
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        for (var h = 0; h < 24; h++)
-                          Expanded(
-                            child: Tooltip(
-                              message: '$h:00 · ${counts[h]} sipariş',
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 2,
-                                ),
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.end,
-                                  children: [
-                                    if (counts[h] > 0)
-                                      Text(
-                                        '${counts[h]}',
-                                        style: const TextStyle(fontSize: 11),
-                                      ),
-                                    Container(
-                                      height:
-                                          counts.reduce(
-                                                (a, b) => a > b ? a : b,
-                                              ) ==
-                                              0
-                                          ? 2
-                                          : 100 *
-                                                counts[h] /
-                                                counts.reduce(
-                                                  (a, b) => a > b ? a : b,
-                                                ),
-                                      decoration: BoxDecoration(
-                                        color: NohutBrand.green,
-                                        borderRadius: BorderRadius.circular(4),
-                                      ),
-                                    ),
-                                    if (h % 3 == 0)
-                                      Text(
-                                        '$h',
-                                        style: const TextStyle(fontSize: 11),
-                                      )
-                                    else
-                                      const SizedBox(height: 16),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
+                  Text(
+                    'Ortalama hazırlık · ${activity.prepAverage == null ? '—' : '${activity.prepAverage} dk'}',
                   ),
-                  const SizedBox(height: 16),
-                  OutlinedButton.icon(
-                    onPressed: () =>
-                        export('nohut-yogunluk', hourlyCountsCsv(counts)),
-                    icon: const Icon(Icons.download),
-                    label: const Text('Yoğunluk CSV'),
+                  Text(
+                    'İptal / karşılanamadı · ${activity.cancellations.length}',
                   ),
+                  Text('Trendyol Go teslim edilen · ${activity.onlineCount}'),
                 ],
               ),
             ),
           ),
-        if (tab == 'Tahsilat')
+        if (tab == 'Yoğunluk')
+          DemandCharts(
+            activity: activity,
+            export: () => export('nohut-yogunluk', activity.csv),
+          ),
+        if (tab == 'Hazırlık Süresi')
+          Card(
+            child: Column(
+              children: [
+                ListTile(
+                  title: const Text('Tamamlanan hazırlıklar'),
+                  subtitle: Text(
+                    'Ölçülen sipariş · ${activity.prepared.length}',
+                  ),
+                  trailing: Text(
+                    activity.prepAverage == null
+                        ? '—'
+                        : '${activity.prepAverage} dk ort.',
+                  ),
+                ),
+                for (final (duration, order) in activity.prepared)
+                  ListTile(
+                    title: Text(
+                      '#${displayOrderNumber(order)} · ${order['source']}',
+                    ),
+                    subtitle: Text(istanbulStamp(order['readyAt'])),
+                    trailing: Text('${duration.inMinutes} dk'),
+                  ),
+              ],
+            ),
+          ),
+        if (tab == 'İptaller')
+          Card(
+            child: Column(
+              children: [
+                ListTile(
+                  title: Text(
+                    '${activity.cancellations.length} iptal / karşılanamadı',
+                  ),
+                ),
+                for (final (date, order) in activity.cancellations)
+                  ListTile(
+                    title: Text(
+                      '#${displayOrderNumber(order)} · ${order['source']}',
+                    ),
+                    subtitle: Text(
+                      [
+                            istanbulStamp(date),
+                            order['cancelReason'],
+                            order['voidReason'],
+                          ]
+                          .where(
+                            (part) => part != null && '$part'.trim().isNotEmpty,
+                          )
+                          .join(' · '),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        if (tab == 'Satışlar')
           Card(
             child: Padding(
               padding: const EdgeInsets.all(20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  ListTile(
+                    title: const Text('Trendyol Go · Teslim edilen siparişler'),
+                    subtitle: Text(
+                      '${activity.onlineCount} sipariş · Platform toplamı',
+                    ),
+                    trailing: Text(formatTry(activity.onlineSales)),
+                  ),
                   FilledButton.icon(
                     onPressed: () =>
                         export('nohut-tahsilat', ledgerCsv(entries)),
@@ -329,12 +366,12 @@ class _SalesReportsState extends State<SalesReports> {
                   FilledButton.icon(
                     onPressed: () => export('nohut-urunler', salesCsv(sold)),
                     icon: const Icon(Icons.download),
-                    label: const Text('Ürün Satışları CSV'),
+                    label: const Text('Yerel Ürün Satışları CSV'),
                   ),
                   if (sorted.isEmpty)
                     const Padding(
                       padding: EdgeInsets.all(25),
-                      child: Text('Bu dönemde ürün satışı yok.'),
+                      child: Text('Bu dönemde yerel ürün satışı yok.'),
                     ),
                   for (final e in sorted)
                     ListTile(
@@ -342,6 +379,17 @@ class _SalesReportsState extends State<SalesReports> {
                       subtitle: Text('${e.value.$1} adet'),
                       trailing: Text(formatTry(e.value.$2)),
                     ),
+                  if (onlineProducts.isNotEmpty) ...[
+                    const Divider(),
+                    const ListTile(
+                      title: Text('Trendyol Go · Teslim edilen ürünler'),
+                    ),
+                    for (final e in onlineProducts)
+                      ListTile(
+                        title: Text(e.key),
+                        trailing: Text('${e.value} adet'),
+                      ),
+                  ],
                 ],
               ),
             ),
@@ -386,7 +434,4 @@ class _SalesReportsState extends State<SalesReports> {
       ],
     );
   }
-
-  String hourlyCountsCsv(List<int> counts) =>
-      '\uFEFFSaat,Sipariş\r\n${[for (var h = 0; h < 24; h++) '$h,${counts[h]}'].join('\r\n')}\r\n';
 }

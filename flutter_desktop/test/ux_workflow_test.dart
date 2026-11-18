@@ -209,6 +209,10 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Yemeksepeti').first);
       await tester.pumpAndSettle();
+      final demo = find.text('Yemeksepeti test alanı');
+      await tester.ensureVisible(demo);
+      await tester.tap(demo);
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Örnek Online Kart'));
       await tester.pumpAndSettle();
       expect(find.textContaining('Kabul bekliyor'), findsWidgets);

@@ -6,6 +6,7 @@ import 'brand.dart';
 import 'pos_logic.dart';
 import 'pos_store.dart';
 import 'operations_ui.dart';
+import 'online_orders.dart';
 import 'qr_menu_sync.dart';
 import 'qr_menu_preview.dart';
 import 'trendyol_go_readonly.dart';
@@ -22,6 +23,7 @@ class SimpleSettings extends StatefulWidget {
     required this.store,
     required this.qrSync,
     required this.tgoIntegration,
+    required this.onOpenGoogle,
     this.staffPanel,
     this.wifiPanel,
   });
@@ -30,6 +32,7 @@ class SimpleSettings extends StatefulWidget {
   final PosStore store;
   final QrMenuAutoSync qrSync;
   final TrendyolGoReadonly tgoIntegration;
+  final VoidCallback onOpenGoogle;
   final Widget? staffPanel, wifiPanel;
   @override
   State<SimpleSettings> createState() => _SimpleSettingsState();
@@ -124,10 +127,9 @@ class _SimpleSettingsState extends State<SimpleSettings> {
               'Genel',
               'Menü',
               'Yazıcı',
-              'Trendyol Go',
+              'Entegrasyonlar',
               if (widget.staffPanel != null) 'Personel',
               if (widget.wifiPanel != null) 'Bağlantı',
-              'inPOS',
               'Yedek',
             ])
               ChoiceChip(
@@ -161,8 +163,36 @@ class _SimpleSettingsState extends State<SimpleSettings> {
               ),
             ],
           ),
-        if (tab == 'Trendyol Go')
+        if (tab == 'Entegrasyonlar') ...[
           TgoSettingsPanel(integration: widget.tgoIntegration),
+          const SizedBox(height: 12),
+          for (final name in ['Yemeksepeti', 'Migros Yemek'])
+            Card(
+              child: ListTile(
+                title: Text(name),
+                subtitle: const Text(
+                  'Bağlı değil · Partner entegrasyon erişimi gerekli',
+                ),
+                trailing: IconButton(
+                  tooltip: '$name panelini aç',
+                  icon: const Icon(Icons.open_in_new),
+                  onPressed: () =>
+                      openExternalPage(context, onlinePartners[name]!.url),
+                ),
+              ),
+            ),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.storefront_outlined),
+              title: const Text('Google İşletme Profili'),
+              subtitle: const Text(
+                'Google Cloud proje onayı ve hesap yetkilendirmesi',
+              ),
+              trailing: const Icon(Icons.arrow_forward),
+              onTap: widget.onOpenGoogle,
+            ),
+          ),
+        ],
         if (tab == 'Menü')
           section(
             'Menü ve fiyatlar',
@@ -229,7 +259,7 @@ class _SimpleSettingsState extends State<SimpleSettings> {
                 ),
             ],
           ),
-        if (tab == 'Yazıcı')
+        if (tab == 'Yazıcı') ...[
           printerLayout(
             settings,
             section(
@@ -382,8 +412,9 @@ class _SimpleSettingsState extends State<SimpleSettings> {
                         );
                     } catch (e) {
                       if (context.mounted)
-                        ScaffoldMessenger.of(context)
-                            .showSnackBar(SnackBar(content: Text('$e')));
+                        ScaffoldMessenger.of(
+                          context,
+                        ).showSnackBar(SnackBar(content: Text('$e')));
                     }
                   },
                 ),
@@ -421,24 +452,39 @@ class _SimpleSettingsState extends State<SimpleSettings> {
               ],
             ),
           ),
-        if (tab == 'inPOS')
-          section('inPOS m530', 'Otomatik bağlantı henüz etkin değil.', [
-            const ListTile(
-              leading: Icon(Icons.credit_card_off_outlined),
-              title: Text('GMP-3 · Resmî SDK ve aktivasyon bekleniyor'),
-              subtitle: Text(
-                'Uygulama numarası, yetkili servis eşleştirmesi ve üretici SDK’sı gerekir. Kart düğmesi şu anda yalnızca terminalde onayladığınız ödemeyi kaydeder.',
+          const SizedBox(height: 12),
+          section(
+            'Mutfak Fişi',
+            'Uber Eats Trendyol Go siparişleri için otomatik baskı zamanını seçin.',
+            [
+              DropdownButtonFormField<String>(
+                initialValue: tgoKitchenTiming(settings),
+                decoration: const InputDecoration(
+                  labelText: 'Mutfak fişi zamanı',
+                ),
+                items: const [
+                  DropdownMenuItem(value: 'manual', child: Text('Elle yazdır')),
+                  DropdownMenuItem(
+                    value: 'arrival',
+                    child: Text('Sipariş gelince'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'accepted',
+                    child: Text('Kabul edildiği görülünce'),
+                  ),
+                ],
+                onChanged: (value) {
+                  if (value == null) return;
+                  widget.edit((s) {
+                    final cfg = s['settings'] as Map;
+                    cfg['tgoKitchenTiming'] = value;
+                    cfg['tgoAutoKitchen'] = value == 'arrival';
+                  });
+                },
               ),
-            ),
-            const Text(
-              'Bağlantı hazır olduğunda: Tutarı gönder → Kartı okut → Sonucu bekle → Onaylı ödemeyi kaydet. Belirsiz sonuç yeniden tahsil edilmez; referans ile sorgulanır.',
-            ),
-            for (final a in asMaps(widget.state['terminalAttempts']))
-              ListTile(
-                title: Text('${a['reference']} · ${a['status']}'),
-                subtitle: Text(formatTry(a['amountCents'] as int)),
-              ),
-          ]),
+            ],
+          ),
+        ],
         if (tab == 'Yedek')
           section(
             'Verilerini koru',
@@ -463,8 +509,9 @@ class _SimpleSettingsState extends State<SimpleSettings> {
                         );
                     } catch (e) {
                       if (context.mounted)
-                        ScaffoldMessenger.of(context)
-                            .showSnackBar(SnackBar(content: Text('$e')));
+                        ScaffoldMessenger.of(
+                          context,
+                        ).showSnackBar(SnackBar(content: Text('$e')));
                     }
                   }
                 },
