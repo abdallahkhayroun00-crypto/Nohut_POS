@@ -85,7 +85,16 @@ jobs:
           $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
           if (-not $vs) { throw 'Visual Studio with x64 C++ tools was not found' }
           $versions = Get-ChildItem -LiteralPath (Join-Path $vs 'VC/Redist/MSVC') -Directory |
-            Where-Object Name -Match '^\d+\.\d+\.\d+ checksums and source revision
+            Where-Object Name -Match '^\d+\.\d+\.\d+$' |
+            Sort-Object { [version] $_.Name } -Descending
+          $runtime = $versions | ForEach-Object {
+            Get-ChildItem -LiteralPath (Join-Path $_.FullName 'x64') -Directory -Filter 'Microsoft.VC*.CRT'
+          } | Select-Object -First 1
+          if (-not $runtime) { throw 'The redistributable x64 CRT was not found' }
+          foreach ($dll in @('msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll')) {
+            Copy-Item -LiteralPath (Join-Path $runtime.FullName $dll) -Destination $release
+          }
+      - name: Record release checksums and source revision
         shell: pwsh
         run: |
           $release = 'flutter_desktop/build/windows/x64/runner/Release'
@@ -106,41 +115,6 @@ jobs:
           path: flutter_desktop/build/windows/installer/
           if-no-files-found: error
           retention-days: 14
-      - name: Upload Windows program (folder with exe and DLL files)
-        uses: actions/upload-artifact@v4
-        with:
-          name: NohutFalafel-Windows-Flutter
-          path: flutter_desktop/build/windows/x64/runner/Release/
-          if-no-files-found: error
-          retention-days: 14
-
-      - name: Upload receipt artwork proof
-        uses: actions/upload-artifact@v4
-        with:
-          name: NohutFalafel-Brand-Previews
-          path: |
-            flutter_desktop/build/receipt-brand-proof.png
-            flutter_desktop/build/desktop-brand-proof.png
-            flutter_desktop/build/staff-brand-*.png
-          if-no-files-found: error
-          retention-days: 14
- |
-            Sort-Object { [version] $_.Name } -Descending
-          $runtime = $versions | ForEach-Object {
-            Get-ChildItem -LiteralPath (Join-Path $_.FullName 'x64') -Directory -Filter 'Microsoft.VC*.CRT'
-          } | Select-Object -First 1
-          if (-not $runtime) { throw 'The redistributable x64 CRT was not found' }
-          foreach ($dll in @('msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll')) {
-            Copy-Item -LiteralPath (Join-Path $runtime.FullName $dll) -Destination $release
-          }
-      - name: Record release checksums and source revision
-        shell: pwsh
-        run: |
-          $release = 'flutter_desktop/build/windows/x64/runner/Release'
-          $manifest = Get-ChildItem -LiteralPath $release -File -Recurse | ForEach-Object {
-            [pscustomobject]@{ path = $_.FullName.Substring((Resolve-Path $release).Path.Length + 1); sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }
-          }
-          @{ sourceRevision = '${{ github.sha }}'; files = @($manifest) } | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8 "$release/build-manifest.json"
       - name: Upload Windows program (folder with exe and DLL files)
         uses: actions/upload-artifact@v4
         with:
