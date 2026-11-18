@@ -1337,28 +1337,106 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
         const SizedBox(height: 16),
         Text('Masa: $busy dolu · ${5 - busy} boş  |  Gel-Al: $pickups açık'),
         const SizedBox(height: 16),
-        StaffMetrics(state: db, day: businessDay),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(18),
-            child: Column(
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final staffPanel = StaffMetrics(state: db, day: businessDay);
+            final hasPlatformData =
+                remoteToday.isNotEmpty || db['tgoSyncInfo'] != null;
+            final platformPanel = Card(
+              child: Padding(
+                padding: const EdgeInsets.all(18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.delivery_dining_outlined,
+                          color: NohutBrand.green,
+                        ),
+                        const SizedBox(width: 9),
+                        Expanded(
+                          child: Text(
+                            'Trendyol Go',
+                            style: Theme.of(context).textTheme.titleLarge,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: tgo.status.startsWith('Bağlı ·')
+                            ? const Color(0xffe5ebdf)
+                            : const Color(0xfff3e8d1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 9,
+                          vertical: 4,
+                        ),
+                        child: Text(tgo.status),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Wrap(
+                      spacing: 18,
+                      runSpacing: 10,
+                      children: [
+                        for (final (label, value) in [
+                          ('Sipariş', '${remoteValid.length}'),
+                          ('Teslim', '${remoteSales.length}'),
+                          ('Tamamlanan Satış', formatTry(remoteAmount)),
+                        ])
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                hasPlatformData ? value : '—',
+                                style: const TextStyle(
+                                  fontSize: 23,
+                                  fontWeight: FontWeight.w800,
+                                  color: NohutBrand.green,
+                                ),
+                              ),
+                              Text(
+                                label,
+                                style: const TextStyle(color: NohutBrand.muted),
+                              ),
+                            ],
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    TextButton.icon(
+                      onPressed: _showTrendyolOrders,
+                      icon: const Icon(Icons.arrow_forward, size: 18),
+                      label: const Text('Online Siparişleri Gör'),
+                    ),
+                  ],
+                ),
+              ),
+            );
+            if (constraints.maxWidth < 980) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  staffPanel,
+                  const SizedBox(height: 10),
+                  platformPanel,
+                ],
+              );
+            }
+            return Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Trendyol Go · Online Satışlar',
-                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
-                ),
-                Text(
-                  'Bugün: ${remoteValid.length} sipariş · ${remoteSales.length} teslim · ${formatTry(remoteAmount)}',
-                ),
-                Text('Bağlantı: ${tgo.status}'),
-                TextButton(
-                  onPressed: _showTrendyolOrders,
-                  child: const Text('Online Siparişleri Gör'),
-                ),
+                Expanded(flex: 6, child: staffPanel),
+                const SizedBox(width: 12),
+                Expanded(flex: 4, child: platformPanel),
               ],
-            ),
-          ),
+            );
+          },
         ),
       ],
     );
