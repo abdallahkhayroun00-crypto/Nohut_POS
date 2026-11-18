@@ -146,7 +146,7 @@ void main() {
       expect(find.text('Platform no: PLATFORM-99'), findsNothing);
       await t.tap(find.byKey(const ValueKey('navigation-reviews')));
       await t.pumpAndSettle();
-      expect(find.text('Değerlendirmeleri Getir'), findsOneWidget);
+      expect(find.byTooltip('Yenile'), findsOneWidget);
       expect(find.text('Şube ID (Store ID)'), findsOneWidget);
       await t.tap(find.text('Google Maps'));
       await t.pumpAndSettle();
