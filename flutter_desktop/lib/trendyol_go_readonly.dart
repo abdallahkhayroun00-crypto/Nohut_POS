@@ -195,7 +195,10 @@ Json normalizeTgoPackage(Json p) {
 
 class TrendyolGoReadonly extends ChangeNotifier {
   TrendyolGoReadonly(this.store) : vault = TgoWindowsVault(store.filePath);
-  static const liveSyncEnabled = bool.fromEnvironment('NOHUT_TRENDYOL_LIVE_SYNC');
+  static const liveSyncEnabled = bool.fromEnvironment(
+    'NOHUT_TRENDYOL_LIVE_SYNC',
+    defaultValue: true,
+  );
   static const pausedStatus = 'Senkronizasyon geçici olarak kapalı';
   final PosStore store;
   final TgoWindowsVault vault;
@@ -227,7 +230,9 @@ class TrendyolGoReadonly extends ChangeNotifier {
     credentials = c;
     status = liveSyncEnabled ? 'Kaydedildi' : pausedStatus;
     error = '';
-    if (!_closed) notifyListeners();
+    if (_closed) return;
+    notifyListeners();
+    if (liveSyncEnabled) unawaited(sync());
   }
 
   Future<void> sync() async {
@@ -241,7 +246,8 @@ class TrendyolGoReadonly extends ChangeNotifier {
       final last = meta is Map
           ? DateTime.tryParse('${meta['lastSync'] ?? ''}')
           : null;
-      final start = DateTime.now().toUtc().subtract(
+      final end = DateTime.now().toUtc();
+      final start = end.subtract(
         last == null ? const Duration(days: 7) : const Duration(hours: 24),
       );
       final fresh = <Json>[];
@@ -256,9 +262,11 @@ class TrendyolGoReadonly extends ChangeNotifier {
               'page': '$page',
               'size': '50',
               'packageModificationStartDate': '${start.millisecondsSinceEpoch}',
+              'packageModificationEndDate': '${end.millisecondsSinceEpoch}',
             },
           );
           final req = await client.getUrl(uri);
+          req.followRedirects = false;
           req.headers.set(
             HttpHeaders.authorizationHeader,
             'Basic ' + base64Encode(utf8.encode(c.apiKey + ':' + c.apiSecret)),
@@ -271,25 +279,29 @@ class TrendyolGoReadonly extends ChangeNotifier {
           req.headers.set('x-executor-user', c.email);
           req.headers.set(HttpHeaders.acceptHeader, 'application/json');
           final res = await req.close().timeout(const Duration(seconds: 20));
-          final payload = await utf8.decoder.bind(res).join();
           if (res.statusCode != 200) {
             throw FormatException('Trendyol API HTTP ${res.statusCode}');
           }
+          final payload = await utf8.decoder.bind(res).join().timeout(
+            const Duration(seconds: 20),
+          );
           final result = jsonDecode(payload);
           if (result is! Map || result['content'] is! List) {
             throw const FormatException('Sipariş yanıtı geçersiz.');
           }
-          for (final raw in result['content'] as List) {
+          final packages = result['content'] as List;
+          for (final raw in packages) {
             if (raw is Map) fresh.add(normalizeTgoPackage(Json.from(raw)));
           }
-          final pages = (result['totalPages'] as num?)?.toInt() ?? 1;
-          if (page + 1 >= pages) break;
+          final pages = (result['totalPages'] as num?)?.toInt();
+          if (pages != null ? page + 1 >= pages : packages.length < 50) break;
           if (page == 9)
             throw const FormatException('API sayfa sınırı; veri kısmi.');
         }
       } finally {
         client.close(force: true);
       }
+      if (_closed) return;
       var saved = false;
       for (var i = 0; i < 4 && !saved; i++) {
         final snapshot = store.read(), next = copyJson(snapshot.data);
