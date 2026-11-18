@@ -639,7 +639,6 @@ class _DashboardSalesState extends State<DashboardSales> {
                         selected: visible.contains(i),
                         selectedColor: NohutBrand.green,
                         backgroundColor: Colors.white,
-                        showCheckmark: false,
                         side: BorderSide(
                           color: visible.contains(i)
                               ? NohutBrand.green
