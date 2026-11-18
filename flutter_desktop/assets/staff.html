@@ -55,7 +55,7 @@ function renderOrders(){
   const localCards=local.map(o=>({
     day:o.numberDay||'',number:o.dailyNumber||0,
     html:'<article class="order"><div class="row spread"><strong class="order-number">#'+number(o)+
-      ' · '+(o.table?'Masa '+o.table:esc(o.source))+'</strong><span class="badge '+(o.serviceStatus==='Hazır'?'ready':'')+'">'+
+      ' · '+(o.table?'Dükkân · Masa '+o.table:esc(o.source))+'</strong><span class="badge '+(o.serviceStatus==='Hazır'?'ready':'')+'">'+
       esc(o.serviceStatus||'Hazırlanıyor')+'</span></div><div class="row spread"><span>'+
       keyedLines(o).reduce((n,l)=>n+l.qty,0)+' ürün</span><strong>Kalan '+money(orderDue(o))+
       '</strong></div><button class="select-order" data-open="'+o.id+'">Hesabı Aç</button></article>',
