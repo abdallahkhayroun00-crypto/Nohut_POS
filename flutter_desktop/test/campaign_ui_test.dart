@@ -16,7 +16,9 @@ void main() {
   await helpers.click(t,'Kampanyalar');
   await helpers.click(t,'Not / Malzeme');expect(find.descendant(of:find.byType(AlertDialog).last,matching:find.byType(ListTile)),findsNWidgets(4));
   await helpers.click(t,'Kaydet');
-  await t.tap(find.byType(DropdownButtonFormField<int>));await t.pumpAndSettle();
+  await t.tap(find.byType(DropdownButtonFormField<int>).first);await t.pumpAndSettle();
+  await t.tap(find.text('Abdallah').last);await t.pumpAndSettle();
+  await t.tap(find.byType(DropdownButtonFormField<int>).last);await t.pumpAndSettle();
   await t.tap(find.textContaining('Masa 1').last);await t.pumpAndSettle();
   await helpers.click(t,'Siparişi Kaydet');
   final db=PosStore(databaseFile:file);
