@@ -78,6 +78,7 @@ class OrderRequest {
     required this.lines,
     this.customer = const {},
     this.expectedTableOrderId,
+    this.staffId,
   });
   final String source;
   final int? table;
@@ -85,6 +86,9 @@ class OrderRequest {
   final List<Json> lines;
   final Json customer;
   final int? expectedTableOrderId;
+  /// Explicit active employee for new orders entered on the cashier PC.
+  /// Existing table additions retain the original order owner.
+  final int? staffId;
 }
 
 class NohutFalafelApp extends StatelessWidget {
@@ -427,13 +431,26 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
           created = occupied['id'] as int;
           return;
         }
+        final person = asMaps(data['employees']).where(
+          (entry) =>
+              entry['id'] == request.staffId &&
+              entry['active'] == true &&
+              '${entry['name'] ?? ''}'.trim().isNotEmpty,
+        ).firstOrNull;
+        if (person == null) {
+          throw const FormatException(
+            'Yeni sipariş için aktif personel seçilmelidir.',
+          );
+        }
         final o = newLocalOrder(
           state: data,
           source: request.source,
           table: request.table,
           pickupChannel: request.pickupChannel,
           productLines: request.lines,
+          cashier: '${person['name']}',
         );
+        ((o['batches'] as List).first as Map)['staffId'] = person['id'];
         o['customer'] = request.customer;
         created = o['id'] as int;
       }
@@ -442,6 +459,12 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       context: context,
       builder: (ctx) => _OrderComposer(
         products: menu,
+        employees: asMaps(store.read().data['employees'])
+            .where((entry) =>
+                entry['active'] == true &&
+                entry['id'] is int &&
+                '${entry['name'] ?? ''}'.trim().isNotEmpty)
+            .toList(),
         onSubmit: saveRequest,
         refreshProducts: _currentProducts,
         refreshTables: () => {
@@ -1278,6 +1301,8 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
         state: db,
         businessDay: businessDay,
       ),
+      const SizedBox(height: 16),
+      StaffPerformanceChart(state: db, day: businessDay),
     ],
   );
 
