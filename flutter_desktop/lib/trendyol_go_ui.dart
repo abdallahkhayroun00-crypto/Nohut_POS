@@ -710,52 +710,10 @@ class _TgoReviewsPanelState extends State<TgoReviewsPanel> {
   Future<void> _reply(Json review) async {
     final reviewId = '${review['reviewId'] ?? ''}';
     if (reviewId.isEmpty || answering || loading) return;
-    final controller = TextEditingController();
     final answer = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Trendyol Go · Yoruma Yanıt Ver'),
-        content: SizedBox(
-          width: 470,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'Bu yanıt platformda herkese açık olur. '
-                'Uber Eats’e geçmiş restoranlarda API yanıtı reddedebilir.',
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: controller,
-                autofocus: true,
-                maxLength: 500,
-                maxLines: 5,
-                decoration: const InputDecoration(
-                  hintText: 'Müşteriye yanıtınızı yazın…',
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Vazgeç'),
-          ),
-          FilledButton(
-            onPressed: () {
-              if (controller.text.trim().isNotEmpty) {
-                Navigator.pop(context, controller.text.trim());
-              }
-            },
-            child: const Text('Yanıtı Gönder'),
-          ),
-        ],
-      ),
+      builder: (_) => const _TgoReplyDialog(),
     );
-    // Release after the dialog transition so the input never loses its
-    // controller while the route is still animating.
-    WidgetsBinding.instance.addPostFrameCallback((_) => controller.dispose());
     if (!mounted || answer == null) return;
     setState(() { answering = true; error = ''; });
     try {
@@ -1086,4 +1044,69 @@ class _TgoReviewsPanelState extends State<TgoReviewsPanel> {
     );
   }
 
+}
+
+
+class _TgoReplyDialog extends StatefulWidget {
+  const _TgoReplyDialog();
+
+  @override
+  State<_TgoReplyDialog> createState() => _TgoReplyDialogState();
+}
+
+class _TgoReplyDialogState extends State<_TgoReplyDialog> {
+  final controller = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    controller.addListener(_refresh);
+  }
+
+  void _refresh() => setState(() {});
+
+  @override
+  void dispose() {
+    controller.removeListener(_refresh);
+    controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('Trendyol Go · Yoruma Yanıt Ver'),
+    content: SizedBox(
+      width: 470,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text(
+            'Bu yanıt platformda herkese açık olur. '
+            'Uber Eats’e geçmiş restoranlarda API yanıtı reddedebilir.',
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: controller,
+            autofocus: true,
+            maxLength: 500,
+            maxLines: 5,
+            decoration: const InputDecoration(
+              hintText: 'Müşteriye yanıtınızı yazın…',
+            ),
+          ),
+        ],
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text('Vazgeç'),
+      ),
+      FilledButton(
+        onPressed: controller.text.trim().isEmpty
+            ? null : () => Navigator.pop(context, controller.text.trim()),
+        child: const Text('Yanıtı Gönder'),
+      ),
+    ],
+  );
 }
