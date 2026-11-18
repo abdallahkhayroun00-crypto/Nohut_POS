@@ -50,6 +50,52 @@ void main() {
     expect(tgoCountsAsSale({...order, 'testPackage': true}), false);
   });
 
+  test('Official meal payload preserves available customer and courier details', () {
+    final order = normalizeTgoPackage({
+      ...payload,
+      'id': 'abc123',
+      'customer': {'firstName': 'A', 'lastName': 'K', 'email': 'masked@example.com'},
+      'address': {
+        'address1': 'Sokak 5',
+        'district': 'Serdivan',
+        'city': 'Sakarya',
+        'phone': '0850 000 0000',
+      },
+      'userInformation': {'appName': 'TrendyolGo'},
+      'preparationTime': 12,
+      'isCourierNearby': true,
+      'pickupEtaState': 'SUCCESS',
+      'estimatedPickupTimeMin': 1763503200000,
+      'estimatedPickupTimeMax': 1763503500000,
+      'eta': '15 - 30 dk',
+      'lines': [
+        {
+          'name': 'Falafel Dürüm',
+          'items': [
+            {'packageItemId': 'item-1', 'isCancelled': false},
+            {'packageItemId': 'item-2', 'isCancelled': false},
+          ],
+        },
+      ],
+    });
+    expect(order['customerName'], 'A K');
+    expect(order['customerPhone'], '0850 000 0000');
+    expect(order['customerEmail'], 'masked@example.com');
+    expect(order['deliveryAddress'], contains('Sokak 5'));
+    expect(order['appName'], 'TrendyolGo');
+    expect(order['preparationMinutes'], 12);
+    expect(order['courierNearby'], true);
+    expect(order['courierEtaFrom'], isNotNull);
+    expect(order['courierEtaTo'], isNotNull);
+    expect(order['pickupEtaState'], 'SUCCESS');
+    expect(order['packageItemIds'], ['item-1', 'item-2']);
+    expect(order['deliveryEta'], '15 - 30 dk');
+  });
+
+  test('Production order writes require explicit verified opt-in', () {
+    expect(TrendyolGoReadonly.writeEnabled, false);
+  });
+
   test('Rejects packages without a stable external identifier', () {
     expect(
       () => normalizeTgoPackage({...payload, 'id': null}),
