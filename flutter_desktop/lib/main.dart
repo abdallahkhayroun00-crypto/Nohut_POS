@@ -8,6 +8,7 @@ import 'trendyol_go_ui.dart';
 import 'sales_reports.dart';
 import 'dashboard_sales.dart';
 import 'order_alerts.dart';
+import 'online_order_alarm.dart';
 import 'online_orders.dart';
 import 'google_business.dart';
 import 'google_business_ui.dart';
@@ -136,6 +137,8 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
   late final PosLanServer lan;
   late final QrMenuAutoSync qrSync;
   late final TrendyolGoReadonly tgo;
+  late final OnlineOrderSoundPlayer onlineSound;
+  late final OnlineOrderAlarm onlineAlarm;
   late final GoogleBusiness google;
   Timer? _midnightTimer;
   Timer? _serviceTimer;
@@ -177,6 +180,12 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     settings['receiptPolicy'] = 'onPayment';
     settings['autoPrint'] = false;
     store.replace(migrated, initial.revision);
+    onlineSound = OnlineOrderSoundPlayer();
+    onlineAlarm = OnlineOrderAlarm(
+      play: onlineSound.play,
+      stopAudio: onlineSound.stop,
+    );
+    onlineAlarm.setAudioEnabled(settings['onlineOrderSound'] != false);
     inpos = InposPayments(store, widget.inposGateway ?? UnavailableInpos());
     lan = PosLanServer(store);
     receiptPrinter = ReceiptPrinter(store);
@@ -189,10 +198,9 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
             ? "Trendyol Go · Yeni sipariş ${orders.single['orderNumber']}"
             : 'Trendyol Go · ${orders.length} yeni sipariş';
         _notify(message);
-        if (store.read().data['settings']?['soundAlerts'] != false) {
-          unawaited(playOrderAlert());
-        }
       },
+      onOrdersSynced: (orders) =>
+          onlineAlarm.acceptSnapshot('Trendyol Go', orders),
     );
     google = GoogleBusiness(
       store.filePath,
@@ -316,6 +324,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     _midnightTimer?.cancel();
     _serviceTimer?.cancel();
     tgo.dispose();
+    onlineAlarm.dispose();
     google.dispose();
     qrSync.dispose();
     receiptPrinter.dispose();
@@ -323,6 +332,74 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     store.removeListener(_staffActivity);
     store.dispose();
     super.dispose();
+  }
+
+  Widget _onlineAlarmBanner() {
+    final active = onlineAlarm.pending;
+    if (active.isEmpty) return const SizedBox.shrink();
+    final severity = onlineAlarm.maxSeverity;
+    final bg = severity >= 2
+        ? const Color(0xffFFE2E1)
+        : severity == 1
+            ? const Color(0xffFFF0D6)
+            : const Color(0xffEDF5E9);
+    final ink = severity >= 2
+        ? const Color(0xff9B2226)
+        : severity == 1
+            ? const Color(0xff8A5000)
+            : const Color(0xff184C3A);
+    final first = active.first;
+    final elapsed = first.elapsedSeconds(DateTime.now());
+    final sourceNames = active.map((o) => o.platform).toSet().join(' · ');
+    return MaterialBanner(
+      backgroundColor: bg,
+      leading: Icon(
+        severity >= 2 ? Icons.emergency_outlined : Icons.notifications_active,
+        color: ink,
+        size: 30,
+      ),
+      content: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            severity >= 2
+                ? 'ACİL · ${active.length} onay bekleyen online sipariş!'
+                : severity == 1
+                    ? 'Dikkat · ${active.length} online sipariş bekliyor'
+                    : 'Yeni online sipariş · ${active.length} bekliyor',
+            style: TextStyle(color: ink, fontWeight: FontWeight.w800),
+          ),
+          Text(
+            '$sourceNames · İlk sipariş #${first.number} · ${elapsed < 0 ? 0 : elapsed} sn',
+            style: TextStyle(color: ink, fontSize: 12),
+          ),
+          if (tgo.error.isNotEmpty)
+            const Text(
+              'Bağlantı hatası: Son doğrulanmış durum korunuyor. Partner panelini kontrol edin.',
+              style: TextStyle(color: Color(0xff9B2226), fontSize: 11),
+            ),
+          if (!onlineAlarm.audioEnabled)
+            Text('Ses kapalı · Ayarlar > Bildirimler',
+                style: TextStyle(color: ink, fontSize: 11)),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => setState(() {
+            page = 'online';
+            onlinePlatform = first.platform;
+            _onlineView++;
+          }),
+          child: const Text('Siparişi Aç'),
+        ),
+        if (first.platform == 'Trendyol Go')
+          TextButton(
+            onPressed: () => openExternalPage(
+                context, 'https://partner.tgoyemek.com/'),
+            child: const Text('Partner Paneli'),
+          ),
+      ],
+    );
   }
 
   void _notify(String message, {bool error = false}) {
@@ -348,6 +425,9 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
         );
         return false;
       }
+      onlineAlarm.setAudioEnabled(
+        store.read().data['settings']?['onlineOrderSound'] != false,
+      );
       return true;
     } on FormatException catch (e) {
       _notify(e.message, error: true);
@@ -940,7 +1020,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
 
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
-    animation: Listenable.merge([store, lan, tgo]),
+    animation: Listenable.merge([store, lan, tgo, onlineAlarm]),
     builder: (ctx, _) {
       final data = store.read().data;
       final width = MediaQuery.sizeOf(context).width;
@@ -1023,6 +1103,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                       ],
                     ),
                   ),
+                  if (onlineAlarm.hasPending) _onlineAlarmBanner(),
                   if (latestNotice != null)
                     MaterialBanner(
                       content: Text(
@@ -2341,6 +2422,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     store: store,
     qrSync: qrSync,
     tgoIntegration: tgo,
+    onTestOnlineSound: (platform) => unawaited(onlineSound.play(platform, 0)),
     onOpenGoogle: () => setState(() => page = 'google'),
     staffPanel: _staff(db),
     wifiPanel: _wifi(db),
