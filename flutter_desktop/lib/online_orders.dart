@@ -66,6 +66,7 @@ class _OnlineOrdersState extends State<OnlineOrders> {
     int? reasonId;
     String? explanation;
     double? receiptAmount;
+    int? bagCount;
     if (action == 'cancel') {
       const reasons = {
         621: 'Tedarik problemi',
@@ -98,10 +99,11 @@ class _OnlineOrdersState extends State<OnlineOrders> {
     } else if (action == 'ready') {
       var value = ((order['totalCents'] as int? ?? 0) / 100)
           .toStringAsFixed(2);
-      final result = await showDialog<String>(
+      var bags = '1';
+      final result = await showDialog<List<String>>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('Hazır · Fiş Tutarını Doğrula'),
+          title: const Text('Hazır · Fiş ve Poşet Bilgileri'),
           content: SizedBox(
             width: 390,
             child: Column(
@@ -119,22 +121,33 @@ class _OnlineOrdersState extends State<OnlineOrders> {
                   decoration: const InputDecoration(labelText: 'Fiş tutarı (₺)'),
                   onChanged: (next) => value = next,
                 ),
+                const SizedBox(height: 10),
+                TextFormField(
+                  initialValue: bags,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: 'Gerçek poşet adedi (1-10)'),
+                  onChanged: (next) => bags = next,
+                ),
               ],
             ),
           ),
           actions: [
             TextButton(onPressed: () => Navigator.pop(ctx),
               child: const Text('Vazgeç')),
-            FilledButton(onPressed: () => Navigator.pop(ctx, value),
+            FilledButton(onPressed: () => Navigator.pop(ctx, [value, bags]),
               child: const Text('Devam Et')),
           ],
         ),
       );
       if (result == null || !mounted) return;
-      receiptAmount = double.tryParse(result.replaceAll(',', '.'));
-      if (receiptAmount == null || !receiptAmount.isFinite || receiptAmount <= 0) {
+      receiptAmount = double.tryParse(result[0].replaceAll(',', '.'));
+      bagCount = int.tryParse(result[1]);
+      if (receiptAmount == null || !receiptAmount.isFinite ||
+          receiptAmount <= 0 || bagCount == null ||
+          bagCount < 1 || bagCount > 10) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Geçerli mali fiş tutarı gerekli.')),
+          const SnackBar(content: Text(
+            'Geçerli mali fiş tutarı ve gerçek poşet adedi gerekli.')),
         );
         return;
       }
@@ -166,18 +179,20 @@ class _OnlineOrdersState extends State<OnlineOrders> {
     );
     if (confirmed != true || !mounted) return;
     try {
-      await widget.integration.updateOrder(
+      final verified = await widget.integration.updateOrder(
         order, action,
         reasonId: reasonId,
         explanation: explanation,
         receiptAmount: receiptAmount,
+        bagCount: bagCount,
       );
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text(
-            'Platform yanıtı alındı. Güncel sipariş durumu yeniden sorgulandı.',
-          )),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(verified
+              ? 'Platform durumu API üzerinden doğrulandı.'
+              : 'İşlem API’ye gönderildi ancak son durum doğrulanamadı. '
+                  'Tekrar göndermeden önce Partner Paneli’ni kontrol edin.'),
+        ));
       }
     } catch (e) {
       if (mounted) {
