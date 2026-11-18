@@ -269,6 +269,48 @@ class _SimpleSettingsState extends State<SimpleSettings> {
           ),
         ],
         if (tab == 'Entegrasyonlar') ...[
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(17),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Entegrasyon Sağlığı',
+                    style: TextStyle(color: NohutBrand.green,
+                        fontWeight: FontWeight.w800, fontSize: 18)),
+                  const SizedBox(height: 9),
+                  ListTile(
+                    leading: Icon(
+                      widget.tgoIntegration.status.startsWith('Bağlı ·')
+                        ? Icons.check_circle_outline : Icons.info_outline,
+                      color: widget.tgoIntegration.status.startsWith('Bağlı ·')
+                        ? NohutBrand.green : NohutBrand.gold,
+                    ),
+                    title: const Text('Trendyol Go by Uber Eats'),
+                    subtitle: Text(
+                      '${widget.tgoIntegration.status}'
+                      '\\nSon başarılı eşitleme: '
+                      '${widget.tgoIntegration.lastSync.isNotEmpty ? widget.tgoIntegration.lastSync : 'Henüz yok'}'
+                      '${widget.tgoIntegration.error.isEmpty ? '' : '\\nHata: ${widget.tgoIntegration.error}'}',
+                    ),
+                  ),
+                  const ListTile(
+                    leading: Icon(Icons.link_off_outlined, color: NohutBrand.gold),
+                    title: Text('Yemeksepeti · Migros Yemek'),
+                    subtitle: Text('API bilgilerini kaydetmek entegrasyonu açmaz. '
+                        'Canlı bağlantı ve Test Connection, resmi restoran API erişimi '
+                        'sağlanana kadar kullanılamaz.'),
+                  ),
+                  const ListTile(
+                    leading: Icon(Icons.info_outline, color: NohutBrand.muted),
+                    title: Text('Google İşletme Profili'),
+                    subtitle: Text('OAuth bağlantısı ve yetkiler Google '
+                        'İşletme Profili sayfasından kontrol edilir.'),
+                  ),
+                ],
+              ),
+            ),
+          ),
           TgoSettingsPanel(integration: widget.tgoIntegration),
           const SizedBox(height: 12),
           const SizedBox(height: 12),
