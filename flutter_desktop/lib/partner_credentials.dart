@@ -229,9 +229,9 @@ class _PartnerCredentialsCardState extends State<PartnerCredentialsCard> {
                   ],
                 ),
               ),
-              if (busy) const SizedBox(
-                  width: 20, height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2)),
+              if (busy)
+                const Icon(Icons.hourglass_empty_outlined,
+                    color: NohutBrand.muted, size: 20),
             ],
           ),
           if (message.isNotEmpty) ...[
