@@ -270,7 +270,7 @@ class _DashboardSalesState extends State<DashboardSales> {
                   borderRadius: BorderRadius.circular(5),
                   child: SizedBox(
                     width: period == _SalesPeriod.daily ? 24 : 35,
-                    height: math.max(3, filledHeight),
+                    height: math.max(3.0, filledHeight),
                     child: Column(
                       children: [
                         for (final i in selected.reversed)
