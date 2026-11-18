@@ -99,6 +99,8 @@ class _TgoSettingsPanelState extends State<TgoSettingsPanel> {
               const Text(
                 'Salt okunur bağlantı · Siparişler alınır; platformda kabul, iptal, fiyat veya durum değişikliği yapılmaz.',
               ),
+              if (!TrendyolGoReadonly.liveSyncEnabled)
+                const Text('Ayarları kaydedebilirsiniz. Canlı sipariş eşitlemesi bu sürümde geçici olarak kapalı.'),
               const SizedBox(height: 16),
               TextField(
                 controller: supplier,
@@ -160,7 +162,8 @@ class _TgoSettingsPanelState extends State<TgoSettingsPanel> {
                     label: const Text('Güvenli Kaydet'),
                   ),
                   OutlinedButton.icon(
-                    onPressed: s.syncing || s.credentials?.valid != true
+                    onPressed: !TrendyolGoReadonly.liveSyncEnabled ||
+                            s.syncing || s.credentials?.valid != true
                         ? null
                         : () => s.sync(),
                     icon: const Icon(Icons.sync),
@@ -226,7 +229,7 @@ class TgoOrdersPanel extends StatelessWidget {
                 style: const TextStyle(fontWeight: FontWeight.w700),
               ),
               TextButton.icon(
-                onPressed: integration!.syncing
+                onPressed: !TrendyolGoReadonly.liveSyncEnabled || integration!.syncing
                     ? null
                     : () => integration!.sync(),
                 icon: const Icon(Icons.refresh),

@@ -63,7 +63,7 @@ if (-not (Test-Path -LiteralPath $database -PathType Leaf)) {
     [IO.File]::WriteAllText($database, 'installer database preservation fixture')
 }
 $dbHash = (Get-FileHash -LiteralPath $database).Hash
-Invoke-Setup $oldSetup ($silent + "/DIR=`"$installDir`"")
+Invoke-Setup $oldSetup ($silent + @('/TASKS=desktopicon', "/DIR=`"$installDir`""))
 $installedExe = Join-Path $installDir $exeName
 if ((Get-ItemProperty -LiteralPath $uninstallKey).DisplayVersion -ne '0.0.0.0') {
     throw 'First installation is missing from Windows Installed Apps.'
