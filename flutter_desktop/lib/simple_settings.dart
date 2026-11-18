@@ -312,6 +312,23 @@ class _SimpleSettingsState extends State<SimpleSettings> {
             ),
           ),
           TgoSettingsPanel(integration: widget.tgoIntegration),
+          if (asMaps(widget.state['tgoOperationAudit']).isNotEmpty)
+            Card(
+              child: ExpansionTile(
+                leading: const Icon(Icons.history_outlined),
+                title: const Text('Trendyol · İşlem Günlüğü'),
+                subtitle: const Text('Platform işlemlerinin yerel denetim kaydı'),
+                children: [
+                  for (final record in asMaps(widget.state['tgoOperationAudit'])
+                      .reversed.take(20))
+                    ListTile(
+                      dense: true,
+                      title: Text('${record['action']} · #${record['orderNumber']}'),
+                      subtitle: Text('${record['at']} · ${record['result']}'),
+                    ),
+                ],
+              ),
+            ),
           const SizedBox(height: 12),
           const SizedBox(height: 12),
           PartnerCredentialsCard(
