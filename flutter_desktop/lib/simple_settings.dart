@@ -92,25 +92,50 @@ class _SimpleSettingsState extends State<SimpleSettings> {
   Widget section(String title, String description, List<Widget> children) =>
       Card(
         child: Padding(
-          padding: const EdgeInsets.all(22),
+          padding: const EdgeInsets.all(19),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  fontFamily: NohutBrand.headingFont,
-                  fontSize: 24,
-                ),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xffEAF2EC),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.tune_outlined,
+                        color: NohutBrand.green, size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(title, style: const TextStyle(
+                          color: NohutBrand.green,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 18,
+                        )),
+                        const SizedBox(height: 4),
+                        Text(description, style: const TextStyle(
+                          color: NohutBrand.muted, fontSize: 12,
+                        )),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 8),
-              Text(description),
-              const SizedBox(height: 20),
+              const SizedBox(height: 14),
+              const Divider(),
+              const SizedBox(height: 10),
               ...children,
             ],
           ),
         ),
       );
+
   @override
   Widget build(BuildContext context) {
     final settings = widget.state['settings'] as Map? ?? {};
@@ -118,7 +143,7 @@ class _SimpleSettingsState extends State<SimpleSettings> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         panelTitle('Ayarlar'),
-        const Text('İşletmen için gereken ayarlar, tek yerde.'),
+        const Text('Restoran yönetimi, platform bağlantıları, yazıcılar ve veri güvenliği.'),
         const SizedBox(height: 16),
         Wrap(
           spacing: 8,
@@ -130,9 +155,24 @@ class _SimpleSettingsState extends State<SimpleSettings> {
               'Entegrasyonlar',
               if (widget.staffPanel != null) 'Personel',
               if (widget.wifiPanel != null) 'Bağlantı',
-              'Yedek',
+              'Güvenlik',
+              'Yedekleme',
             ])
               ChoiceChip(
+                avatar: Icon(
+                  switch (name) {
+                    'Genel' => Icons.dashboard_customize_outlined,
+                    'Menü' => Icons.menu_book_outlined,
+                    'Yazıcı' => Icons.print_outlined,
+                    'Entegrasyonlar' => Icons.hub_outlined,
+                    'Personel' => Icons.people_outline,
+                    'Bağlantı' => Icons.wifi_outlined,
+                    'Güvenlik' => Icons.shield_outlined,
+                    _ => Icons.backup_outlined,
+                  },
+                  size: 17,
+                  color: tab == name ? Colors.white : NohutBrand.green,
+                ),
                 label: Text(name),
                 selected: tab == name,
                 onSelected: (_) => setState(() => tab = name),
@@ -168,16 +208,21 @@ class _SimpleSettingsState extends State<SimpleSettings> {
           const SizedBox(height: 12),
           for (final name in ['Yemeksepeti', 'Migros Yemek'])
             Card(
-              child: ListTile(
-                title: Text(name),
-                subtitle: const Text(
-                  'Bağlı değil · Partner entegrasyon erişimi gerekli',
-                ),
-                trailing: IconButton(
-                  tooltip: '$name panelini aç',
-                  icon: const Icon(Icons.open_in_new),
-                  onPressed: () =>
-                      openExternalPage(context, onlinePartners[name]!.url),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                child: ListTile(
+                  leading: const CircleAvatar(
+                    backgroundColor: Color(0xffFFF2DC),
+                    child: Icon(Icons.link_off_outlined, color: Color(0xffA56A28)),
+                  ),
+                  title: Text(name, style: const TextStyle(fontWeight: FontWeight.w700)),
+                  subtitle: const Text('Bağlı değil · Partner API yetkisi gerekli'),
+                  trailing: OutlinedButton.icon(
+                    onPressed: () =>
+                        openExternalPage(context, onlinePartners[name]!.url),
+                    icon: const Icon(Icons.open_in_new, size: 16),
+                    label: const Text('Paneli Aç'),
+                  ),
                 ),
               ),
             ),
@@ -485,7 +530,37 @@ class _SimpleSettingsState extends State<SimpleSettings> {
             ],
           ),
         ],
-        if (tab == 'Yedek')
+        if (tab == 'Güvenlik')
+          section(
+            'Güvenlik ve erişim',
+            'Bu panel mevcut bağlantı ve erişim durumunu gösterir; yeni bir oturum açma sistemi kurmaz.',
+            [
+              const ListTile(
+                leading: Icon(Icons.admin_panel_settings_outlined),
+                title: Text('Yönetici bilgisayarını koruyun'),
+                subtitle: Text('Windows oturumunu yetkisiz kişilerden koruyun. Bu sürümde yönetici için ayrı POS şifresi bulunmuyor.'),
+              ),
+              const Divider(),
+              const ListTile(
+                leading: Icon(Icons.people_outline),
+                title: Text('Personel erişimi'),
+                subtitle: Text('Personel adı seçimi tek başına kimlik doğrulama değildir. Çalışan ağını misafir Wi-Fi ağından ayırın.'),
+              ),
+              const Divider(),
+              const ListTile(
+                leading: Icon(Icons.key_off_outlined),
+                title: Text('API bilgileri'),
+                subtitle: Text('Entegrasyon anahtarlarını sadece yetkili yönetici cihazında saklayın; ekran görüntülerinde veya GitHub üzerinde paylaşmayın.'),
+              ),
+              const Divider(),
+              const ListTile(
+                leading: Icon(Icons.backup_outlined),
+                title: Text('Veri yedekleri'),
+                subtitle: Text('Yedekleme sekmesinden SQLite yedeği oluşturun ve geri yükleme işlemini güvenli ortamda test edin.'),
+              ),
+            ],
+          ),
+        if (tab == 'Yedekleme')
           section(
             'Verilerini koru',
             'Sipariş geçmişi bu bilgisayarda saklanır.',
