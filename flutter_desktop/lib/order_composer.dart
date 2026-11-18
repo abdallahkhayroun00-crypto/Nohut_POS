@@ -451,7 +451,7 @@ class _OrderComposerState extends State<_OrderComposer> {
                             ? null
                             : (id) => setState(() => selectedEmployeeId = id),
                       ),
-                    )
+                    ),
                   if (widget.adding ||
                       (source == 'Masa' && tableOrders[table] != null))
                     Container(
