@@ -199,6 +199,7 @@ class _OnlineOrdersState extends State<OnlineOrders> {
           if (stamp == null) return false;
           final day = istanbulDay(stamp);
           if ((!history && day != widget.businessDay) ||
+              (history && day.compareTo(widget.businessDay) >= 0) ||
               (history && selectedDay != null && day != selectedDay))
             return false;
           if (history && status.isNotEmpty && status != order['status'])
