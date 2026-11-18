@@ -71,3 +71,9 @@ String reviewDateText(Object? raw) {
   return '${two(turkey.day)}.${two(turkey.month)}.${turkey.year} '
       '${two(turkey.hour)}:${two(turkey.minute)}';
 }
+
+bool reviewHasWrittenComment(Json review) {
+  final comment = review['comment'];
+  return comment is Map &&
+      (comment['text'] ?? '').toString().trim().isNotEmpty;
+}
