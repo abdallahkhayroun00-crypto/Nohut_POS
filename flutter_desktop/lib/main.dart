@@ -8,6 +8,7 @@ import 'trendyol_go_ui.dart';
 import 'sales_reports.dart';
 import 'dashboard_sales.dart';
 import 'order_alerts.dart';
+import 'staff_order_popup.dart';
 import 'online_order_alarm.dart';
 import 'online_orders.dart';
 import 'google_business.dart';
@@ -15,6 +16,7 @@ import 'google_business_ui.dart';
 import 'card_terminal.dart';
 
 import 'dart:async';
+import 'dart:collection';
 
 import 'receipt_printer.dart';
 import 'qr_menu_sync.dart';
@@ -144,6 +146,8 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
   Timer? _serviceTimer;
   final Set<String> seenNotices = {};
   Json? latestNotice;
+  final Queue<Json> _staffPopupQueue = Queue<Json>();
+  bool _staffPopupOpen = false;
   bool orderModalOpen = false;
   String businessDay = istanbulDay(DateTime.now());
   List<Product> menu = const [];
@@ -595,11 +599,57 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     if (incoming.isEmpty) return;
     seenNotices.addAll(incoming.map((n) => '${n['id']}'));
     setState(() => latestNotice = incoming.last);
-    if (store.read().data['settings']?['soundAlerts'] != false &&
-        incoming.any(
-          (n) => ['Yeni sipariş', 'Ek sipariş'].contains(n['action']),
-        ))
-      unawaited(playOrderAlert());
+
+    // All phone order notifications are deduplicated by requestId, just as
+    // submitStaffOrder itself is idempotent. Only order creation/addition
+    // gets a popup; other staff actions remain silent.
+    final orders = incoming
+        .where((n) =>
+            n['action'] == 'Yeni sipariş' || n['action'] == 'Ek sipariş')
+        .toList();
+    _staffPopupQueue.addAll(orders);
+    if (orders.isNotEmpty &&
+        store.read().data['settings']?['soundAlerts'] != false) {
+      for (final _ in orders) {
+        queueStaffPhoneOrderSoundTwice();
+      }
+    }
+    _scheduleStaffPopup();
+  }
+
+  void _scheduleStaffPopup() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _showNextStaffPopup();
+    });
+  }
+
+  void _showNextStaffPopup() {
+    if (!mounted || _staffPopupOpen || orderModalOpen ||
+        _staffPopupQueue.isEmpty) return;
+    final notice = _staffPopupQueue.removeFirst();
+    _staffPopupOpen = true;
+    final orderId = notice['orderId'];
+    showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StaffOrderPopup(
+        notice: notice,
+        order: orderId is int ? mutableOrder(store.read().data, orderId) : null,
+        onOpen: () => Navigator.pop(ctx, true),
+        onDismiss: () => Navigator.pop(ctx, false),
+      ),
+    ).then((open) {
+      _staffPopupOpen = false;
+      if (!mounted) return;
+      if (latestNotice?['id'] == notice['id']) {
+        setState(() => latestNotice = null);
+      }
+      if (open == true && orderId is int) {
+        _showOrder(orderId);
+      } else {
+        _scheduleStaffPopup();
+      }
+    });
   }
 
   void _onTable(int table) {
@@ -666,7 +716,10 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
           ),
         ),
       ),
-    ).whenComplete(() => orderModalOpen = false);
+    ).whenComplete(() {
+      orderModalOpen = false;
+      _scheduleStaffPopup();
+    });
   }
 
   Future<void> _moveOrder(Json order) async {
