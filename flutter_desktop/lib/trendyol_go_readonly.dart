@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as paths;
 
 import 'pos_logic.dart';
+import 'order_reporting.dart';
 import 'pos_store.dart';
 
 // Official MEAL GET API ONLY. Never mutates Trendyol Go orders/menu/status.
@@ -175,9 +176,17 @@ class TrendyolGoReadonly extends ChangeNotifier {
           merged['${o['supplierId']}:${o['storeId']}:${o['orderNumber']}'] = o;
         }
         for (final o in fresh) {
-          merged['${o['supplierId']}:${o['storeId']}:${o['orderNumber']}'] = o;
+          final key = '${o['supplierId']}:${o['storeId']}:${o['orderNumber']}';
+          final prior = merged[key];
+          // Do not allocate a different display number when platform status changes.
+          merged[key] = prior == null ? o : {
+            ...o,
+            if (prior['dailyNumber'] is int) 'dailyNumber': prior['dailyNumber'],
+            if (prior['numberDay'] is String) 'numberDay': prior['numberDay'],
+          };
         }
         next['trendyolGoOrders'] = merged.values.toList();
+        assignDailyNumbers(next);
         next['tgoSyncInfo'] = {'lastSync': DateTime.now().toUtc().toIso8601String()};
         saved = store.replace(next, snapshot.revision).ok;
       }
