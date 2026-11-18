@@ -413,8 +413,27 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     int? created;
     bool saveRequest(OrderRequest request) => _edit((data) {
       validateCashierDraft(data, request.lines);
+      final person = asMaps(data['employees']).where(
+        (entry) =>
+            entry['id'] == request.staffId &&
+            entry['active'] == true &&
+            '${entry['name'] ?? ''}'.trim().isNotEmpty,
+      ).firstOrNull;
+      if (person == null) {
+        throw const FormatException(
+          'Sipariş için aktif personel seçilmelidir.',
+        );
+      }
+      final personName = '${person['name']}';
+      final personId = person['id'] as int;
       if (addToOrder != null) {
-        addOrderBatch(data, addToOrder, request.lines);
+        addOrderBatch(
+          data,
+          addToOrder,
+          request.lines,
+          cashier: personName,
+          staffId: personId,
+        );
         created = addToOrder;
       } else {
         final occupied = request.source == 'Masa'
@@ -427,20 +446,15 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
           );
         }
         if (occupied != null) {
-          addOrderBatch(data, occupied['id'] as int, request.lines);
+          addOrderBatch(
+            data,
+            occupied['id'] as int,
+            request.lines,
+            cashier: personName,
+            staffId: personId,
+          );
           created = occupied['id'] as int;
           return;
-        }
-        final person = asMaps(data['employees']).where(
-          (entry) =>
-              entry['id'] == request.staffId &&
-              entry['active'] == true &&
-              '${entry['name'] ?? ''}'.trim().isNotEmpty,
-        ).firstOrNull;
-        if (person == null) {
-          throw const FormatException(
-            'Yeni sipariş için aktif personel seçilmelidir.',
-          );
         }
         final o = newLocalOrder(
           state: data,
@@ -448,9 +462,9 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
           table: request.table,
           pickupChannel: request.pickupChannel,
           productLines: request.lines,
-          cashier: '${person['name']}',
+          cashier: personName,
         );
-        ((o['batches'] as List).first as Map)['staffId'] = person['id'];
+        ((o['batches'] as List).first as Map)['staffId'] = personId;
         o['customer'] = request.customer;
         created = o['id'] as int;
       }
