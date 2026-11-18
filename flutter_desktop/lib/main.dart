@@ -1815,7 +1815,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                         ? const Icon(Icons.delivery_dining_outlined)
                         : Text('${o['table'] ?? '#'}'),
                   ),
-                  title: Text('#${displayOrderNumber(o)} · ${o['source']}'),
+                  title: Text('#${displayOrderNumber(o)} · ${o['source'] == 'Masa' ? 'Dükkân · Masa ${o['table']}' : o['source']}'),
                   subtitle: Text(o['source'] == 'Trendyol Go'
                       ? '${o['numberDay']} · Trendyol #${o['orderNumber']} · ${o['status']} · Salt okunur'
                       : '${o['numberDay'] ?? ''} · ${o['created'] ?? ''} · ${o['closed'] == true ? 'Kapalı' : o['serviceStatus'] ?? 'Açık'}'),
