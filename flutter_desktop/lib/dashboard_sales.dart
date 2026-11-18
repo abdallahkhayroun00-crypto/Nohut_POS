@@ -166,12 +166,18 @@ class _DashboardSalesState extends State<DashboardSales> {
           return _SalesBucket('${names[i]} ${day.day}');
         });
       case _SalesPeriod.monthly:
-        // One bar per date in the selected month, not twelve fixed
-        // month labels that never let operators inspect previous months.
-        final days = DateTime.utc(target.year, target.month + 1, 0).day;
-        buckets = List.generate(
-          days, (i) => _SalesBucket('${i + 1}'),
-        );
+        // Rolling twelve-month comparison ending at the selected month.
+        // Each backward swipe moves the window one calendar month older.
+        const months = [
+          'Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz',
+          'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara',
+        ];
+        buckets = List.generate(12, (i) {
+          final month = DateTime.utc(
+            target.year, target.month - 11 + i, 1);
+          return _SalesBucket('${months[month.month - 1]} '
+              '${month.year.toString().substring(2)}');
+        });
     }
     final weekStart = DateTime.utc(
       target.year, target.month, target.day - target.weekday + 1,
@@ -191,8 +197,12 @@ class _DashboardSalesState extends State<DashboardSales> {
           final offset = date.difference(weekStart).inDays;
           if (offset >= 0 && offset < 7) bucket = offset;
         case _SalesPeriod.monthly:
-          if (time.year == target.year && time.month == target.month) {
-            bucket = time.day - 1;
+          final windowStart = DateTime.utc(
+            target.year, target.month - 11, 1);
+          final monthIndex = (time.year - windowStart.year) * 12 +
+              time.month - windowStart.month;
+          if (monthIndex >= 0 && monthIndex < 12) {
+            bucket = monthIndex;
           }
       }
       if (bucket != null) buckets[bucket].add(record);
@@ -217,7 +227,7 @@ class _DashboardSalesState extends State<DashboardSales> {
           'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
           'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık',
         ];
-        return '${months[day.month - 1]} ${day.year} · Günlere göre';
+        return '${months[day.month - 1]} ${day.year} · Son 12 ay';
     }
   }
 
@@ -330,7 +340,7 @@ class _DashboardSalesState extends State<DashboardSales> {
         final minWidth = switch (period) {
           _SalesPeriod.daily => 24 * 45.0,
           _SalesPeriod.weekly => 7 * 96.0,
-          _SalesPeriod.monthly => buckets.length * 40.0,
+          _SalesPeriod.monthly => 12 * 76.0,
         };
         final width = math.max(constraints.maxWidth, minWidth);
         return SingleChildScrollView(
