@@ -310,12 +310,13 @@ class TrendyolGoReadonly extends ChangeNotifier {
   /// Operator-initiated lifecycle action. Never performs an optimistic state
   /// change in SQLite; the next successful GET remains the source of truth.
   /// Enabled only after the MEAL write endpoints/permissions are validated.
-  Future<void> updateOrder(
+  Future<bool> updateOrder(
     Json order,
     String action, {
     int? reasonId,
     String? explanation,
     double? receiptAmount,
+    int? bagCount,
   }) async {
     if (!canWrite || writing) {
       throw const FormatException(
@@ -349,8 +350,12 @@ class TrendyolGoReadonly extends ChangeNotifier {
     if (action == 'ready' &&
         (receiptAmount == null ||
          !receiptAmount.isFinite ||
-         receiptAmount <= 0)) {
-      throw const FormatException('Fişteki gerçek tutarı girmelisiniz.');
+         receiptAmount <= 0 ||
+         bagCount == null ||
+         bagCount < 1 || bagCount > 10)) {
+      throw const FormatException(
+        'Gerçek fiş tutarı ve 1-10 arasında poşet adedi gerekli.',
+      );
     }
     final operation = switch (action) {
       'accept' => 'picked',
@@ -393,7 +398,7 @@ class TrendyolGoReadonly extends ChangeNotifier {
         request.headers.contentType = ContentType.json;
         request.write(jsonEncode({
           'invoiceAmount': receiptAmount,
-          'bagCount': 1,
+          'bagCount': bagCount,
           'receiptLink': null,
           'invoiceTaxAmount': null,
         }));
@@ -425,9 +430,42 @@ class TrendyolGoReadonly extends ChangeNotifier {
       writing = false;
       if (!_closed) notifyListeners();
     }
+    // A successful write HTTP response is not necessarily a confirmed status.
     await sync();
+    final expectedStatuses = switch (action) {
+      'accept' => const {'Picking', 'Invoiced', 'Shipped', 'Delivered'},
+      'ready' => const {'Invoiced', 'Shipped', 'Delivered'},
+      'cancel' => const {'UnSupplied', 'Cancelled'},
+      _ => const <String>{},
+    };
+    final updated = tgoOrders(store.read().data).where(
+      (o) => tgoOrderKey(o) == tgoOrderKey(order),
+    );
+    final verified = updated.isNotEmpty &&
+        expectedStatuses.contains('${updated.first['status']}');
+    _recordAction(order, action, verified ? 'DOĞRULANDI' : 'DOĞRULAMA BEKLENİYOR');
+    return verified;
   }
 
+  void _recordAction(Json order, String action, String result) {
+    for (var attempt = 0; attempt < 3; attempt++) {
+      final snapshot = store.read();
+      final next = copyJson(snapshot.data);
+      final raw = next['tgoOperationAudit'];
+      final events = raw is List ? List<dynamic>.from(raw) : <dynamic>[];
+      events.add({
+        'platform': 'Trendyol Go',
+        'packageId': order['packageId'],
+        'orderNumber': order['orderNumber'],
+        'action': action,
+        'result': result,
+        'at': DateTime.now().toUtc().toIso8601String(),
+      });
+      if (events.length > 200) events.removeRange(0, events.length - 200);
+      next['tgoOperationAudit'] = events;
+      if (store.replace(next, snapshot.revision).ok) return;
+    }
+  }
 
   /// Explicit operator-submitted answer using the published MEAL endpoint.
   /// Unlike order status mutations this endpoint is documented, but restaurants
