@@ -61,6 +61,133 @@ class _OnlineOrdersState extends State<OnlineOrders> {
     }
   }
 
+  Future<void> _applyAction(Json order, String action) async {
+    if (!widget.integration.canWrite || widget.integration.writing) return;
+    int? reasonId;
+    String? explanation;
+    double? receiptAmount;
+    if (action == 'cancel') {
+      const reasons = {
+        621: 'Tedarik problemi',
+        622: 'Mağaza kapalı',
+        623: 'Sipariş hazırlanamadı',
+        627: 'Sipariş karışıklığı',
+      };
+      reasonId = await showDialog<int>(
+        context: context,
+        builder: (ctx) => SimpleDialog(
+          title: const Text('Sipariş iptal nedeni'),
+          children: [
+            for (final entry in reasons.entries)
+              SimpleDialogOption(
+                onPressed: () => Navigator.pop(ctx, entry.key),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Text('${entry.key} · ${entry.value}'),
+                ),
+              ),
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Vazgeç'),
+            ),
+          ],
+        ),
+      );
+      if (reasonId == null || !mounted) return;
+      explanation = reasons[reasonId];
+    } else if (action == 'ready') {
+      var value = ((order['totalCents'] as int? ?? 0) / 100)
+          .toStringAsFixed(2);
+      final result = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Hazır · Fiş Tutarını Doğrula'),
+          content: SizedBox(
+            width: 390,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Platforma gönderilecek gerçek mali fiş tutarını doğrulayın. '
+                  'Bu işlem banka tahsilatı veya mali fiş oluşturmaz.',
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  autofocus: true,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(labelText: 'Fiş tutarı (₺)'),
+                  onChanged: (next) => value = next,
+                  controller: TextEditingController(text: value),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx),
+              child: const Text('Vazgeç')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, value),
+              child: const Text('Devam Et')),
+          ],
+        ),
+      );
+      if (result == null || !mounted) return;
+      receiptAmount = double.tryParse(result.replaceAll(',', '.'));
+      if (receiptAmount == null || !receiptAmount.isFinite || receiptAmount <= 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Geçerli mali fiş tutarı gerekli.')),
+        );
+        return;
+      }
+    }
+    final caption = switch (action) {
+      'accept' => 'Kabul Et',
+      'ready' => 'Hazır',
+      _ => 'Siparişi İptal Et',
+    };
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('$caption · Onay'),
+        content: Text(
+          'Platform siparişi #${order['orderNumber']}\n'
+          'Bu işlem doğrudan platform API’sine gönderilir. '
+          'Sipariş durumu platform tarafından onaylanmadan değişmez.'
+          '${explanation == null ? '' : '\nNeden: $explanation'}',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Vazgeç')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(caption),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await widget.integration.updateOrder(
+        order, action,
+        reasonId: reasonId,
+        explanation: explanation,
+        receiptAmount: receiptAmount,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text(
+            'Platform yanıtı alındı. Güncel sipariş durumu yeniden sorgulandı.',
+          )),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Platform işlemi tamamlanamadı: $e'),
+        ));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final integration = widget.integration;
@@ -327,6 +454,8 @@ class _OnlineOrdersState extends State<OnlineOrders> {
                                 child: TgoOrderCard(
                                   order: order,
                                   onKitchenPrint: () => widget.onPrint(order),
+                                  canWrite: integration.canWrite && !integration.writing,
+                                  onAction: _applyAction,
                                 ),
                               ),
                           ],
