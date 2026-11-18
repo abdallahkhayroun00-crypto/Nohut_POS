@@ -70,8 +70,9 @@ void main() {
 
   test('one daily POS sequence for Masa, Trendyol Go and Gel-Al', () {
     final db = emptyPosState();
-    final masa = datedOrder(1200, '2026-11-15T11:00:00Z')
-      ..['source'] = 'Masa'..['table'] = 1;
+    final masa = datedOrder(1200, '2026-11-15T11:00:00Z');
+    masa['source'] = 'Masa';
+    masa['table'] = 1;
     db['orders'] = [masa];
     assignDailyNumbers(db);
     expect(displayOrderNumber(masa), '0001');
