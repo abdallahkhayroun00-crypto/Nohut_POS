@@ -21,6 +21,7 @@ class CompactReviewCard extends StatefulWidget {
     this.awaitingVerification = false,
     this.onReply,
     this.replyBusy = false,
+    this.replyLabel = 'Yanıtla',
   });
   final String platform, dateLabel;
   final num? score;
@@ -28,6 +29,7 @@ class CompactReviewCard extends StatefulWidget {
   final List<String> products;
   final String? answerText, answerStatus, rejectedReason;
   final bool awaitingVerification, replyBusy;
+  final String replyLabel;
   final VoidCallback? onReply;
 
   @override
@@ -204,7 +206,7 @@ class _CompactReviewCardState extends State<CompactReviewCard> {
                       ),
                       onPressed: widget.replyBusy ? null : widget.onReply,
                       icon: const Icon(Icons.reply_outlined, size: 16),
-                      label: const Text('Yanıtla'),
+                      label: Text(widget.replyLabel),
                     ),
                 ],
               ),
