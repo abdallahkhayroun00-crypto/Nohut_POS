@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'brand.dart';
 import 'google_business.dart';
 import 'order_reporting.dart';
 import 'review_display.dart';
