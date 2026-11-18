@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'pos_logic.dart';
+import 'order_reporting.dart';
 import 'trendyol_go_readonly.dart';
 
 class TgoSettingsPanel extends StatefulWidget {
@@ -119,8 +120,11 @@ class TgoOrdersPanel extends StatelessWidget {
   final int? limit;
   @override
   Widget build(BuildContext context) {
-    final sorted = [...orders]..sort((a,b) =>
-        ('${b['createdAt'] ?? ''}').compareTo('${a['createdAt'] ?? ''}'));
+    final sorted = [...orders]..sort((a,b) {
+      final day = '${b['numberDay'] ?? ''}'.compareTo('${a['numberDay'] ?? ''}');
+      if (day != 0) return day;
+      return (b['dailyNumber'] as int? ?? 0).compareTo(a['dailyNumber'] as int? ?? 0);
+    });
     final shown = limit == null ? sorted : sorted.take(limit!).toList();
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       if (integration != null) Wrap(spacing: 12, crossAxisAlignment: WrapCrossAlignment.center,
@@ -136,12 +140,12 @@ class TgoOrdersPanel extends StatelessWidget {
         Card(child: Padding(padding: const EdgeInsets.all(14),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Wrap(spacing: 10, crossAxisAlignment: WrapCrossAlignment.center, children: [
-              Text('#${o['orderNumber']} · Trendyol Go',
+              Text('#${displayOrderNumber(o)} · Trendyol Go',
                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
               Chip(label: Text('${o['status']}')),
               if (o['testPackage'] == true) const Chip(label: Text('TEST')),
             ]),
-            Text('${o['createdAt']} · ${o['pickup'] == true ? 'Platform Gel-Al' : 'Paket Servis'}'),
+            Text('Trendyol sipariş no: ${o['orderNumber']} · ${o['createdAt']} · ${o['pickup'] == true ? 'Platform Gel-Al' : 'Paket Servis'}'),
             for (final line in asMaps(o['lines']))
               ListTile(dense: true,
                 title: Text('${line['qty']} × ${line['name']}'),
