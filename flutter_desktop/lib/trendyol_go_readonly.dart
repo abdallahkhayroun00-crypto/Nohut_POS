@@ -235,6 +235,76 @@ class TrendyolGoReadonly extends ChangeNotifier {
     if (liveSyncEnabled) unawaited(sync());
   }
 
+  Future<HttpClientRequest> _authorizedGet(
+    HttpClient client, Uri uri, TgoCredentials account,
+  ) async {
+    final request = await client.getUrl(uri);
+    request.followRedirects = false;
+    final auth = base64Encode(utf8.encode('${account.apiKey}:${account.apiSecret}'));
+    request.headers
+      ..set(HttpHeaders.authorizationHeader, 'Basic $auth')
+      ..set(HttpHeaders.userAgentHeader, '${account.supplierId} - SelfIntegration')
+      ..set('x-agentname', 'NohutFalafelPOS')
+      ..set('x-executor-user', account.email)
+      ..set(HttpHeaders.acceptHeader, 'application/json');
+    return request;
+  }
+
+  Future<({List<Json> reviews, bool hasNextPage})> readReviews(
+    String storeId, int page,
+  ) async {
+    final account = credentials;
+    if (!liveSyncEnabled || account == null || !account.valid) {
+      throw const FormatException('Önce Trendyol Go API bilgilerini kaydedin.');
+    }
+    if (!RegExp(r'^[0-9]+$').hasMatch(storeId)) {
+      throw const FormatException('Geçerli bir şube ID girin.');
+    }
+    final uri = Uri(
+      scheme: 'https', host: 'api.tgoapis.com',
+      pathSegments: [
+        'integrator', 'review', 'meal', 'suppliers', account.supplierId,
+        'stores', storeId, 'reviews', 'filter',
+      ],
+      queryParameters: {'page': '$page', 'size': '20'},
+    );
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 12);
+    try {
+      final request = await _authorizedGet(client, uri, account);
+      final response = await request.close().timeout(const Duration(seconds: 20));
+      final body = await utf8.decoder.bind(response).join().timeout(
+        const Duration(seconds: 20),
+      );
+      if (response.statusCode == 404 ||
+          response.statusCode == 403 && body.contains('endpoint.not-available.error')) {
+        throw const FormatException(
+          'Bu şube için yorum servisi kullanılamıyor. Yorumları GO Yemek panelinden kontrol edin.',
+        );
+      }
+      if (response.statusCode != 200) {
+        throw FormatException('Trendyol yorum servisi HTTP ${response.statusCode}.');
+      }
+      final payload = jsonDecode(body);
+      final List items;
+      if (payload is List) {
+        items = payload;
+      } else if (payload is Map && payload['content'] is List) {
+        items = payload['content'] as List;
+      } else if (payload is Map && payload['reviewId'] != null) {
+        items = [payload];
+      } else {
+        throw const FormatException('Yorum servisi beklenmeyen bir yanıt verdi.');
+      }
+      final pages = payload is Map ? payload['totalPages'] : null;
+      return (
+        reviews: items.whereType<Map>().map(Json.from).toList(),
+        hasNextPage: pages is num ? page + 1 < pages : items.length == 20,
+      );
+    } finally {
+      client.close(force: true);
+    }
+  }
+
   Future<void> sync() async {
     if (!liveSyncEnabled || _closed || syncing || credentials?.valid != true) return;
     syncing = true;
@@ -265,19 +335,7 @@ class TrendyolGoReadonly extends ChangeNotifier {
               'packageModificationEndDate': '${end.millisecondsSinceEpoch}',
             },
           );
-          final req = await client.getUrl(uri);
-          req.followRedirects = false;
-          req.headers.set(
-            HttpHeaders.authorizationHeader,
-            'Basic ' + base64Encode(utf8.encode(c.apiKey + ':' + c.apiSecret)),
-          );
-          req.headers.set(
-            HttpHeaders.userAgentHeader,
-            c.supplierId + ' - SelfIntegration',
-          );
-          req.headers.set('x-agentname', 'NohutFalafelPOS');
-          req.headers.set('x-executor-user', c.email);
-          req.headers.set(HttpHeaders.acceptHeader, 'application/json');
+          final req = await _authorizedGet(client, uri, c);
           final res = await req.close().timeout(const Duration(seconds: 20));
           if (res.statusCode != 200) {
             throw FormatException('Trendyol API HTTP ${res.statusCode}');

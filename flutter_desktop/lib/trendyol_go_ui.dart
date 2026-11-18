@@ -305,3 +305,139 @@ class TgoOrdersPanel extends StatelessWidget {
     );
   }
 }
+
+class TgoReviewsPanel extends StatefulWidget {
+  const TgoReviewsPanel({
+    super.key, required this.integration, required this.orders,
+  });
+
+  final TrendyolGoReadonly integration;
+  final List<Json> orders;
+
+  @override
+  State<TgoReviewsPanel> createState() => _TgoReviewsPanelState();
+}
+
+class _TgoReviewsPanelState extends State<TgoReviewsPanel> {
+  final storeId = TextEditingController();
+  List<Json> reviews = [];
+  String error = '';
+  int page = 0;
+  bool loading = false, loaded = false, hasNextPage = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final stores = widget.orders
+        .where((order) => order['supplierId'] == widget.integration.credentials?.supplierId)
+        .map((order) => '${order['storeId'] ?? ''}')
+        .where((id) => id.isNotEmpty)
+        .toSet();
+    if (stores.length == 1) storeId.text = stores.single;
+  }
+
+  @override
+  void dispose() {
+    storeId.dispose();
+    super.dispose();
+  }
+
+  Future<void> loadPage(int index) async {
+    if (loading) return;
+    setState(() {
+      loading = true;
+      error = '';
+    });
+    try {
+      final result = await widget.integration.readReviews(storeId.text.trim(), index);
+      if (!mounted) return;
+      setState(() {
+        reviews = result.reviews;
+        hasNextPage = result.hasNextPage;
+        page = index;
+        loaded = true;
+      });
+    } on FormatException catch (e) {
+      if (mounted) setState(() => error = e.message);
+    } catch (_) {
+      if (mounted) setState(() => error = 'Yorumlar alınamadı. Bağlantıyı kontrol edin.');
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Card(
+    child: ExpansionTile(
+      leading: const Icon(Icons.star_outline),
+      title: const Text('Değerlendirmeler'),
+      childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        TextField(
+          controller: storeId,
+          enabled: !loading,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(labelText: 'Şube ID (Store ID)'),
+          onChanged: (_) => setState(() {
+            reviews = [];
+            loaded = false;
+            error = '';
+          }),
+        ),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: OutlinedButton.icon(
+            onPressed: loading ? null : () => loadPage(0),
+            icon: const Icon(Icons.refresh),
+            label: const Text('Değerlendirmeleri Getir'),
+          ),
+        ),
+        if (loading) const LinearProgressIndicator(),
+        if (error.isNotEmpty)
+          Text(error, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+        if (loaded && reviews.isEmpty && error.isEmpty)
+          const Text('Bu sayfada değerlendirme yok.'),
+        for (final review in reviews)
+          _reviewTile(review),
+        if (loaded && (page > 0 || hasNextPage))
+          Wrap(
+            spacing: 8,
+            children: [
+              TextButton(
+                onPressed: loading || page == 0 ? null : () => loadPage(page - 1),
+                child: const Text('Önceki'),
+              ),
+              TextButton(
+                onPressed: loading || !hasNextPage ? null : () => loadPage(page + 1),
+                child: const Text('Sonraki'),
+              ),
+            ],
+          ),
+      ],
+    ),
+  );
+
+  Widget _reviewTile(Json review) {
+    final rating = review['rating'];
+    final comment = review['comment'];
+    final score = rating is Map ? rating['average'] : null;
+    final message = comment is Map ? comment['text'] : null;
+    final timestamp = review['createdDate'];
+    final date = timestamp is num && timestamp >= 0 && timestamp <= 8640000000000000
+        ? DateTime.fromMillisecondsSinceEpoch(timestamp.toInt(), isUtc: true)
+            .add(const Duration(hours: 3)).toIso8601String().split('T').first
+        : null;
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: const Icon(Icons.star_outline),
+      title: Text('${score is num ? score : '—'} / 5'),
+      subtitle: Text([
+        if (date != null) date,
+        if (message is String) message,
+      ].join('\n')),
+    );
+  }
+
+}

@@ -2102,9 +2102,10 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
               setState(() => onlinePlatform = value.single),
         ),
         const SizedBox(height: 16),
-        if (onlinePlatform == 'Trendyol Go')
-          TgoOrdersPanel(orders: tgoOrders(db), integration: tgo)
-        else if (onlinePlatform == 'Uber Eats')
+        if (onlinePlatform == 'Trendyol Go') ...[
+          TgoReviewsPanel(orders: tgoOrders(db), integration: tgo),
+          TgoOrdersPanel(orders: tgoOrders(db), integration: tgo),
+        ] else if (onlinePlatform == 'Uber Eats')
           _notice('Uber Eats · Bağlı değil')
         else ...[
           _notice('Yemeksepeti · Bağlı değil'),
