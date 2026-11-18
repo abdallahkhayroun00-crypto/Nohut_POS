@@ -62,26 +62,94 @@ class _SalesReportsState extends State<SalesReports> {
     width: 220,
     child: Card(
       child: Padding(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(17),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, color: NohutBrand.gold),
-            const SizedBox(height: 12),
-            Text(label),
-            Text(
-              amount,
-              style: const TextStyle(
-                fontSize: 27,
-                fontWeight: FontWeight.w700,
-                color: NohutBrand.green,
+            Container(
+              decoration: BoxDecoration(
+                color: const Color(0xffEAF2EC),
+                borderRadius: BorderRadius.circular(12),
               ),
+              padding: const EdgeInsets.all(9),
+              child: Icon(icon, color: NohutBrand.green, size: 20),
+            ),
+            const SizedBox(height: 12),
+            Text(label, style: const TextStyle(
+                color: NohutBrand.muted, fontSize: 12)),
+            const SizedBox(height: 4),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(amount, style: const TextStyle(
+                fontSize: 25, fontWeight: FontWeight.w800,
+                color: NohutBrand.green)),
             ),
           ],
         ),
       ),
     ),
   );
+  Widget _summaryInsight(IconData icon, String label, String value) =>
+      Container(
+        constraints: const BoxConstraints(minWidth: 185),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: const Color(0xffF4F7F3),
+          borderRadius: BorderRadius.circular(13),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: NohutBrand.green, size: 21),
+            const SizedBox(width: 10),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: const TextStyle(
+                  color: NohutBrand.muted, fontSize: 11)),
+                Text(value, style: const TextStyle(
+                  color: NohutBrand.green, fontWeight: FontWeight.w800,
+                  fontSize: 16)),
+              ],
+            ),
+          ],
+        ),
+      );
+
+  Widget _productBar(String name, int quantity, int revenue, int maximum) {
+    final ratio = maximum <= 0
+        ? 0.0
+        : (revenue / maximum).clamp(0.0, 1.0).toDouble();
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 9),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(child: Text(name,
+                  style: const TextStyle(fontWeight: FontWeight.w600))),
+              const SizedBox(width: 8),
+              Text('$quantity adet',
+                  style: const TextStyle(color: NohutBrand.muted)),
+              const SizedBox(width: 12),
+              Text(formatTry(revenue),
+                  style: const TextStyle(fontWeight: FontWeight.w800)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          LinearProgressIndicator(
+            value: ratio,
+            minHeight: 7,
+            borderRadius: BorderRadius.circular(8),
+            backgroundColor: const Color(0xffEDF1EC),
+            color: NohutBrand.green,
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final entries = ledger(widget.state)
@@ -238,24 +306,59 @@ class _SalesReportsState extends State<SalesReports> {
           ],
         ),
         const SizedBox(height: 16),
-        if (tab == 'Genel Bakış')
+        if (tab == 'Genel Bakış') ...[
           Card(
             child: Padding(
-              padding: const EdgeInsets.all(18),
-              child: Wrap(
-                spacing: 24,
+              padding: const EdgeInsets.all(19),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Ortalama hazırlık · ${activity.prepAverage == null ? '—' : '${activity.prepAverage} dk'}',
+                  Text('Dönem Özeti', style: Theme.of(context).textTheme.titleLarge),
+                  const SizedBox(height: 7),
+                  const Text('Yerel tahsilat ve platform satış tutarı farklı muhasebe kalemleridir.',
+                      style: TextStyle(color: NohutBrand.muted, fontSize: 12)),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 24,
+                    runSpacing: 12,
+                    children: [
+                      _summaryInsight(Icons.timer_outlined, 'Ortalama hazırlık',
+                          activity.prepAverage == null ? '—' : '${activity.prepAverage} dk'),
+                      _summaryInsight(Icons.cancel_outlined, 'İptal / karşılanamadı',
+                          '${activity.cancellations.length}'),
+                      _summaryInsight(Icons.delivery_dining_outlined, 'Trendyol teslim edilen',
+                          '${activity.onlineCount}'),
+                    ],
                   ),
-                  Text(
-                    'İptal / karşılanamadı · ${activity.cancellations.length}',
-                  ),
-                  Text('Trendyol Go teslim edilen · ${activity.onlineCount}'),
                 ],
               ),
             ),
           ),
+          const SizedBox(height: 10),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(19),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Öne çıkan yerel ürünler',
+                      style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 4),
+                  const Text('Satış kayıtlarına dayalı ürün dağılımı · Tahsilat değildir.',
+                      style: TextStyle(fontSize: 12, color: NohutBrand.muted)),
+                  const SizedBox(height: 14),
+                  if (sorted.isEmpty)
+                    const Text('Bu tarih aralığında yerel ürün kaydı yok.'),
+                  for (final entry in sorted.take(5))
+                    _productBar(
+                      entry.key, entry.value.$1, entry.value.$2,
+                      sorted.first.value.$2,
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ],
         if (tab == 'Yoğunluk')
           DemandCharts(
             activity: activity,
@@ -374,10 +477,11 @@ class _SalesReportsState extends State<SalesReports> {
                       child: Text('Bu dönemde yerel ürün satışı yok.'),
                     ),
                   for (final e in sorted)
-                    ListTile(
-                      title: Text(e.key),
-                      subtitle: Text('${e.value.$1} adet'),
-                      trailing: Text(formatTry(e.value.$2)),
+                    _productBar(
+                      e.key,
+                      e.value.$1,
+                      e.value.$2,
+                      sorted.first.value.$2,
                     ),
                   if (onlineProducts.isNotEmpty) ...[
                     const Divider(),
