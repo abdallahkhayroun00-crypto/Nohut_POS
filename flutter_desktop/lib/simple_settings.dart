@@ -8,6 +8,8 @@ import 'pos_store.dart';
 import 'operations_ui.dart';
 import 'qr_menu_sync.dart';
 import 'qr_menu_preview.dart';
+import 'trendyol_go_readonly.dart';
+import 'trendyol_go_ui.dart';
 import 'receipt_printer.dart';
 import 'receipt_layout.dart';
 import 'receipt_preview.dart';
@@ -19,6 +21,7 @@ class SimpleSettings extends StatefulWidget {
     required this.edit,
     required this.store,
     required this.qrSync,
+    required this.tgoIntegration,
     this.staffPanel,
     this.wifiPanel,
   });
@@ -26,6 +29,7 @@ class SimpleSettings extends StatefulWidget {
   final EditState edit;
   final PosStore store;
   final QrMenuAutoSync qrSync;
+  final TrendyolGoReadonly tgoIntegration;
   final Widget? staffPanel, wifiPanel;
   @override
   State<SimpleSettings> createState() => _SimpleSettingsState();
@@ -120,6 +124,7 @@ class _SimpleSettingsState extends State<SimpleSettings> {
               'Genel',
               'Menü',
               'Yazıcı',
+              'Trendyol Go',
               if (widget.staffPanel != null) 'Personel',
               if (widget.wifiPanel != null) 'Bağlantı',
               'inPOS',
@@ -156,6 +161,8 @@ class _SimpleSettingsState extends State<SimpleSettings> {
               ),
             ],
           ),
+        if (tab == 'Trendyol Go')
+          TgoSettingsPanel(integration: widget.tgoIntegration),
         if (tab == 'Menü')
           section(
             'Menü ve fiyatlar',
@@ -375,9 +382,8 @@ class _SimpleSettingsState extends State<SimpleSettings> {
                         );
                     } catch (e) {
                       if (context.mounted)
-                        ScaffoldMessenger.of(
-                          context,
-                        ).showSnackBar(SnackBar(content: Text('$e')));
+                        ScaffoldMessenger.of(context)
+                            .showSnackBar(SnackBar(content: Text('$e')));
                     }
                   },
                 ),
@@ -457,9 +463,8 @@ class _SimpleSettingsState extends State<SimpleSettings> {
                         );
                     } catch (e) {
                       if (context.mounted)
-                        ScaffoldMessenger.of(
-                          context,
-                        ).showSnackBar(SnackBar(content: Text('$e')));
+                        ScaffoldMessenger.of(context)
+                            .showSnackBar(SnackBar(content: Text('$e')));
                     }
                   }
                 },

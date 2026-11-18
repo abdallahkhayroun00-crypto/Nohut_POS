@@ -178,9 +178,44 @@ class PosLanServer extends ChangeNotifier {
             },
           )
           .toList(),
-      'localMenu': orderingProducts(
-        source,
-      ).where((p) => p['active'] != false).toList(),
+      'localMenu': orderingProducts(source)
+          .where((p) => p['active'] != false)
+          .toList(),
+      // Send only sanitized order information to the staff panel.
+      // API credentials, customer address, contact and financial internals stay on the laptop.
+      'trendyolGoOrders': asMaps(source['trendyolGoOrders']).reversed
+          .take(50)
+          .map(
+            (o) => {
+              for (final key in [
+                'dailyNumber',
+                'numberDay',
+                'orderNumber',
+                'orderCode',
+                'status',
+                'createdAt',
+                'totalCents',
+                'paymentType',
+                'customerNote',
+                'pickup',
+                'testPackage',
+              ])
+                key: o[key],
+              'lines': [
+                for (final l in asMaps(o['lines']))
+                  {
+                    for (final key in [
+                      'name',
+                      'qty',
+                      'unitPriceCents',
+                      'options',
+                    ])
+                      key: l[key],
+                  },
+              ],
+            },
+          )
+          .toList(),
       'orders': asMaps(source['orders'])
           .where(
             (o) =>

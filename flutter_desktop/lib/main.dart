@@ -3,6 +3,8 @@ import 'order_actions.dart';
 import 'product_customization.dart';
 import 'service_metrics.dart';
 import 'simple_settings.dart';
+import 'trendyol_go_readonly.dart';
+import 'trendyol_go_ui.dart';
 import 'sales_reports.dart';
 import 'order_alerts.dart';
 import 'card_terminal.dart';
@@ -28,8 +30,8 @@ import 'campaign_menu.dart';
 import 'pos_store.dart';
 import 'operations.dart';
 import 'operations_ui.dart';
-import 'platform_workflows.dart';
 import 'platform_ui.dart';
+import 'platform_workflows.dart';
 
 part 'order_composer.dart';
 
@@ -125,6 +127,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
   late final ReceiptPrinter receiptPrinter;
   late final PosLanServer lan;
   late final QrMenuAutoSync qrSync;
+  late final TrendyolGoReadonly tgo;
   Timer? _midnightTimer;
   Timer? _serviceTimer;
   final Set<String> seenNotices = {};
@@ -167,6 +170,8 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     lan = PosLanServer(store);
     receiptPrinter = ReceiptPrinter(store);
     qrSync = QrMenuAutoSync(store);
+    tgo = TrendyolGoReadonly(store);
+    if (widget.startServer) unawaited(tgo.start());
     _scheduleIstanbulMidnight();
     _serviceTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (mounted) setState(() {});
@@ -278,6 +283,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
   void dispose() {
     _midnightTimer?.cancel();
     _serviceTimer?.cancel();
+    tgo.dispose();
     qrSync.dispose();
     receiptPrinter.dispose();
     lan.dispose();
@@ -341,20 +347,21 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     _showOrder(order['id'] as int);
   }
 
-  List<Product> _currentProducts() => orderingProducts(store.read().data)
-      .where((p) => p['active'] != false)
-      .map(
-        (p) => Product(
-          id: p['id'] as int,
-          campaignData: p['campaignId'] != null ? p : null,
-          name: p['name'] as String,
-          category: p['category'] as String,
-          price: (p['price'] as num?)?.toDouble(),
-          image: p['image'] as String?,
-          descriptionTr: (p['description'] as Map?)?['tr'] as String?,
-        ),
-      )
-      .toList();
+  List<Product> _currentProducts() =>
+      orderingProducts(store.read().data)
+          .where((p) => p['active'] != false)
+          .map(
+            (p) => Product(
+              id: p['id'] as int,
+              campaignData: p['campaignId'] != null ? p : null,
+              name: p['name'] as String,
+              category: p['category'] as String,
+              price: (p['price'] as num?)?.toDouble(),
+              image: p['image'] as String?,
+              descriptionTr: (p['description'] as Map?)?['tr'] as String?,
+            ),
+          )
+          .toList();
 
   Future<void> _composer({
     int? table,
@@ -429,9 +436,9 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
 
   void _staffActivity() {
     if (!mounted) return;
-    final incoming = asMaps(
-      store.read().data['staffNotices'],
-    ).where((n) => !seenNotices.contains('${n['id']}')).toList();
+    final incoming = asMaps(store.read().data['staffNotices'])
+        .where((n) => !seenNotices.contains('${n['id']}'))
+        .toList();
     if (incoming.isEmpty) return;
     seenNotices.addAll(incoming.map((n) => '${n['id']}'));
     setState(() => latestNotice = incoming.last);
@@ -623,9 +630,9 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
   }
 
   Future<void> _selectProductsToPay(Json order) async {
-    final lines = checkLines(
-      order,
-    ).where((line) => line.total > allocatedTo(order, line.key)).toList();
+    final lines = checkLines(order)
+        .where((line) => line.total > allocatedTo(order, line.key))
+        .toList();
     if (lines.isEmpty) return;
     final shares = <String, int>{};
     final selected = await showDialog<Map<String, int>>(
@@ -663,15 +670,18 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                         trailing: TextButton(
                           child: const Text('Adet / pay'),
                           onPressed: () async {
-                            final result =
-                                await askFields(context, 'Adet / pay', [
-                                  (
-                                    'Adet (ör. 1 veya 0,5)',
-                                    (shares[line.key]! /
-                                            cents(line.line['price']))
-                                        .toStringAsFixed(3),
-                                  ),
-                                ]);
+                            final result = await askFields(
+                              context,
+                              'Adet / pay',
+                              [
+                                (
+                                  'Adet (ör. 1 veya 0,5)',
+                                  (shares[line.key]! /
+                                          cents(line.line['price']))
+                                      .toStringAsFixed(3),
+                                ),
+                              ],
+                            );
                             if (result == null || !context.mounted) return;
                             final units = double.tryParse(
                               result.first.replaceAll(',', '.'),
@@ -890,7 +900,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
 
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
-    animation: Listenable.merge([store, lan]),
+    animation: Listenable.merge([store, lan, tgo]),
     builder: (ctx, _) {
       final data = store.read().data;
       final width = MediaQuery.sizeOf(context).width;
@@ -1237,6 +1247,21 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
 
   Widget _dashboard(Json db) {
     final orders = asMaps(db['orders']);
+    final remoteToday = tgoOrders(db)
+        .where((o) => onIstanbulDay(o['createdAt'], businessDay))
+        .toList();
+    final remoteValid = remoteToday
+        .where(
+          (o) =>
+              o['testPackage'] != true &&
+              !['Cancelled', 'UnSupplied'].contains(o['status']),
+        )
+        .toList();
+    final remoteSales = remoteToday.where(tgoCountsAsSale).toList();
+    final remoteAmount = remoteSales.fold<int>(
+      0,
+      (sum, o) => sum + (o['totalCents'] as int? ?? 0),
+    );
     final todayOrders = orders
         .where(
           (o) =>
@@ -1313,6 +1338,28 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
         Text('Masa: $busy dolu · ${5 - busy} boş  |  Gel-Al: $pickups açık'),
         const SizedBox(height: 16),
         StaffMetrics(state: db, day: businessDay),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Trendyol Go · Online Satışlar',
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                ),
+                Text(
+                  'Bugün: ${remoteValid.length} sipariş · ${remoteSales.length} teslim · ${formatTry(remoteAmount)}',
+                ),
+                Text('Bağlantı: ${tgo.status}'),
+                TextButton(
+                  onPressed: _showTrendyolOrders,
+                  child: const Text('Online Siparişleri Gör'),
+                ),
+              ],
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -1320,9 +1367,9 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
   Widget _tables(Json db) {
     final order = selectedOrder == null
         ? null
-        : asMaps(
-            db['orders'],
-          ).where((o) => o['id'] == selectedOrder).firstOrNull;
+        : asMaps(db['orders'])
+              .where((o) => o['id'] == selectedOrder)
+              .firstOrNull;
     final positions = floorEditing
         ? draftFloor
         : positionsFromJson(db['floorPositions']);
@@ -1584,9 +1631,8 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
               for (final guest in split)
                 Builder(
                   builder: (context) {
-                    final allocated = asMaps(
-                      guest['allocations'],
-                    ).fold<int>(0, (sum, a) => sum + (a['cents'] as int));
+                    final allocated = asMaps(guest['allocations'])
+                        .fold<int>(0, (sum, a) => sum + (a['cents'] as int));
                     final rest = guestBalance(
                       o,
                       guest['id'] as int,
@@ -1624,9 +1670,8 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                       label: const Text('Nakit / Kart'),
                     ),
                   if (orderDueCents(o) > 0 &&
-                      checkLines(
-                        o,
-                      ).any((line) => line.total > allocatedTo(o, line.key)))
+                      checkLines(o)
+                          .any((line) => line.total > allocatedTo(o, line.key)))
                     OutlinedButton.icon(
                       onPressed: () => _selectProductsToPay(o),
                       icon: const Icon(Icons.checklist),
@@ -1729,9 +1774,10 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       final text =
           '${o['id']} ${displayOrderNumber(o)} ${o['numberDay'] ?? ''} ${o['table'] ?? ''} ${o['customer']} ${activeLines(o).map((l) => l['name']).join(' ')}'
               .toLowerCase();
-      final staff = asMaps(
-        o['batches'],
-      ).map((b) => b['staff']).join(' ').toLowerCase();
+      final staff = asMaps(o['batches'])
+          .map((b) => b['staff'])
+          .join(' ')
+          .toLowerCase();
       return (orderFilter == 'Tümü' || o['source'] == orderFilter) &&
           text.contains(orderSearch.toLowerCase()) &&
           staff.contains(orderStaff.toLowerCase()) &&
@@ -1748,6 +1794,46 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
           (orderFrom.isEmpty || date.compareTo(orderFrom) >= 0) &&
           (orderTo.isEmpty || date.compareTo(orderTo) <= 0);
     }).toList();
+    final remoteFiltered = tgoOrders(db).where((o) {
+      if (localView == 'pickup') return false;
+      final day = '${o['numberDay'] ?? ''}';
+      final search =
+          '${o['orderNumber']} ${displayOrderNumber(o)} ${o['customerNote']} ${o['lines']}'
+              .toLowerCase();
+      return (orderFilter == 'Tümü' || orderFilter == 'Trendyol Go') &&
+          (orderStaff.isEmpty) &&
+          search.contains(orderSearch.toLowerCase()) &&
+          (orderFrom.isEmpty || day.compareTo(orderFrom) >= 0) &&
+          (orderTo.isEmpty || day.compareTo(orderTo) <= 0) &&
+          (orderStatus.isEmpty || o['status'] == orderStatus);
+    }).toList();
+    final combined = <Json>[...filtered, ...remoteFiltered]
+      ..sort((a, b) {
+        final day = '${b['numberDay'] ?? ''}'.compareTo(
+          '${a['numberDay'] ?? ''}',
+        );
+        if (day != 0) return day;
+        return (b['dailyNumber'] as int? ?? 0).compareTo(
+          a['dailyNumber'] as int? ?? 0,
+        );
+      });
+    bool isRemote(Json order) => order['source'] == 'Trendyol Go';
+    int total(Json order) => isRemote(order)
+        ? order['totalCents'] as int? ?? 0
+        : orderTotalCents(order);
+    String remaining(Json order) =>
+        isRemote(order) ? '—' : formatTry(orderDueCents(order));
+    String orderStamp(Json order) => isRemote(order)
+        ? '${order['numberDay']} · #${order['orderNumber']} · ${order['status']}'
+        : '${order['numberDay'] ?? ''} · ${order['created'] ?? ''}';
+    void openOrder(Json order) {
+      if (isRemote(order)) {
+        _showTrendyolOrders();
+      } else {
+        _showOrder(order['id'] as int);
+      }
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1821,12 +1907,17 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
               });
             }
           },
-          child: Text('Sipariş Filtreleri · ${filtered.length} kayıt'),
+          child: Text('Sipariş Filtreleri · ${combined.length} kayıt'),
         ),
         Wrap(
           spacing: 7,
           children: [
-            for (final filter in ['Tümü', 'Masa', 'Gel-Al'])
+            for (final filter in [
+              'Tümü',
+              'Masa',
+              'Gel-Al',
+              if (localView != 'pickup') 'Trendyol Go',
+            ])
               ChoiceChip(
                 label: Text(filter),
                 selected: orderFilter == filter,
@@ -1840,7 +1931,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
         const SizedBox(height: 12),
 
         Card(
-          child: filtered.isEmpty
+          child: combined.isEmpty
               ? const ListTile(title: Text('Sipariş bulunamadı'))
               : LayoutBuilder(
                   builder: (context, constraints) {
@@ -1848,16 +1939,14 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                     if (compact) {
                       return Column(
                         children: [
-                          for (final o in filtered)
+                          for (final o in combined)
                             ListTile(
                               title: Text(
                                 '#${displayOrderNumber(o)} · ${o['table'] == null ? o['source'] : "Masa ${o['table']}"}',
                               ),
-                              subtitle: Text(
-                                '${o['numberDay'] ?? ''} · ${o['created'] ?? ''}',
-                              ),
-                              trailing: Text(formatTry(orderDueCents(o))),
-                              onTap: () => _showOrder(o['id'] as int),
+                              subtitle: Text(orderStamp(o)),
+                              trailing: Text(remaining(o)),
+                              onTap: () => openOrder(o),
                             ),
                         ],
                       );
@@ -1876,7 +1965,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                           DataColumn(label: Text('İşlem')),
                         ],
                         rows: [
-                          for (final o in filtered)
+                          for (final o in combined)
                             DataRow(
                               cells: [
                                 DataCell(Text('#${displayOrderNumber(o)}')),
@@ -1887,17 +1976,17 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                                         : "Masa ${o['table']}",
                                   ),
                                 ),
-                                DataCell(
-                                  Text(
-                                    '${o['numberDay'] ?? ''} · ${o['created'] ?? ''}',
-                                  ),
-                                ),
-                                DataCell(Text(formatTry(orderTotalCents(o)))),
-                                DataCell(Text(formatTry(orderDueCents(o)))),
+                                DataCell(Text(orderStamp(o))),
+                                DataCell(Text(formatTry(total(o)))),
+                                DataCell(Text(remaining(o))),
                                 DataCell(
                                   TextButton(
-                                    onPressed: () => _showOrder(o['id'] as int),
-                                    child: const Text('Hesabı Aç'),
+                                    onPressed: () => openOrder(o),
+                                    child: Text(
+                                      isRemote(o)
+                                          ? 'Platform Siparişi'
+                                          : 'Hesabı Aç',
+                                    ),
                                   ),
                                 ),
                               ],
@@ -1913,23 +2002,31 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
   }
 
   Json? platformDemo;
-  bool showUberEats = false;
+  String onlinePlatform = 'Yemeksepeti';
+
+  void _showTrendyolOrders() => setState(() {
+    page = 'online';
+    onlinePlatform = 'Trendyol Go';
+  });
 
   Widget _online(Json db) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SegmentedButton<bool>(
+        SegmentedButton<String>(
           segments: const [
-            ButtonSegment(value: false, label: Text('Yemeksepeti')),
-            ButtonSegment(value: true, label: Text('Uber Eats')),
+            ButtonSegment(value: 'Yemeksepeti', label: Text('Yemeksepeti')),
+            ButtonSegment(value: 'Uber Eats', label: Text('Uber Eats')),
+            ButtonSegment(value: 'Trendyol Go', label: Text('Trendyol Go')),
           ],
-          selected: {showUberEats},
+          selected: {onlinePlatform},
           onSelectionChanged: (value) =>
-              setState(() => showUberEats = value.single),
+              setState(() => onlinePlatform = value.single),
         ),
         const SizedBox(height: 16),
-        if (showUberEats)
+        if (onlinePlatform == 'Trendyol Go')
+          TgoOrdersPanel(orders: tgoOrders(db), integration: tgo)
+        else if (onlinePlatform == 'Uber Eats')
           _notice('Uber Eats · Bağlı değil')
         else ...[
           _notice('Yemeksepeti · Bağlı değil'),
@@ -1944,9 +2041,9 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     platformDemo ??= {...emptyPosState(), 'localMenu': asMaps(db['localMenu'])};
     seedPlatformMenu(
       platformDemo!,
-      asMaps(
-        platformDemo!['localMenu'],
-      ).where((p) => p['active'] != false).toList(),
+      asMaps(platformDemo!['localMenu'])
+          .where((p) => p['active'] != false)
+          .toList(),
     );
     return PlatformPanel(
       state: platformDemo!,
@@ -2273,6 +2370,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     edit: _edit,
     store: store,
     qrSync: qrSync,
+    tgoIntegration: tgo,
     staffPanel: _staff(db),
     wifiPanel: _wifi(db),
   );

@@ -37,12 +37,25 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
  const browser=await chromium.launch({headless:true,executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH});
  try{for(const width of [320,390,768,1280]){
   state=structuredClone(fixture);revision=1;mode='ok';posts=[];receipts=new Map();prints=0;
-  const ctx=await browser.newContext({viewport:{width,height:844}}),page=await ctx.newPage(),errors=[];
+  const ctx=await browser.newContext({viewport:{width,height:width===320?568:844}}),page=await ctx.newPage(),errors=[];
   await page.route('http://pos.test/**',route);page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.accept());
   await page.goto('http://pos.test/');await page.locator('#staff option[value="1"]').waitFor({state:'attached'});await page.locator('#staff').selectOption('1');
   fs.mkdirSync(path.join(__dirname,'../build'),{recursive:true});
   await page.screenshot({path:path.join(__dirname,`../build/staff-brand-${width}.png`),fullPage:true});
+  const fit=await page.locator('[data-screen="tables"]').evaluate(screen=>{
+    const bottom=screen.getBoundingClientRect().bottom;
+    return [...screen.querySelectorAll('[data-floor-table]')].every(tile=>{
+      const bounds=tile.getBoundingClientRect();
+      return bounds.bottom<=bottom&&bounds.width>=44&&bounds.height>=44;
+    });
+  });
+  assert.equal(fit,true,'all tables fit on the opening page with touch targets');
+  if(width<=550)assert.equal(await page.locator('.top-nav').evaluate(el=>el.scrollWidth<=el.clientWidth),true);
   await page.locator('[data-floor-table="1"]').click();
+  if(width<=550){
+    assert.equal(await page.locator('[data-screen="menu"]').evaluate(el=>getComputedStyle(el).overflowY),'auto');
+    assert.equal(await page.locator('#menu').evaluate(el=>getComputedStyle(el).overflowY),'visible');
+  }
   assert.equal(await page.locator('#menu img').count(),0,'product images removed');
   assert.equal(await page.locator('#menu').getByText('Şambali',{exact:true}).count(),0);
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
