@@ -6,6 +6,7 @@ import 'simple_settings.dart';
 import 'trendyol_go_readonly.dart';
 import 'trendyol_go_ui.dart';
 import 'sales_reports.dart';
+import 'dashboard_sales.dart';
 import 'order_alerts.dart';
 import 'online_orders.dart';
 import 'google_business.dart';
@@ -1261,202 +1262,24 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     ),
   );
 
-  Widget _dashboard(Json db) {
-    final orders = asMaps(db['orders']);
-    final remoteToday = tgoOrders(db)
-        .where((o) => onIstanbulDay(o['createdAt'], businessDay))
-        .toList();
-    final remoteValid = remoteToday
-        .where(
-          (o) =>
-              o['testPackage'] != true &&
-              !['Cancelled', 'UnSupplied'].contains(o['status']),
-        )
-        .toList();
-    final remoteSales = remoteToday.where(tgoCountsAsSale).toList();
-    final remoteAmount = remoteSales.fold<int>(
-      0,
-      (sum, o) => sum + (o['totalCents'] as int? ?? 0),
-    );
-    final todayOrders = orders
-        .where(
-          (o) =>
-              onIstanbulDay(o['createdAt'], businessDay) &&
-              o['cancelled'] != true &&
-              o['demoRemoteStatus'] != 'Created',
-        )
-        .toList();
-    // Use PAYMENT timestamps, not order creation dates. A table that
-    // pays after midnight belongs to the new day's receipts.
-    final todayNetReceipts = ledger(db)
-        .where(
-          (e) =>
-              (e.source == 'Masa' || e.source == 'Gel-Al') &&
-              onIstanbulDay(e.stamp, businessDay),
-        )
-        .fold<int>(0, (sum, entry) => sum + entry.amount);
-    final active = orders
-        .where((o) => o['closed'] != true && o['cancelled'] != true)
-        .toList();
-    final busy = List.generate(
-      5,
-      (i) => activeTable(db, i + 1),
-    ).where((o) => o != null).length;
-    final localReceipts = ledger(db).where(
-      (entry) =>
-          ['Masa', 'Gel-Al'].contains(entry.source) &&
-          onIstanbulDay(entry.stamp, businessDay),
-    );
-    int receiptsFor(String method) => localReceipts
-        .where((entry) => entry.method == method)
-        .fold(0, (total, entry) => total + entry.amount);
-    final sales = todayOrders
-        .where((order) => !isPlatform(order))
-        .fold<int>(0, (total, order) => total + orderTotalCents(order));
-    final due = active
-        .where((order) => !isPlatform(order))
-        .fold<int>(0, (total, order) => total + orderDueCents(order));
-    final pickups = active.where((order) => order['source'] == 'Gel-Al').length;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _sectionTitle(
-          'Bugün',
-          businessDay,
-          action: FilledButton.icon(
-            onPressed: () => _composer(),
-            icon: const Icon(Icons.add),
-            label: const Text('Sipariş Al'),
-          ),
+  Widget _dashboard(Json db) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      _sectionTitle(
+        'Günlük',
+        businessDay,
+        action: FilledButton.icon(
+          onPressed: () => _composer(),
+          icon: const Icon(Icons.add),
+          label: const Text('Sipariş Al'),
         ),
-        Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: [
-            for (final metric in [
-              ('Nakit', receiptsFor('Nakit'), Icons.payments_outlined),
-              ('Kart', receiptsFor('Kart'), Icons.credit_card_outlined),
-              (
-                'Net Tahsilat',
-                todayNetReceipts,
-                Icons.account_balance_wallet_outlined,
-              ),
-              ('Satış', sales, Icons.receipt_long_outlined),
-              ('Açık Bakiye', due, Icons.pending_actions_outlined),
-            ])
-              SizedBox(
-                width: 184,
-                child: _metric(metric.$1, formatTry(metric.$2), metric.$3),
-              ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        Text('Masa: $busy dolu · ${5 - busy} boş  |  Gel-Al: $pickups açık'),
-        const SizedBox(height: 16),
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final staffPanel = StaffMetrics(state: db, day: businessDay);
-            final hasPlatformData =
-                remoteToday.isNotEmpty || db['tgoSyncInfo'] != null;
-            final platformPanel = Card(
-              child: Padding(
-                padding: const EdgeInsets.all(18),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.delivery_dining_outlined,
-                          color: NohutBrand.green,
-                        ),
-                        const SizedBox(width: 9),
-                        Expanded(
-                          child: Text(
-                            'Trendyol Go',
-                            style: Theme.of(context).textTheme.titleLarge,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: tgo.status.startsWith('Bağlı ·')
-                            ? const Color(0xffe5ebdf)
-                            : const Color(0xfff3e8d1),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 9,
-                          vertical: 4,
-                        ),
-                        child: Text(tgo.status),
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    Wrap(
-                      spacing: 18,
-                      runSpacing: 10,
-                      children: [
-                        for (final (label, value) in [
-                          ('Sipariş', '${remoteValid.length}'),
-                          ('Teslim', '${remoteSales.length}'),
-                          ('Tamamlanan Satış', formatTry(remoteAmount)),
-                        ])
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                hasPlatformData ? value : '—',
-                                style: const TextStyle(
-                                  fontSize: 23,
-                                  fontWeight: FontWeight.w800,
-                                  color: NohutBrand.green,
-                                ),
-                              ),
-                              Text(
-                                label,
-                                style: const TextStyle(color: NohutBrand.muted),
-                              ),
-                            ],
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    TextButton.icon(
-                      onPressed: _showTrendyolOrders,
-                      icon: const Icon(Icons.arrow_forward, size: 18),
-                      label: const Text('Online Siparişleri Gör'),
-                    ),
-                  ],
-                ),
-              ),
-            );
-            if (constraints.maxWidth < 980) {
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  staffPanel,
-                  const SizedBox(height: 10),
-                  platformPanel,
-                ],
-              );
-            }
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(flex: 6, child: staffPanel),
-                const SizedBox(width: 12),
-                Expanded(flex: 4, child: platformPanel),
-              ],
-            );
-          },
-        ),
-      ],
-    );
-  }
+      ),
+      DashboardSales(
+        state: db,
+        businessDay: businessDay,
+      ),
+    ],
+  );
 
   Widget _tables(Json db) {
     final order = selectedOrder == null
