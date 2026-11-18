@@ -67,6 +67,7 @@ class _PartnerCredentialsCardState extends State<PartnerCredentialsCard> {
 
   Future<void> _configure() async {
     if (busy) return;
+    final keyOnly = widget.partner == 'Migros Yemek';
     final id = TextEditingController(text: restaurantId);
     final key = TextEditingController();
     final secret = TextEditingController();
@@ -98,14 +99,16 @@ class _PartnerCredentialsCardState extends State<PartnerCredentialsCard> {
                   autocorrect: false,
                   decoration: const InputDecoration(labelText: 'API Key / Client ID'),
                 ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: secret,
-                  obscureText: true,
-                  enableSuggestions: false,
-                  autocorrect: false,
-                  decoration: const InputDecoration(labelText: 'API Secret / Client Secret'),
-                ),
+                if (!keyOnly) ...[
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: secret,
+                    obscureText: true,
+                    enableSuggestions: false,
+                    autocorrect: false,
+                    decoration: const InputDecoration(labelText: 'API Secret / Client Secret'),
+                  ),
+                ],
               ],
             ),
           ),
@@ -133,8 +136,10 @@ class _PartnerCredentialsCardState extends State<PartnerCredentialsCard> {
       final nextKey = result[1].isNotEmpty ? result[1] : '${previous['apiKey'] ?? ''}';
       final nextSecret = result[2].isNotEmpty
           ? result[2] : '${previous['apiSecret'] ?? ''}';
-      if (nextKey.isEmpty || nextSecret.isEmpty) {
-        throw const FormatException('API Key ve Secret gerekli.');
+      if (nextKey.isEmpty || (!keyOnly && nextSecret.isEmpty)) {
+        throw FormatException(
+          keyOnly ? 'Migros restoran API Key gerekli.' : 'API Key ve Secret gerekli.',
+        );
       }
       await vault.save({
         'restaurantId': result[0],
