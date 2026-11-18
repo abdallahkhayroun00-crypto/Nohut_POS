@@ -1380,6 +1380,25 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     ),
   );
 
+  String? get _onlineDataWarning {
+    if (tgo.credentials?.valid != true) {
+      return 'Trendyol Go API henüz bağlı değil. Yemeksepeti ve Migros '
+          'Yemek canlı sipariş entegrasyonları da etkin değil.';
+    }
+    if (tgo.error.isNotEmpty) {
+      return 'Trendyol Go son eşitlemesi başarısız: ${tgo.error}. '
+          'Geçmiş dönemlerde 0 ₺, veri eksikliği anlamına gelebilir.';
+    }
+    final last = DateTime.tryParse(tgo.lastSync);
+    if (last == null ||
+        DateTime.now().toUtc().difference(last.toUtc()) >
+            const Duration(minutes: 5)) {
+      return 'Trendyol Go son doğrulanmış eşitlemesi güncel değil. '
+          'Online satışlar eksik olabilir.';
+    }
+    return null;
+  }
+
   Widget _dashboard(Json db) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
@@ -1395,6 +1414,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       DashboardSales(
         state: db,
         businessDay: businessDay,
+        onlineWarning: _onlineDataWarning,
       ),
       const SizedBox(height: 16),
       StaffPerformanceChart(state: db, day: businessDay),
@@ -2186,6 +2206,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     key: ValueKey('daily-reports-$businessDay'),
     state: db,
     edit: _edit,
+    onlineWarning: _onlineDataWarning,
   );
 
   Widget _wifi(Json db) {
