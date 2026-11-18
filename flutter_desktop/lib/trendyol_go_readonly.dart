@@ -425,6 +425,9 @@ class TrendyolGoReadonly extends ChangeNotifier {
           '${responseBody.length > 160 ? responseBody.substring(0, 160) : responseBody}',
         );
       }
+    } catch (_) {
+      try { _recordAction(order, action, 'HATA'); } catch (_) {}
+      rethrow;
     } finally {
       client.close(force: true);
       writing = false;
