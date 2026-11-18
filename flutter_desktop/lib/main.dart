@@ -1105,6 +1105,12 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
               o['demoRemoteStatus'] != 'Created',
         )
         .toList();
+    final recentOrders = <Json>[...todayOrders, ...remoteValid]
+      ..sort((a, b) {
+        final day = '${b['numberDay'] ?? ''}'.compareTo('${a['numberDay'] ?? ''}');
+        if (day != 0) return day;
+        return (b['dailyNumber'] as int? ?? 0).compareTo(a['dailyNumber'] as int? ?? 0);
+      });
     // Use PAYMENT timestamps, not order creation dates. A table that
     // pays after midnight belongs to the new day's receipts.
     final todayNetReceipts = ledger(db)
@@ -1238,19 +1244,28 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                   style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
                 ),
                 const SizedBox(height: 13),
-                if (todayOrders.isEmpty)
+                if (recentOrders.isEmpty)
                   const Text(
                     'Bugün henüz sipariş yok. Eski kayıtlar Siparişler bölümünde saklanır.',
                   ),
-                for (final o in todayOrders.reversed.take(6))
+                for (final o in recentOrders.take(6))
                   ListTile(
                     leading: const Icon(Icons.receipt_long_outlined),
                     title: Text(
                       '#${displayOrderNumber(o)} · ${o['source']}${o['table'] == null ? '' : ' · Masa ${o['table']}'}',
                     ),
-                    subtitle: Text(o['closed'] == true ? 'Kapalı' : 'Açık'),
-                    trailing: Text(formatTry(orderTotalCents(o))),
-                    onTap: () => _focusOrder(o),
+                    subtitle: Text(o['source'] == 'Trendyol Go'
+                        ? 'Platform referansı: ${o['orderNumber']} · ${o['status']}'
+                        : (o['closed'] == true ? 'Kapalı' : 'Açık')),
+                    trailing: Text(formatTry(o['source'] == 'Trendyol Go'
+                        ? (o['totalCents'] as int? ?? 0) : orderTotalCents(o))),
+                    onTap: () {
+                      if (o['source'] == 'Trendyol Go') {
+                        setState(() { page = 'orders'; onlineOrders = true; });
+                      } else {
+                        _focusOrder(o);
+                      }
+                    },
                   ),
               ],
             ),
@@ -1672,6 +1687,23 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
           (orderFrom.isEmpty || date.compareTo(orderFrom) >= 0) &&
           (orderTo.isEmpty || date.compareTo(orderTo) <= 0);
     }).toList();
+    final remoteFiltered = tgoOrders(db).where((o) {
+      final day = '${o['numberDay'] ?? ''}';
+      final search = '${o['orderNumber']} ${displayOrderNumber(o)} ${o['customerNote']} ${o['lines']}'
+          .toLowerCase();
+      return (orderFilter == 'Tümü' || orderFilter == 'Trendyol Go') &&
+          (orderStaff.isEmpty) &&
+          search.contains(orderSearch.toLowerCase()) &&
+          (orderFrom.isEmpty || day.compareTo(orderFrom) >= 0) &&
+          (orderTo.isEmpty || day.compareTo(orderTo) <= 0) &&
+          (orderStatus.isEmpty || o['status'] == orderStatus);
+    }).toList();
+    final combined = <Json>[...filtered, ...remoteFiltered]
+      ..sort((a,b) {
+        final day = '${b['numberDay'] ?? ''}'.compareTo('${a['numberDay'] ?? ''}');
+        if (day != 0) return day;
+        return (b['dailyNumber'] as int? ?? 0).compareTo(a['dailyNumber'] as int? ?? 0);
+      });
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1746,7 +1778,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
               });
             }
           },
-          child: Text('Sipariş Filtreleri · ${filtered.length} kayıt'),
+          child: Text('Sipariş Filtreleri · ${combined.length} kayıt'),
         ),
         Wrap(
           spacing: 7,
@@ -1773,39 +1805,37 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
         Card(
           child: Column(
             children: [
-              if (filtered.isEmpty)
+              if (combined.isEmpty)
                 const ListTile(title: Text('Sipariş bulunamadı')),
-              for (final o in filtered)
+              for (final o in combined)
                 ListTile(
                   leading: CircleAvatar(
                     backgroundColor: cream,
-                    child: Text('${o['table'] ?? '#'}'),
+                    child: o['source'] == 'Trendyol Go'
+                        ? const Icon(Icons.delivery_dining_outlined)
+                        : Text('${o['table'] ?? '#'}'),
                   ),
                   title: Text('#${displayOrderNumber(o)} · ${o['source']}'),
-                  subtitle: Text(
-                    '${o['numberDay'] ?? ''} · ${o['created'] ?? ''} · ${o['closed'] == true ? 'Kapalı' : o['serviceStatus'] ?? 'Açık'}',
-                  ),
-                  trailing: Text(
-                    o['closed'] == true
-                        ? formatTry(orderTotalCents(o))
-                        : 'Kalan ${formatTry(orderDueCents(o))}',
-                  ),
-                  onTap: () => _showOrder(o['id'] as int),
+                  subtitle: Text(o['source'] == 'Trendyol Go'
+                      ? '${o['numberDay']} · Trendyol #${o['orderNumber']} · ${o['status']} · Salt okunur'
+                      : '${o['numberDay'] ?? ''} · ${o['created'] ?? ''} · ${o['closed'] == true ? 'Kapalı' : o['serviceStatus'] ?? 'Açık'}'),
+                  trailing: Text(o['source'] == 'Trendyol Go'
+                      ? formatTry(o['totalCents'] as int? ?? 0)
+                      : o['closed'] == true
+                          ? formatTry(orderTotalCents(o))
+                          : 'Kalan ${formatTry(orderDueCents(o))}'),
+                  onTap: () {
+                    if (o['source'] == 'Trendyol Go') {
+                      setState(() => onlineOrders = true);
+                    } else {
+                      _showOrder(o['id'] as int);
+                    }
+                  },
                 ),
             ],
           ),
         ),
-        if (orderFilter == 'Tümü' || orderFilter == 'Trendyol Go')
-          TgoOrdersPanel(orders: tgoOrders(db).where((o) {
-            final raw = '${o['createdAt'] ?? ''}';
-            final date = raw.length >= 10 ? raw.substring(0, 10) : '';
-            return (orderSearch.isEmpty ||
-                '${o['orderNumber']} ${o['customerNote']} ${o['lines']}'
-                    .toLowerCase().contains(orderSearch.toLowerCase())) &&
-                (orderFrom.isEmpty || date.compareTo(orderFrom) >= 0) &&
-                (orderTo.isEmpty || date.compareTo(orderTo) <= 0) &&
-                (orderStatus.isEmpty || o['status'] == orderStatus);
-          }).toList(), limit: 25),
+
       ],
     );
   }
