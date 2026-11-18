@@ -199,8 +199,11 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
             : 'Trendyol Go · ${orders.length} yeni sipariş';
         _notify(message);
       },
-      onOrdersSynced: (orders) =>
-          onlineAlarm.acceptSnapshot('Trendyol Go', orders),
+      onOrdersSynced: (orders) => onlineAlarm.acceptSnapshot(
+        'Trendyol Go',
+        orders.where((order) =>
+            order['supplierId'] == tgo.credentials?.supplierId).toList(),
+      ),
     );
     google = GoogleBusiness(
       store.filePath,
@@ -2443,7 +2446,9 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     store: store,
     qrSync: qrSync,
     tgoIntegration: tgo,
-    onTestOnlineSound: (platform) => unawaited(onlineSound.play(platform, 0)),
+    onTestOnlineSound: (platform) => unawaited(
+      onlineSound.play(platform, 0).catchError((Object _) {}),
+    ),
     onOpenGoogle: () => setState(() => page = 'google'),
     staffPanel: _staff(db),
     wifiPanel: _wifi(db),
