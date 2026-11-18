@@ -36,7 +36,7 @@ class GoogleBusinessPanel extends StatefulWidget {
 class _GoogleBusinessPanelState extends State<GoogleBusinessPanel> {
   _Section section = _Section.reviews;
   Json? data;
-  bool busy = false, onlyUnanswered = false;
+  bool busy = false, onlyUnanswered = false, starsOnly = false;
   String? error;
   int _generation = 0;
 
@@ -426,7 +426,9 @@ class _GoogleBusinessPanelState extends State<GoogleBusinessPanel> {
 
   List<Widget> _reviews(Json current) {
     final rows = asMaps(current['reviews'])
-        .where((row) => !onlyUnanswered || row['reviewReply'] == null)
+        .where((row) => (!onlyUnanswered || row['reviewReply'] == null) &&
+            (!starsOnly ||
+                (row['comment'] ?? '').toString().trim().isEmpty))
         .toList()
       ..sort((a, b) {
         // Newest reviews first, regardless of reply/update time.
@@ -449,6 +451,11 @@ class _GoogleBusinessPanelState extends State<GoogleBusinessPanel> {
             label: const Text('Yanıtsız'),
             selected: onlyUnanswered,
             onSelected: (value) => setState(() => onlyUnanswered = value),
+          ),
+          FilterChip(
+            label: const Text('Sadece puan'),
+            selected: starsOnly,
+            onSelected: (value) => setState(() => starsOnly = value),
           ),
         ],
       ),
