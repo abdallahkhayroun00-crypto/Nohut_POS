@@ -209,7 +209,13 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Yemeksepeti').first);
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Örnek Online Kart'));
+      final demo = find.text('Yemeksepeti test alanı');
+      await tester.ensureVisible(demo);
+      await tester.tap(demo);
+      await tester.pumpAndSettle();
+      final sampleOrder = find.text('Örnek Online Kart');
+      await tester.ensureVisible(sampleOrder);
+      await tester.tap(sampleOrder);
       await tester.pumpAndSettle();
       expect(find.textContaining('Kabul bekliyor'), findsWidgets);
       final real = PosStore(databaseFile: file);

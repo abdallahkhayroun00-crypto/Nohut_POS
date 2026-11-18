@@ -1,15 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:ffi';
 
-import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as paths;
 
 import 'pos_logic.dart';
 import 'order_reporting.dart';
 import 'pos_store.dart';
+import 'windows_vault.dart';
 
 // Official MEAL GET API ONLY. Never mutates Trendyol Go orders/menu/status.
 class TgoCredentials {
@@ -27,110 +26,42 @@ class TgoCredentials {
       email.contains('@');
 }
 
-final class _DataBlob extends Struct {
-  @Uint32()
-  external int length;
-  external Pointer<Uint8> bytes;
-}
-
-typedef _DpapiNative = Int32 Function(
-  Pointer<_DataBlob>, Pointer<Void>, Pointer<_DataBlob>, Pointer<Void>,
-  Pointer<Void>, Uint32, Pointer<_DataBlob>,
-);
-typedef _DpapiDart = int Function(
-  Pointer<_DataBlob>, Pointer<Void>, Pointer<_DataBlob>, Pointer<Void>,
-  Pointer<Void>, int, Pointer<_DataBlob>,
-);
-
-Uint8List _protectForCurrentUser(List<int> data, {required bool decrypt}) {
-  if (!Platform.isWindows) {
-    throw const FormatException('Windows güvenli kasa gerekli.');
-  }
-  final crypt32 = DynamicLibrary.open('crypt32.dll');
-  final kernel32 = DynamicLibrary.open('kernel32.dll');
-  final transform = crypt32.lookupFunction<_DpapiNative, _DpapiDart>(
-    decrypt ? 'CryptUnprotectData' : 'CryptProtectData',
-  );
-  final localFree = kernel32.lookupFunction<Pointer<Void> Function(Pointer<Void>),
-      Pointer<Void> Function(Pointer<Void>)>('LocalFree');
-  final input = calloc<_DataBlob>();
-  final output = calloc<_DataBlob>();
-  final source = calloc<Uint8>(data.length);
-  try {
-    source.asTypedList(data.length).setAll(0, data);
-    input.ref
-      ..length = data.length
-      ..bytes = source;
-    // Current user scope, with system prompts disabled.
-    if (transform(input, nullptr, nullptr, nullptr, nullptr, 1, output) == 0) {
-      throw const FormatException('Windows güvenli kasa işlemi başarısız.');
-    }
-    return Uint8List.fromList(output.ref.bytes.asTypedList(output.ref.length));
-  } finally {
-    if (output.ref.bytes != nullptr) {
-      output.ref.bytes.asTypedList(output.ref.length).fillRange(0, output.ref.length, 0);
-      localFree(output.ref.bytes.cast<Void>());
-    }
-    source.asTypedList(data.length).fillRange(0, data.length, 0);
-    calloc.free(source);
-    calloc.free(output);
-    calloc.free(input);
-  }
-}
-
 class TgoWindowsVault {
   TgoWindowsVault(String databasePath, {File? credentialFile})
-    : file = credentialFile ?? File(
-        paths.join(
-          Platform.environment['APPDATA'] ?? paths.dirname(databasePath),
-          'NohutFalafel',
-          'trendyol-go-credentials.dpapi',
-        ),
-      );
+    : file =
+          credentialFile ??
+          File(
+            paths.join(
+              Platform.environment['APPDATA'] ?? paths.dirname(databasePath),
+              'NohutFalafel',
+              'trendyol-go-credentials.dpapi',
+            ),
+          );
   final File file;
 
   Future<TgoCredentials?> load() async {
-    if (!await file.exists()) return null;
-    final ciphertext = base64Decode((await file.readAsString()).trim());
-    final clear = _protectForCurrentUser(ciphertext, decrypt: true);
-    try {
-      final fields = jsonDecode(utf8.decode(clear)) as Map;
-      return TgoCredentials(
-        fields['supplierId'] as String,
-        fields['apiKey'] as String,
-        fields['apiSecret'] as String,
-        fields['email'] as String,
-      );
-    } finally {
-      clear.fillRange(0, clear.length, 0);
-    }
+    final fields = await WindowsVault(file).load();
+    if (fields == null) return null;
+    return TgoCredentials(
+      fields['supplierId'] as String,
+      fields['apiKey'] as String,
+      fields['apiSecret'] as String,
+      fields['email'] as String,
+    );
   }
 
   Future<void> save(TgoCredentials value) async {
     if (!value.valid) {
-      throw const FormatException('Satıcı ID, API Key, API Secret ve e-posta gerekli.');
+      throw const FormatException(
+        'Satıcı ID, API Key, API Secret ve e-posta gerekli.',
+      );
     }
-    final clear = utf8.encode(jsonEncode({
+    await WindowsVault(file).save({
       'supplierId': value.supplierId,
       'apiKey': value.apiKey,
       'apiSecret': value.apiSecret,
       'email': value.email,
-    }));
-    final String encrypted;
-    try {
-      encrypted = base64Encode(_protectForCurrentUser(clear, decrypt: false));
-    } finally {
-      clear.fillRange(0, clear.length, 0);
-    }
-    await file.parent.create(recursive: true);
-    final staging = await file.parent.createTemp('.trendyol-go-');
-    try {
-      final pending = File(paths.join(staging.path, 'credentials.dpapi'));
-      await pending.writeAsString(encrypted, flush: true);
-      await pending.rename(file.path);
-    } finally {
-      await staging.delete(recursive: true);
-    }
+    });
   }
 }
 
@@ -192,11 +123,14 @@ Json normalizeTgoPackage(Json p) {
     'totalCents': tgoCents(p['totalPrice']),
     'paymentType': '${payment['paymentType'] ?? ''}',
     'customerNote': '${p['customerNote'] ?? ''}',
-    'cancelReason': '${p['cancelInfo'] is Map ? (p['cancelInfo'] as Map)['reason'] ?? '' : ''}',
+    'cancelReason':
+        '${p['cancelInfo'] is Map ? (p['cancelInfo'] as Map)['reason'] ?? '' : ''}',
     'courierNearby': p['isCourierNearby'] == true,
-    if (p['estimatedPickupTimeMin'] is num && (p['estimatedPickupTimeMin'] as num) > 0)
+    if (p['estimatedPickupTimeMin'] is num &&
+        (p['estimatedPickupTimeMin'] as num) > 0)
       'courierEtaFrom': tgoTime(p['estimatedPickupTimeMin']),
-    if (p['estimatedPickupTimeMax'] is num && (p['estimatedPickupTimeMax'] as num) > 0)
+    if (p['estimatedPickupTimeMax'] is num &&
+        (p['estimatedPickupTimeMax'] as num) > 0)
       'courierEtaTo': tgoTime(p['estimatedPickupTimeMax']),
     'pickup': p['storePickupSelected'] == true,
     'testPackage': p['testPackage'] == true,
@@ -206,6 +140,16 @@ Json normalizeTgoPackage(Json p) {
 
 String tgoOrderKey(Json order) =>
     '${order['supplierId']}:${order['storeId']}:${order['orderNumber']}';
+
+String tgoKitchenTiming(Object? settings) {
+  if (settings is! Map) return 'manual';
+  return switch (settings['tgoKitchenTiming']) {
+    'arrival' => 'arrival',
+    'accepted' => 'accepted',
+    'manual' => 'manual',
+    _ => settings['tgoAutoKitchen'] == true ? 'arrival' : 'manual',
+  };
+}
 
 bool tgoKitchenActive(Json order) =>
     order['testPackage'] != true &&
@@ -275,14 +219,21 @@ class TrendyolGoReadonly extends ChangeNotifier {
   }
 
   Future<HttpClientRequest> _authorizedGet(
-    HttpClient client, Uri uri, TgoCredentials account,
+    HttpClient client,
+    Uri uri,
+    TgoCredentials account,
   ) async {
     final request = await client.getUrl(uri);
     request.followRedirects = false;
-    final auth = base64Encode(utf8.encode('${account.apiKey}:${account.apiSecret}'));
+    final auth = base64Encode(
+      utf8.encode('${account.apiKey}:${account.apiSecret}'),
+    );
     request.headers
       ..set(HttpHeaders.authorizationHeader, 'Basic $auth')
-      ..set(HttpHeaders.userAgentHeader, '${account.supplierId} - SelfIntegration')
+      ..set(
+        HttpHeaders.userAgentHeader,
+        '${account.supplierId} - SelfIntegration',
+      )
       ..set('x-agentname', 'NohutFalafelPOS')
       ..set('x-executor-user', account.email)
       ..set(HttpHeaders.acceptHeader, 'application/json');
@@ -290,7 +241,8 @@ class TrendyolGoReadonly extends ChangeNotifier {
   }
 
   Future<({List<Json> reviews, bool hasNextPage})> readReviews(
-    String storeId, int page,
+    String storeId,
+    int page,
   ) async {
     final account = credentials;
     if (!liveSyncEnabled || account == null || !account.valid) {
@@ -300,28 +252,43 @@ class TrendyolGoReadonly extends ChangeNotifier {
       throw const FormatException('Geçerli bir şube ID girin.');
     }
     final uri = Uri(
-      scheme: 'https', host: 'api.tgoapis.com',
+      scheme: 'https',
+      host: 'api.tgoapis.com',
       pathSegments: [
-        'integrator', 'review', 'meal', 'suppliers', account.supplierId,
-        'stores', storeId, 'reviews', 'filter',
+        'integrator',
+        'review',
+        'meal',
+        'suppliers',
+        account.supplierId,
+        'stores',
+        storeId,
+        'reviews',
+        'filter',
       ],
       queryParameters: {'page': '$page', 'size': '20'},
     );
-    final client = HttpClient()..connectionTimeout = const Duration(seconds: 12);
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 12);
     try {
       final request = await _authorizedGet(client, uri, account);
-      final response = await request.close().timeout(const Duration(seconds: 20));
-      final body = await utf8.decoder.bind(response).join().timeout(
+      final response = await request.close().timeout(
         const Duration(seconds: 20),
       );
+      final body = await utf8.decoder
+          .bind(response)
+          .join()
+          .timeout(const Duration(seconds: 20));
       if (response.statusCode == 404 ||
-          response.statusCode == 403 && body.contains('endpoint.not-available.error')) {
+          response.statusCode == 403 &&
+              body.contains('endpoint.not-available.error')) {
         throw const FormatException(
           'Bu şube için yorum servisi kullanılamıyor. Yorumları GO Yemek panelinden kontrol edin.',
         );
       }
       if (response.statusCode != 200) {
-        throw FormatException('Trendyol yorum servisi HTTP ${response.statusCode}.');
+        throw FormatException(
+          'Trendyol yorum servisi HTTP ${response.statusCode}.',
+        );
       }
       final payload = jsonDecode(body);
       final List items;
@@ -332,7 +299,9 @@ class TrendyolGoReadonly extends ChangeNotifier {
       } else if (payload is Map && payload['reviewId'] != null) {
         items = [payload];
       } else {
-        throw const FormatException('Yorum servisi beklenmeyen bir yanıt verdi.');
+        throw const FormatException(
+          'Yorum servisi beklenmeyen bir yanıt verdi.',
+        );
       }
       final pages = payload is Map ? payload['totalPages'] : null;
       return (
@@ -345,7 +314,8 @@ class TrendyolGoReadonly extends ChangeNotifier {
   }
 
   Future<void> sync() async {
-    if (!liveSyncEnabled || _closed || syncing || credentials?.valid != true) return;
+    if (!liveSyncEnabled || _closed || syncing || credentials?.valid != true)
+      return;
     syncing = true;
     status = 'Senkronize ediliyor';
     error = '';
@@ -379,9 +349,10 @@ class TrendyolGoReadonly extends ChangeNotifier {
           if (res.statusCode != 200) {
             throw FormatException('Trendyol API HTTP ${res.statusCode}');
           }
-          final payload = await utf8.decoder.bind(res).join().timeout(
-            const Duration(seconds: 20),
-          );
+          final payload = await utf8.decoder
+              .bind(res)
+              .join()
+              .timeout(const Duration(seconds: 20));
           final result = jsonDecode(payload);
           if (result is! Map || result['content'] is! List) {
             throw const FormatException('Sipariş yanıtı geçersiz.');
@@ -406,17 +377,37 @@ class TrendyolGoReadonly extends ChangeNotifier {
         final merged = {for (final o in tgoOrders(next)) tgoOrderKey(o): o};
         final previouslyKnown = merged.keys.toSet();
         final sameAccount = meta is Map && meta['supplierId'] == c.supplierId;
-        final autoKitchen = next['settings']?['tgoAutoKitchen'] == true;
+        final kitchenTiming = tgoKitchenTiming(next['settings']);
         for (final o in fresh) {
           final key = tgoOrderKey(o);
           final prior = merged[key];
+          final changedAt = o['modifiedAt'];
           // Do not allocate a different display number when platform status changes.
           merged[key] = {
             ...o,
-            if (prior?['dailyNumber'] is int) 'dailyNumber': prior!['dailyNumber'],
+            if (prior?['dailyNumber'] is int)
+              'dailyNumber': prior!['dailyNumber'],
             if (prior?['numberDay'] is String) 'numberDay': prior!['numberDay'],
+            if (prior?['serviceStartedAt'] != null)
+              'serviceStartedAt': prior!['serviceStartedAt']
+            else if (prior?['status'] == 'Created' && o['status'] == 'Picking')
+              'serviceStartedAt': changedAt,
+            if (prior?['readyAt'] != null)
+              'readyAt': prior!['readyAt']
+            else if (prior?['status'] == 'Picking' &&
+                o['status'] == 'Invoiced' &&
+                prior?['serviceStartedAt'] != null)
+              'readyAt': changedAt,
             if (prior?['kitchenPrintState'] is String)
-              'kitchenPrintState': prior!['kitchenPrintState'],
+              'kitchenPrintState': prior!['kitchenPrintState']
+            else if (last != null &&
+                sameAccount &&
+                kitchenTiming == 'accepted' &&
+                prior?['status'] == 'Created' &&
+                o['status'] == 'Picking' &&
+                tgoKitchenActive(o) &&
+                onIstanbulDay(o['createdAt'], istanbulDay(end)))
+              'kitchenPrintState': 'Bekliyor',
           };
         }
         newOrders = [
@@ -427,7 +418,7 @@ class TrendyolGoReadonly extends ChangeNotifier {
                   onIstanbulDay(entry.value['createdAt'], istanbulDay(end)))
                 entry.value,
         ];
-        if (autoKitchen) {
+        if (kitchenTiming == 'arrival') {
           for (final order in newOrders) {
             order['kitchenPrintState'] = 'Bekliyor';
           }

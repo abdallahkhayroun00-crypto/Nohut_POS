@@ -7,6 +7,9 @@ import 'trendyol_go_readonly.dart';
 import 'trendyol_go_ui.dart';
 import 'sales_reports.dart';
 import 'order_alerts.dart';
+import 'online_orders.dart';
+import 'google_business.dart';
+import 'google_business_ui.dart';
 import 'card_terminal.dart';
 
 import 'dart:async';
@@ -128,6 +131,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
   late final PosLanServer lan;
   late final QrMenuAutoSync qrSync;
   late final TrendyolGoReadonly tgo;
+  late final GoogleBusiness google;
   Timer? _midnightTimer;
   Timer? _serviceTimer;
   final Set<String> seenNotices = {};
@@ -152,6 +156,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     ('tables', Icons.table_restaurant_outlined, 'Masalar & Siparişler'),
     ('online', Icons.delivery_dining_outlined, 'Online Siparişler'),
     ('reviews', Icons.star_outline, 'Geri Bildirimler'),
+    ('google', Icons.storefront_outlined, 'Google İşletme Profili'),
     ('payments', Icons.point_of_sale_outlined, 'Kasa & Ödemeler'),
     ('reports', Icons.bar_chart_outlined, 'Raporlar'),
     ('settings', Icons.settings_outlined, 'Ayarlar'),
@@ -171,17 +176,29 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     lan = PosLanServer(store);
     receiptPrinter = ReceiptPrinter(store);
     qrSync = QrMenuAutoSync(store);
-    tgo = TrendyolGoReadonly(store, onNewOrders: (orders) {
-      if (!mounted) return;
-      final message = orders.length == 1
-          ? "Trendyol Go · Yeni sipariş ${orders.single['orderNumber']}"
-          : 'Trendyol Go · ${orders.length} yeni sipariş';
-      _notify(message);
-      if (store.read().data['settings']?['soundAlerts'] != false) {
-        unawaited(playOrderAlert());
-      }
-    });
-    if (widget.startServer) unawaited(tgo.start());
+    tgo = TrendyolGoReadonly(
+      store,
+      onNewOrders: (orders) {
+        if (!mounted) return;
+        final message = orders.length == 1
+            ? "Trendyol Go · Yeni sipariş ${orders.single['orderNumber']}"
+            : 'Trendyol Go · ${orders.length} yeni sipariş';
+        _notify(message);
+        if (store.read().data['settings']?['soundAlerts'] != false) {
+          unawaited(playOrderAlert());
+        }
+      },
+    );
+    google = GoogleBusiness(
+      store.filePath,
+      onNewReviews: (count) {
+        if (mounted) _notify('$count yeni Google yorumu');
+      },
+    );
+    if (widget.startServer) {
+      unawaited(tgo.start());
+      unawaited(google.load());
+    }
     _scheduleIstanbulMidnight();
     _serviceTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (mounted) setState(() {});
@@ -294,6 +311,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     _midnightTimer?.cancel();
     _serviceTimer?.cancel();
     tgo.dispose();
+    google.dispose();
     qrSync.dispose();
     receiptPrinter.dispose();
     lan.dispose();
@@ -338,7 +356,10 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
   void _switch(String next) {
     setState(() {
       page = next;
-      if (next == 'online') onlineHistory = false;
+      if (next == 'online') {
+        onlinePlatform = 'Tümü';
+        _onlineView++;
+      }
       selectedOrder = null;
       if (next != 'tables') selectedTable = null;
       floorEditing = false;
@@ -764,8 +785,6 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       context: context,
       builder: (ctx) => PaymentEntryDialog(
         dueCents: due,
-        inposReady:
-            inpos.gateway.ready && guestId == null && productShares == null,
         fixedAmount: productShares != null,
         orderNumber: displayOrderNumber(order),
         guestName: guestName ?? '',
@@ -774,34 +793,6 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     if (!mounted) return;
     if (result == null) return;
     final (amountCents, methodName, receivedCents, mixedReceived) = result;
-    if (methodName == 'inPOS m530') {
-      if (terminalBusy) return;
-      terminalBusy = true;
-      _notify('inPOS sonucu bekleniyor; kartı cihazda okutun.');
-      try {
-        final reply = await inpos.pay(
-          order['id'] as int,
-          amountCents,
-          'pos_${DateTime.now().microsecondsSinceEpoch}',
-        );
-        if (!mounted) return;
-        if (reply.status == TerminalStatus.approved) {
-          _notify('inPOS ödemesi onaylandı');
-          await _offerReceipt(order['id'] as int);
-        } else
-          _notify(
-            reply.status == TerminalStatus.unknown
-                ? 'Sonuç belirsiz. Tekrar tahsil etmeyin; işlemi sorgulayın.'
-                : 'inPOS: ${reply.status.name}',
-            error: true,
-          );
-      } catch (e) {
-        if (mounted) _notify('$e', error: true);
-      } finally {
-        terminalBusy = false;
-      }
-      return;
-    }
     final confirmed = await confirmAction(
       context,
       'Ödemeyi Onayla',
@@ -875,7 +866,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     final print = await confirmAction(
       context,
       'Fiş yazdırılsın mı?',
-      'Bu ödeme için hesap özeti yazdırabilirsiniz. Mali fiş inPOS cihazından alınır.',
+      'Bu ödeme için hesap özeti yazdırabilirsiniz. Mali fiş ödeme cihazından alınır.',
       confirm: 'Evet · Yazdır',
     );
     if (print)
@@ -1175,8 +1166,14 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
         );
       case 'online':
         return _online(db);
+      case 'google':
+        return GoogleBusinessPanel(google: google);
       case 'reviews':
-        return FeedbackPanel(orders: tgoOrders(db), integration: tgo);
+        return FeedbackPanel(
+          orders: tgoOrders(db),
+          integration: tgo,
+          onOpenGoogle: () => setState(() => page = 'google'),
+        );
       case 'payments':
         return _payments(db);
       case 'reports':
@@ -2093,68 +2090,35 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
   }
 
   Json? platformDemo;
-  String onlinePlatform = 'Trendyol Go';
-  bool onlineHistory = false;
+  String onlinePlatform = 'Tümü';
+  int _onlineView = 0;
 
   void _showTrendyolOrders() => setState(() {
     page = 'online';
     onlinePlatform = 'Trendyol Go';
-    onlineHistory = false;
+    _onlineView++;
   });
 
-  Widget _online(Json db) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SegmentedButton<String>(
-          segments: const [
-            ButtonSegment(
-              value: 'Trendyol Go',
-              label: Text('Trendyol Go'),
-              icon: Icon(Icons.delivery_dining_outlined),
-            ),
-            ButtonSegment(value: 'Yemeksepeti', label: Text('Yemeksepeti')),
-            ButtonSegment(value: 'Migros Yemek', label: Text('Migros Yemek')),
-          ],
-          selected: {onlinePlatform},
-          onSelectionChanged: (value) =>
-              setState(() => onlinePlatform = value.single),
-        ),
-        const SizedBox(height: 16),
-        if (onlinePlatform == 'Trendyol Go')
-          TgoOrdersPanel(
-            orders: tgoOrders(db),
-            integration: tgo,
-            businessDay: businessDay,
-            showHistory: onlineHistory,
-            onPeriodChanged: () => setState(() => onlineHistory = !onlineHistory),
-            autoKitchen: db['settings']?['tgoAutoKitchen'] == true,
-            onAutoKitchenChanged: (value) {
-              _edit((data) => (data['settings'] as Map)['tgoAutoKitchen'] = value);
-            },
-            onKitchenPrint: (order) {
-              final key = tgoOrderKey(order);
-              _edit((data) {
-                for (final current in mutableTgoOrders(data)) {
-                  if (tgoOrderKey(current) == key &&
-                      current['kitchenPrintState'] == null &&
-                      tgoKitchenActive(current)) {
-                    current['kitchenPrintState'] = 'Bekliyor';
-                  }
-                }
-              });
-            },
-          )
-        else if (onlinePlatform == 'Migros Yemek')
-          const MigrosOrdersPanel()
-        else ...[
-          _notice('Yemeksepeti · Bağlı değil'),
-          const SizedBox(height: 12),
-          _platformDemo(db),
-        ],
-      ],
-    );
-  }
+  Widget _online(Json db) => OnlineOrders(
+    key: ValueKey(_onlineView),
+    orders: tgoOrders(db),
+    integration: tgo,
+    businessDay: businessDay,
+    initialSource: onlinePlatform,
+    demo: () => _platformDemo(db),
+    onPrint: (order) {
+      final key = tgoOrderKey(order);
+      _edit((data) {
+        for (final current in mutableTgoOrders(data)) {
+          if (tgoOrderKey(current) == key &&
+              current['kitchenPrintState'] == null &&
+              tgoKitchenActive(current)) {
+            current['kitchenPrintState'] = 'Bekliyor';
+          }
+        }
+      });
+    },
+  );
 
   Widget _platformDemo(Json db) {
     platformDemo ??= {...emptyPosState(), 'localMenu': asMaps(db['localMenu'])};
@@ -2490,6 +2454,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     store: store,
     qrSync: qrSync,
     tgoIntegration: tgo,
+    onOpenGoogle: () => setState(() => page = 'google'),
     staffPanel: _staff(db),
     wifiPanel: _wifi(db),
   );
