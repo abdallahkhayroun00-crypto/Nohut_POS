@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'google_business.dart';
 import 'order_reporting.dart';
+import 'review_display.dart';
 import 'pos_logic.dart';
 import 'trendyol_go_ui.dart' show openExternalPage;
 
@@ -422,9 +423,17 @@ class _GoogleBusinessPanelState extends State<GoogleBusinessPanel> {
   }
 
   List<Widget> _reviews(Json current) {
-    final rows = asMaps(
-      current['reviews'],
-    ).where((row) => !onlyUnanswered || row['reviewReply'] == null).toList();
+    final rows = asMaps(current['reviews'])
+        .where((row) => !onlyUnanswered || row['reviewReply'] == null)
+        .toList()
+      ..sort((a, b) {
+        // Newest reviews first, regardless of reply/update time.
+        final left = reviewDate(a['createTime'] ?? a['updateTime']);
+        final right = reviewDate(b['createTime'] ?? b['updateTime']);
+        if (left == null) return right == null ? 0 : 1;
+        if (right == null) return -1;
+        return right.compareTo(left);
+      });
     const stars = {'ONE': 1, 'TWO': 2, 'THREE': 3, 'FOUR': 4, 'FIVE': 5};
     return [
       Wrap(
@@ -453,7 +462,18 @@ class _GoogleBusinessPanelState extends State<GoogleBusinessPanel> {
                   '${_map(row['reviewer'])['displayName'] ?? 'Google kullanıcısı'} · ${stars[row['starRating']] ?? '—'}/5',
                   style: Theme.of(context).textTheme.titleSmall,
                 ),
-                Text(istanbulStamp(row['updateTime'] ?? row['createTime'])),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: [
+                    Text(reviewDateText(row['createTime'] ?? row['updateTime'])),
+                    Text(reviewRelativeAge(row['createTime'] ?? row['updateTime']),
+                      style: const TextStyle(color: NohutBrand.muted)),
+                    const Text('Google Maps',
+                      style: TextStyle(color: NohutBrand.green,
+                          fontWeight: FontWeight.w600)),
+                  ],
+                ),
                 if (row['comment'] case final String comment
                     when comment.isNotEmpty)
                   SelectableText(comment),
