@@ -122,7 +122,7 @@ class OnlineOrderSoundPlayer {
       final wave = math.sin(2 * math.pi * pitch * t) +
           0.20 * math.sin(2 * math.pi * pitch * 2 * t);
       final sample = (wave * envelope * 12500).round().clamp(-32767, 32767);
-      data.setInt16(44 + i * 2, sample, Endian.little);
+      data.setInt16(44 + i * 2, sample.toInt(), Endian.little);
     }
     return data.buffer.asUint8List();
   }
