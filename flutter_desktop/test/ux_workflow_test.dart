@@ -215,13 +215,17 @@ void main() {
       expect(find.text('Kasayı Aç'), findsNothing);
       expect(find.text('Kasayı Kapat'), findsNothing);
       expect(find.text('Yazdırma Kuyruğu'), findsNothing);
+      expect(find.textContaining('ORDER-101'), findsNothing);
       await tester.ensureVisible(find.text('Siparişler').first);
       await tester.tap(find.text('Siparişler').first);
       await tester.pumpAndSettle();
       await tester.ensureVisible(find.text('Online Siparişler').first);
       await tester.tap(find.text('Online Siparişler').first);
       await tester.pumpAndSettle();
-      expect(find.textContaining('Trendyol sipariş no: ORDER-101'), findsOneWidget);
+      expect(
+        find.textContaining('Trendyol sipariş no: ORDER-101'),
+        findsOneWidget,
+      );
       expect(find.text('1 × Falafel Dürüm'), findsOneWidget);
       expect(find.textContaining('Salt okunur · Yönetim'), findsOneWidget);
       expect(find.text('Kabul Et'), findsNothing);
