@@ -187,8 +187,12 @@ Json normalizeTgoPackage(Json p) {
   };
 }
 
-String tgoOrderKey(Json order) =>
-    '${order['supplierId']}:${order['storeId']}:${order['orderNumber']}';
+String tgoOrderKey(Json order) {
+  // Package ID is the immutable platform identity; the human-facing order
+  // number may be reused across split packages.
+  final packageId = '${order['packageId'] ?? ''}'.trim();
+  return '${order['supplierId']}:${order['storeId']}:${packageId.isNotEmpty ? packageId : order['orderNumber']}';
+}
 
 String tgoKitchenTiming(Object? settings) {
   if (settings is! Map) return 'manual';
@@ -223,10 +227,12 @@ String tgoKitchenTicket(Json order) {
 }
 
 class TrendyolGoReadonly extends ChangeNotifier {
-  TrendyolGoReadonly(this.store, {this.onNewOrders})
+  TrendyolGoReadonly(this.store, {this.onNewOrders, this.onOrdersSynced})
     : vault = TgoWindowsVault(store.filePath);
 
   final void Function(List<Json>)? onNewOrders;
+  /// Only invoked after the remote API succeeded and SQLite committed.
+  final void Function(List<Json>)? onOrdersSynced;
   static const liveSyncEnabled = bool.fromEnvironment(
     'NOHUT_TRENDYOL_LIVE_SYNC',
     defaultValue: true,
@@ -258,6 +264,10 @@ class TrendyolGoReadonly extends ChangeNotifier {
     if (_closed) return;
     notifyListeners();
     if (!liveSyncEnabled) return;
+    final meta = store.read().data['tgoSyncInfo'];
+    if (meta is Map && meta['supplierId'] == credentials?.supplierId) {
+      lastSync = '${meta['lastSync'] ?? ''}';
+    }
     if (credentials?.valid == true) unawaited(sync());
     _timer = Timer.periodic(const Duration(seconds: 60), (_) {
       if (credentials?.valid == true) unawaited(sync());
@@ -267,7 +277,7 @@ class TrendyolGoReadonly extends ChangeNotifier {
   Future<void> save(TgoCredentials c) async {
     await vault.save(c);
     credentials = c;
-    status = liveSyncEnabled ? 'Kaydedildi' : pausedStatus;
+    status = liveSyncEnabled ? 'Bilgiler kaydedildi · bağlantı doğrulanıyor' : pausedStatus;
     error = '';
     if (_closed) return;
     notifyListeners();
@@ -571,9 +581,11 @@ class TrendyolGoReadonly extends ChangeNotifier {
           ? DateTime.tryParse('${meta['lastSync'] ?? ''}')
           : null;
       final end = DateTime.now().toUtc();
-      final start = end.subtract(
-        last == null ? const Duration(days: 7) : const Duration(hours: 24),
-      );
+      // Resume from the last successful checkpoint (with overlap). Never
+      // drop changes during a long internet/power outage.
+      final start = last == null
+          ? end.subtract(const Duration(days: 7))
+          : last.subtract(const Duration(hours: 24));
       final fresh = <Json>[];
       final client = HttpClient()
         ..connectionTimeout = const Duration(seconds: 12);
@@ -681,6 +693,7 @@ class TrendyolGoReadonly extends ChangeNotifier {
       lastSync = DateTime.now().toLocal().toIso8601String();
       status = 'Bağlı · Salt okunur';
       if (newOrders.isNotEmpty) onNewOrders?.call(newOrders);
+      onOrdersSynced?.call(tgoOrders(store.read().data));
     } on FormatException catch (e) {
       error = e.message;
       status = 'Bağlantı hatası';
