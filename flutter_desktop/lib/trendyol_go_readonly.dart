@@ -417,9 +417,10 @@ class TrendyolGoReadonly extends ChangeNotifier {
     await sync();
   }
 
-  /// Restaurant review answer from the published MEAL endpoint.
-  /// This is distinct from (and does not enable) unverified order writes.
-  /// Explicit user action only; no optimistic mutation of local records.
+
+  /// Explicit operator-submitted answer using the published MEAL endpoint.
+  /// Unlike order status mutations this endpoint is documented, but restaurants
+  /// migrated to Uber Eats can receive HTTP 403 or 404.
   Future<void> answerReview({
     required String storeId,
     required String reviewId,
@@ -429,222 +430,8 @@ class TrendyolGoReadonly extends ChangeNotifier {
     if (!liveSyncEnabled || account == null || !account.valid) {
       throw const FormatException('Önce Trendyol Go API bağlantısını kurun.');
     }
-    if (!RegExp(r'^[0-9]+
-    String storeId,
-    int page,
-  ) async {
-    final account = credentials;
-    if (!liveSyncEnabled || account == null || !account.valid) {
-      throw const FormatException('Önce Trendyol Go API bilgilerini kaydedin.');
-    }
-    if (!RegExp(r'^[0-9]+$').hasMatch(storeId)) {
-      throw const FormatException('Geçerli bir şube ID girin.');
-    }
-    final uri = Uri(
-      scheme: 'https',
-      host: 'api.tgoapis.com',
-      pathSegments: [
-        'integrator',
-        'review',
-        'meal',
-        'suppliers',
-        account.supplierId,
-        'stores',
-        storeId,
-        'reviews',
-        'filter',
-      ],
-      queryParameters: {'page': '$page', 'size': '20'},
-    );
-    final client = HttpClient()
-      ..connectionTimeout = const Duration(seconds: 12);
-    try {
-      final request = await _authorizedGet(client, uri, account);
-      final response = await request.close().timeout(
-        const Duration(seconds: 20),
-      );
-      final body = await utf8.decoder
-          .bind(response)
-          .join()
-          .timeout(const Duration(seconds: 20));
-      if (response.statusCode == 404 ||
-          response.statusCode == 403 &&
-              body.contains('endpoint.not-available.error')) {
-        throw const FormatException(
-          'Bu şube için yorum servisi kullanılamıyor. Yorumları GO Yemek panelinden kontrol edin.',
-        );
-      }
-      if (response.statusCode != 200) {
-        throw FormatException(
-          'Trendyol yorum servisi HTTP ${response.statusCode}.',
-        );
-      }
-      final payload = jsonDecode(body);
-      final List items;
-      if (payload is List) {
-        items = payload;
-      } else if (payload is Map && payload['content'] is List) {
-        items = payload['content'] as List;
-      } else if (payload is Map && payload['reviewId'] != null) {
-        items = [payload];
-      } else {
-        throw const FormatException(
-          'Yorum servisi beklenmeyen bir yanıt verdi.',
-        );
-      }
-      final pages = payload is Map ? payload['totalPages'] : null;
-      return (
-        reviews: items.whereType<Map>().map(Json.from).toList(),
-        hasNextPage: pages is num ? page + 1 < pages : items.length == 20,
-      );
-    } finally {
-      client.close(force: true);
-    }
-  }
-
-  Future<void> sync() async {
-    if (!liveSyncEnabled || _closed || syncing || credentials?.valid != true)
-      return;
-    syncing = true;
-    status = 'Senkronize ediliyor';
-    error = '';
-    notifyListeners();
-    try {
-      final c = credentials!, meta = store.read().data['tgoSyncInfo'];
-      final last = meta is Map
-          ? DateTime.tryParse('${meta['lastSync'] ?? ''}')
-          : null;
-      final end = DateTime.now().toUtc();
-      final start = end.subtract(
-        last == null ? const Duration(days: 7) : const Duration(hours: 24),
-      );
-      final fresh = <Json>[];
-      final client = HttpClient()
-        ..connectionTimeout = const Duration(seconds: 12);
-      try {
-        for (var page = 0; page < 10; page++) {
-          final uri = Uri.https(
-            'api.tgoapis.com',
-            '/integrator/order/meal/suppliers/' + c.supplierId + '/packages',
-            {
-              'page': '$page',
-              'size': '50',
-              'packageModificationStartDate': '${start.millisecondsSinceEpoch}',
-              'packageModificationEndDate': '${end.millisecondsSinceEpoch}',
-            },
-          );
-          final req = await _authorizedGet(client, uri, c);
-          final res = await req.close().timeout(const Duration(seconds: 20));
-          if (res.statusCode != 200) {
-            throw FormatException('Trendyol API HTTP ${res.statusCode}');
-          }
-          final payload = await utf8.decoder
-              .bind(res)
-              .join()
-              .timeout(const Duration(seconds: 20));
-          final result = jsonDecode(payload);
-          if (result is! Map || result['content'] is! List) {
-            throw const FormatException('Sipariş yanıtı geçersiz.');
-          }
-          final packages = result['content'] as List;
-          for (final raw in packages) {
-            if (raw is Map) fresh.add(normalizeTgoPackage(Json.from(raw)));
-          }
-          final pages = (result['totalPages'] as num?)?.toInt();
-          if (pages != null ? page + 1 >= pages : packages.length < 50) break;
-          if (page == 9)
-            throw const FormatException('API sayfa sınırı; veri kısmi.');
-        }
-      } finally {
-        client.close(force: true);
-      }
-      if (_closed) return;
-      var saved = false;
-      var newOrders = <Json>[];
-      for (var i = 0; i < 4 && !saved; i++) {
-        final snapshot = store.read(), next = copyJson(snapshot.data);
-        final merged = {for (final o in tgoOrders(next)) tgoOrderKey(o): o};
-        final previouslyKnown = merged.keys.toSet();
-        final sameAccount = meta is Map && meta['supplierId'] == c.supplierId;
-        final kitchenTiming = tgoKitchenTiming(next['settings']);
-        for (final o in fresh) {
-          final key = tgoOrderKey(o);
-          final prior = merged[key];
-          final changedAt = o['modifiedAt'];
-          // Do not allocate a different display number when platform status changes.
-          merged[key] = {
-            ...o,
-            if (prior?['dailyNumber'] is int)
-              'dailyNumber': prior!['dailyNumber'],
-            if (prior?['numberDay'] is String) 'numberDay': prior!['numberDay'],
-            if (prior?['serviceStartedAt'] != null)
-              'serviceStartedAt': prior!['serviceStartedAt']
-            else if (prior?['status'] == 'Created' && o['status'] == 'Picking')
-              'serviceStartedAt': changedAt,
-            if (prior?['readyAt'] != null)
-              'readyAt': prior!['readyAt']
-            else if (prior?['status'] == 'Picking' &&
-                o['status'] == 'Invoiced' &&
-                prior?['serviceStartedAt'] != null)
-              'readyAt': changedAt,
-            if (prior?['kitchenPrintState'] is String)
-              'kitchenPrintState': prior!['kitchenPrintState']
-            else if (last != null &&
-                sameAccount &&
-                kitchenTiming == 'accepted' &&
-                prior?['status'] == 'Created' &&
-                o['status'] == 'Picking' &&
-                tgoKitchenActive(o) &&
-                onIstanbulDay(o['createdAt'], istanbulDay(end)))
-              'kitchenPrintState': 'Bekliyor',
-          };
-        }
-        newOrders = [
-          if (last != null && sameAccount)
-            for (final entry in merged.entries)
-              if (!previouslyKnown.contains(entry.key) &&
-                  tgoKitchenActive(entry.value) &&
-                  onIstanbulDay(entry.value['createdAt'], istanbulDay(end)))
-                entry.value,
-        ];
-        if (kitchenTiming == 'arrival') {
-          for (final order in newOrders) {
-            order['kitchenPrintState'] = 'Bekliyor';
-          }
-        }
-        next['trendyolGoOrders'] = merged.values.toList();
-        assignDailyNumbers(next);
-        next['tgoSyncInfo'] = {
-          'supplierId': c.supplierId,
-          'lastSync': end.toIso8601String(),
-        };
-        saved = store.replace(next, snapshot.revision).ok;
-      }
-      if (!saved)
-        throw const FormatException('Veritabanı güncellemesi çakıştı.');
-      lastSync = DateTime.now().toLocal().toIso8601String();
-      status = 'Bağlı · Salt okunur';
-      if (newOrders.isNotEmpty) onNewOrders?.call(newOrders);
-    } on FormatException catch (e) {
-      error = e.message;
-      status = 'Bağlantı hatası';
-    } catch (_) {
-      error = 'Ağ veya yetki hatası. Ayarları kontrol edin.';
-      status = 'Bağlantı hatası';
-    } finally {
-      syncing = false;
-      if (!_closed) notifyListeners();
-    }
-  }
-
-  @override
-  void dispose() {
-    _closed = true;
-    _timer?.cancel();
-    super.dispose();
-  }
-}
-).hasMatch(storeId) ||
+    if (storeId.isEmpty ||
+        storeId.codeUnits.any((unit) => unit < 48 || unit > 57) ||
         reviewId.isEmpty ||
         reviewId.contains('/') ||
         reviewId.contains('..')) {
@@ -654,13 +441,10 @@ class TrendyolGoReadonly extends ChangeNotifier {
     if (answer.isEmpty) {
       throw const FormatException('Yanıt metni boş olamaz.');
     }
-    final uri = Uri(
-      scheme: 'https',
-      host: 'api.tgoapis.com',
-      pathSegments: [
-        'integrator', 'review', 'meal', 'suppliers', account.supplierId,
-        'stores', storeId, 'reviews', reviewId, 'answer',
-      ],
+    final uri = Uri.https(
+      'api.tgoapis.com',
+      '/integrator/review/meal/suppliers/' + account.supplierId +
+        '/stores/' + storeId + '/reviews/' + reviewId + '/answer',
     );
     final client = HttpClient()
       ..connectionTimeout = const Duration(seconds: 12);
@@ -669,9 +453,10 @@ class TrendyolGoReadonly extends ChangeNotifier {
       request.followRedirects = false;
       request.headers
         ..set(HttpHeaders.authorizationHeader,
-          'Basic ${base64Encode(utf8.encode('${account.apiKey}:${account.apiSecret}'))}')
+          'Basic ' + base64Encode(utf8.encode(
+            account.apiKey + ':' + account.apiSecret)))
         ..set(HttpHeaders.userAgentHeader,
-          '${account.supplierId} - SelfIntegration')
+          account.supplierId + ' - SelfIntegration')
         ..set('x-agentname', 'NohutFalafelPOS')
         ..set('x-executor-user', account.email)
         ..set(HttpHeaders.acceptHeader, 'application/json');
@@ -681,17 +466,18 @@ class TrendyolGoReadonly extends ChangeNotifier {
         const Duration(seconds: 20));
       final body = await utf8.decoder.bind(response).join().timeout(
         const Duration(seconds: 20));
-      if (response.statusCode == 403 && body.contains('endpoint.not-available.error') ||
+      if ((response.statusCode == 403 &&
+              body.contains('endpoint.not-available.error')) ||
           response.statusCode == 404) {
         throw const FormatException(
-          'Bu restoranın Trendyol yorum yanıtlama servisi kullanılamıyor. '
-          'Uber Eats geçişi nedeniyle 403/404 dönebilir; Partner Paneli kullanın.',
+          'Bu restoranın yorum yanıtlama servisi kullanılamıyor. '
+          'Uber Eats geçişi nedeniyle reddedilebilir; Partner Paneli kullanın.',
         );
       }
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw FormatException(
-          'Trendyol yanıtı kabul etmedi (HTTP ${response.statusCode}). '
-          'Yorumu platformdan kontrol edin.',
+          'Trendyol yanıtı kabul etmedi (HTTP ' +
+          response.statusCode.toString() + '). Partner Paneli’nden kontrol edin.',
         );
       }
     } finally {
