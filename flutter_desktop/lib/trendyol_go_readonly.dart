@@ -108,8 +108,49 @@ Json normalizeTgoPackage(Json p) {
   final payment = p['payment'] is Map
       ? p['payment'] as Map
       : <String, dynamic>{};
+  final customer = p['customer'] is Map
+      ? p['customer'] as Map
+      : <String, dynamic>{};
+  final address = p['address'] is Map
+      ? p['address'] as Map
+      : <String, dynamic>{};
+  final sourceApp = p['userInformation'] is Map
+      ? p['userInformation'] as Map
+      : <String, dynamic>{};
+  String clean(Object? field) => '${field ?? ''}'.trim();
+  final customerName = [
+    clean(customer['firstName']),
+    clean(customer['lastName']),
+  ].where((name) => name.isNotEmpty).join(' ');
+  // Marketplace courier deliveries may deliberately mask the full address.
+  final addressText = [
+    clean(address['address1']),
+    clean(address['address2']),
+    clean(address['district']),
+    clean(address['city']),
+    clean(address['addressDescription']),
+  ].where((part) =>
+      part.isNotEmpty &&
+      !part.toLowerCase().contains('trendyol go - yemek') &&
+      !part.toLowerCase().contains('tgo yemek')).join(' · ');
   return {
     'source': 'Trendyol Go',
+    'orderId': clean(p['orderId']),
+    if (customerName.isNotEmpty) 'customerName': customerName,
+    if (clean(customer['email']).isNotEmpty)
+      'customerEmail': clean(customer['email']),
+    if (clean(address['phone']).isNotEmpty)
+      'customerPhone': clean(address['phone']),
+    if (addressText.isNotEmpty) 'deliveryAddress': addressText,
+    if (clean(sourceApp['appName']).isNotEmpty)
+      'appName': clean(sourceApp['appName']),
+    if (clean(p['deliveryType']).isNotEmpty)
+      'deliveryType': clean(p['deliveryType']),
+    if (clean(p['eta']).isNotEmpty) 'deliveryEta': clean(p['eta']),
+    if (p['preparationTime'] is num)
+      'preparationMinutes': (p['preparationTime'] as num).toInt(),
+    if (p['pickupEtaState'] != null)
+      'pickupEtaState': clean(p['pickupEtaState']),
     'supplierId': '${p['supplierId'] ?? ''}',
     'storeId': '${p['storeId'] ?? ''}',
     'packageId': id,
@@ -125,7 +166,8 @@ Json normalizeTgoPackage(Json p) {
     'customerNote': '${p['customerNote'] ?? ''}',
     'cancelReason':
         '${p['cancelInfo'] is Map ? (p['cancelInfo'] as Map)['reason'] ?? '' : ''}',
-    'courierNearby': p['isCourierNearby'] == true,
+    if (p['isCourierNearby'] is bool)
+      'courierNearby': p['isCourierNearby'],
     if (p['estimatedPickupTimeMin'] is num &&
         (p['estimatedPickupTimeMin'] as num) > 0)
       'courierEtaFrom': tgoTime(p['estimatedPickupTimeMin']),
