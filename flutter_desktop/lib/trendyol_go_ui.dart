@@ -100,12 +100,22 @@ class _TgoSettingsPanelState extends State<TgoSettingsPanel> {
                 style: TextStyle(fontSize: 23, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 7),
-              const Text(
-                'Salt okunur bağlantı · Siparişler alınır; platformda kabul, iptal, fiyat veya durum değişikliği yapılmaz.',
+              Text(
+                s.canWrite
+                    ? 'Sipariş işlemleri etkin · Kabul Et / Hazır / İptal Et işlemleri platform API yanıtı ile doğrulanır.'
+                    : 'Sipariş senkronizasyonu etkin. Kabul Et / Hazır / İptal Et için restoran API yazma yetkisi ve doğrulanmış bağlantı gereklidir.',
               ),
               if (!TrendyolGoReadonly.liveSyncEnabled)
                 const Text(
                   'Ayarları kaydedebilirsiniz. Canlı sipariş eşitlemesi bu sürümde geçici olarak kapalı.',
+                ),
+              if (!TrendyolGoReadonly.writeEnabled)
+                const Padding(
+                  padding: EdgeInsets.only(top: 8),
+                  child: Text(
+                    'Güvenlik: Yazma işlemleri bu yapıda kapalıdır. Restoran API izinleri ve MEAL endpointleri doğrulandıktan sonra açılabilir.',
+                    style: TextStyle(color: NohutBrand.muted, fontSize: 12),
+                  ),
                 ),
               const SizedBox(height: 16),
               TextField(
