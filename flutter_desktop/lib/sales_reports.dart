@@ -8,9 +8,12 @@ import 'order_reporting.dart';
 import 'report_activity.dart';
 
 class SalesReports extends StatefulWidget {
-  const SalesReports({super.key, required this.state, required this.edit});
+  const SalesReports({
+    super.key, required this.state, required this.edit, this.onlineWarning,
+  });
   final Json state;
   final EditState edit;
+  final String? onlineWarning;
   @override
   State<SalesReports> createState() => _SalesReportsState();
 }
@@ -195,6 +198,12 @@ class _SalesReportsState extends State<SalesReports> {
       children: [
         panelTitle('Raporlar'),
         const Text('Tarih aralığı ve sipariş kaynağı seçin.'),
+        if (widget.onlineWarning != null)
+          Card(child: ListTile(
+            leading: const Icon(Icons.info_outline, color: NohutBrand.gold),
+            title: const Text('Online platform verileri eksik olabilir'),
+            subtitle: Text(widget.onlineWarning!),
+          )),
         const SizedBox(height: 16),
         Card(
           child: Padding(
