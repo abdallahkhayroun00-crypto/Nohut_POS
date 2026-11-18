@@ -77,12 +77,10 @@ class OnlineOrderAlarm extends ChangeNotifier {
     if (_disposed || !providers.contains(platform)) return;
     final now = _clock();
     var changed = false;
-    final seenKeys = <String>{};
     for (final order in orders) {
       if (order['testPackage'] == true) continue;
       final key = identity(platform, order);
       if (key.isEmpty) continue;
-      seenKeys.add(key);
       final status = '${order['status'] ?? ''}';
       if (!requiresAcceptance(status)) {
         if (_pending.remove(key) != null) changed = true;
