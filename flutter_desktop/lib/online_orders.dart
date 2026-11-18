@@ -112,12 +112,12 @@ class _OnlineOrdersState extends State<OnlineOrders> {
                   'Bu işlem banka tahsilatı veya mali fiş oluşturmaz.',
                 ),
                 const SizedBox(height: 12),
-                TextField(
+                TextFormField(
+                  initialValue: value,
                   autofocus: true,
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   decoration: const InputDecoration(labelText: 'Fiş tutarı (₺)'),
                   onChanged: (next) => value = next,
-                  controller: TextEditingController(text: value),
                 ),
               ],
             ),
