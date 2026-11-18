@@ -213,7 +213,9 @@ void main() {
       await tester.ensureVisible(demo);
       await tester.tap(demo);
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Örnek Online Kart'));
+      final sampleOrder = find.text('Örnek Online Kart');
+      await tester.ensureVisible(sampleOrder);
+      await tester.tap(sampleOrder);
       await tester.pumpAndSettle();
       expect(find.textContaining('Kabul bekliyor'), findsWidgets);
       final real = PosStore(databaseFile: file);

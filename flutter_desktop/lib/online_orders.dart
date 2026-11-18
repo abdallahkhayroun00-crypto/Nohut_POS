@@ -106,7 +106,13 @@ class _OnlineOrdersState extends State<OnlineOrders> {
               ChoiceChip(
                 label: Text(label),
                 selected: history == value,
-                onSelected: (_) => setState(() => history = value),
+                onSelected: (selected) {
+                  if (!selected) return;
+                  setState(() {
+                    history = value;
+                    query = '';
+                  });
+                },
               ),
             const SizedBox(width: 12),
             for (final key in ['Tümü', ...onlinePartners.keys])
@@ -158,6 +164,7 @@ class _OnlineOrdersState extends State<OnlineOrders> {
             SizedBox(
               width: 230,
               child: TextField(
+                key: ValueKey(history),
                 decoration: const InputDecoration(
                   labelText: 'Sipariş No / Kod',
                   prefixIcon: Icon(Icons.search),
