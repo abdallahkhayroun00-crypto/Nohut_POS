@@ -176,7 +176,7 @@ class PosLanServer extends ChangeNotifier {
       'trendyolGoOrders': asMaps(source['trendyolGoOrders']).reversed.take(50)
           .map((o) => {
             for (final key in [
-              'orderNumber', 'orderCode', 'status', 'createdAt',
+              'dailyNumber', 'numberDay', 'orderNumber', 'orderCode', 'status', 'createdAt',
               'totalCents', 'paymentType', 'customerNote', 'pickup', 'testPackage',
             ]) key: o[key],
             'lines': [
