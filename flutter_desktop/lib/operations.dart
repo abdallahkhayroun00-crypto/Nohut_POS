@@ -510,7 +510,7 @@ List<SaleEntry> sales(Json state) => [
             SaleEntry(
               o['id'] as int,
               '${o['source']}',
-              '${b['staff']}',
+              orderOwnerName(o),
               '${l['name'] ?? l['productKey']}',
               l['qty'] as int,
               cents(l['price']) * (l['qty'] as int),
