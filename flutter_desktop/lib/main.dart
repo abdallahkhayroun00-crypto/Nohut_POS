@@ -911,13 +911,16 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
         drawer: condensed ? Drawer(child: _sidebar(false)) : null,
         body: Row(
           children: [
-            if (!condensed) SizedBox(width: 235, child: _sidebar(false)),
+            if (!condensed) SizedBox(width: 248, child: _sidebar(false)),
             Expanded(
               child: Column(
                 children: [
                   Container(
-                    color: Colors.white,
-                    height: 76,
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      border: Border(bottom: BorderSide(color: Color(0xffE3EBE5))),
+                    ),
+                    height: 80,
                     padding: const EdgeInsets.symmetric(horizontal: 27),
                     child: Row(
                       children: [
@@ -1005,9 +1008,12 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                     ),
                   Expanded(
                     child: SingleChildScrollView(
-                      padding: const EdgeInsets.all(24),
+                      padding: EdgeInsets.symmetric(
+                        horizontal: width < 800 ? 12 : 26,
+                        vertical: 22,
+                      ),
                       child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 1400),
+                        constraints: const BoxConstraints(maxWidth: 1500),
                         child: _page(data),
                       ),
                     ),
@@ -1109,7 +1115,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                         borderRadius: BorderRadius.circular(11),
                       ),
                       tileColor: page == item.$1
-                          ? const Color(0xff37694d)
+                          ? const Color(0xff397757)
                           : Colors.transparent,
                       onTap: () {
                         if (MediaQuery.sizeOf(context).width < 1050) {
@@ -1934,87 +1940,106 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
             label: const Text('Sipariş Al'),
           ),
         ),
-        TextField(
-          decoration: const InputDecoration(
-            labelText: 'Sipariş, masa, müşteri veya ürün ara',
-            prefixIcon: Icon(Icons.search),
-          ),
-          onChanged: (v) => setState(() => orderSearch = v),
-        ),
-        Wrap(
-          spacing: 8,
-          children: [
-            for (final status in [
-              '',
-              'Kalan',
-              'Ödendi',
-              if (localView == 'pickup') 'Teslim Edildi',
-              'Kapalı',
-            ])
-              ChoiceChip(
-                label: Text(status.isEmpty ? 'Tümü' : status),
-                selected: orderStatus == status,
-                onSelected: (_) => setState(() => orderStatus = status),
-              ),
-            TextButton(
-              onPressed: () => setState(() {
-                orderFrom = '';
-                orderTo = '';
-              }),
-              child: const Text('Tüm Tarihler'),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    SizedBox(
+                      width: 350,
+                      child: TextField(
+                        decoration: const InputDecoration(
+                          hintText: 'Sipariş, masa, müşteri veya ürün ara',
+                          prefixIcon: Icon(Icons.search),
+                        ),
+                        onChanged: (v) => setState(() => orderSearch = v),
+                      ),
+                    ),
+                    for (final status in [
+                      '', 'Kalan', 'Ödendi',
+                      if (localView == 'pickup') 'Teslim Edildi',
+                      'Kapalı',
+                    ])
+                      ChoiceChip(
+                        label: Text(status.isEmpty ? 'Tümü' : status),
+                        selected: orderStatus == status,
+                        onSelected: (_) => setState(() => orderStatus = status),
+                      ),
+                    TextButton.icon(
+                      onPressed: () => setState(() {
+                        orderFrom = ''; orderTo = '';
+                      }),
+                      icon: const Icon(Icons.event_available_outlined, size: 17),
+                      label: const Text('Tüm Tarihler'),
+                    ),
+                    OutlinedButton(
+                              onPressed: () async {
+                                final v = await askFields(context, 'Sipariş Filtreleri', [
+                                  ('Sipariş / masa / müşteri / ürün ara', orderSearch),
+                                  (
+                                    'Durum: boş / Kalan / Ödendi / Kapalı / İptal / Hazır / Hazırlanıyor / Teslim Edildi',
+                                    orderStatus,
+                                  ),
+                                  ('Siparişi alan personel', orderStaff),
+                                  ('Başlangıç YYYY-MM-DD', orderFrom),
+                                  ('Bitiş YYYY-MM-DD', orderTo),
+                                ]);
+                                if (v != null && mounted) {
+                                  if (v.skip(3).any((d) => d.isNotEmpty && !validBusinessDate(d)) ||
+                                      v[3].isNotEmpty &&
+                                          v[4].isNotEmpty &&
+                                          v[3].compareTo(v[4]) > 0) {
+                                    _notify('Tarih aralığı geçersiz', error: true);
+                                    return;
+                                  }
+                                  setState(() {
+                                    orderSearch = v[0];
+                                    orderStatus = v[1];
+                                    orderStaff = v[2];
+                                    orderFrom = v[3];
+                                    orderTo = v[4];
+                                    selectedOrder = null;
+                                  });
+                                }
+                              },
+                              child: const Text('Gelişmiş Filtreler'),
+                            ),,
+                  ],
+                ),
+                const SizedBox(height: 12),
+                const Divider(),
+                Wrap(
+                  spacing: 7,
+                  runSpacing: 7,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    for (final filter in [
+                      'Tümü', 'Masa', 'Gel-Al',
+                      if (localView != 'pickup') 'Trendyol Go',
+                    ])
+                      ChoiceChip(
+                        label: Text(filter),
+                        selected: orderFilter == filter,
+                        onSelected: (_) => setState(() {
+                          orderFilter = filter;
+                          selectedOrder = null;
+                        }),
+                      ),
+                    const SizedBox(width: 8),
+                    Text('${combined.length} kayıt',
+                      style: const TextStyle(color: NohutBrand.muted,
+                          fontWeight: FontWeight.w700)),
+                  ],
+                ),
+              ],
             ),
-          ],
-        ),
-        OutlinedButton(
-          onPressed: () async {
-            final v = await askFields(context, 'Sipariş Filtreleri', [
-              ('Sipariş / masa / müşteri / ürün ara', orderSearch),
-              (
-                'Durum: boş / Kalan / Ödendi / Kapalı / İptal / Hazır / Hazırlanıyor / Teslim Edildi',
-                orderStatus,
-              ),
-              ('Siparişi alan personel', orderStaff),
-              ('Başlangıç YYYY-MM-DD', orderFrom),
-              ('Bitiş YYYY-MM-DD', orderTo),
-            ]);
-            if (v != null && mounted) {
-              if (v.skip(3).any((d) => d.isNotEmpty && !validBusinessDate(d)) ||
-                  v[3].isNotEmpty &&
-                      v[4].isNotEmpty &&
-                      v[3].compareTo(v[4]) > 0) {
-                _notify('Tarih aralığı geçersiz', error: true);
-                return;
-              }
-              setState(() {
-                orderSearch = v[0];
-                orderStatus = v[1];
-                orderStaff = v[2];
-                orderFrom = v[3];
-                orderTo = v[4];
-                selectedOrder = null;
-              });
-            }
-          },
-          child: Text('Sipariş Filtreleri · ${combined.length} kayıt'),
-        ),
-        Wrap(
-          spacing: 7,
-          children: [
-            for (final filter in [
-              'Tümü',
-              'Masa',
-              'Gel-Al',
-              if (localView != 'pickup') 'Trendyol Go',
-            ])
-              ChoiceChip(
-                label: Text(filter),
-                selected: orderFilter == filter,
-                onSelected: (_) => setState(() {
-                  orderFilter = filter;
-                  selectedOrder = null;
-                }),
-              ),
-          ],
+          ),
         ),
         const SizedBox(height: 12),
 
