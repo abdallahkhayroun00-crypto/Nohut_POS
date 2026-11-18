@@ -2114,6 +2114,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
               icon: Icon(Icons.delivery_dining_outlined),
             ),
             ButtonSegment(value: 'Yemeksepeti', label: Text('Yemeksepeti')),
+            ButtonSegment(value: 'Migros Yemek', label: Text('Migros Yemek')),
           ],
           selected: {onlinePlatform},
           onSelectionChanged: (value) =>
@@ -2144,6 +2145,8 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
               });
             },
           )
+        else if (onlinePlatform == 'Migros Yemek')
+          const MigrosOrdersPanel()
         else ...[
           _notice('Yemeksepeti · Bağlı değil'),
           const SizedBox(height: 12),

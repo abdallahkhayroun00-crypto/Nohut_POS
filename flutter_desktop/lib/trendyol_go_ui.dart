@@ -558,7 +558,11 @@ class _TgoOrderCard extends StatelessWidget {
                     'https://partner.tgoyemek.com/',
                   ),
                   icon: const Icon(Icons.open_in_new),
-                  label: const Text('Siparişi GO Yemek Panelinde Yönet'),
+                  label: Text(switch (status) {
+                    'Created' => 'Kabul Et · GO Yemek Paneli',
+                    'Picking' => 'Hazır · GO Yemek Paneli',
+                    _ => 'GO Yemek Panelini Aç',
+                  }),
                 ),
               ),
             if (printState != null)
@@ -572,6 +576,37 @@ class _TgoOrderCard extends StatelessWidget {
                   label: const Text('Mutfak Fişi Yazdır'),
                 ),
               ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class MigrosOrdersPanel extends StatelessWidget {
+  const MigrosOrdersPanel({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Migros Yemek · Bağlı değil',
+              style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 8),
+            const Text('Nohut POS için Migros Yemek entegrasyon erişimi gerekli.'),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: () => _openExternalPage(
+                context,
+                'https://restoran.migrosonline.com/login',
+              ),
+              icon: const Icon(Icons.open_in_new),
+              label: const Text('Migros Restoran Panelini Aç'),
+            ),
           ],
         ),
       ),
