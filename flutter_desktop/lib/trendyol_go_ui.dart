@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import 'brand.dart';
@@ -195,19 +197,38 @@ class _TgoSettingsPanelState extends State<TgoSettingsPanel> {
 }
 
 class TgoOrdersPanel extends StatelessWidget {
-  const TgoOrdersPanel({super.key, required this.orders, required this.integration});
+  const TgoOrdersPanel({
+    super.key,
+    required this.orders,
+    required this.integration,
+    required this.businessDay,
+    required this.showHistory,
+    required this.onPeriodChanged,
+  });
 
   final List<Json> orders;
   final TrendyolGoReadonly integration;
+  final String businessDay;
+  final bool showHistory;
+  final VoidCallback onPeriodChanged;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final sorted = [...orders]..sort((a, b) {
-      final byDate = '${b['createdAt'] ?? ''}'.compareTo('${a['createdAt'] ?? ''}');
-      return byDate != 0
-          ? byDate
-          : (b['dailyNumber'] as int? ?? 0).compareTo(a['dailyNumber'] as int? ?? 0);
+    final datedOrders = <(DateTime, Json)>[];
+    for (final order in orders) {
+      final createdAt = DateTime.tryParse('${order['createdAt'] ?? ''}');
+      if (createdAt == null) continue;
+      final day = istanbulDay(createdAt);
+      if (showHistory ? day.compareTo(businessDay) < 0 : day == businessDay) {
+        datedOrders.add((createdAt, order));
+      }
+    }
+    datedOrders.sort((a, b) {
+      final byDate = b.$1.compareTo(a.$1);
+      if (byDate != 0) return byDate;
+      return (b.$2['dailyNumber'] as int? ?? 0)
+          .compareTo(a.$2['dailyNumber'] as int? ?? 0);
     });
     final connected = integration.status.startsWith('Bağlı ·');
     return Column(
@@ -258,13 +279,33 @@ class TgoOrdersPanel extends StatelessWidget {
         ),
         if (integration.syncing) const LinearProgressIndicator(),
         const SizedBox(height: 12),
-        if (sorted.isEmpty)
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                showHistory ? 'Geçmiş Siparişler' : 'Bugünün Siparişleri',
+                style: theme.textTheme.titleMedium,
+              ),
+            ),
+            OutlinedButton.icon(
+              onPressed: onPeriodChanged,
+              icon: Icon(showHistory ? Icons.today_outlined : Icons.history),
+              label: Text(showHistory ? 'Bugüne Dön' : 'Geçmiş'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (datedOrders.isEmpty)
           Card(
             child: Padding(
               padding: const EdgeInsets.all(18),
-              child: Text(connected
-                  ? 'Bu dönemde sipariş yok.'
-                  : 'Bağlantıyı Ayarlar → Trendyol Go bölümünden kontrol edin.'),
+              child: Text(
+                showHistory
+                    ? 'Kayıtlı geçmiş sipariş bulunamadı.'
+                    : connected
+                        ? 'Bugün için sipariş yok.'
+                        : 'Bağlantıyı Ayarlar → Trendyol Go bölümünden kontrol edin.',
+              ),
             ),
           )
         else
@@ -277,7 +318,7 @@ class TgoOrdersPanel extends StatelessWidget {
                 spacing: 12,
                 runSpacing: 8,
                 children: [
-                  for (final order in sorted)
+                  for (final (_, order) in datedOrders)
                     SizedBox(width: width, child: _TgoOrderCard(order: order)),
                 ],
               );
@@ -387,6 +428,141 @@ class _TgoOrderCard extends StatelessWidget {
                 Text(formatTry(order['totalCents'] as int? ?? 0),
                     style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
               ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class FeedbackPanel extends StatefulWidget {
+  const FeedbackPanel({
+    super.key,
+    required this.integration,
+    required this.orders,
+  });
+
+  final TrendyolGoReadonly integration;
+  final List<Json> orders;
+
+  @override
+  State<FeedbackPanel> createState() => _FeedbackPanelState();
+}
+
+enum _FeedbackSource { trendyol, google, yemeksepeti }
+
+class _FeedbackPanelState extends State<FeedbackPanel> {
+  _FeedbackSource source = _FeedbackSource.trendyol;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Wrap(
+          spacing: 8,
+          runSpacing: 4,
+          children: [
+            for (final (value, label) in const [
+              (_FeedbackSource.trendyol, 'Trendyol Go'),
+              (_FeedbackSource.google, 'Google Maps'),
+              (_FeedbackSource.yemeksepeti, 'Yemeksepeti'),
+            ])
+              ChoiceChip(
+                label: Text(label),
+                selected: source == value,
+                onSelected: (_) => setState(() => source = value),
+              ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Offstage(
+          offstage: source != _FeedbackSource.trendyol,
+          child: TgoReviewsPanel(
+            orders: widget.orders,
+            integration: widget.integration,
+          ),
+        ),
+        if (source == _FeedbackSource.google)
+          const _ExternalReviewsCard(
+            icon: Icons.place_outlined,
+            title: 'Google Maps',
+            description: 'Nohut Falafel yorumlarını Google Maps’te okuyun.',
+            action: 'Google Maps’te Aç',
+            url: 'https://www.google.com/maps/place/Nohut+Falafel/@40.7650391,30.3602224,17z/data=!4m8!3m7!1s0x14ccb3cd4595bcab:0xd28ffffa342dbede!8m2!3d40.7650391!4d30.3602224!9m1!1b1!16s%2Fg%2F11wjq__p26?hl=tr',
+          ),
+        if (source == _FeedbackSource.yemeksepeti)
+          const _ExternalReviewsCard(
+            icon: Icons.restaurant_outlined,
+            title: 'Yemeksepeti',
+            description: 'Yorumları görmek için restoran hesabınızla Partner Paneli’ne giriş yapın.',
+            action: 'Partner Panelini Aç',
+            url: 'https://partner-app.yemeksepeti.com/',
+          ),
+      ],
+    );
+  }
+}
+
+class _ExternalReviewsCard extends StatelessWidget {
+  const _ExternalReviewsCard({
+    required this.icon,
+    required this.title,
+    required this.description,
+    required this.action,
+    required this.url,
+  });
+
+  final IconData icon;
+  final String title, description, action, url;
+
+  Future<void> _open(BuildContext context) async {
+    try {
+      final ProcessResult result;
+      if (Platform.isWindows) {
+        result = await Process.run('rundll32.exe', [
+          'url.dll,FileProtocolHandler',
+          url,
+        ]);
+      } else {
+        result = await Process.run(
+          Platform.isMacOS ? 'open' : 'xdg-open',
+          [url],
+        );
+      }
+      if (result.exitCode == 0) return;
+    } on ProcessException {
+      // Offer the address for manual opening if the browser cannot be launched.
+    }
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: SelectableText('Tarayıcı açılamadı. $url')),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, color: NohutBrand.green),
+                const SizedBox(width: 8),
+                Expanded(child: Text(title, style: Theme.of(context).textTheme.titleLarge)),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(description),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: () => _open(context),
+              icon: const Icon(Icons.open_in_new),
+              label: Text(action),
             ),
           ],
         ),

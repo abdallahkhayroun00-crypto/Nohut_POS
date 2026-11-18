@@ -329,6 +329,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
   void _switch(String next) {
     setState(() {
       page = next;
+      if (next == 'online') onlineHistory = false;
       selectedOrder = null;
       if (next != 'tables') selectedTable = null;
       floorEditing = false;
@@ -1166,7 +1167,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       case 'online':
         return _online(db);
       case 'reviews':
-        return TgoReviewsPanel(orders: tgoOrders(db), integration: tgo);
+        return FeedbackPanel(orders: tgoOrders(db), integration: tgo);
       case 'payments':
         return _payments(db);
       case 'reports':
@@ -2084,10 +2085,12 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
 
   Json? platformDemo;
   String onlinePlatform = 'Trendyol Go';
+  bool onlineHistory = false;
 
   void _showTrendyolOrders() => setState(() {
     page = 'online';
     onlinePlatform = 'Trendyol Go';
+    onlineHistory = false;
   });
 
   Widget _online(Json db) {
@@ -2109,7 +2112,13 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
         ),
         const SizedBox(height: 16),
         if (onlinePlatform == 'Trendyol Go')
-          TgoOrdersPanel(orders: tgoOrders(db), integration: tgo)
+          TgoOrdersPanel(
+            orders: tgoOrders(db),
+            integration: tgo,
+            businessDay: businessDay,
+            showHistory: onlineHistory,
+            onPeriodChanged: () => setState(() => onlineHistory = !onlineHistory),
+          )
         else ...[
           _notice('Yemeksepeti · Bağlı değil'),
           const SizedBox(height: 12),

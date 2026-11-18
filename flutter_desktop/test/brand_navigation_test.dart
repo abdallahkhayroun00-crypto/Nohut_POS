@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:nohut_falafel_desktop/main.dart';
 import 'package:nohut_falafel_desktop/brand.dart';
 import 'package:nohut_falafel_desktop/pos_store.dart';
+import 'package:nohut_falafel_desktop/order_reporting.dart';
 
 void main() {
   testWidgets(
@@ -18,15 +19,25 @@ void main() {
       final db = PosStore(databaseFile: file);
       final state = emptyPosState();
       state['settings'] = {'qrAutoSync': false, 'autoPrint': false};
+      final today = DateTime.now().toUtc();
+      final yesterday = today.subtract(const Duration(days: 1));
       state['trendyolGoOrders'] = [
         {
           'source': 'Trendyol Go',
           'orderNumber': 'PLATFORM-99',
-          'createdAt': '2026-11-18T09:18:24.000Z',
+          'createdAt': today.toIso8601String(),
           'status': 'Delivered',
           'paymentType': 'PAY_WITH_CARD',
           'totalCents': 80000,
           'lines': [{'qty': 2, 'name': 'Vegan Özel Tabağı'}],
+        },
+        {
+          'source': 'Trendyol Go',
+          'orderNumber': 'PLATFORM-98',
+          'createdAt': yesterday.toIso8601String(),
+          'status': 'Delivered',
+          'totalCents': 4500,
+          'lines': [{'qty': 1, 'name': 'Çay'}],
         },
       ];
       db.replace(state, db.read().revision);
@@ -92,12 +103,28 @@ void main() {
       expect(find.text('Yemeksepeti'), findsOneWidget);
       expect(find.text('Değerlendirmeleri Getir'), findsNothing);
       expect(find.text('Teslim Edildi'), findsOneWidget);
-      expect(find.text('2026-11-18 12:18'), findsOneWidget);
+      expect(find.text(istanbulStamp(today.toIso8601String())), findsOneWidget);
+      expect(find.text('Platform no: PLATFORM-98'), findsNothing);
+      await t.tap(find.text('Geçmiş'));
+      await t.pumpAndSettle();
+      expect(find.text('Platform no: PLATFORM-98'), findsOneWidget);
+      expect(find.text('Platform no: PLATFORM-99'), findsNothing);
+      await t.tap(find.text('Bugüne Dön'));
+      await t.pumpAndSettle();
+      expect(find.text('Platform no: PLATFORM-99'), findsOneWidget);
+      expect(find.text('Platform no: PLATFORM-98'), findsNothing);
       expect(find.text('PAY_WITH_CARD'), findsNothing);
       await t.tap(find.byKey(const ValueKey('navigation-reviews')));
       await t.pumpAndSettle();
       expect(find.text('Değerlendirmeleri Getir'), findsOneWidget);
       expect(find.text('Şube ID (Store ID)'), findsOneWidget);
+      await t.tap(find.text('Google Maps'));
+      await t.pumpAndSettle();
+      expect(find.text('Google Maps’te Aç'), findsOneWidget);
+      expect(find.text('Değerlendirmeleri Getir'), findsNothing);
+      await t.tap(find.text('Yemeksepeti'));
+      await t.pumpAndSettle();
+      expect(find.text('Partner Panelini Aç'), findsOneWidget);
       await t.tap(find.byKey(const ValueKey('navigation-settings')));
       await t.pumpAndSettle();
       for (final tab in ['Personel', 'Bağlantı', 'Yazıcı']) {
