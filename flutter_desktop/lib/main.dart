@@ -1399,7 +1399,8 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       return 'Trendyol Go son doğrulanmış eşitlemesi güncel değil. '
           'Online satışlar eksik olabilir.';
     }
-    return null;
+    return 'Yemeksepeti ve Migros Yemek canlı sipariş API bağlantıları '
+        'henüz etkin değil. Bu platformlarda 0 ₺, doğrulanmış sıfır satış demek değildir.';
   }
 
   Widget _dashboard(Json db) => Column(
