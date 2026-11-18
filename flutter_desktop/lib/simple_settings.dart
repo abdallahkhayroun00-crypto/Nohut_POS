@@ -11,6 +11,7 @@ import 'qr_menu_sync.dart';
 import 'qr_menu_preview.dart';
 import 'trendyol_go_readonly.dart';
 import 'trendyol_go_ui.dart';
+import 'partner_credentials.dart';
 import 'receipt_printer.dart';
 import 'receipt_layout.dart';
 import 'receipt_preview.dart';
@@ -206,26 +207,19 @@ class _SimpleSettingsState extends State<SimpleSettings> {
         if (tab == 'Entegrasyonlar') ...[
           TgoSettingsPanel(integration: widget.tgoIntegration),
           const SizedBox(height: 12),
-          for (final name in ['Yemeksepeti', 'Migros Yemek'])
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                child: ListTile(
-                  leading: const CircleAvatar(
-                    backgroundColor: Color(0xffFFF2DC),
-                    child: Icon(Icons.link_off_outlined, color: Color(0xffA56A28)),
-                  ),
-                  title: Text(name, style: const TextStyle(fontWeight: FontWeight.w700)),
-                  subtitle: const Text('Bağlı değil · Partner API yetkisi gerekli'),
-                  trailing: OutlinedButton.icon(
-                    onPressed: () =>
-                        openExternalPage(context, onlinePartners[name]!.url),
-                    icon: const Icon(Icons.open_in_new, size: 16),
-                    label: const Text('Paneli Aç'),
-                  ),
-                ),
-              ),
-            ),
+          const SizedBox(height: 12),
+          PartnerCredentialsCard(
+            partner: 'Yemeksepeti',
+            databasePath: widget.store.filePath,
+            portalUrl: onlinePartners['Yemeksepeti']!.url,
+            documentationUrl: 'https://integration.yemeksepeti.com/en/',
+          ),
+          PartnerCredentialsCard(
+            partner: 'Migros Yemek',
+            databasePath: widget.store.filePath,
+            portalUrl: onlinePartners['Migros Yemek']!.url,
+          ),
+          const SizedBox(height: 12),
           Card(
             child: ListTile(
               leading: const Icon(Icons.storefront_outlined),
