@@ -104,7 +104,7 @@ void main() {
       await t.tap(find.byKey(const ValueKey('navigation-online')));
       await t.pumpAndSettle();
       expect(
-        find.widgetWithText(FilterChip, 'Uber Eats Trendyol Go'),
+        find.widgetWithText(FilterChip, 'Trendyol Go'),
         findsOneWidget,
       );
       expect(find.widgetWithText(FilterChip, 'Yemeksepeti'), findsOneWidget);
