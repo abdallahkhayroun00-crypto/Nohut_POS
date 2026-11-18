@@ -2134,7 +2134,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
             onKitchenPrint: (order) {
               final key = tgoOrderKey(order);
               _edit((data) {
-                for (final current in tgoOrders(data)) {
+                for (final current in mutableTgoOrders(data)) {
                   if (tgoOrderKey(current) == key &&
                       current['kitchenPrintState'] == null &&
                       tgoKitchenActive(current)) {

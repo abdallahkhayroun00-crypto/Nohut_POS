@@ -39,7 +39,7 @@ class ReceiptPrinter {
         changed = true;
       }
     }
-    for (final order in tgoOrders(next)) {
+    for (final order in mutableTgoOrders(next)) {
       if (order['kitchenPrintState'] == 'Gönderiliyor') {
         order['kitchenPrintState'] = 'Kontrol gerekli';
         changed = true;
@@ -60,7 +60,7 @@ class ReceiptPrinter {
       final settings = next['settings'] as Map? ?? {};
       final printer = '${settings['printerName'] ?? ''}'.trim();
       if (printer.isEmpty) return;
-      for (final order in tgoOrders(next)) {
+      for (final order in mutableTgoOrders(next)) {
         if (order['kitchenPrintState'] != 'Bekliyor') continue;
         if (!tgoKitchenActive(order)) {
           order['kitchenPrintState'] = 'Atlandı';
@@ -78,7 +78,7 @@ class ReceiptPrinter {
         if (_disposed) return;
         final current = store.read(), updated = copyJson(current.data);
         final key = tgoOrderKey(order);
-        for (final target in tgoOrders(updated)) {
+        for (final target in mutableTgoOrders(updated)) {
           if (tgoOrderKey(target) == key &&
               target['kitchenPrintState'] == 'Gönderiliyor') {
             target['kitchenPrintState'] = outcome;

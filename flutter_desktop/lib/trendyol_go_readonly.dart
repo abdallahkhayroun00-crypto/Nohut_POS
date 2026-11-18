@@ -143,7 +143,12 @@ String tgoTime(Object? v) {
       : DateTime.fromMillisecondsSinceEpoch(n, isUtc: true).toIso8601String();
 }
 
-List<Json> tgoOrders(Json s) => asMaps(s['trendyolGoOrders']).toList();
+List<Json> tgoOrders(Json s) => asMaps(s['trendyolGoOrders']);
+
+Iterable<Json> mutableTgoOrders(Json state) {
+  final orders = state['trendyolGoOrders'];
+  return orders is List ? orders.whereType<Json>() : const <Json>[];
+}
 
 /// Only fully delivered, non-test packages count as completed sales.
 bool tgoCountsAsSale(Json o) =>
