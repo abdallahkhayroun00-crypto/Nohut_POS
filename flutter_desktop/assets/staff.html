@@ -41,40 +41,42 @@ function renderCart(){$('cart').innerHTML=[...cart].map(([key,r])=>`<article cla
 function total(){let sum=0;for(const[key,r]of cart){const p=product(r.productId);sum+=(Math.round((p?.price||0)*100)+(r.adjustmentCents||0)+componentExtra(r))*r.qty;const warning=document.querySelector(`[data-line-status="${key}"]`);if(warning)warning.textContent=!p||p.price==null?'Ürün satış dışı. Kaldırın.':money((Math.round(p.price*100)+(r.adjustmentCents||0)+componentExtra(r))*r.qty)}const count=[...cart.values()].reduce((n,r)=>n+r.qty,0);$('total').textContent='Toplam '+money(sum);$('cart-count').textContent=count;$('dock-caption').textContent='Sipariş sepeti · '+count+' ürün';$('dock-total').textContent=money(sum);updateProductCounts();controls()}
 let knownTrendyolOrderNumbers=null;
 function renderOrders(){
-  const latestPlatform=state?.trendyolGoOrders||[];
-  const currentNumbers=new Set(latestPlatform.map(o=>String(o.orderNumber)));
+  const platform=state?.trendyolGoOrders||[];
+  const currentNumbers=new Set(platform.map(o=>String(o.orderNumber)));
   if(knownTrendyolOrderNumbers!==null){
     const fresh=[...currentNumbers].filter(n=>!knownTrendyolOrderNumbers.has(n));
     if(fresh.length) notice('🔔 Trendyol Go · '+fresh.length+' yeni sipariş geldi. Siparişler bölümünde görüntüleyin.');
   }
   knownTrendyolOrderNumbers=currentNumbers;
-  const filter=$('order-filter').value, all=openOrders();
-  const rows=all.filter(o=>filter==='all'||filter==='ready'&&o.serviceStatus==='Hazır'||o.source===filter)
-    .sort((a,b)=>(a.serviceStatus==='Hazır'?-1:0)-(b.serviceStatus==='Hazır'?-1:0)||
-      String(a.createdAt).localeCompare(String(b.createdAt)));
-  const onlineRows=(state?.trendyolGoOrders||[])
-    .filter(o=>filter==='all'||filter==='Trendyol Go')
-    .sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt)));
-  $('order-count').textContent=all.length+onlineRows.length;
-  const localHtml=rows.map(o=>
-    '<article class="order"><div class="row spread"><strong class="order-number">#'+number(o)+
-    ' · '+(o.table?'Masa '+o.table:esc(o.source))+'</strong><span class="badge '+(o.serviceStatus==='Hazır'?'ready':'')+'">'+
-    esc(o.serviceStatus||'Hazırlanıyor')+'</span></div><div class="row spread"><span>'+
-    keyedLines(o).reduce((n,l)=>n+l.qty,0)+' ürün</span><strong>Kalan '+money(orderDue(o))+
-    '</strong></div><button class="select-order" data-open="'+o.id+'">Hesabı Aç</button></article>').join('');
-  const onlineHtml=onlineRows.map(o=>
-    '<article class="order platform-order"><div class="row spread"><strong class="order-number">#'+
-    esc(o.orderNumber||'')+' · Trendyol Go</strong><span class="badge">'+esc(o.status||'')+
-    '</span></div><p class="muted">Salt okunur · '+esc(o.createdAt||'')+
-    (o.pickup?' · Platform Gel-Al':' · Paket')+'</p>'+
-    (o.lines||[]).map(l=>'<div class="detail-line"><div class="grow"><strong>'+
-      esc(l.qty)+' × '+esc(l.name||'')+'</strong><p class="muted">'+
-      esc((l.options||[]).join(', '))+'</p></div><b>'+money(l.unitPriceCents||0)+'</b></div>').join('')+
-    (o.customerNote?'<p class="muted">Not: '+esc(o.customerNote)+'</p>':'')+
-    '<div class="row spread"><span>'+esc(o.paymentType||'')+
-    '</span><strong>Platform toplamı: '+money(o.totalCents||0)+'</strong></div>'+
-    '<p class="muted">İşlem için Trendyol Go Partner Panelini kullanın.</p></article>').join('');
-  $('orders').innerHTML=localHtml+onlineHtml||'<p class="empty">Sipariş yok.</p>';
+  const filter=$('order-filter').value;
+  const local=openOrders().filter(o=>filter==='all'||filter==='ready'&&o.serviceStatus==='Hazır'||o.source===filter);
+  const remote=platform.filter(o=>filter==='all'||filter==='Trendyol Go');
+  $('order-count').textContent=local.length+remote.length;
+  const localCards=local.map(o=>({
+    day:o.numberDay||'',number:o.dailyNumber||0,
+    html:'<article class="order"><div class="row spread"><strong class="order-number">#'+number(o)+
+      ' · '+(o.table?'Masa '+o.table:esc(o.source))+'</strong><span class="badge '+(o.serviceStatus==='Hazır'?'ready':'')+'">'+
+      esc(o.serviceStatus||'Hazırlanıyor')+'</span></div><div class="row spread"><span>'+
+      keyedLines(o).reduce((n,l)=>n+l.qty,0)+' ürün</span><strong>Kalan '+money(orderDue(o))+
+      '</strong></div><button class="select-order" data-open="'+o.id+'">Hesabı Aç</button></article>',
+  }));
+  const remoteCards=remote.map(o=>({
+    day:o.numberDay||'',number:o.dailyNumber||0,
+    html:'<article class="order platform-order"><div class="row spread"><strong class="order-number">#'+
+      number(o)+' · Trendyol Go</strong><span class="badge">'+esc(o.status||'')+
+      '</span></div><p class="muted">Trendyol sipariş no: '+esc(o.orderNumber||'')+
+      ' · Salt okunur · '+esc(o.createdAt||'')+(o.pickup?' · Platform Gel-Al':' · Paket')+'</p>'+
+      (o.lines||[]).map(l=>'<div class="detail-line"><div class="grow"><strong>'+
+        esc(l.qty)+' × '+esc(l.name||'')+'</strong><p class="muted">'+
+        esc((l.options||[]).join(', '))+'</p></div><b>'+money(l.unitPriceCents||0)+'</b></div>').join('')+
+      (o.customerNote?'<p class="muted">Not: '+esc(o.customerNote)+'</p>':'')+
+      '<div class="row spread"><span>'+esc(o.paymentType||'')+
+      '</span><strong>Platform toplamı: '+money(o.totalCents||0)+'</strong></div>'+
+      '<p class="muted">İşlem için Trendyol Go Partner Panelini kullanın.</p></article>',
+  }));
+  const items=[...localCards,...remoteCards]
+    .sort((a,b)=>b.day.localeCompare(a.day)||b.number-a.number);
+  $('orders').innerHTML=items.map(x=>x.html).join('')||'<p class="empty">Sipariş yok.</p>';
   controls();
 }
 function renderDetail(){const o=order(focusedOrder);if(!o){$('order-detail').innerHTML='<div class="empty"><strong>Hesap kapalı veya güncellendi</strong><button data-view="orders">Siparişlere dön</button></div>';return}const paid=o.paidCents??0;$('order-detail').innerHTML=`<div class="row spread"><button data-view="orders" class="ghost">← Geri</button><span class="badge">${esc(o.serviceStatus||'Hazırlanıyor')}</span></div><h2>#${number(o)} · ${o.table?'Masa '+o.table:esc(o.source)}</h2><div class="detail-actions"><button data-existing-add="${o.id}">+ Ek ürün</button>${o.source==='Masa'?'<button id="move-order">Masayı taşı</button>':''}</div>${keyedLines(o).map(l=>`<div class="detail-line"><div class="grow"><strong>${l.qty} × ${esc(l.name||l.productKey)}</strong><p class="muted">${esc(l.note||'')}${l.removed?.length?' · Çıkar: '+esc(l.removed.join(', ')):''}</p>${componentSummary(l)}<span class="line-price">${money(Math.round(l.price*100)*l.qty)}</span></div><button data-edit-line="${esc(l.key)}" aria-label="${esc(l.name)} düzenle">Düzenle</button><button data-remove-line="${esc(l.key)}" class="ghost danger" aria-label="${esc(l.name)} kaldır">×</button></div>`).join('')||'<p class="empty">Ürün yok</p>'}<div class="history-note">${serviceTime(o)}</div><div class="row"><button id="split-order">Hesabı Böl / Ürün Paylaştır</button><button id="delete-order" class="danger">Kalıcı Sil</button></div>${(o.guestChecks||[]).map(g=>`<div class="row spread"><span>${esc(g.name)} · Kalan ${money(g.balanceCents??0)}</span><button data-pay-guest="${g.id}" data-locked="${(g.balanceCents??0)<=0}">Ödeme Al</button></div>`).join('')}<div class="detail-totals"><p><span>Toplam</span><strong>${money(orderTotal(o))}</strong></p><p><span>Alınan</span><strong>${money(paid)}</strong></p><p><span>Kalan</span><strong>${money(orderDue(o))}</strong></p></div><div class="detail-actions">${['Hazırlanıyor','Hazır'].includes(o.serviceStatus)?`<button id="advance-status">${o.serviceStatus==='Hazır'?'Teslim Edildi':'Hazır'}</button>`:''}<button id="pay-order" class="primary" data-locked="${orderDue(o)<=0||(o.guestChecks||[]).length>0}">Nakit / Kart</button><button id="close-order" data-locked="${orderDue(o)>0}">Hesabı Kapat</button></div><p class="muted history-note">Değişiklikler aynı sipariş numarasına kaydedilir.</p>`;controls()}
