@@ -5,6 +5,7 @@ import 'order_reporting.dart';
 import 'pos_logic.dart';
 import 'trendyol_go_readonly.dart';
 import 'trendyol_go_ui.dart';
+import 'operations_ui.dart';
 
 const onlinePartners = {
   'Trendyol Go': (
@@ -47,6 +48,61 @@ class _OnlineOrdersState extends State<OnlineOrders> {
   bool history = false;
   String query = '', status = '';
   String? selectedDay;
+
+  Future<void> _createTrendyolProductDraft() async {
+    final result = await askFields(context, 'Trendyol Go · Yeni Ürün Taslağı', [
+      ('Ürün Adı', ''),
+      ('Kategori', ''),
+      ('Satış Fiyatı (₺)', ''),
+      ('Ürün Açıklaması', ''),
+      ('Görsel URL (isteğe bağlı)', ''),
+      ('Seçenekler / Ekstralar', ''),
+    ], validate: (v) {
+      if (v[0].trim().isEmpty || v[1].trim().isEmpty) {
+        return 'Ürün adı ve kategori gerekli';
+      }
+      final amount = double.tryParse(v[2].trim().replaceAll(',', '.'));
+      if (amount == null || !amount.isFinite || amount <= 0 ||
+          amount > 1000000) return 'Geçerli fiyat gerekli';
+      if (v[0].length > 180 || v[1].length > 120 ||
+          v[3].length > 2000 || v[4].length > 1000 ||
+          v[5].length > 1000) return 'Alan uzunluğu geçersiz';
+      return null;
+    });
+    if (result == null || !mounted) return;
+    var stored = false;
+    for (var attempt = 0; attempt < 4 && !stored; attempt++) {
+      final snapshot = widget.integration.store.read();
+      final next = copyJson(snapshot.data);
+      final drafts = next.putIfAbsent('tgoProductDrafts', () => <dynamic>[]) as List;
+      if (drafts.length >= 500) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Taslak sınırına ulaşıldı.')));
+        return;
+      }
+      drafts.add({
+        'id': DateTime.now().toUtc().microsecondsSinceEpoch,
+        'supplierId': widget.integration.credentials?.supplierId,
+        'name': result[0].trim(),
+        'category': result[1].trim(),
+        'price': double.parse(result[2].trim().replaceAll(',', '.')),
+        'description': result[3].trim(),
+        'imageUrl': result[4].trim(),
+        'options': result[5].trim(),
+        'createdAt': DateTime.now().toUtc().toIso8601String(),
+        'status': 'Yerel Taslak',
+      });
+      stored = widget.integration.store.replace(next, snapshot.revision).ok;
+    }
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(stored
+          ? 'Ürün taslağı kaydedildi. Trendyol Go yayını yapılmadı.'
+          : 'Taslak kaydedilemedi. Tekrar deneyin.'),
+      ));
+      setState(() {});
+    }
+  }
 
   Future<void> _pickDate() async {
     final today = DateTime.parse(widget.businessDay);
@@ -320,6 +376,19 @@ class _OnlineOrdersState extends State<OnlineOrders> {
                   const Text('Fiyat, ürün/kategori aktif-pasif, çalışma saatleri ve yeni ürün '
                     'işlemleri için partner paneli. Menü API yazma izni doğrulanana kadar '
                     'POS eski fiyatları değiştirmez.'),
+                  const SizedBox(height: 10),
+                  FilledButton.icon(
+                    onPressed: _createTrendyolProductDraft,
+                    icon: const Icon(Icons.add_circle_outline),
+                    label: const Text('Yeni Ürün Taslağı Oluştur'),
+                  ),
+                  const SizedBox(height: 7),
+                  Text(
+                    'Kaydedilmiş yerel taslak: ' +
+                    asMaps(widget.integration.store.read().data['tgoProductDrafts'])
+                      .length.toString(),
+                    style: const TextStyle(fontSize: 12, color: NohutBrand.muted),
+                  ),
                   const SizedBox(height: 10),
                   Wrap(
                     spacing: 8,
