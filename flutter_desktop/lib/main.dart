@@ -2273,7 +2273,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       children: [
         _sectionTitle(
           'Personel Bağlantısı',
-          'Telefonları aynı Wi-Fi ağına bağlayın ve personel QR kodunu okutun.',
+          'Android uygulaması için QR + tek seferlik PIN; iPhone için Safari.',
         ),
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -2402,7 +2402,10 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                       ),
                       const SizedBox(height: 11),
                       const Text(
-                        'Şimdilik şifre yok. Misafir Wi-Fi, router izolasyonu ve internet port yönlendirme kullanmayın.',
+                        'Android uygulamasında ilk kullanımda QR + PIN gerekir. '
+                        'Cihaz onaylandıktan sonra otomatik bağlanır. '
+                        'iPhone Safari panelinin eski LAN erişimi PIN kullanmaz; '
+                        'misafir Wi-Fi ve internet port yönlendirme kullanmayın.',
                         style: TextStyle(
                           fontSize: 11,
                           color: Colors.deepOrange,
@@ -2472,8 +2475,62 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                         label: const Text('Bağlantıyı Kopyala'),
                       ),
                       const SizedBox(height: 15),
+                      const Divider(height: 28),
+                      const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.android, color: NohutBrand.green),
+                          SizedBox(width: 6),
+                          Text('ANDROID · NOHUT PERSONEL',
+                              style: TextStyle(fontWeight: FontWeight.w800)),
+                        ],
+                      ),
+                      const SizedBox(height: 5),
                       const Text(
-                        'Android Chrome · iPhone Safari',
+                        'Uygulamada QR kodu tarayın, sonra bu PIN’i '
+                        'yalnızca bir kez girin.',
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 9),
+                      SelectableText(
+                        lan.pairing.pin,
+                        style: const TextStyle(
+                          fontSize: 30,
+                          letterSpacing: 6,
+                          fontWeight: FontWeight.w900,
+                          color: NohutBrand.green,
+                        ),
+                      ),
+                      Text(
+                        '15 dakika geçerlidir · Her eşleştirmeden sonra yenilenir',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 11,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant),
+                      ),
+                      TextButton.icon(
+                        onPressed: () => setState(lan.pairing.rotatePin),
+                        icon: const Icon(Icons.refresh, size: 18),
+                        label: const Text('Yeni PIN Oluştur'),
+                      ),
+                      if (lan.pairing.devices.isNotEmpty) ...[
+                        const Divider(height: 22),
+                        const Text('Eşleştirilmiş Android cihazlar',
+                          style: TextStyle(fontWeight: FontWeight.w800)),
+                        for (final device in lan.pairing.devices)
+                          if (device['revoked'] != true)
+                            ListTile(
+                              dense: true,
+                              leading: const Icon(Icons.smartphone),
+                              title: Text('${device['name']}'),
+                              trailing: TextButton(
+                                onPressed: () => setState(() =>
+                                  lan.pairing.revoke('${device['id']}')),
+                                child: const Text('Erişimi Kaldır'),
+                              ),
+                            ),
+                      ],
+                      const Text(
+                        'iPhone · Safari Web Paneli',
                         style: TextStyle(
                           color: Color(0xff526251),
                           fontSize: 11,
