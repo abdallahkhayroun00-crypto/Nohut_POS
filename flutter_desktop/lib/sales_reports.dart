@@ -22,6 +22,7 @@ class _SalesReportsState extends State<SalesReports> {
   static const tabs = [
     'Genel Bakış',
     'Yoğunluk',
+    'Trendyol Analitik',
     'Satışlar',
     'Ürünler',
     'Hazırlık Süresi',
@@ -193,6 +194,25 @@ class _SalesReportsState extends State<SalesReports> {
       ..sort((a, b) => b.value.$2.compareTo(a.value.$2));
     final onlineProducts = activity.onlineProducts.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
+    final trendyolOrders = asMaps(widget.state['trendyolGoOrders'])
+        .where((order) => order['testPackage'] != true &&
+            includes((order['createdAt'] ?? '').toString()) &&
+            (source == 'Tümü' || source == 'Trendyol Go'))
+        .toList();
+    final hourly = <int, int>{};
+    for (final order in trendyolOrders) {
+      final created = DateTime.tryParse((order['createdAt'] ?? '').toString());
+      if (created == null) continue;
+      final hour = created.toUtc().add(const Duration(hours: 3)).hour;
+      hourly[hour] = (hourly[hour] ?? 0) + 1;
+    }
+    final maximumHour = hourly.values.fold<int>(0, (a, b) => a > b ? a : b);
+    final courierMilestones = <String, int>{};
+    for (final stage in const ['nearby', 'picked_up', 'delivered']) {
+      courierMilestones[stage] = trendyolOrders.where((o) =>
+          asMaps(o['courierTimeline']).any((e) => e['stage'] == stage))
+          .length;
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -399,6 +419,79 @@ class _SalesReportsState extends State<SalesReports> {
               ],
             ),
           ),
+        if (tab == 'Trendyol Analitik') ...[
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text('Trendyol Go · Sipariş ve Kurye Analizi',
+                    style: Theme.of(context).textTheme.titleLarge),
+                  const SizedBox(height: 5),
+                  const Text('Bu rakamlar yalnızca POS tarafından alınmış platform kayıtlarına dayanır. '
+                    'Eksik senkronizasyon gerçek sıfır sipariş anlamına gelmez.'),
+                  const SizedBox(height: 14),
+                  Wrap(spacing: 12, runSpacing: 10, children: [
+                    _summaryInsight(Icons.receipt_long_outlined,
+                      'Alınan sipariş', trendyolOrders.length.toString()),
+                    _summaryInsight(Icons.check_circle_outline,
+                      'Teslim edilen', trendyolOrders.where((o) =>
+                        o['status'] == 'Delivered').length.toString()),
+                    _summaryInsight(Icons.cancel_outlined,
+                      'İptal / karşılanamadı', trendyolOrders.where((o) =>
+                        o['status'] == 'Cancelled' || o['status'] == 'UnSupplied').length.toString()),
+                    _summaryInsight(Icons.payments_outlined,
+                      'Teslim edilen toplam', formatTry(
+                        trendyolOrders.where((o) => o['status'] == 'Delivered')
+                          .fold<int>(0, (sum, o) => sum +
+                            (o['totalCents'] as int? ?? 0)))),
+                  ]),
+                  const Divider(height: 28),
+                  const Text('Kurye Takip · POS gözlemleri',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 9),
+                  for (final row in const [
+                    ('nearby', 'Kurye Yaklaşıyor'),
+                    ('picked_up', 'Kuryeye Teslim Edildi'),
+                    ('delivered', 'Müşteriye Teslim Edildi'),
+                  ])
+                    ListTile(
+                      dense: true,
+                      title: Text(row.$2),
+                      trailing: Text((courierMilestones[row.$1] ?? 0).toString(),
+                        style: const TextStyle(fontWeight: FontWeight.w800)),
+                    ),
+                  const Text('Olay saatleri, platformun gerçek olay zamanı değil, '
+                    'POS tarafından ilk görülen zamandır.',
+                    style: TextStyle(fontSize: 12, color: NohutBrand.muted)),
+                  const Divider(height: 28),
+                  const Text('Sipariş Yoğunluğu · Saatlik',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 10),
+                  for (var hour = 0; hour < 24; hour++)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(children: [
+                        SizedBox(width: 55, child: Text(
+                          hour.toString().padLeft(2, '0') + ':00')),
+                        Expanded(child: LinearProgressIndicator(
+                          value: maximumHour == 0 ? 0 :
+                            ((hourly[hour] ?? 0) / maximumHour).toDouble(),
+                          minHeight: 8,
+                          borderRadius: BorderRadius.circular(6),
+                        )),
+                        const SizedBox(width: 9),
+                        SizedBox(width: 28, child: Text(
+                          (hourly[hour] ?? 0).toString(),
+                          textAlign: TextAlign.right)),
+                      ]),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ],
         if (tab == 'İptaller')
           Card(
             child: Column(
