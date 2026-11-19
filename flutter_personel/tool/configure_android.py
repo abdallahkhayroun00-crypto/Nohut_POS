@@ -42,4 +42,9 @@ source = source.replace("minSdk = flutter.minSdkVersion", "minSdk = 23")
 source = source.replace("targetSdk = flutter.targetSdkVersion",
                         "targetSdk = 36")
 gradle.write_text(source)
+# Flutter create generates a generic MyApp widget test which does not match the
+# native NohutPersonelApp. Project-specific tests are in personel_test.dart.
+template_test = Path("test/widget_test.dart")
+if template_test.exists():
+    template_test.unlink()
 print("Configured LAN, camera, notifications and desugaring for native app")
