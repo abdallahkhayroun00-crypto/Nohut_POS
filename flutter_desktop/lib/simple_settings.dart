@@ -227,16 +227,17 @@ class _SimpleSettingsState extends State<SimpleSettings> {
               ),
               const ListTile(
                 leading: Icon(Icons.timer_outlined),
-                title: Text('10 sn ses · 15 sn aralık'),
-                subtitle: Text('10 saniyelik özgün melodi + 5 saniye sessizlik. '
-                    '45 saniye sonra hızlanır; 90 saniyede kırmızı acil uyarı.'),
+                title: Text('Tek seferlik ses · 3 saniye'),
+                subtitle: Text('Her yeni online sipariş için yalnızca bir kez '
+                    '3 saniyelik ses çalar. Kabul edilmese bile tekrarlamaz. '
+                    'Görsel aciliyet 45 ve 90 saniyede artar.'),
               ),
               const ListTile(
                 leading: Icon(Icons.verified_outlined),
-                title: Text('Platform onayı gerekli'),
-                subtitle: Text('Ses yalnızca API tarafından doğrulanan kabul, '
-                    'iptal veya kapanış durumundan sonra durur. '
-                    'Siparişi açmak sesi durdurmaz.'),
+                title: Text('Görsel uyarı onaya kadar kalır'),
+                subtitle: Text('Siparişi açmak onay sayılmaz. Bekleyen sipariş '
+                    'sadece platformdan doğrulanan durum değişikliğiyle '
+                    'uyarı listesinden çıkar. Ses tekrar başlamaz.'),
               ),
               const SizedBox(height: 8),
               const Text('Sesleri dene',
