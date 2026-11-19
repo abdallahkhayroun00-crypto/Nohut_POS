@@ -11,12 +11,14 @@ import 'staff_commands.dart';
 import 'pos_logic.dart';
 import 'campaign_menu.dart';
 import 'pos_store.dart';
+import 'mobile_pairing.dart';
 
 /// Native Flutter Windows HTTP server for employee phones. No Python process.
 class PosLanServer extends ChangeNotifier {
   PosLanServer(this.store, {this.port = 8787, String? staffHtml})
     : _staffHtml = staffHtml;
   final PosStore store;
+  late final MobilePairing pairing = MobilePairing(store);
   HttpServer? _server;
   String? error;
   int port;
@@ -302,6 +304,7 @@ class PosLanServer extends ChangeNotifier {
       _json(request.response, 200, {
         'online': true,
         'revision': store.read().revision,
+        'serverId': pairing.serverId,
       });
       return;
     }
@@ -328,6 +331,80 @@ class PosLanServer extends ChangeNotifier {
       });
       return;
     }
+    if (request.method == 'GET' && resource == '/api/mobile/bootstrap') {
+      if (!pairing.authorized(request.headers.value('authorization'))) {
+        _json(request.response, 401, {'error': 'pairing_required'});
+        return;
+      }
+      final snapshot = store.read();
+      final state = _staffState(snapshot.data);
+      state['staffNotices'] = [
+        for (final notice in asMaps(snapshot.data['staffNotices']).take(30))
+          {
+            for (final key in ['id', 'staff', 'action', 'table', 'orderId', 'at'])
+              key: notice[key],
+          },
+      ];
+      _json(request.response, 200, {
+        'revision': snapshot.revision,
+        'serverId': pairing.serverId,
+        'state': state,
+      });
+      return;
+    }
+
+    if (request.method == 'POST' &&
+        ['/api/mobile/pair', '/api/mobile/orders', '/api/mobile/actions']
+            .contains(resource)) {
+      final addr = request.connectionInfo?.remoteAddress.address ?? '';
+      if (!_privateIp(addr) && addr != '127.0.0.1' && addr != '::1') {
+        _json(request.response, 403, {'error': 'lan_only'});
+        return;
+      }
+      if (resource != '/api/mobile/pair' &&
+          !pairing.authorized(request.headers.value('authorization'))) {
+        _json(request.response, 401, {'error': 'device_revoked_or_unpaired'});
+        return;
+      }
+      if (request.contentLength > 256 * 1024) {
+        _json(request.response, 413, {'error': 'payload_size'});
+        return;
+      }
+      final chunks = <int>[];
+      await for (final chunk in request) {
+        chunks.addAll(chunk);
+        if (chunks.length > 256 * 1024) {
+          _json(request.response, 413, {'error': 'payload_size'});
+          return;
+        }
+      }
+      try {
+        final payload = jsonDecode(utf8.decode(chunks));
+        if (payload is! Map) throw const FormatException('İstek geçersiz');
+        final decoded = Map<String, dynamic>.from(payload);
+        final Json result;
+        if (resource == '/api/mobile/pair') {
+          result = pairing.pair(addr, decoded);
+        } else if (resource == '/api/mobile/orders') {
+          result = submitStaffOrder(store, decoded);
+        } else {
+          result = submitStaffAction(store, decoded);
+        }
+        _json(request.response, 200, result);
+      } on StaffConflict {
+        _json(request.response, 409, {
+          'error': 'conflict', 'revision': store.read().revision,
+        });
+      } on FormatException catch (e) {
+        _json(request.response, 422, {
+          'error': 'invalid_request', 'message': e.message,
+        });
+      } catch (e) {
+        _json(request.response, 500, {'error': 'request_failed'});
+      }
+      return;
+    }
+
     if (request.method == 'POST' &&
         ['/api/staff/orders', '/api/staff/actions'].contains(resource)) {
       // Reject browser requests from unrelated origins (prototype has no login).
@@ -381,6 +458,7 @@ class PosLanServer extends ChangeNotifier {
     _disposed = true;
     _generation++;
     _server?.close(force: true);
+    pairing.dispose();
     super.dispose();
   }
 }
