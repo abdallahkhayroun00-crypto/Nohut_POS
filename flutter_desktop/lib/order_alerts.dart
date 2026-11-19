@@ -27,7 +27,7 @@ Future<void> playOrderAlert() async {
   }
 }
 
-/// Original, synthesized ten-second restaurant sounds.
+/// Original, synthesized three-second restaurant sounds.
 /// Does not play copyrighted sounds extracted from partner apps.
 class OnlineOrderSoundPlayer {
   Process? _running;
@@ -81,10 +81,10 @@ class OnlineOrderSoundPlayer {
     if (_running == process) _running = null;
   }
 
-  /// WAV PCM 16-bit mono, 10 seconds. Escalation changes pitch/cadence.
+  /// WAV PCM 16-bit mono, 3 seconds. Escalation changes pitch/cadence.
   Uint8List _generateWav(String platform, int urgency) {
     const sampleRate = 12000;
-    const seconds = 10;
+    const seconds = 3;
     final samples = sampleRate * seconds;
     final data = ByteData(44 + samples * 2);
     void ascii(int offset, String text) {
@@ -130,7 +130,7 @@ class OnlineOrderSoundPlayer {
 
 
 /// Phone-to-PC staff orders: play the user-provided shop notification TWICE.
-/// Separate from online delivery-platform alarm loops (10s every 15s).
+/// Separate from online delivery-platform one-shot alerts (3s per order).
 Future<void> _staffSoundQueue = Future<void>.value();
 
 void queueStaffPhoneOrderSoundTwice() {
