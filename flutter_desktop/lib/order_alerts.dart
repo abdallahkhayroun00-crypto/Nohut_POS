@@ -56,7 +56,7 @@ class OnlineOrderSoundPlayer {
     final root = Platform.environment['TEMP'] ?? Directory.systemTemp.path;
     final dir = Directory(paths.join(root, 'NohutFalafel', 'alarm-tones'));
     await dir.create(recursive: true);
-    final wav = File(paths.join(dir.path, '$slug-$level.wav'));
+    final wav = File(paths.join(dir.path, '$slug-$level-3s.wav'));
     if (!await wav.exists()) {
       await wav.writeAsBytes(_generateWav(slug, level), flush: true);
     }
