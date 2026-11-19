@@ -5,6 +5,7 @@ import 'service_metrics.dart';
 import 'simple_settings.dart';
 import 'customer_accounts.dart';
 import 'open_accounts_ui.dart';
+import 'group_payments.dart';
 import 'trendyol_go_readonly.dart';
 import 'trendyol_go_ui.dart';
 import 'sales_reports.dart';
@@ -1067,6 +1068,96 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     }
   }
 
+  Future<void> _payOpenAccount(List<Json> selectedOrders) async {
+    final ids = selectedOrders.map((o) => o['id'] as int).toList();
+    if (ids.length < 2 || ids.toSet().length != ids.length) {
+      _notify('En az iki farklı Gel-Al siparişi seçin.', error: true);
+      return;
+    }
+    final live = store.read().data;
+    final originals = <int, String>{};
+    var total = 0;
+    String? account;
+    for (final id in ids) {
+      final order = mutableOrder(live, id);
+      if (order == null || order['source'] != 'Gel-Al' ||
+          order['closed'] == true || order['cancelled'] == true ||
+          orderDueCents(order) <= 0) {
+        _notify('Açık hesap değişti. Listeyi yeniden kontrol edin.', error: true);
+        return;
+      }
+      final key = pickupAccountKey(order, live);
+      if (account != null && account != key) {
+        _notify('Farklı müşterilerin hesapları birleştirilemez.', error: true);
+        return;
+      }
+      account = key;
+      originals[id] = jsonEncode(order);
+      total += orderDueCents(order);
+    }
+    final result = await showDialog<(int, String, int?, int?)>(
+      context: context,
+      builder: (ctx) => PaymentEntryDialog(
+        dueCents: total,
+        fixedAmount: true,
+        orderNumber: 'TOPLU GEL-AL',
+        guestName: ids.length.toString() + ' sipariş',
+      ),
+    );
+    if (!mounted || result == null) return;
+    final (amount, method, cashPartOrReceived, mixedReceived) = result;
+    if (amount != total) {
+      _notify('Hesap toplamı değişti. Tekrar deneyin.', error: true);
+      return;
+    }
+    final cash = method == 'Nakit'
+        ? amount
+        : method == 'Karışık' ? cashPartOrReceived : 0;
+    final received = method == 'Nakit'
+        ? cashPartOrReceived
+        : method == 'Karışık' ? mixedReceived : null;
+    final confirmed = await confirmAction(
+      context,
+      'Toplu Ödemeyi Onayla',
+      ids.length.toString() + ' Gel-Al siparişi\nToplam: ' +
+      formatTry(amount) + '\nYöntem: ' + method +
+      (method == 'Karışık'
+        ? '\nNakit: ' + formatTry(cash!) +
+          ' · Kart: ' + formatTry(amount - cash)
+        : '') +
+      '\nKart tahsilatını banka terminalinde ayrıca doğrulayın. '
+      'Bu işlem kart terminaline ödeme göndermez.',
+      confirm: method == 'Nakit'
+          ? 'Nakdi Aldım · Kaydet'
+          : 'Terminalde Onaylandı · Kaydet',
+    );
+    if (!confirmed || !mounted) return;
+    String? combinedReceipt;
+    final operationId = 'gel-al-' +
+        DateTime.now().toUtc().microsecondsSinceEpoch.toString();
+    final ok = _edit((data) {
+      for (final id in ids) {
+        final current = mutableOrder(data, id);
+        if (current == null || jsonEncode(current) != originals[id]) {
+          throw const FormatException(
+            'Hesap işlem sırasında değişti. Ödeme kaydedilmedi.');
+        }
+      }
+      combinedReceipt = recordCombinedPickupPayment(
+        data,
+        orderIds: ids,
+        amountCents: amount,
+        method: method,
+        cashCents: cash,
+        receivedCents: received,
+        transactionId: operationId,
+      );
+    });
+    if (!ok || !mounted) return;
+    _notify('Toplu Gel-Al ödemesi kaydedildi · ' + formatTry(amount));
+    await _offerReceipt(ids.first, receipt: combinedReceipt);
+  }
+
   Future<void> _offerReceipt(int orderId, {String? receipt}) async {
     if (!mounted) return;
     final print = await confirmAction(
@@ -1392,6 +1483,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
           state: db,
           onOpenOrder: _focusOrder,
           onPayOrder: (order) => unawaited(_pay(order)),
+          onPayAccount: (orders) => unawaited(_payOpenAccount(orders)),
         );
       case 'payments':
         return _payments(db);
