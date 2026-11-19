@@ -836,6 +836,9 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
   }
 
   Future<void> _selectProductsToPay(Json order) async {
+    // Product lines are grouped for the kitchen, but their *units* must be
+    // selectable individually at the till. Already allocated/paid units do
+    // not appear again in the unpaid selector.
     final lines = checkLines(order)
         .where((line) => line.total > allocatedTo(order, line.key))
         .toList();
@@ -846,64 +849,95 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, change) {
           int left(CheckLine line) => line.total - allocatedTo(order, line.key);
+          int unit(CheckLine line) => cents(line.line['price']);
+          String qtyLabel(int amount, int price) {
+            if (price <= 0) return '0';
+            final qty = amount / price;
+            return qty == qty.truncateToDouble()
+                ? qty.toInt().toString()
+                : qty.toStringAsFixed(2).replaceAll('.', ',');
+          }
           final total = shares.values.fold<int>(0, (a, b) => a + b);
           return AlertDialog(
             title: const Text('Ürün seçerek öde'),
             content: SizedBox(
-              width: 480,
+              width: 500,
               child: ListView(
                 shrinkWrap: true,
                 children: [
+                  Text(
+                    'Ödenmemiş tutar: ${formatTry(orderDueCents(order))}',
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text('Her + işareti yalnızca 1 adet seçer.'),
+                  const SizedBox(height: 8),
                   for (final line in lines) ...[
-                    CheckboxListTile(
-                      value: shares.containsKey(line.key),
-                      title: Text('${line.line['name']}'),
-                      subtitle: Text('Dağıtılmamış ${formatTry(left(line))}'),
-                      onChanged: (value) => change(() {
-                        if (value == true) {
-                          shares[line.key] = min(
-                            left(line),
-                            cents(line.line['price']),
-                          );
-                        } else {
-                          shares.remove(line.key);
-                        }
-                      }),
-                    ),
-                    if (shares.containsKey(line.key))
-                      ListTile(
-                        title: Text(formatTry(shares[line.key]!)),
-                        trailing: TextButton(
-                          child: const Text('Adet / pay'),
-                          onPressed: () async {
-                            final result = await askFields(
-                              context,
-                              'Adet / pay',
-                              [
-                                (
-                                  'Adet (ör. 1 veya 0,5)',
-                                  (shares[line.key]! /
-                                          cents(line.line['price']))
-                                      .toStringAsFixed(3),
+                    Builder(builder: (context) {
+                      final available = left(line);
+                      final price = unit(line);
+                      final chosen = shares[line.key] ?? 0;
+                      return Column(
+                        children: [
+                          CheckboxListTile(
+                            key: ValueKey('product-pay-${line.key}'),
+                            value: chosen > 0,
+                            controlAffinity: ListTileControlAffinity.leading,
+                            contentPadding: EdgeInsets.zero,
+                            title: Text('${line.line['name']}'),
+                            subtitle: Text(
+                              'Kalan ${qtyLabel(available, price)} adet · '
+                              '${formatTry(available)}',
+                            ),
+                            onChanged: price <= 0
+                                ? null
+                                : (value) => change(() {
+                                    if (value == true) {
+                                      shares[line.key] = min(price, available);
+                                    } else {
+                                      shares.remove(line.key);
+                                    }
+                                  }),
+                          ),
+                          if (chosen > 0)
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(14, 0, 8, 10),
+                              child: Row(children: [
+                                IconButton.outlined(
+                                  tooltip: '1 adet azalt',
+                                  icon: const Icon(Icons.remove),
+                                  onPressed: () => change(() {
+                                    if (chosen <= price) {
+                                      shares.remove(line.key);
+                                    } else {
+                                      shares[line.key] = chosen - price;
+                                    }
+                                  }),
                                 ),
-                              ],
-                            );
-                            if (result == null || !context.mounted) return;
-                            final units = double.tryParse(
-                              result.first.replaceAll(',', '.'),
-                            );
-                            if (units == null ||
-                                !units.isFinite ||
-                                units <= 0 ||
-                                units > line.line['qty'])
-                              return;
-                            final value = (cents(line.line['price']) * units)
-                                .round();
-                            if (value <= 0 || value > left(line)) return;
-                            change(() => shares[line.key] = value);
-                          },
-                        ),
-                      ),
+                                Expanded(
+                                  child: Text(
+                                    'Seçilen: ${qtyLabel(chosen, price)} adet',
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.w700),
+                                  ),
+                                ),
+                                IconButton.filledTonal(
+                                  tooltip: '1 adet ekle',
+                                  icon: const Icon(Icons.add),
+                                  onPressed: chosen >= available
+                                      ? null
+                                      : () => change(() {
+                                          shares[line.key] =
+                                              min(available, chosen + price);
+                                        }),
+                                ),
+                              ]),
+                            ),
+                          const Divider(height: 10),
+                        ],
+                      );
+                    }),
                   ],
                 ],
               ),
@@ -913,14 +947,6 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                 onPressed: () => Navigator.pop(dialogContext),
                 child: const Text('Vazgeç'),
               ),
-              TextButton(
-                onPressed: () => change(() {
-                  for (final line in lines) {
-                    shares[line.key] = left(line);
-                  }
-                }),
-                child: const Text('Dağıtılmamış ürünleri seç'),
-              ),
               FilledButton(
                 onPressed: total == 0 || total > orderDueCents(order)
                     ? null
@@ -928,7 +954,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                         dialogContext,
                         Map<String, int>.of(shares),
                       ),
-                child: Text('Öde · ${formatTry(total)}'),
+                child: Text('Seçilenleri Öde · ${formatTry(total)}'),
               ),
             ],
           );
