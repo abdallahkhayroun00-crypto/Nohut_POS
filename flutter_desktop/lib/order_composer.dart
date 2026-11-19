@@ -60,11 +60,13 @@ class _OrderComposerState extends State<_OrderComposer> {
       builder: (dialogContext) => StatefulBuilder(
         builder: (dialogContext, update) {
           final needle = activeSearch.trim().toLowerCase();
+          final digits = customerPhoneKey(needle);
           final suggestions = needle.length < 2 ? <Json>[] : widget.customers
               .where((c) =>
                   (c['name'] ?? '').toString().toLowerCase().contains(needle) ||
-                  customerPhoneKey((c['phone'] ?? '').toString()).contains(
-                      customerPhoneKey(needle)))
+                  (digits.isNotEmpty &&
+                      customerPhoneKey((c['phone'] ?? '').toString())
+                          .contains(digits)))
               .take(5).toList();
           return AlertDialog(
             title: const Text('Gel-Al Bilgileri'),
