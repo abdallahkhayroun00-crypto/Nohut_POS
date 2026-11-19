@@ -165,7 +165,7 @@ void main() {
         (s, edit) => StaffPanel(state: s, edit: edit),
       );
       await tap(t, 'Personel Ekle');
-      await enter(t, 'Ad', 'Fatma');
+      await enter(t, 'Ad Soyad', 'Fatma');
       await choice(t, 'Yönetici');
       await tap(t, 'Kaydet');
       expect(
@@ -173,7 +173,7 @@ void main() {
         'Yönetici',
       );
       await tap(t, 'Fatma');
-      await enter(t, 'Ad', 'Fatma Yeni');
+      await enter(t, 'Ad Soyad', 'Fatma Yeni');
       await choice(t, 'Personel');
       await tap(t, 'Kaydet');
       final id = asMaps(key.currentState!.data['employees']).last['id'];
@@ -186,7 +186,7 @@ void main() {
       );
       expect(asMaps(key.currentState!.data['employees']).last['active'], false);
       await tap(t, 'Personel Ekle');
-      await enter(t, 'Ad', 'Fatma Yeni');
+      await enter(t, 'Ad Soyad', 'Fatma Yeni');
       await tap(t, 'Kaydet');
       expect(asMaps(key.currentState!.data['employees']), hasLength(4));
       expect(find.textContaining('Bu ad zaten var'), findsOneWidget);
