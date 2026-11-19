@@ -254,7 +254,7 @@ class _StaffHomeState extends State<StaffHome> {
         physics: const NeverScrollableScrollPhysics(),
         mainAxisSpacing: 11,
         crossAxisSpacing: 11,
-        childAspectRatio: width < 420 ? 1.45 : 1.6,
+        childAspectRatio: width < 420 ? 1.12 : 1.45,
         children: [
           for (var n = 1; n <= 5; n++)
             Builder(builder: (context) {
