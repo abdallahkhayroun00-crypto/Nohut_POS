@@ -256,6 +256,96 @@ class _OnlineOrdersState extends State<OnlineOrders> {
         ),
         const SizedBox(height: 5),
         const Text('Tüm platformlar tek ekranda · Bağlantısı olmayan platformlar otomatik sipariş göndermez.'),
+        Card(
+          key: const ValueKey('online-availability-controls'),
+          color: const Color(0xffeaf2ec),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(children: [
+                  Icon(Icons.power_settings_new, color: NohutBrand.green),
+                  SizedBox(width: 9),
+                  Text('ONLINE SİPARİŞLERİ AÇ / KAPAT',
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+                ]),
+                const SizedBox(height: 5),
+                const Text('Anlık satışa açık/kapalı durumu sipariş senkronizasyonundan doğrulanamaz. '
+                  'Yanlışlıkla kapatılmış gibi göstermemek için durum bilinmiyor.'),
+                const SizedBox(height: 11),
+                for (final platform in onlinePartners.keys)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 5),
+                    child: Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 10,
+                      runSpacing: 6,
+                      children: [
+                        SizedBox(
+                          width: 140,
+                          child: Text(platform, style: const TextStyle(fontWeight: FontWeight.w700)),
+                        ),
+                        const Chip(
+                          avatar: Icon(Icons.help_outline, size: 16),
+                          label: Text('Durum doğrulanmadı'),
+                        ),
+                        FilledButton.icon(
+                          onPressed: () => openExternalPage(context, onlinePartners[platform]!.url),
+                          icon: const Icon(Icons.open_in_new, size: 17),
+                          label: const Text('Online Aç / Kapat'),
+                        ),
+                      ],
+                    ),
+                  ),
+                const SizedBox(height: 6),
+                const Text('Butonlar resmi partner panelini açar. POS içinden anlık aç/kapat yazma işlemi '
+                  'API yetkisi ve doğrulanmış restoran durumu olmadan gönderilmez.',
+                  style: TextStyle(fontSize: 12, color: NohutBrand.muted)),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        if (source == 'Trendyol Go' || source == 'Tümü')
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(15),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Trendyol Go · Menü ve Restoran Yönetimi',
+                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                  const SizedBox(height: 5),
+                  const Text('Fiyat, ürün/kategori aktif-pasif, çalışma saatleri ve yeni ürün '
+                    'işlemleri için partner paneli. Menü API yazma izni doğrulanana kadar '
+                    'POS eski fiyatları değiştirmez.'),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final label in const [
+                        'Ürün Fiyatı', 'Ürün Aktif / Pasif',
+                        'Kategori Aktif / Pasif', 'Çalışma Saatleri',
+                        'Yeni Ürün Ekle',
+                      ])
+                        OutlinedButton.icon(
+                          onPressed: () => openExternalPage(context, onlinePartners['Trendyol Go']!.url),
+                          icon: const Icon(Icons.open_in_new, size: 16),
+                          label: Text(label),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 7),
+                  const Text('Yeni ürünün yayınlanması ve gerekli bilgiler partner panelindeki '
+                    'onay sürecine bağlıdır; POS üzerinden oluşturulmuş sayılmaz.',
+                    style: TextStyle(fontSize: 12, color: NohutBrand.muted)),
+                ],
+              ),
+            ),
+          ),
+        const SizedBox(height: 14),
         const SizedBox(height: 14),
         Card(
           child: Padding(
