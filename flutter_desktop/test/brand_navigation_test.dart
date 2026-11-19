@@ -12,7 +12,7 @@ import 'package:nohut_falafel_desktop/order_reporting.dart';
 
 void main() {
   testWidgets(
-    'eight branded destinations include separate orders and reviews',
+    'nine branded destinations include open accounts, orders and reviews',
     (t) async {
       final dir = Directory.systemTemp.createTempSync('nohut-brand-');
       final file = '${dir.path}/db';
@@ -79,7 +79,7 @@ void main() {
               w.key is ValueKey<String> &&
               (w.key as ValueKey<String>).value.startsWith('navigation-'),
         ),
-        findsNWidgets(8),
+        findsNWidgets(9),
       );
       expect(find.text('Personel Yönetimi'), findsNothing);
       expect(find.text('Online Siparişler'), findsOneWidget);
