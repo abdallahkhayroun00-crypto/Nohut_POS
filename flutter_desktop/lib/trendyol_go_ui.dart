@@ -284,6 +284,16 @@ class TgoOrderCard extends StatelessWidget {
         order['pickup'] != true &&
         const ['Created', 'Picking', 'Invoiced'].contains(status);
     final lines = asMaps(order['lines']);
+    final courierTimeline = asMaps(order['courierTimeline']);
+    String observedAt(String stage) {
+      final entry = courierTimeline.where((e) => e['stage'] == stage).firstOrNull;
+      final time = entry?['observedAt'];
+      return time is String && DateTime.tryParse(time) != null
+          ? istanbulStamp(time) + ' · POS\'da görüldü'
+          : 'Saat bilgisi yok';
+    }
+    bool reached(String stage) =>
+        courierTimeline.any((event) => event['stage'] == stage);
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -369,6 +379,33 @@ class TgoOrderCard extends StatelessWidget {
                   style: TextStyle(color: NohutBrand.muted, fontSize: 12)),
             if (deliveryEta.isNotEmpty)
               Text('Tahmini teslimat: $deliveryEta'),
+            if (order['pickup'] != true) ...[
+              const SizedBox(height: 10),
+              const Text('Kurye Takip', style: TextStyle(
+                color: NohutBrand.green, fontWeight: FontWeight.w800)),
+              for (final step in const [
+                ('nearby', 'Kurye Yaklaşıyor'),
+                ('picked_up', 'Kuryeye Teslim Edildi'),
+                ('delivered', 'Müşteriye Teslim Edildi'),
+              ])
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  leading: Icon(
+                    reached(step.$1)
+                        ? Icons.check_circle_outline
+                        : Icons.radio_button_unchecked,
+                    color: reached(step.$1)
+                        ? NohutBrand.green : NohutBrand.muted,
+                  ),
+                  title: Text(step.$2),
+                  subtitle: Text(observedAt(step.$1)),
+                ),
+              const Text(
+                'Saatler platformun gerçek olay zamanı değil, POS tarafından ilk görüldüğü zamandır.',
+                style: TextStyle(fontSize: 11, color: NohutBrand.muted),
+              ),
+            ],
             if (reason.isNotEmpty) Text('İptal nedeni: $reason'),
             for (final line in lines)
               Padding(
