@@ -20,8 +20,8 @@ class OnlineAlarmOrder {
   }
 }
 
-/// One shared audible queue for all restaurant delivery partners.
-/// The partner connector must provide authoritative API status snapshots.
+/// A short one-shot alert for each newly discovered online order.
+/// Acceptance controls the *visible* queue; it never triggers repeat audio.
 class OnlineOrderAlarm extends ChangeNotifier {
   OnlineOrderAlarm({
     required this.play,
@@ -39,13 +39,13 @@ class OnlineOrderAlarm extends ChangeNotifier {
   final DateTime Function() _clock;
   Timer? _timer;
   final Map<String, OnlineAlarmOrder> _pending = {};
-  DateTime? _lastRing;
-  int _ringIndex = 0;
+  final List<OnlineAlarmOrder> _soundQueue = [];
+  final Set<String> _signaled = {};
+  bool _playing = false;
   bool _audioEnabled = true;
   bool _disposed = false;
 
-  static const ringLength = Duration(seconds: 10);
-  static const repeatEvery = Duration(seconds: 15);
+  static const ringLength = Duration(seconds: 3);
   static const providers = ['Trendyol Go', 'Yemeksepeti', 'Migros Yemek'];
 
   List<OnlineAlarmOrder> get pending => _pending.values.toList()
@@ -71,8 +71,7 @@ class OnlineOrderAlarm extends ChangeNotifier {
     return '$platform:$supplier:$branch:$package';
   }
 
-  /// Called only after a successful, authoritative platform synchronization.
-  /// Failed polling MUST NOT silently dismiss pending notifications.
+  /// Failed/partial polling must never dismiss a still-pending visible alert.
   void acceptSnapshot(String platform, List<Map<String, dynamic>> orders) {
     if (_disposed || !providers.contains(platform)) return;
     final now = _clock();
@@ -84,62 +83,74 @@ class OnlineOrderAlarm extends ChangeNotifier {
       final status = '${order['status'] ?? ''}';
       if (!requiresAcceptance(status)) {
         if (_pending.remove(key) != null) changed = true;
+        _soundQueue.removeWhere((queued) => queued.key == key);
         continue;
       }
       final createdAt = DateTime.tryParse('${order['createdAt'] ?? ''}');
-      // Do not ring for stale archived snapshots at first connection.
       if (createdAt == null ||
           createdAt.isAfter(now.add(const Duration(minutes: 5))) ||
           now.difference(createdAt).inHours >= 24) {
         continue;
       }
       if (!_pending.containsKey(key)) {
-        _pending[key] = OnlineAlarmOrder(
+        final incoming = OnlineAlarmOrder(
           platform: platform,
           key: key,
           number: '${order['orderNumber'] ?? order['packageId'] ?? ''}',
           detectedAt: now,
         );
+        _pending[key] = incoming;
+        // Each order ID can ring only once, even across repeated API polls
+        // or a temporary out-of-order status snapshot.
+        if (!_signaled.contains(key) &&
+            !_soundQueue.any((queued) => queued.key == key)) {
+          _soundQueue.add(incoming);
+        }
         changed = true;
       }
     }
-    // Missing records do not imply acceptance: paginated API responses can
-    // omit an active order. Only an explicit confirmed status removes an alert.
-    if (_pending.isEmpty) {
-      _lastRing = null;
-      stopAudio();
+    if (changed) {
+      if (_pending.isEmpty) stopAudio();
+      notifyListeners();
     }
-    if (changed) notifyListeners();
-    if (changed && _pending.isNotEmpty && _lastRing == null) tick();
+    _playNextOnce();
+  }
+
+  void _playNextOnce() {
+    if (_disposed || !_audioEnabled || _playing || _soundQueue.isEmpty) return;
+    final next = _soundQueue.removeAt(0);
+    if (!_pending.containsKey(next.key)) {
+      _playNextOnce();
+      return;
+    }
+    _signaled.add(next.key);
+    _playing = true;
+    unawaited(play(next.platform, next.severity(_clock()))
+        .catchError((Object _) {})
+        .whenComplete(() {
+      _playing = false;
+      _playNextOnce();
+    }));
   }
 
   void setAudioEnabled(bool value) {
     if (_audioEnabled == value) return;
     _audioEnabled = value;
     if (!value) stopAudio();
-    _lastRing = null;
     notifyListeners();
-    if (value && hasPending) tick();
+    if (value) _playNextOnce();
   }
 
+  /// Time affects visible urgency only; it never repeats the sound.
   void tick() {
-    if (_disposed) return;
-    final now = _clock();
-    if (_audioEnabled && _pending.isNotEmpty &&
-        (_lastRing == null || now.difference(_lastRing!) >= repeatEvery)) {
-      final active = pending;
-      final chosen = active[_ringIndex % active.length];
-      _ringIndex++;
-      _lastRing = now;
-      unawaited(play(chosen.platform, maxSeverity).catchError((Object _) {}));
-    }
-    if (_pending.isNotEmpty) notifyListeners();
+    if (!_disposed && _pending.isNotEmpty) notifyListeners();
   }
 
   @override
   void dispose() {
     _disposed = true;
     _timer?.cancel();
+    _soundQueue.clear();
     stopAudio();
     super.dispose();
   }
