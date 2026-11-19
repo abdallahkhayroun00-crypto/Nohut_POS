@@ -3,6 +3,8 @@ import 'order_actions.dart';
 import 'product_customization.dart';
 import 'service_metrics.dart';
 import 'simple_settings.dart';
+import 'customer_accounts.dart';
+import 'open_accounts_ui.dart';
 import 'trendyol_go_readonly.dart';
 import 'trendyol_go_ui.dart';
 import 'sales_reports.dart';
@@ -169,6 +171,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     ('online', Icons.delivery_dining_outlined, 'Online Siparişler'),
     ('reviews', Icons.star_outline, 'Geri Bildirimler'),
     ('google', Icons.storefront_outlined, 'Google İşletme Profili'),
+    ('open-accounts', Icons.account_balance_wallet_outlined, 'Açık Hesaplar'),
     ('payments', Icons.point_of_sale_outlined, 'Kasa & Ödemeler'),
     ('reports', Icons.bar_chart_outlined, 'Raporlar'),
     ('settings', Icons.settings_outlined, 'Ayarlar'),
@@ -552,7 +555,9 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
           cashier: personName,
         );
         ((o['batches'] as List).first as Map)['staffId'] = personId;
-        o['customer'] = request.customer;
+        o['customer'] = request.source == 'Gel-Al'
+            ? linkedPickupCustomer(data, request.customer)
+            : request.customer;
         created = o['id'] as int;
       }
     });
@@ -560,6 +565,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       context: context,
       builder: (ctx) => _OrderComposer(
         products: menu,
+        customers: savedCustomers(store.read().data),
         employees: asMaps(store.read().data['employees'])
             .where((entry) =>
                 entry['active'] == true &&
@@ -1380,6 +1386,12 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
           orders: tgoOrders(db),
           integration: tgo,
           onOpenGoogle: () => setState(() => page = 'google'),
+        );
+      case 'open-accounts':
+        return OpenAccountsPanel(
+          state: db,
+          onOpenOrder: _focusOrder,
+          onPayOrder: (order) => unawaited(_pay(order)),
         );
       case 'payments':
         return _payments(db);
