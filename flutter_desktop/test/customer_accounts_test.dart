@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nohut_pos/customer_accounts.dart';
-import 'package:nohut_pos/pos_logic.dart';
-import 'package:nohut_pos/pos_store.dart';
+import 'package:nohut_falafel_desktop/customer_accounts.dart';
+import 'package:nohut_falafel_desktop/pos_logic.dart';
+import 'package:nohut_falafel_desktop/pos_store.dart';
 
 Json order(int id, Json customer, int total, int paid) => {
   'id': id,
