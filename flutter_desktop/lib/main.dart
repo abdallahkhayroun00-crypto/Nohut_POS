@@ -1511,6 +1511,22 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
         businessDay: businessDay,
         onlineWarning: _onlineDataWarning,
       ),
+      Card(
+        child: ListTile(
+          leading: const Icon(Icons.account_balance_wallet_outlined),
+          title: const Text('Açık Hesaplar · Gel-Al'),
+          subtitle: Text(
+            pickupOpenAccounts(db).length.toString() +
+            ' müşteri / hesap · Birikmiş ödenmemiş siparişler',
+          ),
+          trailing: Text(
+            formatTry(pickupOpenAccounts(db).fold<int>(
+              0, (sum, account) => sum + account.dueCents)),
+            style: const TextStyle(fontWeight: FontWeight.w800),
+          ),
+          onTap: () => _switch('open-accounts'),
+        ),
+      ),
       const SizedBox(height: 16),
       StaffPerformanceChart(state: db, day: businessDay),
     ],
