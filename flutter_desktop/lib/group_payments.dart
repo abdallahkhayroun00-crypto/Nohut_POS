@@ -72,9 +72,11 @@ String recordCombinedPickupPayment(
       receivedCents - requiredCash;
   // Validate on detached copies so exceptions cannot partially charge orders.
   final updated = <Json>[];
+  final charged = <int>[];
   for (final original in orders) {
     final trial = copyJson(original);
     final amount = orderDueCents(trial);
+    charged.add(amount);
     final cash = cashRemaining < amount ? cashRemaining : amount;
     final card = amount - cash;
     final oldPaymentCount = asMaps(trial['payments']).length;
@@ -124,9 +126,7 @@ String recordCombinedPickupPayment(
     '-------------------------------',
     for (var i = 0; i < orders.length; i++)
       '#' + displayOrderNumber(orders[i]).toString() +
-      ' · ' + formatTry(orderDueCents(updated[i]) +
-          orderPaidCents(updated[i]) - orderPaidCents(orders[i])) +
-      ' tahsilat',
+      ' · ' + formatTry(charged[i]) + ' tahsilat',
     '-------------------------------',
     'Tahsilat ' + formatTry(total),
     if (requiredCash > 0) 'Nakit ' + formatTry(requiredCash),
