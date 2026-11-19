@@ -715,30 +715,45 @@ class StaffPanel extends StatelessWidget {
   const StaffPanel({super.key, required this.state, required this.edit});
   final Json state;
   final EditState edit;
+
   Future<void> change(BuildContext context, [Json? person]) async {
-    final v = await askFields(
+    final values = await askFields(
       context,
-      person == null ? 'Personel Ekle' : 'Personel Düzenle',
+      person == null ? 'Personel Ekle' : 'Personel Bilgilerini Düzenle',
       [
-        ('Ad', '${person?['name'] ?? ''}'),
-        ('Görev', '${person?['role'] ?? 'Personel'}'),
+        ('Ad Soyad', (person?['name'] ?? '').toString()),
+        ('Yetki', (person?['role'] ?? 'Personel').toString()),
+        ('Telefon (isteğe bağlı)', (person?['phone'] ?? '').toString()),
+        ('Görev', (person?['jobTitle'] ?? '').toString()),
+        ('İşe Başlama Tarihi', (person?['startDate'] ?? '').toString()),
+        ('Notlar', (person?['notes'] ?? '').toString()),
       ],
-      choices: {
-        1: ['Personel', 'Yönetici'],
+      choices: {1: ['Personel', 'Yönetici']},
+      validate: (v) {
+        if (v[0].trim().isEmpty) return 'Personel adı gerekli';
+        if (v[0].length > 120 || v[2].length > 40 ||
+            v[3].length > 120 || v[4].length > 20 ||
+            v[5].length > 1000) return 'Alan uzunluğu geçersiz';
+        return null;
       },
-      validate: (v) => v[0].isEmpty ? 'Personel adı gerekli' : null,
     );
-    if (v != null) {
-      edit(
-        (s) => saveEmployee(
-          s,
-          person?['id'] as int?,
-          v[0],
-          v[1],
-          person?['active'] == true || person == null,
-        ),
+    if (values == null) return;
+    edit((s) {
+      saveEmployee(
+        s,
+        person?['id'] as int?,
+        values[0].trim(),
+        values[1],
+        person?['active'] == true || person == null,
       );
-    }
+      // Mutate the stored employee map, not an asMaps() copy.
+      final employee = (s['employees'] as List).cast<Map>()
+          .firstWhere((e) => e['name'] == values[0].trim());
+      employee['phone'] = values[2].trim();
+      employee['jobTitle'] = values[3].trim();
+      employee['startDate'] = values[4].trim();
+      employee['notes'] = values[5].trim();
+    });
   }
 
   @override
@@ -746,27 +761,42 @@ class StaffPanel extends StatelessWidget {
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       panelTitle('Personel Yönetimi'),
-      info('Telefonda çalışan adı seçilir. Prototipte şifre yok.'),
-      FilledButton(
+      info('Personel bilgileri yerel olarak saklanır. Şifreli oturum açma bulunmadığından Yetki alanı tek başına güvenlik sağlamaz.'),
+      FilledButton.icon(
         onPressed: () => change(context),
-        child: const Text('Personel Ekle'),
+        icon: const Icon(Icons.person_add_outlined),
+        label: const Text('Personel Ekle'),
       ),
-      for (final p in asMaps(state['employees']))
+      for (final person in asMaps(state['employees']))
         ListTile(
-          title: Text('${p['name']}'),
-          subtitle: Text('${p['role']}'),
-          onTap: () => change(context, p),
-          trailing: Switch(
-            value: p['active'] == true,
-            onChanged: (v) => edit(
-              (s) => saveEmployee(
-                s,
-                p['id'] as int,
-                '${p['name']}',
-                '${p['role']}',
-                v,
+          title: Text((person['name'] ?? '').toString()),
+          subtitle: Text([
+            (person['role'] ?? 'Personel').toString(),
+            if ((person['jobTitle'] ?? '').toString().isNotEmpty)
+              (person['jobTitle'] ?? '').toString(),
+            if ((person['phone'] ?? '').toString().isNotEmpty)
+              (person['phone'] ?? '').toString(),
+          ].join(' · ')),
+          trailing: Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 8,
+            children: [
+              OutlinedButton.icon(
+                onPressed: () => change(context, person),
+                icon: const Icon(Icons.edit_outlined, size: 16),
+                label: const Text('Düzenle'),
               ),
-            ),
+              Switch(
+                value: person['active'] == true,
+                onChanged: (value) => edit((s) => saveEmployee(
+                  s,
+                  person['id'] as int,
+                  (person['name'] ?? '').toString(),
+                  (person['role'] ?? 'Personel').toString(),
+                  value,
+                )),
+              ),
+            ],
           ),
         ),
     ],
