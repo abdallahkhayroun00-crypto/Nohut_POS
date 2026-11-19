@@ -110,8 +110,12 @@ void main() {
       await tester.tap(find.text('İçecekler').last);
       await tester.pumpAndSettle();
       expect(find.text('Not: Sos ayrı'), findsOneWidget);
-      final table = find.byType(DropdownButtonFormField<int>);
-      await tester.tap(table);
+      final fields = find.byType(DropdownButtonFormField<int>);
+      await tester.tap(fields.first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Abdallah').last);
+      await tester.pumpAndSettle();
+      await tester.tap(fields.last);
       await tester.pumpAndSettle();
       await tester.tap(find.textContaining('Masa 1').last);
       await tester.pumpAndSettle();

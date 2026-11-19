@@ -3,6 +3,7 @@ part of 'main.dart';
 class _OrderComposer extends StatefulWidget {
   const _OrderComposer({
     required this.products,
+    required this.employees,
     this.table,
     this.adding = false,
     this.pickupOnly = false,
@@ -12,6 +13,7 @@ class _OrderComposer extends StatefulWidget {
     this.refreshTables,
   });
   final List<Product> products;
+  final List<Json> employees;
   final int? table;
   final bool adding, pickupOnly;
   final Map<int, Json> tableOrders;
@@ -28,6 +30,7 @@ class _OrderComposerState extends State<_OrderComposer> {
   Json pickupCustomer = {};
   String category = 'all', search = '', source = 'Masa', pickup = 'Tezgahtan';
   int? table;
+  int? selectedEmployeeId;
   int nextLine = 0;
   String? saveError;
   late List<Product> products;
@@ -425,6 +428,62 @@ class _OrderComposerState extends State<_OrderComposer> {
                         onChanged: (v) => setState(() => source = v!),
                       ),
                     ),
+                  SizedBox(
+                      width: 225,
+                      child: DropdownButtonFormField<int>(
+                        isExpanded: true,
+                        initialValue: selectedEmployeeId,
+                        decoration: const InputDecoration(
+                          labelText: 'Siparişi Alan Personel *',
+                          prefixIcon: Icon(Icons.person_outline),
+                        ),
+                        hint: const Text('Personel seçin'),
+                        items: [
+                          for (final employee in widget.employees)
+                            if (employee['id'] is int)
+                              DropdownMenuItem<int>(
+                                value: employee['id'] as int,
+                                child: Text('${employee['name']}',
+                                    overflow: TextOverflow.ellipsis),
+                              ),
+                        ],
+                        onChanged: widget.employees.isEmpty
+                            ? null
+                            : (id) => setState(() => selectedEmployeeId = id),
+                      ),
+                    ),
+                  if (widget.adding ||
+                      (source == 'Masa' && tableOrders[table] != null))
+                    Container(
+                      constraints: const BoxConstraints(maxWidth: 280),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 11, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xffEAF2EC),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.how_to_reg_outlined,
+                              color: NohutBrand.green, size: 18),
+                          SizedBox(width: 7),
+                          Flexible(
+                            child: Text(
+                              'Ek sipariş, hesabı açan personele yazılır',
+                              style: TextStyle(
+                                  fontSize: 12, color: NohutBrand.green,
+                                  fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  if (widget.employees.isEmpty)
+                    const Text(
+                      'Aktif personel yok. Ayarlar → Personel bölümünden ekleyin.',
+                      style: TextStyle(color: Color(0xff9E4A38), fontSize: 12),
+                    ),
                   if (source == 'Masa')
                     SizedBox(
                       width: 180,
@@ -576,7 +635,8 @@ class _OrderComposerState extends State<_OrderComposer> {
                     onPressed:
                         draft.isEmpty ||
                             draft.any((l) => l['_unavailable'] == true) ||
-                            (source == 'Masa' && table == null)
+                            (source == 'Masa' && table == null) ||
+                            selectedEmployeeId == null
                         ? null
                         : () {
                             final request = OrderRequest(
@@ -584,6 +644,7 @@ class _OrderComposerState extends State<_OrderComposer> {
                               table: source == 'Masa' ? table : null,
                               pickupChannel: pickup,
                               customer: pickupCustomer,
+                              staffId: selectedEmployeeId,
                               expectedTableOrderId:
                                   tableOrders[table]?['id'] as int?,
                               lines: draft

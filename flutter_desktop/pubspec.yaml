@@ -27,6 +27,7 @@ flutter:
     - assets/staff.html
     - assets/printing/
     - assets/brand/
+    - assets/notifications/
     - assets/brand/fonts/
   fonts:
     - family: Barlow Semi Condensed

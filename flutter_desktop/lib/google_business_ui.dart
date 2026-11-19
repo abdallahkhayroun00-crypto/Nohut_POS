@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 
 import 'google_business.dart';
 import 'order_reporting.dart';
+import 'review_display.dart';
+import 'compact_review_card.dart';
 import 'pos_logic.dart';
 import 'trendyol_go_ui.dart' show openExternalPage;
 
@@ -33,7 +35,7 @@ class GoogleBusinessPanel extends StatefulWidget {
 class _GoogleBusinessPanelState extends State<GoogleBusinessPanel> {
   _Section section = _Section.reviews;
   Json? data;
-  bool busy = false, onlyUnanswered = false;
+  bool busy = false, onlyUnanswered = false, starsOnly = false;
   String? error;
   int _generation = 0;
 
@@ -422,9 +424,19 @@ class _GoogleBusinessPanelState extends State<GoogleBusinessPanel> {
   }
 
   List<Widget> _reviews(Json current) {
-    final rows = asMaps(
-      current['reviews'],
-    ).where((row) => !onlyUnanswered || row['reviewReply'] == null).toList();
+    final rows = asMaps(current['reviews'])
+        .where((row) => (!onlyUnanswered || row['reviewReply'] == null) &&
+            (!starsOnly ||
+                (row['comment'] ?? '').toString().trim().isEmpty))
+        .toList()
+      ..sort((a, b) {
+        // Newest reviews first, regardless of reply/update time.
+        final left = reviewDate(a['createTime'] ?? a['updateTime']);
+        final right = reviewDate(b['createTime'] ?? b['updateTime']);
+        if (left == null) return right == null ? 0 : 1;
+        if (right == null) return -1;
+        return right.compareTo(left);
+      });
     const stars = {'ONE': 1, 'TWO': 2, 'THREE': 3, 'FOUR': 4, 'FIVE': 5};
     return [
       Wrap(
@@ -439,39 +451,34 @@ class _GoogleBusinessPanelState extends State<GoogleBusinessPanel> {
             selected: onlyUnanswered,
             onSelected: (value) => setState(() => onlyUnanswered = value),
           ),
+          FilterChip(
+            label: const Text('Sadece puan'),
+            selected: starsOnly,
+            onSelected: (value) => setState(() => starsOnly = value),
+          ),
         ],
       ),
       if (rows.isEmpty) const ListTile(title: Text('Gösterilecek yorum yok.')),
       for (final row in rows)
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '${_map(row['reviewer'])['displayName'] ?? 'Google kullanıcısı'} · ${stars[row['starRating']] ?? '—'}/5',
-                  style: Theme.of(context).textTheme.titleSmall,
-                ),
-                Text(istanbulStamp(row['updateTime'] ?? row['createTime'])),
-                if (row['comment'] case final String comment
-                    when comment.isNotEmpty)
-                  SelectableText(comment),
-                if (_map(row['reviewReply'])['comment']
-                    case final String comment) ...[
-                  const Divider(),
-                  const Text('İşletme yanıtı'),
-                  SelectableText(comment),
-                ],
-                TextButton(
-                  onPressed: busy ? null : () => _reply(row),
-                  child: Text(
-                    row['reviewReply'] == null ? 'Yanıtla' : 'Yanıtı Düzenle',
-                  ),
-                ),
-              ],
-            ),
-          ),
+        CompactReviewCard(
+          key: ValueKey('google-review-' +
+              (row['reviewId'] ?? row['name'] ?? '').toString()),
+          platform: 'Google Maps',
+          score: stars[row['starRating']],
+          customerName: _map(row['reviewer'])['displayName']?.toString(),
+          dateLabel: reviewDateText(
+                row['createTime'] ?? row['updateTime']) +
+              ' · ' + reviewRelativeAge(
+                row['createTime'] ?? row['updateTime']),
+          comment: row['comment'] is String
+              ? row['comment'] as String : null,
+          answerText: _map(row['reviewReply'])['comment']?.toString(),
+          answerStatus: row['reviewReply'] == null
+              ? null : 'Yanıtlandı',
+          replyBusy: busy,
+          onReply: busy ? null : () => _reply(row),
+          replyLabel: row['reviewReply'] == null
+              ? 'Yanıtla' : 'Yanıtı Düzenle',
         ),
       if (current['nextPageToken'] case final String token
           when token.isNotEmpty)

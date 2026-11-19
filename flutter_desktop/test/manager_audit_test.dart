@@ -57,7 +57,11 @@ void main() {
         await t.ensureVisible(addFalafel);
         await t.tap(addFalafel);
         await t.pumpAndSettle();
-        await t.tap(find.byType(DropdownButtonFormField<int>));
+        await t.tap(find.byType(DropdownButtonFormField<int>).first);
+        await t.pumpAndSettle();
+        await t.tap(find.text('Abdallah').last);
+        await t.pumpAndSettle();
+        await t.tap(find.byType(DropdownButtonFormField<int>).last);
         await t.pumpAndSettle();
         await t.tap(find.textContaining('Masa 1').last);
         await t.pumpAndSettle();

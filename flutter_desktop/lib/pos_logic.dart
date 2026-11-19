@@ -31,6 +31,15 @@ List<Json> activeLines(Json order) {
   ];
 }
 
+/// Sales ownership belongs to the employee who opened the order, even when
+/// later batches were entered by somebody else (including the cashier PC).
+/// Historical anonymous PC orders must never be credited to a guessed person.
+String orderOwnerName(Json order) {
+  final first = asMaps(order['batches']).firstOrNull;
+  final staff = '${first?['staff'] ?? ''}'.trim();
+  return staff.isEmpty || staff == 'Kasa (PC)' ? 'Atanmamış' : staff;
+}
+
 int orderTotalCents(Json order) {
   if (order['cancelled'] == true) return 0;
   // Platform orders have an authoritative net amount after discounts.

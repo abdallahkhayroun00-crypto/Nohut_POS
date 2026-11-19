@@ -6,13 +6,17 @@ import 'simple_settings.dart';
 import 'trendyol_go_readonly.dart';
 import 'trendyol_go_ui.dart';
 import 'sales_reports.dart';
+import 'dashboard_sales.dart';
 import 'order_alerts.dart';
+import 'staff_order_popup.dart';
+import 'online_order_alarm.dart';
 import 'online_orders.dart';
 import 'google_business.dart';
 import 'google_business_ui.dart';
 import 'card_terminal.dart';
 
 import 'dart:async';
+import 'dart:collection';
 
 import 'receipt_printer.dart';
 import 'qr_menu_sync.dart';
@@ -77,6 +81,7 @@ class OrderRequest {
     required this.lines,
     this.customer = const {},
     this.expectedTableOrderId,
+    this.staffId,
   });
   final String source;
   final int? table;
@@ -84,6 +89,9 @@ class OrderRequest {
   final List<Json> lines;
   final Json customer;
   final int? expectedTableOrderId;
+  /// Explicit active employee for new orders entered on the cashier PC.
+  /// Existing table additions retain the original order owner.
+  final int? staffId;
 }
 
 class NohutFalafelApp extends StatelessWidget {
@@ -131,11 +139,15 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
   late final PosLanServer lan;
   late final QrMenuAutoSync qrSync;
   late final TrendyolGoReadonly tgo;
+  late final OnlineOrderSoundPlayer onlineSound;
+  late final OnlineOrderAlarm onlineAlarm;
   late final GoogleBusiness google;
   Timer? _midnightTimer;
   Timer? _serviceTimer;
   final Set<String> seenNotices = {};
   Json? latestNotice;
+  final Queue<Json> _staffPopupQueue = Queue<Json>();
+  bool _staffPopupOpen = false;
   bool orderModalOpen = false;
   String businessDay = istanbulDay(DateTime.now());
   List<Product> menu = const [];
@@ -172,6 +184,12 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     settings['receiptPolicy'] = 'onPayment';
     settings['autoPrint'] = false;
     store.replace(migrated, initial.revision);
+    onlineSound = OnlineOrderSoundPlayer();
+    onlineAlarm = OnlineOrderAlarm(
+      play: onlineSound.play,
+      stopAudio: onlineSound.stop,
+    );
+    onlineAlarm.setAudioEnabled(settings['onlineOrderSound'] != false);
     inpos = InposPayments(store, widget.inposGateway ?? UnavailableInpos());
     lan = PosLanServer(store);
     receiptPrinter = ReceiptPrinter(store);
@@ -184,10 +202,12 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
             ? "Trendyol Go · Yeni sipariş ${orders.single['orderNumber']}"
             : 'Trendyol Go · ${orders.length} yeni sipariş';
         _notify(message);
-        if (store.read().data['settings']?['soundAlerts'] != false) {
-          unawaited(playOrderAlert());
-        }
       },
+      onOrdersSynced: (orders) => onlineAlarm.acceptSnapshot(
+        'Trendyol Go',
+        orders.where((order) =>
+            order['supplierId'] == tgo.credentials?.supplierId).toList(),
+      ),
     );
     google = GoogleBusiness(
       store.filePath,
@@ -311,6 +331,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     _midnightTimer?.cancel();
     _serviceTimer?.cancel();
     tgo.dispose();
+    onlineAlarm.dispose();
     google.dispose();
     qrSync.dispose();
     receiptPrinter.dispose();
@@ -318,6 +339,74 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     store.removeListener(_staffActivity);
     store.dispose();
     super.dispose();
+  }
+
+  Widget _onlineAlarmBanner() {
+    final active = onlineAlarm.pending;
+    if (active.isEmpty) return const SizedBox.shrink();
+    final severity = onlineAlarm.maxSeverity;
+    final bg = severity >= 2
+        ? const Color(0xffFFE2E1)
+        : severity == 1
+            ? const Color(0xffFFF0D6)
+            : const Color(0xffEDF5E9);
+    final ink = severity >= 2
+        ? const Color(0xff9B2226)
+        : severity == 1
+            ? const Color(0xff8A5000)
+            : const Color(0xff184C3A);
+    final first = active.first;
+    final elapsed = first.elapsedSeconds(DateTime.now());
+    final sourceNames = active.map((o) => o.platform).toSet().join(' · ');
+    return MaterialBanner(
+      backgroundColor: bg,
+      leading: Icon(
+        severity >= 2 ? Icons.emergency_outlined : Icons.notifications_active,
+        color: ink,
+        size: 30,
+      ),
+      content: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            severity >= 2
+                ? 'ACİL · ${active.length} onay bekleyen online sipariş!'
+                : severity == 1
+                    ? 'Dikkat · ${active.length} online sipariş bekliyor'
+                    : 'Yeni online sipariş · ${active.length} bekliyor',
+            style: TextStyle(color: ink, fontWeight: FontWeight.w800),
+          ),
+          Text(
+            '$sourceNames · İlk sipariş #${first.number} · ${elapsed < 0 ? 0 : elapsed} sn',
+            style: TextStyle(color: ink, fontSize: 12),
+          ),
+          if (tgo.error.isNotEmpty)
+            const Text(
+              'Bağlantı hatası: Son doğrulanmış durum korunuyor. Partner panelini kontrol edin.',
+              style: TextStyle(color: Color(0xff9B2226), fontSize: 11),
+            ),
+          if (!onlineAlarm.audioEnabled)
+            Text('Ses kapalı · Ayarlar > Bildirimler',
+                style: TextStyle(color: ink, fontSize: 11)),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => setState(() {
+            page = 'online';
+            onlinePlatform = first.platform;
+            _onlineView++;
+          }),
+          child: const Text('Siparişi Aç'),
+        ),
+        if (first.platform == 'Trendyol Go')
+          TextButton(
+            onPressed: () => openExternalPage(
+                context, 'https://partner.tgoyemek.com/'),
+            child: const Text('Partner Paneli'),
+          ),
+      ],
+    );
   }
 
   void _notify(String message, {bool error = false}) {
@@ -343,6 +432,9 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
         );
         return false;
       }
+      onlineAlarm.setAudioEnabled(
+        store.read().data['settings']?['onlineOrderSound'] != false,
+      );
       return true;
     } on FormatException catch (e) {
       _notify(e.message, error: true);
@@ -408,8 +500,27 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     int? created;
     bool saveRequest(OrderRequest request) => _edit((data) {
       validateCashierDraft(data, request.lines);
+      final person = asMaps(data['employees']).where(
+        (entry) =>
+            entry['id'] == request.staffId &&
+            entry['active'] == true &&
+            '${entry['name'] ?? ''}'.trim().isNotEmpty,
+      ).firstOrNull;
+      if (person == null) {
+        throw const FormatException(
+          'Sipariş için aktif personel seçilmelidir.',
+        );
+      }
+      final personName = '${person['name']}';
+      final personId = person['id'] as int;
       if (addToOrder != null) {
-        addOrderBatch(data, addToOrder, request.lines);
+        addOrderBatch(
+          data,
+          addToOrder,
+          request.lines,
+          cashier: personName,
+          staffId: personId,
+        );
         created = addToOrder;
       } else {
         final occupied = request.source == 'Masa'
@@ -422,7 +533,13 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
           );
         }
         if (occupied != null) {
-          addOrderBatch(data, occupied['id'] as int, request.lines);
+          addOrderBatch(
+            data,
+            occupied['id'] as int,
+            request.lines,
+            cashier: personName,
+            staffId: personId,
+          );
           created = occupied['id'] as int;
           return;
         }
@@ -432,7 +549,9 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
           table: request.table,
           pickupChannel: request.pickupChannel,
           productLines: request.lines,
+          cashier: personName,
         );
+        ((o['batches'] as List).first as Map)['staffId'] = personId;
         o['customer'] = request.customer;
         created = o['id'] as int;
       }
@@ -441,6 +560,12 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       context: context,
       builder: (ctx) => _OrderComposer(
         products: menu,
+        employees: asMaps(store.read().data['employees'])
+            .where((entry) =>
+                entry['active'] == true &&
+                entry['id'] is int &&
+                '${entry['name'] ?? ''}'.trim().isNotEmpty)
+            .toList(),
         onSubmit: saveRequest,
         refreshProducts: _currentProducts,
         refreshTables: () => {
@@ -474,11 +599,57 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     if (incoming.isEmpty) return;
     seenNotices.addAll(incoming.map((n) => '${n['id']}'));
     setState(() => latestNotice = incoming.last);
-    if (store.read().data['settings']?['soundAlerts'] != false &&
-        incoming.any(
-          (n) => ['Yeni sipariş', 'Ek sipariş'].contains(n['action']),
-        ))
-      unawaited(playOrderAlert());
+
+    // All phone order notifications are deduplicated by requestId, just as
+    // submitStaffOrder itself is idempotent. Only order creation/addition
+    // gets a popup; other staff actions remain silent.
+    final orders = incoming
+        .where((n) =>
+            n['action'] == 'Yeni sipariş' || n['action'] == 'Ek sipariş')
+        .toList();
+    _staffPopupQueue.addAll(orders);
+    if (orders.isNotEmpty &&
+        store.read().data['settings']?['soundAlerts'] != false) {
+      for (final _ in orders) {
+        queueStaffPhoneOrderSoundTwice();
+      }
+    }
+    _scheduleStaffPopup();
+  }
+
+  void _scheduleStaffPopup() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _showNextStaffPopup();
+    });
+  }
+
+  void _showNextStaffPopup() {
+    if (!mounted || _staffPopupOpen || orderModalOpen ||
+        _staffPopupQueue.isEmpty) return;
+    final notice = _staffPopupQueue.removeFirst();
+    _staffPopupOpen = true;
+    final orderId = notice['orderId'];
+    showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StaffOrderPopup(
+        notice: notice,
+        order: orderId is int ? mutableOrder(store.read().data, orderId) : null,
+        onOpen: () => Navigator.pop(ctx, true),
+        onDismiss: () => Navigator.pop(ctx, false),
+      ),
+    ).then((open) {
+      _staffPopupOpen = false;
+      if (!mounted) return;
+      if (latestNotice?['id'] == notice['id']) {
+        setState(() => latestNotice = null);
+      }
+      if (open == true && orderId is int) {
+        _showOrder(orderId);
+      } else {
+        _scheduleStaffPopup();
+      }
+    });
   }
 
   void _onTable(int table) {
@@ -545,7 +716,10 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
           ),
         ),
       ),
-    ).whenComplete(() => orderModalOpen = false);
+    ).whenComplete(() {
+      orderModalOpen = false;
+      _scheduleStaffPopup();
+    });
   }
 
   Future<void> _moveOrder(Json order) async {
@@ -662,6 +836,9 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
   }
 
   Future<void> _selectProductsToPay(Json order) async {
+    // Product lines are grouped for the kitchen, but their *units* must be
+    // selectable individually at the till. Already allocated/paid units do
+    // not appear again in the unpaid selector.
     final lines = checkLines(order)
         .where((line) => line.total > allocatedTo(order, line.key))
         .toList();
@@ -672,64 +849,95 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, change) {
           int left(CheckLine line) => line.total - allocatedTo(order, line.key);
+          int unit(CheckLine line) => cents(line.line['price']);
+          String qtyLabel(int amount, int price) {
+            if (price <= 0) return '0';
+            final qty = amount / price;
+            return qty == qty.truncateToDouble()
+                ? qty.toInt().toString()
+                : qty.toStringAsFixed(2).replaceAll('.', ',');
+          }
           final total = shares.values.fold<int>(0, (a, b) => a + b);
           return AlertDialog(
             title: const Text('Ürün seçerek öde'),
             content: SizedBox(
-              width: 480,
+              width: 500,
               child: ListView(
                 shrinkWrap: true,
                 children: [
+                  Text(
+                    'Ödenmemiş tutar: ${formatTry(orderDueCents(order))}',
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text('Her + işareti yalnızca 1 adet seçer.'),
+                  const SizedBox(height: 8),
                   for (final line in lines) ...[
-                    CheckboxListTile(
-                      value: shares.containsKey(line.key),
-                      title: Text('${line.line['name']}'),
-                      subtitle: Text('Dağıtılmamış ${formatTry(left(line))}'),
-                      onChanged: (value) => change(() {
-                        if (value == true) {
-                          shares[line.key] = min(
-                            left(line),
-                            cents(line.line['price']),
-                          );
-                        } else {
-                          shares.remove(line.key);
-                        }
-                      }),
-                    ),
-                    if (shares.containsKey(line.key))
-                      ListTile(
-                        title: Text(formatTry(shares[line.key]!)),
-                        trailing: TextButton(
-                          child: const Text('Adet / pay'),
-                          onPressed: () async {
-                            final result = await askFields(
-                              context,
-                              'Adet / pay',
-                              [
-                                (
-                                  'Adet (ör. 1 veya 0,5)',
-                                  (shares[line.key]! /
-                                          cents(line.line['price']))
-                                      .toStringAsFixed(3),
+                    Builder(builder: (context) {
+                      final available = left(line);
+                      final price = unit(line);
+                      final chosen = shares[line.key] ?? 0;
+                      return Column(
+                        children: [
+                          CheckboxListTile(
+                            key: ValueKey('product-pay-${line.key}'),
+                            value: chosen > 0,
+                            controlAffinity: ListTileControlAffinity.leading,
+                            contentPadding: EdgeInsets.zero,
+                            title: Text('${line.line['name']}'),
+                            subtitle: Text(
+                              'Kalan ${qtyLabel(available, price)} adet · '
+                              '${formatTry(available)}',
+                            ),
+                            onChanged: price <= 0
+                                ? null
+                                : (value) => change(() {
+                                    if (value == true) {
+                                      shares[line.key] = min(price, available);
+                                    } else {
+                                      shares.remove(line.key);
+                                    }
+                                  }),
+                          ),
+                          if (chosen > 0)
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(14, 0, 8, 10),
+                              child: Row(children: [
+                                IconButton.outlined(
+                                  tooltip: '1 adet azalt',
+                                  icon: const Icon(Icons.remove),
+                                  onPressed: () => change(() {
+                                    if (chosen <= price) {
+                                      shares.remove(line.key);
+                                    } else {
+                                      shares[line.key] = chosen - price;
+                                    }
+                                  }),
                                 ),
-                              ],
-                            );
-                            if (result == null || !context.mounted) return;
-                            final units = double.tryParse(
-                              result.first.replaceAll(',', '.'),
-                            );
-                            if (units == null ||
-                                !units.isFinite ||
-                                units <= 0 ||
-                                units > line.line['qty'])
-                              return;
-                            final value = (cents(line.line['price']) * units)
-                                .round();
-                            if (value <= 0 || value > left(line)) return;
-                            change(() => shares[line.key] = value);
-                          },
-                        ),
-                      ),
+                                Expanded(
+                                  child: Text(
+                                    'Seçilen: ${qtyLabel(chosen, price)} adet',
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.w700),
+                                  ),
+                                ),
+                                IconButton.filledTonal(
+                                  tooltip: '1 adet ekle',
+                                  icon: const Icon(Icons.add),
+                                  onPressed: chosen >= available
+                                      ? null
+                                      : () => change(() {
+                                          shares[line.key] =
+                                              min(available, chosen + price);
+                                        }),
+                                ),
+                              ]),
+                            ),
+                          const Divider(height: 10),
+                        ],
+                      );
+                    }),
                   ],
                 ],
               ),
@@ -739,14 +947,6 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                 onPressed: () => Navigator.pop(dialogContext),
                 child: const Text('Vazgeç'),
               ),
-              TextButton(
-                onPressed: () => change(() {
-                  for (final line in lines) {
-                    shares[line.key] = left(line);
-                  }
-                }),
-                child: const Text('Dağıtılmamış ürünleri seç'),
-              ),
               FilledButton(
                 onPressed: total == 0 || total > orderDueCents(order)
                     ? null
@@ -754,7 +954,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                         dialogContext,
                         Map<String, int>.of(shares),
                       ),
-                child: Text('Öde · ${formatTry(total)}'),
+                child: Text('Seçilenleri Öde · ${formatTry(total)}'),
               ),
             ],
           );
@@ -902,7 +1102,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
 
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
-    animation: Listenable.merge([store, lan, tgo]),
+    animation: Listenable.merge([store, lan, tgo, onlineAlarm]),
     builder: (ctx, _) {
       final data = store.read().data;
       final width = MediaQuery.sizeOf(context).width;
@@ -911,13 +1111,16 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
         drawer: condensed ? Drawer(child: _sidebar(false)) : null,
         body: Row(
           children: [
-            if (!condensed) SizedBox(width: 235, child: _sidebar(false)),
+            if (!condensed) SizedBox(width: 248, child: _sidebar(false)),
             Expanded(
               child: Column(
                 children: [
                   Container(
-                    color: Colors.white,
-                    height: 76,
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      border: Border(bottom: BorderSide(color: Color(0xffE3EBE5))),
+                    ),
+                    height: 80,
                     padding: const EdgeInsets.symmetric(horizontal: 27),
                     child: Row(
                       children: [
@@ -982,6 +1185,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                       ],
                     ),
                   ),
+                  if (onlineAlarm.hasPending) _onlineAlarmBanner(),
                   if (latestNotice != null)
                     MaterialBanner(
                       content: Text(
@@ -1005,9 +1209,12 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                     ),
                   Expanded(
                     child: SingleChildScrollView(
-                      padding: const EdgeInsets.all(24),
+                      padding: EdgeInsets.symmetric(
+                        horizontal: width < 800 ? 12 : 26,
+                        vertical: 22,
+                      ),
                       child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 1400),
+                        constraints: const BoxConstraints(maxWidth: 1500),
                         child: _page(data),
                       ),
                     ),
@@ -1109,7 +1316,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                         borderRadius: BorderRadius.circular(11),
                       ),
                       tileColor: page == item.$1
-                          ? const Color(0xff37694d)
+                          ? const Color(0xff397757)
                           : Colors.transparent,
                       onTap: () {
                         if (MediaQuery.sizeOf(context).width < 1050) {
@@ -1255,202 +1462,47 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     ),
   );
 
-  Widget _dashboard(Json db) {
-    final orders = asMaps(db['orders']);
-    final remoteToday = tgoOrders(db)
-        .where((o) => onIstanbulDay(o['createdAt'], businessDay))
-        .toList();
-    final remoteValid = remoteToday
-        .where(
-          (o) =>
-              o['testPackage'] != true &&
-              !['Cancelled', 'UnSupplied'].contains(o['status']),
-        )
-        .toList();
-    final remoteSales = remoteToday.where(tgoCountsAsSale).toList();
-    final remoteAmount = remoteSales.fold<int>(
-      0,
-      (sum, o) => sum + (o['totalCents'] as int? ?? 0),
-    );
-    final todayOrders = orders
-        .where(
-          (o) =>
-              onIstanbulDay(o['createdAt'], businessDay) &&
-              o['cancelled'] != true &&
-              o['demoRemoteStatus'] != 'Created',
-        )
-        .toList();
-    // Use PAYMENT timestamps, not order creation dates. A table that
-    // pays after midnight belongs to the new day's receipts.
-    final todayNetReceipts = ledger(db)
-        .where(
-          (e) =>
-              (e.source == 'Masa' || e.source == 'Gel-Al') &&
-              onIstanbulDay(e.stamp, businessDay),
-        )
-        .fold<int>(0, (sum, entry) => sum + entry.amount);
-    final active = orders
-        .where((o) => o['closed'] != true && o['cancelled'] != true)
-        .toList();
-    final busy = List.generate(
-      5,
-      (i) => activeTable(db, i + 1),
-    ).where((o) => o != null).length;
-    final localReceipts = ledger(db).where(
-      (entry) =>
-          ['Masa', 'Gel-Al'].contains(entry.source) &&
-          onIstanbulDay(entry.stamp, businessDay),
-    );
-    int receiptsFor(String method) => localReceipts
-        .where((entry) => entry.method == method)
-        .fold(0, (total, entry) => total + entry.amount);
-    final sales = todayOrders
-        .where((order) => !isPlatform(order))
-        .fold<int>(0, (total, order) => total + orderTotalCents(order));
-    final due = active
-        .where((order) => !isPlatform(order))
-        .fold<int>(0, (total, order) => total + orderDueCents(order));
-    final pickups = active.where((order) => order['source'] == 'Gel-Al').length;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _sectionTitle(
-          'Bugün',
-          businessDay,
-          action: FilledButton.icon(
-            onPressed: () => _composer(),
-            icon: const Icon(Icons.add),
-            label: const Text('Sipariş Al'),
-          ),
-        ),
-        Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: [
-            for (final metric in [
-              ('Nakit', receiptsFor('Nakit'), Icons.payments_outlined),
-              ('Kart', receiptsFor('Kart'), Icons.credit_card_outlined),
-              (
-                'Net Tahsilat',
-                todayNetReceipts,
-                Icons.account_balance_wallet_outlined,
-              ),
-              ('Satış', sales, Icons.receipt_long_outlined),
-              ('Açık Bakiye', due, Icons.pending_actions_outlined),
-            ])
-              SizedBox(
-                width: 184,
-                child: _metric(metric.$1, formatTry(metric.$2), metric.$3),
-              ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        Text('Masa: $busy dolu · ${5 - busy} boş  |  Gel-Al: $pickups açık'),
-        const SizedBox(height: 16),
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final staffPanel = StaffMetrics(state: db, day: businessDay);
-            final hasPlatformData =
-                remoteToday.isNotEmpty || db['tgoSyncInfo'] != null;
-            final platformPanel = Card(
-              child: Padding(
-                padding: const EdgeInsets.all(18),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.delivery_dining_outlined,
-                          color: NohutBrand.green,
-                        ),
-                        const SizedBox(width: 9),
-                        Expanded(
-                          child: Text(
-                            'Trendyol Go',
-                            style: Theme.of(context).textTheme.titleLarge,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: tgo.status.startsWith('Bağlı ·')
-                            ? const Color(0xffe5ebdf)
-                            : const Color(0xfff3e8d1),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 9,
-                          vertical: 4,
-                        ),
-                        child: Text(tgo.status),
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    Wrap(
-                      spacing: 18,
-                      runSpacing: 10,
-                      children: [
-                        for (final (label, value) in [
-                          ('Sipariş', '${remoteValid.length}'),
-                          ('Teslim', '${remoteSales.length}'),
-                          ('Tamamlanan Satış', formatTry(remoteAmount)),
-                        ])
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                hasPlatformData ? value : '—',
-                                style: const TextStyle(
-                                  fontSize: 23,
-                                  fontWeight: FontWeight.w800,
-                                  color: NohutBrand.green,
-                                ),
-                              ),
-                              Text(
-                                label,
-                                style: const TextStyle(color: NohutBrand.muted),
-                              ),
-                            ],
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    TextButton.icon(
-                      onPressed: _showTrendyolOrders,
-                      icon: const Icon(Icons.arrow_forward, size: 18),
-                      label: const Text('Online Siparişleri Gör'),
-                    ),
-                  ],
-                ),
-              ),
-            );
-            if (constraints.maxWidth < 980) {
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  staffPanel,
-                  const SizedBox(height: 10),
-                  platformPanel,
-                ],
-              );
-            }
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(flex: 6, child: staffPanel),
-                const SizedBox(width: 12),
-                Expanded(flex: 4, child: platformPanel),
-              ],
-            );
-          },
-        ),
-      ],
-    );
+  String? get _onlineDataWarning {
+    if (tgo.credentials?.valid != true) {
+      return 'Trendyol Go API henüz bağlı değil. Yemeksepeti ve Migros '
+          'Yemek canlı sipariş entegrasyonları da etkin değil.';
+    }
+    if (tgo.error.isNotEmpty) {
+      return 'Trendyol Go son eşitlemesi başarısız: ${tgo.error}. '
+          'Geçmiş dönemlerde 0 ₺, veri eksikliği anlamına gelebilir.';
+    }
+    final last = DateTime.tryParse(tgo.lastSync);
+    if (last == null ||
+        DateTime.now().toUtc().difference(last.toUtc()) >
+            const Duration(minutes: 5)) {
+      return 'Trendyol Go son doğrulanmış eşitlemesi güncel değil. '
+          'Online satışlar eksik olabilir.';
+    }
+    return 'Yemeksepeti ve Migros Yemek canlı sipariş API bağlantıları '
+        'henüz etkin değil. Bu platformlarda 0 ₺, doğrulanmış sıfır satış demek değildir.';
   }
+
+  Widget _dashboard(Json db) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      _sectionTitle(
+        'Günlük',
+        businessDay,
+        action: FilledButton.icon(
+          onPressed: () => _composer(),
+          icon: const Icon(Icons.add),
+          label: const Text('Sipariş Al'),
+        ),
+      ),
+      DashboardSales(
+        state: db,
+        businessDay: businessDay,
+        onlineWarning: _onlineDataWarning,
+      ),
+      const SizedBox(height: 16),
+      StaffPerformanceChart(state: db, day: businessDay),
+    ],
+  );
 
   Widget _tables(Json db) {
     final order = selectedOrder == null
@@ -1934,87 +1986,106 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
             label: const Text('Sipariş Al'),
           ),
         ),
-        TextField(
-          decoration: const InputDecoration(
-            labelText: 'Sipariş, masa, müşteri veya ürün ara',
-            prefixIcon: Icon(Icons.search),
-          ),
-          onChanged: (v) => setState(() => orderSearch = v),
-        ),
-        Wrap(
-          spacing: 8,
-          children: [
-            for (final status in [
-              '',
-              'Kalan',
-              'Ödendi',
-              if (localView == 'pickup') 'Teslim Edildi',
-              'Kapalı',
-            ])
-              ChoiceChip(
-                label: Text(status.isEmpty ? 'Tümü' : status),
-                selected: orderStatus == status,
-                onSelected: (_) => setState(() => orderStatus = status),
-              ),
-            TextButton(
-              onPressed: () => setState(() {
-                orderFrom = '';
-                orderTo = '';
-              }),
-              child: const Text('Tüm Tarihler'),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    SizedBox(
+                      width: 350,
+                      child: TextField(
+                        decoration: const InputDecoration(
+                          hintText: 'Sipariş, masa, müşteri veya ürün ara',
+                          prefixIcon: Icon(Icons.search),
+                        ),
+                        onChanged: (v) => setState(() => orderSearch = v),
+                      ),
+                    ),
+                    for (final status in [
+                      '', 'Kalan', 'Ödendi',
+                      if (localView == 'pickup') 'Teslim Edildi',
+                      'Kapalı',
+                    ])
+                      ChoiceChip(
+                        label: Text(status.isEmpty ? 'Tümü' : status),
+                        selected: orderStatus == status,
+                        onSelected: (_) => setState(() => orderStatus = status),
+                      ),
+                    TextButton.icon(
+                      onPressed: () => setState(() {
+                        orderFrom = ''; orderTo = '';
+                      }),
+                      icon: const Icon(Icons.event_available_outlined, size: 17),
+                      label: const Text('Tüm Tarihler'),
+                    ),
+                    OutlinedButton(
+                              onPressed: () async {
+                                final v = await askFields(context, 'Sipariş Filtreleri', [
+                                  ('Sipariş / masa / müşteri / ürün ara', orderSearch),
+                                  (
+                                    'Durum: boş / Kalan / Ödendi / Kapalı / İptal / Hazır / Hazırlanıyor / Teslim Edildi',
+                                    orderStatus,
+                                  ),
+                                  ('Siparişi alan personel', orderStaff),
+                                  ('Başlangıç YYYY-MM-DD', orderFrom),
+                                  ('Bitiş YYYY-MM-DD', orderTo),
+                                ]);
+                                if (v != null && mounted) {
+                                  if (v.skip(3).any((d) => d.isNotEmpty && !validBusinessDate(d)) ||
+                                      v[3].isNotEmpty &&
+                                          v[4].isNotEmpty &&
+                                          v[3].compareTo(v[4]) > 0) {
+                                    _notify('Tarih aralığı geçersiz', error: true);
+                                    return;
+                                  }
+                                  setState(() {
+                                    orderSearch = v[0];
+                                    orderStatus = v[1];
+                                    orderStaff = v[2];
+                                    orderFrom = v[3];
+                                    orderTo = v[4];
+                                    selectedOrder = null;
+                                  });
+                                }
+                              },
+                              child: const Text('Gelişmiş Filtreler'),
+                            ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                const Divider(),
+                Wrap(
+                  spacing: 7,
+                  runSpacing: 7,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    for (final filter in [
+                      'Tümü', 'Masa', 'Gel-Al',
+                      if (localView != 'pickup') 'Trendyol Go',
+                    ])
+                      ChoiceChip(
+                        label: Text(filter),
+                        selected: orderFilter == filter,
+                        onSelected: (_) => setState(() {
+                          orderFilter = filter;
+                          selectedOrder = null;
+                        }),
+                      ),
+                    const SizedBox(width: 8),
+                    Text('${combined.length} kayıt',
+                      style: const TextStyle(color: NohutBrand.muted,
+                          fontWeight: FontWeight.w700)),
+                  ],
+                ),
+              ],
             ),
-          ],
-        ),
-        OutlinedButton(
-          onPressed: () async {
-            final v = await askFields(context, 'Sipariş Filtreleri', [
-              ('Sipariş / masa / müşteri / ürün ara', orderSearch),
-              (
-                'Durum: boş / Kalan / Ödendi / Kapalı / İptal / Hazır / Hazırlanıyor / Teslim Edildi',
-                orderStatus,
-              ),
-              ('Siparişi alan personel', orderStaff),
-              ('Başlangıç YYYY-MM-DD', orderFrom),
-              ('Bitiş YYYY-MM-DD', orderTo),
-            ]);
-            if (v != null && mounted) {
-              if (v.skip(3).any((d) => d.isNotEmpty && !validBusinessDate(d)) ||
-                  v[3].isNotEmpty &&
-                      v[4].isNotEmpty &&
-                      v[3].compareTo(v[4]) > 0) {
-                _notify('Tarih aralığı geçersiz', error: true);
-                return;
-              }
-              setState(() {
-                orderSearch = v[0];
-                orderStatus = v[1];
-                orderStaff = v[2];
-                orderFrom = v[3];
-                orderTo = v[4];
-                selectedOrder = null;
-              });
-            }
-          },
-          child: Text('Sipariş Filtreleri · ${combined.length} kayıt'),
-        ),
-        Wrap(
-          spacing: 7,
-          children: [
-            for (final filter in [
-              'Tümü',
-              'Masa',
-              'Gel-Al',
-              if (localView != 'pickup') 'Trendyol Go',
-            ])
-              ChoiceChip(
-                label: Text(filter),
-                selected: orderFilter == filter,
-                onSelected: (_) => setState(() {
-                  orderFilter = filter;
-                  selectedOrder = null;
-                }),
-              ),
-          ],
+          ),
         ),
         const SizedBox(height: 12),
 
@@ -2218,6 +2289,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     key: ValueKey('daily-reports-$businessDay'),
     state: db,
     edit: _edit,
+    onlineWarning: _onlineDataWarning,
   );
 
   Widget _wifi(Json db) {
@@ -2227,7 +2299,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       children: [
         _sectionTitle(
           'Personel Bağlantısı',
-          'Telefonları aynı Wi-Fi ağına bağlayın ve personel QR kodunu okutun.',
+          'Android uygulaması için QR + tek seferlik PIN; iPhone için Safari.',
         ),
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -2356,7 +2428,10 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                       ),
                       const SizedBox(height: 11),
                       const Text(
-                        'Şimdilik şifre yok. Misafir Wi-Fi, router izolasyonu ve internet port yönlendirme kullanmayın.',
+                        'Android uygulamasında ilk kullanımda QR + PIN gerekir. '
+                        'Cihaz onaylandıktan sonra otomatik bağlanır. '
+                        'iPhone Safari panelinin eski LAN erişimi PIN kullanmaz; '
+                        'misafir Wi-Fi ve internet port yönlendirme kullanmayın.',
                         style: TextStyle(
                           fontSize: 11,
                           color: Colors.deepOrange,
@@ -2426,8 +2501,62 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                         label: const Text('Bağlantıyı Kopyala'),
                       ),
                       const SizedBox(height: 15),
+                      const Divider(height: 28),
+                      const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.android, color: NohutBrand.green),
+                          SizedBox(width: 6),
+                          Text('ANDROID · NOHUT PERSONEL',
+                              style: TextStyle(fontWeight: FontWeight.w800)),
+                        ],
+                      ),
+                      const SizedBox(height: 5),
                       const Text(
-                        'Android Chrome · iPhone Safari',
+                        'Uygulamada QR kodu tarayın, sonra bu PIN’i '
+                        'yalnızca bir kez girin.',
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 9),
+                      SelectableText(
+                        lan.pairing.pin,
+                        style: const TextStyle(
+                          fontSize: 30,
+                          letterSpacing: 6,
+                          fontWeight: FontWeight.w900,
+                          color: NohutBrand.green,
+                        ),
+                      ),
+                      Text(
+                        '15 dakika geçerlidir · Her eşleştirmeden sonra yenilenir',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 11,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant),
+                      ),
+                      TextButton.icon(
+                        onPressed: () => setState(lan.pairing.rotatePin),
+                        icon: const Icon(Icons.refresh, size: 18),
+                        label: const Text('Yeni PIN Oluştur'),
+                      ),
+                      if (lan.pairing.devices.isNotEmpty) ...[
+                        const Divider(height: 22),
+                        const Text('Eşleştirilmiş Android cihazlar',
+                          style: TextStyle(fontWeight: FontWeight.w800)),
+                        for (final device in lan.pairing.devices)
+                          if (device['revoked'] != true)
+                            ListTile(
+                              dense: true,
+                              leading: const Icon(Icons.smartphone),
+                              title: Text('${device['name']}'),
+                              trailing: TextButton(
+                                onPressed: () => setState(() =>
+                                  lan.pairing.revoke('${device['id']}')),
+                                child: const Text('Erişimi Kaldır'),
+                              ),
+                            ),
+                      ],
+                      const Text(
+                        'iPhone · Safari Web Paneli',
                         style: TextStyle(
                           color: Color(0xff526251),
                           fontSize: 11,
@@ -2454,6 +2583,9 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     store: store,
     qrSync: qrSync,
     tgoIntegration: tgo,
+    onTestOnlineSound: (platform) => unawaited(
+      onlineSound.play(platform, 0).catchError((Object _) {}),
+    ),
     onOpenGoogle: () => setState(() => page = 'google'),
     staffPanel: _staff(db),
     wifiPanel: _wifi(db),

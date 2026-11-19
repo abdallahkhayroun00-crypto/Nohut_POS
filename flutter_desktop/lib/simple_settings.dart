@@ -11,6 +11,7 @@ import 'qr_menu_sync.dart';
 import 'qr_menu_preview.dart';
 import 'trendyol_go_readonly.dart';
 import 'trendyol_go_ui.dart';
+import 'partner_credentials.dart';
 import 'receipt_printer.dart';
 import 'receipt_layout.dart';
 import 'receipt_preview.dart';
@@ -24,6 +25,7 @@ class SimpleSettings extends StatefulWidget {
     required this.qrSync,
     required this.tgoIntegration,
     required this.onOpenGoogle,
+    this.onTestOnlineSound,
     this.staffPanel,
     this.wifiPanel,
   });
@@ -33,6 +35,7 @@ class SimpleSettings extends StatefulWidget {
   final QrMenuAutoSync qrSync;
   final TrendyolGoReadonly tgoIntegration;
   final VoidCallback onOpenGoogle;
+  final ValueChanged<String>? onTestOnlineSound;
   final Widget? staffPanel, wifiPanel;
   @override
   State<SimpleSettings> createState() => _SimpleSettingsState();
@@ -92,25 +95,50 @@ class _SimpleSettingsState extends State<SimpleSettings> {
   Widget section(String title, String description, List<Widget> children) =>
       Card(
         child: Padding(
-          padding: const EdgeInsets.all(22),
+          padding: const EdgeInsets.all(19),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  fontFamily: NohutBrand.headingFont,
-                  fontSize: 24,
-                ),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xffEAF2EC),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.tune_outlined,
+                        color: NohutBrand.green, size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(title, style: const TextStyle(
+                          color: NohutBrand.green,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 18,
+                        )),
+                        const SizedBox(height: 4),
+                        Text(description, style: const TextStyle(
+                          color: NohutBrand.muted, fontSize: 12,
+                        )),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 8),
-              Text(description),
-              const SizedBox(height: 20),
+              const SizedBox(height: 14),
+              const Divider(),
+              const SizedBox(height: 10),
               ...children,
             ],
           ),
         ),
       );
+
   @override
   Widget build(BuildContext context) {
     final settings = widget.state['settings'] as Map? ?? {};
@@ -118,21 +146,38 @@ class _SimpleSettingsState extends State<SimpleSettings> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         panelTitle('Ayarlar'),
-        const Text('İşletmen için gereken ayarlar, tek yerde.'),
+        const Text('Restoran yönetimi, platform bağlantıları, yazıcılar ve veri güvenliği.'),
         const SizedBox(height: 16),
         Wrap(
           spacing: 8,
           children: [
             for (final name in [
               'Genel',
+              'Bildirimler',
               'Menü',
               'Yazıcı',
               'Entegrasyonlar',
               if (widget.staffPanel != null) 'Personel',
               if (widget.wifiPanel != null) 'Bağlantı',
-              'Yedek',
+              'Güvenlik',
+              'Yedekleme',
             ])
               ChoiceChip(
+                avatar: Icon(
+                  switch (name) {
+                    'Genel' => Icons.dashboard_customize_outlined,
+                    'Bildirimler' => Icons.notifications_active_outlined,
+                    'Menü' => Icons.menu_book_outlined,
+                    'Yazıcı' => Icons.print_outlined,
+                    'Entegrasyonlar' => Icons.hub_outlined,
+                    'Personel' => Icons.people_outline,
+                    'Bağlantı' => Icons.wifi_outlined,
+                    'Güvenlik' => Icons.shield_outlined,
+                    _ => Icons.backup_outlined,
+                  },
+                  size: 17,
+                  color: tab == name ? Colors.white : NohutBrand.green,
+                ),
                 label: Text(name),
                 selected: tab == name,
                 onSelected: (_) => setState(() => tab = name),
@@ -163,24 +208,142 @@ class _SimpleSettingsState extends State<SimpleSettings> {
               ),
             ],
           ),
-        if (tab == 'Entegrasyonlar') ...[
-          TgoSettingsPanel(integration: widget.tgoIntegration),
-          const SizedBox(height: 12),
-          for (final name in ['Yemeksepeti', 'Migros Yemek'])
-            Card(
-              child: ListTile(
-                title: Text(name),
+        if (tab == 'Bildirimler') ...[
+          section(
+            'Online Sipariş Alarm 2.0',
+            'Trendyol Go, Yemeksepeti ve Migros Yemek için ortak kuyruk. '
+            'Canlı ses sadece doğrulanmış online siparişle başlar.',
+            [
+              SwitchListTile.adaptive(
+                title: const Text('Online sipariş sesi'),
                 subtitle: const Text(
-                  'Bağlı değil · Partner entegrasyon erişimi gerekli',
+                  'Personel (masa) siparişi sesinden bağımsızdır. '
+                  'Kapalıyken bekleyen online sipariş uyarısı ekranda kalır.',
                 ),
-                trailing: IconButton(
-                  tooltip: '$name panelini aç',
-                  icon: const Icon(Icons.open_in_new),
-                  onPressed: () =>
-                      openExternalPage(context, onlinePartners[name]!.url),
-                ),
+                value: settings['onlineOrderSound'] != false,
+                onChanged: (value) => widget.edit((s) =>
+                    (s.putIfAbsent('settings', () => <String, dynamic>{})
+                        as Map)['onlineOrderSound'] = value),
+              ),
+              const ListTile(
+                leading: Icon(Icons.timer_outlined),
+                title: Text('Tek seferlik ses · 3 saniye'),
+                subtitle: Text('Her yeni online sipariş için yalnızca bir kez '
+                    '3 saniyelik ses çalar. Kabul edilmese bile tekrarlamaz. '
+                    'Görsel aciliyet 45 ve 90 saniyede artar.'),
+              ),
+              const ListTile(
+                leading: Icon(Icons.verified_outlined),
+                title: Text('Görsel uyarı onaya kadar kalır'),
+                subtitle: Text('Siparişi açmak onay sayılmaz. Bekleyen sipariş '
+                    'sadece platformdan doğrulanan durum değişikliğiyle '
+                    'uyarı listesinden çıkar. Ses tekrar başlamaz.'),
+              ),
+              const SizedBox(height: 8),
+              const Text('Sesleri dene',
+                  style: TextStyle(fontWeight: FontWeight.w800)),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final provider in const [
+                    'Trendyol Go', 'Yemeksepeti', 'Migros Yemek',
+                  ])
+                    OutlinedButton.icon(
+                      onPressed: widget.onTestOnlineSound == null
+                          ? null
+                          : () => widget.onTestOnlineSound!(provider),
+                      icon: const Icon(Icons.volume_up_outlined, size: 18),
+                      label: Text('$provider · Test Sesi'),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Ses düzeyi Windows mikserinden ayarlanır. '
+                'Yemeksepeti ve Migros Yemek canlı sipariş bildirimleri '
+                'yetkili API bağlantısı kurulana kadar çalışmaz.',
+                style: TextStyle(fontSize: 12, color: NohutBrand.muted),
+              ),
+            ],
+          ),
+        ],
+        if (tab == 'Entegrasyonlar') ...[
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(17),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Entegrasyon Sağlığı',
+                    style: TextStyle(color: NohutBrand.green,
+                        fontWeight: FontWeight.w800, fontSize: 18)),
+                  const SizedBox(height: 9),
+                  ListTile(
+                    leading: Icon(
+                      widget.tgoIntegration.status.startsWith('Bağlı ·')
+                        ? Icons.check_circle_outline : Icons.info_outline,
+                      color: widget.tgoIntegration.status.startsWith('Bağlı ·')
+                        ? NohutBrand.green : NohutBrand.gold,
+                    ),
+                    title: const Text('Trendyol Go by Uber Eats'),
+                    subtitle: Text(
+                      '${widget.tgoIntegration.status}'
+                      '\\nSon başarılı eşitleme: '
+                      '${widget.tgoIntegration.lastSync.isNotEmpty ? widget.tgoIntegration.lastSync : 'Henüz yok'}'
+                      '${widget.tgoIntegration.error.isEmpty ? '' : '\\nHata: ${widget.tgoIntegration.error}'}',
+                    ),
+                  ),
+                  const ListTile(
+                    leading: Icon(Icons.link_off_outlined, color: NohutBrand.gold),
+                    title: Text('Yemeksepeti · Migros Yemek'),
+                    subtitle: Text('API bilgilerini kaydetmek entegrasyonu açmaz. '
+                        'Canlı bağlantı ve Test Connection, resmi restoran API erişimi '
+                        'sağlanana kadar kullanılamaz.'),
+                  ),
+                  const ListTile(
+                    leading: Icon(Icons.info_outline, color: NohutBrand.muted),
+                    title: Text('Google İşletme Profili'),
+                    subtitle: Text('OAuth bağlantısı ve yetkiler Google '
+                        'İşletme Profili sayfasından kontrol edilir.'),
+                  ),
+                ],
               ),
             ),
+          ),
+          TgoSettingsPanel(integration: widget.tgoIntegration),
+          if (asMaps(widget.state['tgoOperationAudit']).isNotEmpty)
+            Card(
+              child: ExpansionTile(
+                leading: const Icon(Icons.history_outlined),
+                title: const Text('Trendyol · İşlem Günlüğü'),
+                subtitle: const Text('Platform işlemlerinin yerel denetim kaydı'),
+                children: [
+                  for (final record in asMaps(widget.state['tgoOperationAudit'])
+                      .reversed.take(20))
+                    ListTile(
+                      dense: true,
+                      title: Text('${record['action']} · #${record['orderNumber']}'),
+                      subtitle: Text('${record['at']} · ${record['result']}'),
+                    ),
+                ],
+              ),
+            ),
+          const SizedBox(height: 12),
+          const SizedBox(height: 12),
+          PartnerCredentialsCard(
+            partner: 'Yemeksepeti',
+            databasePath: widget.store.filePath,
+            portalUrl: onlinePartners['Yemeksepeti']!.url,
+            documentationUrl: 'https://integration.yemeksepeti.com/en/',
+          ),
+          PartnerCredentialsCard(
+            partner: 'Migros Yemek',
+            databasePath: widget.store.filePath,
+            portalUrl: onlinePartners['Migros Yemek']!.url,
+          ),
+          const SizedBox(height: 12),
           Card(
             child: ListTile(
               leading: const Icon(Icons.storefront_outlined),
@@ -485,7 +648,37 @@ class _SimpleSettingsState extends State<SimpleSettings> {
             ],
           ),
         ],
-        if (tab == 'Yedek')
+        if (tab == 'Güvenlik')
+          section(
+            'Güvenlik ve erişim',
+            'Bu panel mevcut bağlantı ve erişim durumunu gösterir; yeni bir oturum açma sistemi kurmaz.',
+            [
+              const ListTile(
+                leading: Icon(Icons.admin_panel_settings_outlined),
+                title: Text('Yönetici bilgisayarını koruyun'),
+                subtitle: Text('Windows oturumunu yetkisiz kişilerden koruyun. Bu sürümde yönetici için ayrı POS şifresi bulunmuyor.'),
+              ),
+              const Divider(),
+              const ListTile(
+                leading: Icon(Icons.people_outline),
+                title: Text('Personel erişimi'),
+                subtitle: Text('Personel adı seçimi tek başına kimlik doğrulama değildir. Çalışan ağını misafir Wi-Fi ağından ayırın.'),
+              ),
+              const Divider(),
+              const ListTile(
+                leading: Icon(Icons.key_off_outlined),
+                title: Text('API bilgileri'),
+                subtitle: Text('Entegrasyon anahtarlarını sadece yetkili yönetici cihazında saklayın; ekran görüntülerinde veya GitHub üzerinde paylaşmayın.'),
+              ),
+              const Divider(),
+              const ListTile(
+                leading: Icon(Icons.backup_outlined),
+                title: Text('Veri yedekleri'),
+                subtitle: Text('Yedekleme sekmesinden SQLite yedeği oluşturun ve geri yükleme işlemini güvenli ortamda test edin.'),
+              ),
+            ],
+          ),
+        if (tab == 'Yedekleme')
           section(
             'Verilerini koru',
             'Sipariş geçmişi bu bilgisayarda saklanır.',

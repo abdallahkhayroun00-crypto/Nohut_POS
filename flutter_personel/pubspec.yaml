@@ -1,0 +1,36 @@
+name: nohut_personel
+description: Native Flutter Android client for Nohut Falafel POS, without a WebView.
+publish_to: none
+version: 0.1.0+1
+
+environment:
+  sdk: '>=3.10.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.5.0
+  mobile_scanner: ^7.5.0
+  flutter_secure_storage: ^11.2.0
+  flutter_local_notifications: ^19.5.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/nohut-logo.webp
+  fonts:
+    - family: Barlow
+      fonts:
+        - asset: assets/Barlow-Regular.ttf
+        - asset: assets/Barlow-SemiBold.ttf
+          weight: 600
+        - asset: assets/Barlow-Bold.ttf
+          weight: 700
+    - family: Bree
+      fonts:
+        - asset: assets/BreeSerif-Regular.ttf

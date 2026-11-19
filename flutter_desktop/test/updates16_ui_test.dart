@@ -46,7 +46,7 @@ void main() {
         'Menü',
         'Yazıcı',
         'Entegrasyonlar',
-        'Yedek',
+        'Yedekleme',
         'Genel',
       ]) {
         await helpers.click(t, tab);

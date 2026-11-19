@@ -8,7 +8,7 @@ import 'trendyol_go_ui.dart';
 
 const onlinePartners = {
   'Trendyol Go': (
-    label: 'Uber Eats Trendyol Go',
+    label: 'Trendyol Go',
     url: 'https://partner.tgoyemek.com/',
   ),
   'Yemeksepeti': (
@@ -61,6 +61,148 @@ class _OnlineOrdersState extends State<OnlineOrders> {
     }
   }
 
+  Future<void> _applyAction(Json order, String action) async {
+    if (!widget.integration.canWrite || widget.integration.writing) return;
+    int? reasonId;
+    String? explanation;
+    double? receiptAmount;
+    int? bagCount;
+    if (action == 'cancel') {
+      const reasons = {
+        621: 'Tedarik problemi',
+        622: 'Mağaza kapalı',
+        623: 'Sipariş hazırlanamadı',
+        627: 'Sipariş karışıklığı',
+      };
+      reasonId = await showDialog<int>(
+        context: context,
+        builder: (ctx) => SimpleDialog(
+          title: const Text('Sipariş iptal nedeni'),
+          children: [
+            for (final entry in reasons.entries)
+              SimpleDialogOption(
+                onPressed: () => Navigator.pop(ctx, entry.key),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Text('${entry.key} · ${entry.value}'),
+                ),
+              ),
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Vazgeç'),
+            ),
+          ],
+        ),
+      );
+      if (reasonId == null || !mounted) return;
+      explanation = reasons[reasonId];
+    } else if (action == 'ready') {
+      var value = ((order['totalCents'] as int? ?? 0) / 100)
+          .toStringAsFixed(2);
+      var bags = '1';
+      final result = await showDialog<List<String>>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Hazır · Fiş ve Poşet Bilgileri'),
+          content: SizedBox(
+            width: 390,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Platforma gönderilecek gerçek mali fiş tutarını doğrulayın. '
+                  'Bu işlem banka tahsilatı veya mali fiş oluşturmaz.',
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  initialValue: value,
+                  autofocus: true,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(labelText: 'Fiş tutarı (₺)'),
+                  onChanged: (next) => value = next,
+                ),
+                const SizedBox(height: 10),
+                TextFormField(
+                  initialValue: bags,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: 'Gerçek poşet adedi (1-10)'),
+                  onChanged: (next) => bags = next,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx),
+              child: const Text('Vazgeç')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, [value, bags]),
+              child: const Text('Devam Et')),
+          ],
+        ),
+      );
+      if (result == null || !mounted) return;
+      receiptAmount = double.tryParse(result[0].replaceAll(',', '.'));
+      bagCount = int.tryParse(result[1]);
+      if (receiptAmount == null || !receiptAmount.isFinite ||
+          receiptAmount <= 0 || bagCount == null ||
+          bagCount < 1 || bagCount > 10) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text(
+            'Geçerli mali fiş tutarı ve gerçek poşet adedi gerekli.')),
+        );
+        return;
+      }
+    }
+    final caption = switch (action) {
+      'accept' => 'Kabul Et',
+      'ready' => 'Hazır',
+      _ => 'Siparişi İptal Et',
+    };
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('$caption · Onay'),
+        content: Text(
+          'Platform siparişi #${order['orderNumber']}\n'
+          'Bu işlem doğrudan platform API’sine gönderilir. '
+          'Sipariş durumu platform tarafından onaylanmadan değişmez.'
+          '${explanation == null ? '' : '\nNeden: $explanation'}',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Vazgeç')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(caption),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      final verified = await widget.integration.updateOrder(
+        order, action,
+        reasonId: reasonId,
+        explanation: explanation,
+        receiptAmount: receiptAmount,
+        bagCount: bagCount,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(verified
+              ? 'Platform durumu API üzerinden doğrulandı.'
+              : 'İşlem API’ye gönderildi ancak son durum doğrulanamadı. '
+                  'Tekrar göndermeden önce Partner Paneli’ni kontrol edin.'),
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Platform işlemi tamamlanamadı: $e'),
+        ));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final integration = widget.integration;
@@ -71,9 +213,8 @@ class _OnlineOrdersState extends State<OnlineOrders> {
           final stamp = DateTime.tryParse('${order['createdAt']}');
           if (stamp == null) return false;
           final day = istanbulDay(stamp);
-          if ((history
-                  ? day.compareTo(widget.businessDay) >= 0
-                  : day != widget.businessDay) ||
+          if ((!history && day != widget.businessDay) ||
+              (history && day.compareTo(widget.businessDay) >= 0) ||
               (history && selectedDay != null && day != selectedDay))
             return false;
           if (history && status.isNotEmpty && status != order['status'])
@@ -95,121 +236,192 @@ class _OnlineOrdersState extends State<OnlineOrders> {
     );
     final completed = orders.where((order) => _lane(order) == 3);
     final partners = source == 'Tümü' ? onlinePartners.keys : [source];
+    final canSync = integration.credentials?.valid == true &&
+        TrendyolGoReadonly.liveSyncEnabled;
+    final tgoConnected = integration.status.startsWith('Bağlı ·');
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
+        Row(
           children: [
-            for (final (value, label) in [(false, 'Bugün'), (true, 'Geçmiş')])
-              ChoiceChip(
-                label: Text(label),
-                selected: history == value,
-                onSelected: (selected) {
-                  if (!selected) return;
-                  setState(() {
-                    history = value;
-                    query = '';
-                  });
-                },
-              ),
-            const SizedBox(width: 12),
-            for (final key in ['Tümü', ...onlinePartners.keys])
-              FilterChip(
-                label: Text(onlinePartners[key]?.label ?? key),
-                selected: source == key,
-                onSelected: (_) => setState(() => source = key),
-              ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        Wrap(
-          spacing: 10,
-          runSpacing: 8,
-          children: [
-            for (final partner in partners)
-              OutlinedButton.icon(
-                onPressed: () =>
-                    openExternalPage(context, onlinePartners[partner]!.url),
-                icon: const Icon(Icons.open_in_new, size: 16),
-                label: Text('${onlinePartners[partner]!.label} paneli'),
-              ),
-            if (partners.contains('Trendyol Go'))
-              IconButton(
-                tooltip: 'Trendyol Go siparişlerini yenile',
-                icon: const Icon(Icons.refresh),
-                onPressed:
-                    integration.syncing ||
-                        integration.credentials?.valid != true ||
-                        !TrendyolGoReadonly.liveSyncEnabled
-                    ? null
-                    : integration.sync,
-              ),
-          ],
-        ),
-        if (partners.contains('Trendyol Go')) ...[
-          Text('Trendyol Go · ${integration.status}'),
-          if (integration.error.isNotEmpty) Text(integration.error),
-          if (integration.syncing) const LinearProgressIndicator(),
-        ],
-        for (final partner in partners.where((p) => p != 'Trendyol Go'))
-          Text('$partner · Bağlı değil'),
-        const SizedBox(height: 12),
-        Wrap(
-          spacing: 12,
-          runSpacing: 8,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            SizedBox(
-              width: 230,
-              child: TextField(
-                key: ValueKey(history),
-                decoration: const InputDecoration(
-                  labelText: 'Sipariş No / Kod',
-                  prefixIcon: Icon(Icons.search),
-                ),
-                onChanged: (value) =>
-                    setState(() => query = value.trim().toLowerCase()),
-              ),
+            const Icon(Icons.delivery_dining_outlined, color: NohutBrand.green, size: 24),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text('Sipariş Merkezi',
+                  style: Theme.of(context).textTheme.titleLarge),
             ),
-            if (history) ...[
-              OutlinedButton.icon(
-                onPressed: _pickDate,
-                icon: const Icon(Icons.calendar_today_outlined),
-                label: Text(selectedDay ?? 'Tarih seç'),
-              ),
-              if (selectedDay != null)
-                TextButton(
-                  onPressed: () => setState(() => selectedDay = null),
-                  child: const Text('Tüm tarihler'),
-                ),
-              DropdownButton<String>(
-                value: status,
-                items: [
-                  for (final (value, label) in const [
-                    ('', 'Tüm durumlar'),
-                    ('Created', 'Yeni'),
-                    ('Picking', 'Hazırlanıyor'),
-                    ('Invoiced', 'Hazır'),
-                    ('Shipped', 'Yolda'),
-                    ('Delivered', 'Teslim edildi'),
-                    ('Cancelled', 'İptal'),
-                    ('UnSupplied', 'Karşılanamadı'),
-                  ])
-                    DropdownMenuItem(value: value, child: Text(label)),
-                ],
-                onChanged: (value) => setState(() => status = value ?? ''),
-              ),
-            ],
+            if (integration.syncing)
+              const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
           ],
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 5),
+        const Text('Tüm platformlar tek ekranda · Bağlantısı olmayan platformlar otomatik sipariş göndermez.'),
+        const SizedBox(height: 14),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 9,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    for (final (value, label) in [(false, 'Bugün'), (true, 'Geçmiş')])
+                      ChoiceChip(
+                        showCheckmark: false,
+                        avatar: Icon(value ? Icons.history : Icons.today,
+                            size: 16,
+                            color: history == value
+                                ? Colors.white : NohutBrand.green),
+                        label: Text(label,
+                            style: TextStyle(
+                              color: history == value
+                                  ? Colors.white : NohutBrand.ink,
+                              fontWeight: FontWeight.w700,
+                            )),
+                        selectedColor: NohutBrand.green,
+                        backgroundColor: Colors.white,
+                        selected: history == value,
+                        onSelected: (selected) {
+                          if (!selected) return;
+                          setState(() { history = value; query = ''; });
+                        },
+                      ),
+                    const SizedBox(width: 8),
+                    for (final key in ['Tümü', ...onlinePartners.keys])
+                      FilterChip(
+                        showCheckmark: false,
+                        label: Text(onlinePartners[key]?.label ?? key,
+                            style: TextStyle(
+                              color: source == key
+                                  ? Colors.white : NohutBrand.ink,
+                              fontWeight: FontWeight.w600,
+                            )),
+                        selectedColor: NohutBrand.green,
+                        backgroundColor: Colors.white,
+                        selected: source == key,
+                        onSelected: (_) => setState(() => source = key),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    SizedBox(
+                      width: 280,
+                      child: TextField(
+                        key: ValueKey(history),
+                        decoration: const InputDecoration(
+                          hintText: 'Sipariş numarası veya kodu ara',
+                          prefixIcon: Icon(Icons.search),
+                        ),
+                        onChanged: (value) =>
+                            setState(() => query = value.trim().toLowerCase()),
+                      ),
+                    ),
+                    if (history) ...[
+                      OutlinedButton.icon(
+                        onPressed: _pickDate,
+                        icon: const Icon(Icons.calendar_today_outlined, size: 17),
+                        label: Text(selectedDay ?? 'Tarih seç'),
+                      ),
+                      if (selectedDay != null)
+                        TextButton(
+                          onPressed: () => setState(() => selectedDay = null),
+                          child: const Text('Tüm tarihler'),
+                        ),
+                      DropdownButton<String>(
+                        value: status,
+                        items: [
+                          for (final (value, label) in const [
+                            ('', 'Tüm durumlar'),
+                            ('Created', 'Yeni'),
+                            ('Picking', 'Hazırlanıyor'),
+                            ('Invoiced', 'Hazır'),
+                            ('Shipped', 'Yolda'),
+                            ('Delivered', 'Teslim edildi'),
+                            ('Cancelled', 'İptal'),
+                            ('UnSupplied', 'Karşılanamadı'),
+                          ])
+                            DropdownMenuItem(value: value, child: Text(label)),
+                        ],
+                        onChanged: (value) => setState(() => status = value ?? ''),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Wrap(
+              spacing: 12,
+              runSpacing: 10,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                for (final partner in partners)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        partner == 'Trendyol Go' && tgoConnected
+                            ? Icons.check_circle_outline
+                            : Icons.info_outline,
+                        size: 17,
+                        color: partner == 'Trendyol Go' && canSync
+                            ? NohutBrand.green
+                            : NohutBrand.gold,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        '$partner · ${partner == 'Trendyol Go' ? integration.status : 'Bağlı değil'}',
+                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+                      ),
+                      const SizedBox(width: 6),
+                      IconButton(
+                        tooltip: '$partner panelini aç',
+                        icon: const Icon(Icons.open_in_new, size: 17),
+                        onPressed: () => openExternalPage(context, onlinePartners[partner]!.url),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ],
+                  ),
+                if (partners.contains('Trendyol Go'))
+                  OutlinedButton.icon(
+                    onPressed: integration.syncing || !canSync ? null : integration.sync,
+                    icon: const Icon(Icons.refresh, size: 18),
+                    label: const Text('Yenile'),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        if (integration.error.isNotEmpty && partners.contains('Trendyol Go'))
+          Padding(
+            padding: const EdgeInsets.all(10),
+            child: Text(integration.error,
+                style: const TextStyle(color: Color(0xffB54737))),
+          ),
+        const SizedBox(height: 12),
         if (history)
           if (orders.isEmpty)
-            const ListTile(title: Text('Bu filtrelere uyan sipariş yok.'))
+            const Card(child: ListTile(leading: Icon(Icons.inbox_outlined),
+                title: Text('Bu filtrelere uyan sipariş yok.')))
           else
-            for (final order in orders) TgoOrderCard(order: order)
+            for (final order in orders)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: TgoOrderCard(order: order),
+              )
         else
           LayoutBuilder(
             builder: (context, constraints) {
@@ -217,44 +429,70 @@ class _OnlineOrdersState extends State<OnlineOrders> {
               final width = wide
                   ? (constraints.maxWidth - 24) / 3
                   : constraints.maxWidth;
+              const titles = ['Yeni', 'Hazırlanıyor', 'Hazır'];
+              const icons = [Icons.fiber_new_outlined, Icons.restaurant_outlined, Icons.check_circle_outline];
+              const tones = [Color(0xffEAF1E7), Color(0xffFFF2DA), Color(0xffE5F3EA)];
               return Wrap(
                 spacing: 12,
                 runSpacing: 12,
                 children: [
-                  for (final (i, title) in [
-                    'Yeni',
-                    'Hazırlanıyor',
-                    'Hazır',
-                  ].indexed)
+                  for (var i = 0; i < 3; i++)
                     SizedBox(
                       width: width,
-                      child: DecoratedBox(
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: NohutBrand.green.withAlpha(12),
-                          borderRadius: BorderRadius.circular(14),
+                          color: tones[i],
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: const Color(0xffDCE6DA)),
                         ),
-                        child: Padding(
-                          padding: const EdgeInsets.all(10),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              ListTile(
-                                dense: true,
-                                title: Text(title),
-                                trailing: Text('${groups[i].length}'),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(icons[i], color: NohutBrand.green, size: 19),
+                                const SizedBox(width: 8),
+                                Expanded(child: Text(titles[i],
+                                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800))),
+                                CircleAvatar(
+                                  radius: 15,
+                                  backgroundColor: Colors.white,
+                                  child: Text('${groups[i].length}',
+                                      style: const TextStyle(fontWeight: FontWeight.bold,
+                                          color: NohutBrand.green, fontSize: 12)),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            if (groups[i].isEmpty)
+                              Container(
+                                padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 12),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withAlpha(200),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: const Column(
+                                  children: [
+                                    Icon(Icons.inbox_outlined, color: NohutBrand.muted),
+                                    SizedBox(height: 5),
+                                    Text('Bu aşamada sipariş yok',
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(color: NohutBrand.muted)),
+                                  ],
+                                ),
                               ),
-                              for (final order in groups[i])
-                                TgoOrderCard(
+                            for (final order in groups[i])
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: TgoOrderCard(
                                   order: order,
                                   onKitchenPrint: () => widget.onPrint(order),
+                                  canWrite: integration.canWrite && !integration.writing,
+                                  onAction: _applyAction,
                                 ),
-                              if (groups[i].isEmpty)
-                                const Padding(
-                                  padding: EdgeInsets.all(10),
-                                  child: Text('Sipariş yok'),
-                                ),
-                            ],
-                          ),
+                              ),
+                          ],
                         ),
                       ),
                     ),
@@ -264,16 +502,29 @@ class _OnlineOrdersState extends State<OnlineOrders> {
           ),
         if (!history && completed.isNotEmpty) ...[
           const SizedBox(height: 16),
-          Text(
-            'Bugün · Tamamlanan ve iptal edilenler',
-            style: Theme.of(context).textTheme.titleMedium,
+          Card(
+            child: ExpansionTile(
+              leading: const Icon(Icons.task_alt, color: NohutBrand.green),
+              title: Text('Bugün · Tamamlanan ve iptal edilenler (${completed.length})'),
+              subtitle: const Text('Teslim edilen veya kapanan siparişler'),
+              childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              children: [
+                for (final order in completed)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: TgoOrderCard(order: order),
+                  ),
+              ],
+            ),
           ),
-          for (final order in completed) TgoOrderCard(order: order),
         ],
         if (source == 'Yemeksepeti')
-          ExpansionTile(
-            title: const Text('Yemeksepeti test alanı'),
-            children: [Builder(builder: (_) => widget.demo())],
+          Card(
+            child: ExpansionTile(
+              title: const Text('Yemeksepeti test alanı'),
+              subtitle: const Text('Canlı siparişlerle karıştırılmaz'),
+              children: [Builder(builder: (_) => widget.demo())],
+            ),
           ),
       ],
     );

@@ -1,0 +1,68 @@
+name: Build Nohut Personel Native Android APK
+
+on:
+  push:
+    paths:
+      - 'flutter_personel/**'
+      - 'flutter_desktop/lib/mobile_pairing.dart'
+      - 'flutter_desktop/lib/lan_server.dart'
+      - '.github/workflows/flutter-personel-android.yml'
+  pull_request:
+    paths:
+      - 'flutter_personel/**'
+      - 'flutter_desktop/lib/mobile_pairing.dart'
+      - 'flutter_desktop/lib/lan_server.dart'
+      - '.github/workflows/flutter-personel-android.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nohut-personel-android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Java for Android build
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install Flutter stable
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Generate native Android platform
+        working-directory: flutter_personel
+        run: flutter create --platforms android --org com.nohutfalafel --project-name nohut_personel .
+      - name: Configure Android and launcher branding
+        working-directory: flutter_personel
+        run: |
+          python3 -m pip install --quiet pillow
+          python3 tool/configure_android.py
+          python3 tool/brand_icon.py
+      - name: Install Flutter packages
+        working-directory: flutter_personel
+        run: flutter pub get
+      - name: Dart static analysis
+        working-directory: flutter_personel
+        run: flutter analyze --no-fatal-infos
+      - name: Native UI and pairing tests
+        working-directory: flutter_personel
+        run: flutter test --reporter expanded
+      - name: Build native release APK
+        working-directory: flutter_personel
+        run: flutter build apk --release
+      - name: Upload installable Android APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Nohut-Personel-Android-APK
+          path: flutter_personel/build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 14
+          if-no-files-found: error
