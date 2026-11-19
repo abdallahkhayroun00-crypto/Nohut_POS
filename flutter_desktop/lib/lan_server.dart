@@ -20,6 +20,7 @@ class PosLanServer extends ChangeNotifier {
   final PosStore store;
   late final MobilePairing pairing = MobilePairing(store);
   HttpServer? _server;
+  RawDatagramSocket? _discovery;
   String? error;
   int port;
   String? selectedIp;
@@ -115,6 +116,26 @@ class PosLanServer extends ChangeNotifier {
       }
       _server = bound;
       port = _server!.port;
+      // Broadcast discovery works only on the local restaurant network.
+      // A paired phone compares the stable opaque serverId before reconnecting.
+      try {
+        _discovery = await RawDatagramSocket.bind(
+            InternetAddress.anyIPv4, 8788);
+        _discovery!.listen((event) {
+          if (event != RawSocketEvent.read) return;
+          final packet = _discovery?.receive();
+          if (packet == null) return;
+          final ip = packet.address.address;
+          if (!_privateIp(ip) && ip != '127.0.0.1') return;
+          final message = utf8.decode(packet.data, allowMalformed: true);
+          if (message != 'NOHUT_DISCOVER_V1:${pairing.serverId}') return;
+          final reply = utf8.encode(
+              'NOHUT_HERE_V1:${pairing.serverId}:$port');
+          _discovery?.send(reply, packet.address, packet.port);
+        });
+      } catch (e) {
+        debugPrint('Optional Android LAN discovery unavailable: $e');
+      }
       _server!.listen(
         (r) => _handle(r).catchError((Object e, StackTrace stack) {
           debugPrint('LAN server error: $e');
@@ -145,6 +166,8 @@ class PosLanServer extends ChangeNotifier {
     _generation++;
     final server = _server;
     _server = null;
+    _discovery?.close();
+    _discovery = null;
     await server?.close(force: true);
     if (!_disposed) notifyListeners();
   }
@@ -458,6 +481,7 @@ class PosLanServer extends ChangeNotifier {
     _disposed = true;
     _generation++;
     _server?.close(force: true);
+    _discovery?.close();
     pairing.dispose();
     super.dispose();
   }
