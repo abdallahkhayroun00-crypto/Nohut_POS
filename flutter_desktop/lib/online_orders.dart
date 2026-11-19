@@ -102,9 +102,7 @@ class _OnlineOrdersState extends State<OnlineOrders> {
           final raw = v[2].replaceAll(',', '.');
           final amount = double.tryParse(raw);
           if (amount == null || !amount.isFinite || amount <= 0 ||
-              amount > 1000000 || !RegExp(r'^\d+([.,]\d{1,2})?
-
-$').hasMatch(v[2])) {
+              amount > 1000000 || !RegExp(r'^\d+([.,]\d{1,2})?$').hasMatch(v[2])) {
             return 'En fazla iki kuruş hanesi olan geçerli fiyat girin.';
           }
         }
