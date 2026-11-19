@@ -340,7 +340,7 @@ class _OnlineOrdersState extends State<OnlineOrders> {
                       children: [
                         SizedBox(
                           width: 140,
-                          child: Text(platform, style: const TextStyle(fontWeight: FontWeight.w700)),
+                          child: Text('$platform · Durum', style: const TextStyle(fontWeight: FontWeight.w700)),
                         ),
                         const Chip(
                           avatar: Icon(Icons.help_outline, size: 16),
