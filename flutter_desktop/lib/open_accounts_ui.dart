@@ -10,10 +10,12 @@ class OpenAccountsPanel extends StatefulWidget {
     required this.state,
     required this.onOpenOrder,
     required this.onPayOrder,
+    required this.onPayAccount,
   });
   final Json state;
   final ValueChanged<Json> onOpenOrder;
   final ValueChanged<Json> onPayOrder;
+  final ValueChanged<List<Json>> onPayAccount;
 
   @override
   State<OpenAccountsPanel> createState() => _OpenAccountsPanelState();
@@ -104,6 +106,21 @@ class _OpenAccountsPanelState extends State<OpenAccountsPanel> {
                 trailing: Text(formatTry(account.dueCents),
                     style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
                 children: [
+                  if (account.key.startsWith('id:') || account.key.startsWith('phone:'))
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: FilledButton.icon(
+                          key: ValueKey('combined-pay-' + account.key),
+                          onPressed: account.orders.length > 1
+                              ? () => widget.onPayAccount(account.orders)
+                              : null,
+                          icon: const Icon(Icons.library_add_check),
+                          label: const Text('Tüm Siparişleri Birlikte Öde'),
+                        ),
+                      ),
+                    ),
                   if (account.key.startsWith('order:'))
                     const Padding(
                       padding: EdgeInsets.fromLTRB(16, 0, 16, 10),
