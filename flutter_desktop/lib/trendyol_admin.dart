@@ -147,7 +147,11 @@ class TgoMealAdmin {
     if (batch.isEmpty) {
       throw const FormatException('Batch ID alınamadı. İşlemi tekrar göndermeyin; Partner Paneli kontrol edin.');
     }
-    return checkPriceBatch(batch);
+    // Queue acceptance is NOT confirmation. Poll the batch using GET.
+    return TgoAdminResult(
+      message: 'Fiyat talebi alındı. Batch sonucu doğrulanmalı.',
+      pendingBatchId: batch,
+    );
   }
 
   /// Checking an async batch is safe. Never resend an identical price update.
