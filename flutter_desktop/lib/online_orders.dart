@@ -68,7 +68,7 @@ class _OnlineOrdersState extends State<OnlineOrders> {
         .where((s) => s.isNotEmpty)
         .firstOrNull ?? '';
     late final List<(String, String)> fields;
-    Map<int, List<String>>? choices;
+    Map<int, List<String>> choices = {};
     String title;
     if (action == 'price') {
       title = 'Trendyol Go · Ürün Fiyatı Güncelle';
