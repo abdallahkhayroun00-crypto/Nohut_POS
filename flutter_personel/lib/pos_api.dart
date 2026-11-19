@@ -297,14 +297,14 @@ class PersonelController extends ChangeNotifier {
     if (!_disposed) notifyListeners();
   }
 
-  Future<void> sendOrder(Json order) async {
+  Future<String> sendOrder(Json order) async {
     if (!online || busy) throw const FormatException('Laptop bağlantısı gerekli.');
     busy = true;
     notifyListeners();
     try {
       final result = await api.submitOrder(order);
       await refreshAfterWrite();
-      return result['orderNumber'];
+      return '${result['orderNumber'] ?? result['orderId'] ?? '—'}';
     } finally {
       busy = false;
       notifyListeners();
