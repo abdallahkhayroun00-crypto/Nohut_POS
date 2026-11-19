@@ -1123,7 +1123,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       formatTry(amount) + '\nYöntem: ' + method +
       (method == 'Karışık'
         ? '\nNakit: ' + formatTry(cash!) +
-          ' · Kart: ' + formatTry(amount - cash)
+          ' · Kart: ' + formatTry(amount - (cash ?? 0))
         : '') +
       '\nKart tahsilatını banka terminalinde ayrıca doğrulayın. '
       'Bu işlem kart terminaline ödeme göndermez.',
