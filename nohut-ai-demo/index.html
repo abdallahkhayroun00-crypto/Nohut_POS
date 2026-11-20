@@ -146,12 +146,13 @@ async function statusCheck(){
   var pr=await fetch(worker+'/api/popular',{signal:AbortSignal.timeout(5000)});if(pr.ok){var st=await pr.json();popular=st&&Array.isArray(st.ranking)?st:null}
  }catch(e){online=false;blocked=false;popular=null;statusDisplay()}
 }
+function getClientId(){var k='nohut_ai_client_id',v=localStorage.getItem(k);if(!v){v=crypto.randomUUID();localStorage.setItem(k,v)}return v}
 async function sendQuestion(question){
  question=String(question||'').trim().slice(0,300);if(!question)return;
  $('question').value='';bubble(question,'user');$('send').disabled=true;
  try{
   if(online&&!blocked){
-   var res=await fetch(worker+'/api/ai/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:question,language:lang}),signal:AbortSignal.timeout(25000)});
+   var res=await fetch(worker+'/api/ai/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:question,language:lang,client_id:getClientId()}),signal:AbortSignal.timeout(25000)});
    if(res.status===429){blocked=true;online=false;statusDisplay();}
    if(res.ok){var j=await res.json();if(typeof j.answer==='string'&&j.answer.trim()){bubble(j.answer,'bot','Gemini · Cloudflare Worker');return}}
   }
