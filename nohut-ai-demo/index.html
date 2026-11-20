@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#173c30">
+<meta name="description" content="Nohut AI – ayrı test ortamı, akıllı menü asistanı.">
+<title>Nohut AI Lab | Akıllı Menü Asistanı</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700;800&display=swap');
+:root{--dark:#173d30;--ink:#24372d;--muted:#697c6d;--cream:#fbf8ef;--paper:#fffcf5;--line:#e4e6d9;--green:#366e52;--mint:#eef4e9;--gold:#edc673;--shadow:0 22px 65px rgba(15,53,35,.12)}
+*{box-sizing:border-box}body{margin:0;background:#e9eee5;color:var(--ink);font:15px/1.55 'DM Sans','Manrope',system-ui,sans-serif}button,input{font:inherit}button{cursor:pointer}button:disabled{cursor:not-allowed;opacity:.45}button:focus-visible,input:focus-visible{outline:3px solid #b1cf78;outline-offset:3px}a{text-decoration:none;color:inherit}
+.shell{min-height:100svh;display:grid;grid-template-columns:minmax(320px,39%) minmax(0,1fr);max-width:1480px;margin:auto;background:var(--cream);box-shadow:var(--shadow)}
+.left{position:relative;min-height:100svh;background:#163b2d;color:#fff;padding:31px 36px;overflow:hidden;display:flex;flex-direction:column}
+.left:before{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(13,53,35,.34) 0,rgba(16,54,37,.34) 35%,rgba(11,42,28,.96) 100%),url('https://nohutfalafel.github.io/qr-menu/assets/hero.png') center/cover no-repeat;opacity:.85}
+.left:after{content:"";position:absolute;border:1px solid #ffffff21;border-radius:50%;width:570px;height:570px;left:-280px;bottom:-270px}
+.left>*{position:relative;z-index:1}
+.topline{display:flex;align-items:center;justify-content:space-between;gap:10px}.brand{display:flex;align-items:center;gap:11px;font-weight:800;letter-spacing:-.4px}.brandmark{width:42px;height:42px;background:#fff;border-radius:12px;display:grid;place-items:center;overflow:hidden}.brandmark img{width:100%;height:100%;object-fit:contain}.labflag{border:1px solid #ffffff7d;border-radius:99px;padding:6px 12px;font-size:11px;font-weight:800;letter-spacing:1.1px;color:#fff}
+.leftBody{margin:auto 0 60px;max-width:500px}.eyebrow{color:#e5d6a2;font-size:11px;letter-spacing:3px;font-weight:800;text-transform:uppercase}.leftBody h1{font-family:'Manrope',sans-serif;font-size:clamp(42px,5.2vw,74px);letter-spacing:-3.9px;line-height:1.08;margin:20px 0}.leftBody h1 em{color:#e8c678;font-style:normal}.leftBody p{font-size:17px;color:#e4eee0;max-width:360px;margin:0}.leftBot{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.smallcap{font-size:12px;color:#e8f0df}.dot{display:inline-block;background:#badd83;width:8px;height:8px;border-radius:50%;margin-right:7px}.menuLink{display:inline-flex;align-items:center;gap:8px;border:1px solid #ffffff70;border-radius:99px;padding:9px 14px;color:#fff;font-size:12px;font-weight:700}.menuLink:hover{background:#ffffff22}
+.right{padding:27px clamp(18px,3.7vw,60px) 26px;display:flex;flex-direction:column;min-height:100svh;max-width:850px;width:100%;margin:auto}
+.head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}.headTitle{display:flex;align-items:center;gap:11px}.orb{height:49px;width:49px;background:var(--dark);border-radius:17px;display:grid;place-items:center;color:var(--gold);font-size:24px;box-shadow:0 6px 17px #30563d32}.headTitle h2{font-size:18px;margin:0;letter-spacing:-.5px}.sub{font-size:12px;color:var(--muted)}.headtools{display:flex;gap:8px;align-items:center}.langbtn{border:1px solid var(--line);background:transparent;color:var(--ink);border-radius:10px;padding:9px 11px;font-size:12px;font-weight:800}.langbtn.active{background:var(--dark);color:white}.gear{background:#fff;border:1px solid var(--line);width:37px;height:37px;border-radius:11px}
+.statusBar{margin:19px 0;border-radius:13px;background:#eef1e5;border:1px solid #dee6d7;padding:10px 13px;display:flex;align-items:center;gap:9px;font-size:12px;color:#526452}.statusBall{width:8px;height:8px;background:#d49f49;border-radius:50%;flex:none}.statusBall.live{background:#48a976}.statusBall.off{background:#a4a9a1}.statusText{flex:1}.statusBar strong{font-weight:800}.intro h3{font:800 31px/1.15 'Manrope',sans-serif;letter-spacing:-1.25px;margin:20px 0 8px}.intro p{color:#788777;margin:0 0 20px}.picks{display:flex;gap:9px;flex-wrap:wrap}.pick{background:#fff;border:1px solid var(--line);border-radius:13px;padding:10px 13px;font-weight:700;font-size:12px;box-shadow:0 3px 12px #21432909;transition:.16s}.pick:hover{transform:translateY(-2px);border-color:#a6c3ab;background:#f6faf2}
+.chat{margin-top:19px;display:flex;flex-direction:column;gap:15px;overflow-y:auto;flex:1;min-height:225px;max-height:calc(100svh - 390px);padding:3px 3px 20px;scrollbar-width:thin}
+.bubbleRow{display:flex;gap:10px;align-items:flex-start}.bubbleRow.user{justify-content:flex-end}.avatar{height:29px;width:29px;flex:none;border-radius:10px;background:#e3ecdc;display:grid;place-items:center;font-size:15px}.bubble{max-width:87%;border-radius:15px 15px 15px 5px;padding:12px 14px;background:#fff;border:1px solid var(--line);box-shadow:0 4px 14px #143d2010;white-space:pre-wrap;overflow-wrap:anywhere}.user .bubble{background:var(--dark);color:#fff;border-color:var(--dark);border-radius:15px 15px 5px 15px}.source{margin-top:8px;font-size:10px;color:#829081;font-weight:700}.cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin:8px 0 3px 40px}.product{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:13px;background:#fff;padding:9px;min-width:0}.photo{background:#f3f2e8;border-radius:11px;width:56px;height:56px;object-fit:contain;flex:none;display:grid;place-items:center;font-size:26px}.product img.photo{object-fit:contain}.productTxt{min-width:0;flex:1}.productName{font-size:12px;font-weight:800;line-height:1.25}.price{color:var(--green);font-weight:800;font-size:12px;margin-top:5px}.product a{display:inline-block;color:var(--green);font-weight:800;font-size:11px;margin-top:4px}.notice{margin:10px 0;color:#756545;font-size:12px;background:#fff5dc;border:1px solid #f1dfb0;padding:10px 12px;border-radius:12px}.inputarea{margin-top:auto;padding-top:16px;border-top:1px solid var(--line)}
+.composer{background:#fff;border:1px solid #dae1d4;box-shadow:0 8px 20px #1e433510;border-radius:18px;padding:7px 7px 7px 15px;display:flex;align-items:center;gap:10px}
+.composer input{flex:1;min-width:0;padding:12px 0;border:0;outline:none;font-size:14px;color:var(--ink);background:transparent}
+.mic,.send{width:40px;height:40px;border-radius:12px;border:0;display:grid;place-items:center;font-size:20px}.mic{background:#f0f3ea;color:#315944}.mic.recording{background:#f7d6ce;color:#b33223}.send{background:var(--dark);color:white}
+.foot{display:flex;justify-content:space-between;align-items:center;gap:9px;flex-wrap:wrap;margin-top:9px;font-size:11px;color:#879281}.foot a{text-decoration:underline;text-underline-offset:3px}
+.settings{position:fixed;inset:0;background:#14271aaa;z-index:10;display:none;align-items:center;justify-content:center;padding:18px}.settings.open{display:flex}.panel{width:min(100%,480px);background:#fffdf6;border-radius:22px;padding:24px;box-shadow:var(--shadow)}.panel h3{margin:0 0 8px;font-size:21px}.panel p{color:var(--muted);font-size:13px}.panel label{display:block;font-size:12px;font-weight:800;margin:16px 0 7px}.panel input{width:100%;padding:12px;border-radius:11px;border:1px solid #cedacd;background:white}.settingactions{display:flex;justify-content:flex-end;gap:9px;margin-top:15px}.btn{padding:11px 15px;border-radius:11px;border:0;background:#e8ede5;font-weight:800;color:#244435}.btn.primary{background:var(--dark);color:white}
+.budgetarea{display:flex;gap:8px;align-items:center;margin:15px 0}.budgetarea input{width:86px;background:white;border:1px solid #dbe3d4;border-radius:9px;padding:9px;font-weight:800}.budgetarea label{font-size:12px;font-weight:800;color:#5d745f}.budgetarea button{border:1px solid #dbe3d4;background:#fff;border-radius:9px;padding:9px 12px;font-size:12px;font-weight:800}
+[dir=rtl] .bubbleRow{direction:rtl}[dir=rtl] .bubbleRow.user{justify-content:flex-start}[dir=rtl] .bubbleRow.user .bubble{border-radius:15px 15px 15px 5px}[dir=rtl] .cards{margin:8px 40px 3px 0}
+@media(max-width:850px){.shell{display:block}.left{min-height:220px;padding:20px 23px;max-height:240px}.leftBody{margin:22px 0 0}.leftBody h1{font-size:39px;line-height:1.06;margin:6px 0 8px;letter-spacing:-2px}.leftBody p{font-size:12px;max-width:340px}.leftBot{display:none}.right{padding:18px 16px 19px;min-height:calc(100svh - 220px);max-width:100%}.intro h3{font-size:26px}.chat{max-height:none;min-height:220px}.cards{grid-template-columns:1fr 1fr}}
+@media(max-width:480px){.left{min-height:172px;max-height:185px;padding:13px 17px}.topline .brandmark{width:33px;height:33px}.brand{font-size:12px}.labflag{font-size:9px;padding:5px 8px}.leftBody{margin:17px 0 0}.leftBody h1{font-size:31px;letter-spacing:-1.5px;margin:4px 0}.leftBody p{font-size:11px}.eyebrow{font-size:9px}.right{padding:13px 12px 14px;min-height:calc(100svh - 172px)}.orb{height:42px;width:42px}.headTitle h2{font-size:16px}.headtools{gap:4px}.langbtn{padding:7px 8px}.gear{width:32px;height:32px}.statusBar{margin:12px 0}.intro h3{font-size:23px;margin:12px 0 5px}.intro p{margin-bottom:12px;font-size:13px}.picks{gap:7px}.pick{font-size:11px;padding:8px 10px}.chat{margin-top:14px;min-height:180px;max-height:46svh;gap:11px}.bubble{font-size:13px;max-width:90%}.cards{grid-template-columns:1fr;margin-left:37px}.product{padding:7px}.photo{width:48px;height:48px}.inputarea{padding-top:10px}.composer input{font-size:13px}}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="shell">
+  <aside class="left">
+    <div class="topline"><div class="brand"><span class="brandmark"><img src="https://nohutfalafel.github.io/qr-menu/assets/original-logo.jpeg" alt="Nohut logo"></span> NOHUT FALAFEL</div><span class="labflag">EXPERIMENT / TEST</span></div>
+    <div class="leftBody"><span class="eyebrow">YOUR NEXT FAVOURITE BITE</span><h1>Lezzeti<br><em>keşfet.</em> ✦</h1><p>Ne yiyeceğine karar veremiyor musun? Nohut'un akıllı menü asistanına sor.</p></div>
+    <div class="leftBot"><span class="smallcap"><span class="dot"></span>Orijinal QR menü değişmedi</span><a class="menuLink" target="_blank" rel="noopener" href="https://nohutfalafel.github.io/qr-menu/">Menüyü Gör ↗</a></div>
+  </aside>
+  <main class="right">
+    <header class="head">
+      <div class="headTitle"><span class="orb">✳</span><div><h2>Nohut AI <span style="color:#7d8f74">/ Lab</span></h2><span class="sub" id="subtitle">Akıllı Menü Asistanı · Test sürümü</span></div></div>
+      <div class="headtools"><button class="langbtn active" data-lang="tr" type="button">TR</button><button class="langbtn" data-lang="en" type="button">EN</button><button class="langbtn" data-lang="ar" type="button">AR</button><button class="gear" id="openSettings" aria-label="Test ayarları" title="Test ayarları">⚙</button></div>
+    </header>
+    <div class="statusBar" role="status"><i class="statusBall" id="statusBall"></i><span class="statusText" id="statusText"><strong>Yerel demo</strong> · Gemini henüz bağlı değil. Menü sorularını deneyebilirsin.</span><span id="menuCount"></span></div>
+    <section class="intro" id="intro"><h3 id="welcome">Bugün ne yesek? 🌿</h3><p id="tagline">Bütçeni, damak zevkini ya da merak ettiğin bir yemeği söyle.</p><div class="picks" id="picks"></div></section>
+    <section class="chat" id="chat" role="log" aria-live="polite" aria-label="Nohut AI konuşması"></section>
+    <section class="inputarea">
+      <form class="composer" id="chatForm"><input id="question" maxlength="300" autocomplete="off" aria-label="Mesaj" placeholder="Bir şey sor..."><button class="mic" type="button" id="mic" aria-label="Sesli komut" title="Sesli komut">🎙</button><button class="send" type="submit" id="send" aria-label="Gönder">➤</button></form>
+      <div class="foot"><span id="disclaimer">⚠️ Alerjen bilgilerini personelimize doğrulatın.</span><a href="https://nohutfalafel.github.io/qr-menu/" rel="noopener" target="_blank" id="menuFooter">Gerçek menü ↗</a></div>
+    </section>
+  </main>
+</div>
+<div class="settings" id="settings" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+ <div class="panel"><h3 id="settingsTitle">⚙ Test bağlantısı</h3><p>Gemini anahtarını buraya yapıştırmayın. Yalnızca kendi Cloudflare Worker URL'nizi girin. Anahtar Worker Secret olarak sunucuda kalmalıdır.</p>
+ <label for="workerUrl">Cloudflare Worker API URL</label><input id="workerUrl" inputmode="url" placeholder="https://nohut-ai.example.workers.dev"><p>Bağlantı kurulmazsa sayfa yerel menü demosu olarak çalışır. Gerçek POS satış sıralaması yalnızca güvenli senkronizasyon sonrası gösterilir.</p><div class="settingactions"><button type="button" class="btn" id="closeSettings">Kapat</button><button type="button" class="btn primary" id="saveSettings">Kaydet & test et</button></div></div>
+</div>
+<script src="https://nohutfalafel.github.io/qr-menu/menu-data.js"></script>
+<script src="https://nohutfalafel.github.io/qr-menu/menu-ar.js"></script>
+<script src="https://nohutfalafel.github.io/qr-menu/campaigns-data.js"></script>
+<script>
+(function(){
+'use strict';
+var QR='https://nohutfalafel.github.io/qr-menu/';
+var $=function(id){return document.getElementById(id)};
+var lang='tr',worker=(localStorage.getItem('nohut_ai_worker')||'').trim(),online=false,blocked=false,popular=null,menu=[],campaigns=[];
+var dict={
+tr:{welcome:'Bugün ne yesek? 🌿',tag:'Bütçeni, damak zevkini ya da merak ettiğin bir yemeği söyle.',subtitle:'Akıllı Menü Asistanı · Test sürümü',placeholder:'Ne yemek istersin?',disclaimer:'⚠️ Alerjen bilgilerini personelimize doğrulatın.',footer:'Gerçek menü ↗',picks:['Ne yesem?','200 TL bütçem var','Vegan seçenekler','En çok satanlar','Kampanyalar','3 kişi için öner','Süt alerjim var'],q:['İlk defa geldim, ne önerirsin?','200 TL bütçem var, ne yiyebilirim?','Vegan seçenekleriniz neler?','En çok satılan ürün hangisi?','Hangi kampanyalar aktif?','Üç kişiyiz, ne önerirsiniz?','Süt alerjim var, ne güvenle yiyebilirim?'],menu:'Menüden doğrulanan ürünler',noStats:'Gerçek POS satış sıralaması henüz bağlanmadı. En çok satan ürünü tahmin etmek istemiyorum.',allergy:'Alerjen ve çapraz bulaşma güvenliği hakkında kesin bilgi veremem. Lütfen sipariş vermeden önce personelimizle doğrulayın.',vegan:'Menüde vegan adıyla listelenen seçenekler:',budget:'Bu bütçeye göre menüden bazı seçenekler:',campaign:'Yayınlanan kampanyalar:',fallback:'Şimdilik menüden bu seçenekleri önerebilirim. Gemini bağlantısı kurulunca daha ayrıntılı konuşabiliriz.',ask:'Menü hakkında, bütçe veya ürün adı sorabilirsin.',status:'Yerel demo · Gemini henüz bağlı değil',live:'Gemini bağlı · Güvenli Worker üzerinden',quota:'AI günlük kotası doldu · Menü demosu kullanılabilir',source:'Kaynak: yayınlanan QR menü',posSource:'Kaynak: POS özet verisi',view:'Menüde gör ↗',unavailable:'Bu ürün geçici olarak mevcut değil.',product:'Menüde bulduğum ürün:',recommend:'İlk kez deneyecekler için bir seçenek:',waiting:'Bir dakika, menüyü inceliyorum…'},
+en:{welcome:'What are you craving? 🌿',tag:'Tell me your budget, taste or a dish you are curious about.',subtitle:'Smart Menu Assistant · Test version',placeholder:'Ask me about the menu...',disclaimer:'⚠️ Confirm allergens with our staff before ordering.',footer:'Official menu ↗',picks:['What should I eat?','I have 200 TL','Vegan options','Best sellers','Current offers','Food for three','Milk allergy'],q:['What would you recommend for a first visit?','What can I eat for 200 TL?','What vegan dishes do you have?','What sells the most?','Which offers are available?','What should three people order?','I have a milk allergy. What is safe?'],menu:'Products from the published menu',noStats:'Real POS best-seller data is not connected yet. I will not guess the ranking.',allergy:'I cannot guarantee allergen or cross-contact safety. Please confirm ingredients and preparation with our staff before ordering.',vegan:'Items explicitly labelled vegan on the menu:',budget:'These options fit your budget:',campaign:'Published offers:',fallback:'Here are some menu-based suggestions. Connect Gemini for a more flexible conversation.',ask:'Ask me about a dish, price, vegan options or a budget.',status:'Local demo · Gemini is not connected yet',live:'Gemini connected · Through secure Worker',quota:'Daily AI quota exhausted · Menu demo still works',source:'Source: published QR menu',posSource:'Source: aggregated POS data',view:'See menu ↗',unavailable:'This product is temporarily unavailable.',product:'I found this product on the menu:',recommend:'A popular style of first-visit choice:',waiting:'Let me check the menu…'},
+ar:{welcome:'شنو تشهيتي اليوم؟ 🌿',tag:'قول ليا الميزانية أو نوع الماكلة اللي كتعجبك.',subtitle:'مساعد القائمة الذكي · نسخة تجريبية',placeholder:'سولني على المينيو...',disclaimer:'⚠️ تأكد من الحساسية والمكونات مع العامل قبل الطلب.',footer:'المينيو الرسمي ↗',picks:['شنو ناكل؟','عندي 200 ليرة','اختيارات نباتية','الأكثر مبيعاً','العروض الحالية','ثلاثة أشخاص','عندي حساسية الحليب'],q:['أول مرة نجي، شنو تقترح؟','عندي 200 ليرة شنو نقدر ناكل؟','شنو عندكم نباتي؟','شنو الأكثر مبيعاً؟','شنو العروض الحالية؟','حنا ثلاثة شنو ناخدو؟','عندي حساسية الحليب، شنو آمن؟'],menu:'منتجات من المينيو المنشور',noStats:'إحصائيات المبيعات الحقيقية من POS مازال ما تربطاتش. ما غاديش نخمن الأكثر مبيعاً.',allergy:'ما نقدرش نضمن غياب المواد المسببة للحساسية أو التلوث المتبادل. تأكد مع العامل قبل الطلب.',vegan:'المنتجات المصنفة Vegan صراحة فالمينيو:',budget:'هاد المنتجات ممكنة ضمن الميزانية:',campaign:'العروض المنشورة:',fallback:'ها بعض الاقتراحات من المينيو. من بعد ربط Gemini نقدر نجاوب على أسئلة أكثر تعقيداً.',ask:'سولني على منتج، الثمن، النباتي أو الميزانية.',status:'تجربة محلية · Gemini مازال ما تربطش',live:'Gemini مربوط · عبر Worker آمن',quota:'الحصة اليومية ديال AI سالات · المينيو باقي خدام',source:'المصدر: المينيو المنشور',posSource:'المصدر: إحصائيات POS',view:'شوف المينيو ↗',unavailable:'المنتج غير متوفر مؤقتاً.',product:'لقيت هاد المنتج فالمينيو:',recommend:'اقتراح لتجربة أولى:',waiting:'كنراجع المينيو…'}};
+function say(k){return dict[lang][k]}
+function clean(s){return String(s||'').toLocaleLowerCase('tr-TR').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[ıİ]/g,'i').replace(/[^a-z0-9\u0600-\u06ff]+/g,' ').trim()}
+function itemName(x){if(lang==='ar'&&typeof arabicMenu!=='undefined'&&arabicMenu.items&&arabicMenu.items[x.tr])return arabicMenu.items[x.tr][0];return lang==='en'?x.en:x.tr}
+function emoji(c){return ({wrap:'🌯',plate:'🥙',fatte:'🍲',meze:'🫘',side:'🥟',salad:'🥗',dessert:'🍮',drink:'🥤'})[c]||'🌿'}
+function hydrate(){
+ if(typeof data!=='undefined'&&Array.isArray(data)){
+  menu=data.map(function(x,i){return {id:i,tr:x[1],en:x[2],cat:x[0],price:Number(x[3]),descTR:x[4],descEN:x[5],active:x[6]!==false,available:x[7]!==false};});
+ }
+ if(!menu.length)menu=[{id:0,cat:'wrap',tr:'Vegan Dürüm',en:'Vegan Wrap',price:140,active:true,available:true,descTR:'Falafel, humus, marul, domates, salatalık, nane'},{id:1,cat:'wrap',tr:'Falafel Dürüm',en:'Falafel Wrap',price:140,active:true,available:true,descTR:'Falafel, humus, marul'},{id:2,cat:'plate',tr:'Vegan Özel Tabağı',en:'Vegan Special Platter',price:320,active:true,available:true,descTR:'Falafel, ıspanaklı sembusek, sarma'},{id:3,cat:'dessert',tr:'Layali Lübnan',en:'Lebanese Nights',price:150,active:true,available:true,descTR:'Lübnan tatlısı'}];
+ campaigns=(Array.isArray(window.nohutCampaigns)?window.nohutCampaigns:[]).filter(function(c){return c.active!==false&&(!c.startsAt||Date.parse(c.startsAt)<=Date.now())&&(!c.endsAt||Date.parse(c.endsAt)>Date.now())});
+ $('menuCount').textContent=menu.filter(function(x){return x.active&&x.available}).length+' ürün';
+}
+async function syncPrices(){
+ try{
+  var r=await fetch(QR+'cms/menu-prices.json',{cache:'no-store'});if(!r.ok)return;
+  var groups=await r.json(),lookup=new Map();
+  Object.keys(groups).forEach(function(cat){(groups[cat]||[]).forEach(function(p){lookup.set(p.name,p)})});
+  if(lookup.size<menu.length/2)return;
+  menu.forEach(function(x){var p=lookup.get(x.tr);if(p&&Number.isFinite(p.price)){x.price=p.price;x.active=p.active!==false;x.available=p.available!==false}});
+  $('menuCount').textContent=menu.filter(function(x){return x.active&&x.available}).length+' ürün';
+ }catch(e){console.info('Nohut CMS price fallback:',e.message)}
+ try{var z=await fetch(QR+'cms/campaigns.json',{cache:'no-store'});if(z.ok){var list=await z.json();if(Array.isArray(list))campaigns=list.filter(function(c){return c.active&&(!c.startsAt||Date.parse(c.startsAt)<=Date.now())&&(!c.endsAt||Date.parse(c.endsAt)>Date.now())})}}catch(e){}
+}
+function el(tag,cls,txt){var n=document.createElement(tag);if(cls)n.className=cls;if(txt!==undefined)n.textContent=txt;return n}
+function bubble(message,role,source,items){
+ var chat=$('chat'),row=el('div','bubbleRow '+(role==='user'?'user':''));if(role!=='user')row.appendChild(el('span','avatar','✳'));
+ var box=el('div','bubble',message);row.appendChild(box);chat.appendChild(row);
+ if(source){box.appendChild(el('div','source',source));}
+ if(items&&items.length){var cards=el('div','cards');
+ items.slice(0,6).forEach(function(x){var card=el('div','product'),photo=el('div','photo',emoji(x.cat||'wrap')),detail=el('div','productTxt'),name=el('div','productName',itemName(x)),pr=el('div','price',x.price?x.price+' TL':'');var a=el('a','','');a.textContent=say('view');a.href=QR;a.target='_blank';a.rel='noopener';detail.append(name,pr,a);card.append(photo,detail);cards.appendChild(card)});
+ chat.appendChild(cards)}
+ chat.scrollTop=chat.scrollHeight;
+}
+function available(){return menu.filter(function(x){return x.active&&x.available&&Number.isFinite(x.price)})}
+function replyLocal(input){
+ var n=clean(input),a=available(),found=a.find(function(x){var item=clean(x.tr);return item.length>3&&n.includes(item)}),m=n.match(/(\d{2,4})\s*(?:tl|lira|try|₺|ليرة|درهم)/),budget=m?Number(m[1]):0;
+ if(/(alerj|allerg|gluten|sut|milk|lactose|حساسي|الحليب|لبن|حليب|fistik|nuts)/i.test(n))return {answer:say('allergy'),items:[]};
+ if(/(cok sat|en cok|best sell|popular|populer|الأكثر|الاكثر|مبيع)/i.test(n)){
+  if(popular&&Array.isArray(popular.ranking)&&popular.ranking.length){var p=popular.ranking.map(function(row){var key=row.product_name||row.name||row.product_id||'';return a.find(function(x){return clean(x.tr)===clean(key)})}).filter(Boolean);if(p.length)return {answer:(lang==='ar'?'الترتيب حسب آخر بيانات POS:':lang==='en'?'According to the latest POS summary:':'Son POS özetine göre en çok satılanlar:'),items:p.slice(0,5),source:say('posSource')+' · '+(popular.updated_at||'')}}
+  return {answer:say('noStats'),items:[]};
+ }
+ if(/(kampanya|offer|deal|promotion|عرض|العروض|تخفيض)/i.test(n)){
+  var lines=campaigns.map(function(c){return '• '+(c.title&& (c.title[lang]||c.title.tr)||c.id)+' — '+c.price+' TL'});return {answer:say('campaign')+'\n'+(lines.join('\n')||'—'),items:[]};
+ }
+ if(/(vegan|plant based|vegetarian|نبات|فيغان)/i.test(n))return {answer:say('vegan')+'\n'+say('allergy'),items:a.filter(function(x){return /vegan/i.test(x.tr)})};
+ if(budget>0||/(budget|butce|bütçe|under|limit|عندي|ميزانية)/i.test(n)){
+  var limit=budget||200,foods=a.filter(function(x){return x.price<=limit&&x.cat!=='drink'}).sort(function(x,y){return y.price-x.price});var combinations=[];
+  foods.slice(0,3).forEach(function(food){var drink=a.filter(function(x){return x.cat==='drink'&&x.price<=limit-food.price}).sort(function(x,y){return y.price-x.price})[0];combinations.push(food);if(drink&&combinations.length<6)combinations.push(drink)});
+  return {answer:say('budget')+' '+limit+' TL. '+(lang==='ar'?'الأثمنة حسب المينيو الحالي.':lang==='en'?'Prices from the published menu.':'Fiyatlar yayınlanan menüden alınır.'),items:combinations.length?combinations:foods.slice(0,4)};
+ }
+ if(found){
+  var desc=lang==='ar'&&typeof arabicMenu!=='undefined'&&arabicMenu.items&&arabicMenu.items[found.tr]?arabicMenu.items[found.tr][1]:lang==='en'?found.descEN:found.descTR;
+  return {answer:say('product')+'\n'+itemName(found)+' · '+found.price+' TL\n'+(desc||'')+'\n'+say('allergy'),items:[found]};
+ }
+ if(/(uc kisi|3 kisi|three people|group|ثلاث|3 اشخاص)/i.test(n))return {answer:say('fallback')+'\n'+say('menu'),items:a.filter(function(x){return x.cat==='plate'}).slice(0,4)};
+ if(/(ne yesem|oner|tavsiye|recommend|what should|delicious|اول مرة|اقترح|شنو ناكل)/i.test(n))return {answer:say('recommend'),items:a.filter(function(x){return ['Falafel Dürüm','Vegan Dürüm','Beyrut Tabağı','Falafel Porsiyon'].includes(x.tr)).slice(0,4)};
+ return {answer:say('ask')+'\n'+say('fallback'),items:a.filter(function(x){return x.cat==='wrap'}).slice(0,3)};
+}
+function setLang(next){
+ lang=next;document.documentElement.lang=lang;document.documentElement.dir=lang==='ar'?'rtl':'ltr';
+ document.querySelectorAll('.langbtn').forEach(function(x){x.classList.toggle('active',x.dataset.lang===lang)});
+ $('welcome').textContent=say('welcome');$('tagline').textContent=say('tag');$('subtitle').textContent=say('subtitle');$('question').placeholder=say('placeholder');$('disclaimer').textContent=say('disclaimer');$('menuFooter').textContent=say('footer');
+ var wrap=$('picks');wrap.replaceChildren();say('picks').forEach(function(s,i){var b=el('button','pick',s);b.type='button';b.addEventListener('click',function(){sendQuestion(dict[lang].q[i])});wrap.appendChild(b)});
+ statusDisplay();
+}
+function statusDisplay(){
+ $('statusText').textContent=blocked?say('quota'):online?say('live'):say('status');$('statusBall').className='statusBall '+(online?'live':blocked?'off':'');
+}
+async function statusCheck(){
+ if(!worker){online=false;blocked=false;popular=null;statusDisplay();return}
+ try{
+  var res=await fetch(worker+'/api/ai/status',{signal:AbortSignal.timeout(5000)}),j=await res.json();online=Boolean(j.available);blocked=Boolean(j.quota_exhausted);statusDisplay();
+  var pr=await fetch(worker+'/api/popular',{signal:AbortSignal.timeout(5000)});if(pr.ok){var st=await pr.json();popular=st&&Array.isArray(st.ranking)?st:null}
+ }catch(e){online=false;blocked=false;popular=null;statusDisplay()}
+}
+async function sendQuestion(question){
+ question=String(question||'').trim().slice(0,300);if(!question)return;
+ $('question').value='';bubble(question,'user');$('send').disabled=true;
+ try{
+  if(online&&!blocked){
+   var res=await fetch(worker+'/api/ai/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:question,language:lang}),signal:AbortSignal.timeout(25000)});
+   if(res.status===429){blocked=true;online=false;statusDisplay();}
+   if(res.ok){var j=await res.json();if(typeof j.answer==='string'&&j.answer.trim()){bubble(j.answer,'bot','Gemini · Cloudflare Worker');return}}
+  }
+  var response=replyLocal(question);bubble(response.answer,'bot',response.source||say('source'),response.items);
+ }catch(e){var fallback=replyLocal(question);bubble(fallback.answer,'bot',say('source'),fallback.items)}
+ finally{$('send').disabled=false;$('question').focus()}
+}
+function setup(){
+ hydrate();syncPrices();setLang('tr');statusCheck();
+ document.querySelectorAll('.langbtn').forEach(function(b){b.addEventListener('click',function(){setLang(b.dataset.lang)})});
+ $('chatForm').addEventListener('submit',function(e){e.preventDefault();sendQuestion($('question').value)});
+ $('openSettings').addEventListener('click',function(){$('workerUrl').value=worker;$('settings').classList.add('open')});
+ $('closeSettings').addEventListener('click',function(){$('settings').classList.remove('open')});
+ $('settings').addEventListener('click',function(e){if(e.target===$('settings'))$('settings').classList.remove('open')});
+ $('saveSettings').addEventListener('click',function(){
+  var url=$('workerUrl').value.trim().replace(/\/+$/,'');
+  if(url&&!/^https:\/\/[a-z0-9.-]+(?::\d+)?$/i.test(url)){alert('Lütfen geçerli HTTPS Worker adresi girin.');return}
+  worker=url;localStorage.setItem('nohut_ai_worker',worker);$('settings').classList.remove('open');statusCheck();
+ });
+ var Rec=window.SpeechRecognition||window.webkitSpeechRecognition;
+ if(Rec){var recognition=new Rec();recognition.lang='tr-TR';recognition.interimResults=false;recognition.onresult=function(e){$('question').value=e.results[0][0].transcript};recognition.onend=function(){$('mic').classList.remove('recording')};recognition.onerror=function(){$('mic').classList.remove('recording')};
+ $('mic').addEventListener('click',function(){recognition.lang=lang==='ar'?'ar-MA':lang==='en'?'en-US':'tr-TR';$('mic').classList.add('recording');try{recognition.start()}catch(e){$('mic').classList.remove('recording')}})}
+ else{$('mic').disabled=true;$('mic').title='Tarayıcı konuşma tanımayı desteklemiyor'}
+ bubble('Merhaba! 👋 Nohut AI test alanına hoş geldin. Menü, bütçe, vegan seçenekler ve kampanyalar hakkında sorabilirsin. Gerçek POS sıralaması henüz bağlı değil.','bot',say('source'));
+}
+setup();
+})();
+</script>
+</body></html>
