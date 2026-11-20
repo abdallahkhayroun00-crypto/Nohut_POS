@@ -11,11 +11,14 @@ class OpenAccountsPanel extends StatefulWidget {
     required this.onOpenOrder,
     required this.onPayOrder,
     required this.onPayAccount,
+    required this.onLinkCustomer,
   });
   final Json state;
   final ValueChanged<Json> onOpenOrder;
   final ValueChanged<Json> onPayOrder;
   final ValueChanged<List<Json>> onPayAccount;
+  final void Function(int orderId, int? customerId, String? newName, String phone)
+      onLinkCustomer;
 
   @override
   State<OpenAccountsPanel> createState() => _OpenAccountsPanelState();
@@ -32,6 +35,125 @@ class _OpenAccountsPanelState extends State<OpenAccountsPanel> {
         account.phone.contains(q) ||
         account.orders.any((o) =>
             displayOrderNumber(o).toString().contains(q))).toList();
+  }
+
+  Future<void> _linkLegacyOrder(Json order) async {
+    final directory = savedCustomers(widget.state);
+    final name = TextEditingController(
+      text: (order['customer'] is Map
+          ? (order['customer'] as Map)['name'] : '').toString(),
+    );
+    final phone = TextEditingController(
+      text: (order['customer'] is Map
+          ? (order['customer'] as Map)['phone'] : '').toString(),
+    );
+    final search = TextEditingController();
+    bool createNew = directory.isEmpty;
+    int? chosenId;
+    final result = await showDialog<(int?, String?, String)>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, update) {
+          final needle = search.text.trim().toLowerCase();
+          final matching = directory.where((c) => needle.isEmpty ||
+            (c['name'] ?? '').toString().toLowerCase().contains(needle) ||
+            customerPhoneKey((c['phone'] ?? '').toString())
+              .contains(customerPhoneKey(needle)) &&
+            customerPhoneKey(needle).isNotEmpty,
+          ).take(8).toList();
+          return AlertDialog(
+            title: const Text('Eski Gel-Al Siparişini Müşteriye Bağla'),
+            content: SizedBox(
+              width: 460,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Sipariş #' + displayOrderNumber(order).toString() +
+                      ' · Kalan ' + formatTry(orderDueCents(order))),
+                    const SizedBox(height: 7),
+                    const Text('Ürünler ve önceki ödemeler değişmez. '
+                      'Yalnızca müşteri bağlantısı eklenir.'),
+                    const SizedBox(height: 12),
+                    Wrap(spacing: 8, children: [
+                      ChoiceChip(
+                        label: const Text('Kayıtlı Müşteri'),
+                        selected: !createNew,
+                        onSelected: directory.isEmpty ? null
+                          : (_) => update(() => createNew = false),
+                      ),
+                      ChoiceChip(
+                        label: const Text('Yeni Müşteri'),
+                        selected: createNew,
+                        onSelected: (_) => update(() => createNew = true),
+                      ),
+                    ]),
+                    const SizedBox(height: 12),
+                    if (createNew) ...[
+                      TextField(
+                        controller: name,
+                        maxLength: 120,
+                        decoration: const InputDecoration(labelText: 'Müşteri Adı *'),
+                      ),
+                      TextField(
+                        controller: phone,
+                        maxLength: 40,
+                        keyboardType: TextInputType.phone,
+                        decoration: const InputDecoration(labelText: 'Telefon (isteğe bağlı)'),
+                      ),
+                    ] else ...[
+                      TextField(
+                        controller: search,
+                        decoration: const InputDecoration(
+                          labelText: 'Kayıtlı müşteri ara',
+                          prefixIcon: Icon(Icons.search),
+                        ),
+                        onChanged: (_) => update(() {}),
+                      ),
+                      for (final customer in matching)
+                        ListTile(
+                          dense: true,
+                          leading: Icon(chosenId == customer['id']
+                              ? Icons.check_circle : Icons.person_outline),
+                          title: Text((customer['name'] ?? '').toString()),
+                          subtitle: Text((customer['phone'] ?? '').toString()),
+                          selected: chosenId == customer['id'],
+                          onTap: () => update(
+                            () => chosenId = customer['id'] as int),
+                        ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Vazgeç'),
+              ),
+              FilledButton(
+                onPressed: (createNew ? name.text.trim().isNotEmpty
+                    : chosenId != null)
+                    ? () => Navigator.pop(
+                      dialogContext,
+                      createNew
+                          ? (null, name.text.trim(), phone.text.trim())
+                          : (chosenId, null, ''),
+                    )
+                    : null,
+                child: const Text('Müşteriye Bağla'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    name.dispose();
+    phone.dispose();
+    search.dispose();
+    if (result == null || !mounted) return;
+    widget.onLinkCustomer(order['id'] as int, result.$1, result.$2, result.$3);
   }
 
   @override
@@ -131,6 +253,15 @@ class _OpenAccountsPanelState extends State<OpenAccountsPanel> {
                               icon: const Icon(Icons.payments_outlined),
                               label: const Text('Ödeme Al'),
                             ),
+                            if (!savedCustomers(widget.state).any((c) =>
+                                order['customer'] is Map &&
+                                c['id'] == (order['customer'] as Map)['id']))
+                              OutlinedButton.icon(
+                                key: ValueKey('link-legacy-' + order['id'].toString()),
+                                onPressed: () => _linkLegacyOrder(order),
+                                icon: const Icon(Icons.person_add_alt_1_outlined),
+                                label: const Text('Müşteriye Bağla'),
+                              ),
                           ]),
                         ],
                       ),
