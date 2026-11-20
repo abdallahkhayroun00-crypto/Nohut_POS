@@ -1491,6 +1491,15 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
           onOpenOrder: _focusOrder,
           onPayOrder: (order) => unawaited(_pay(order)),
           onPayAccount: (orders) => unawaited(_payOpenAccount(orders)),
+          onLinkCustomer: (orderId, customerId, newName, phone) {
+            _edit((state) => linkLegacyPickupOrder(
+              state,
+              orderId: orderId,
+              existingCustomerId: customerId,
+              newCustomerName: newName,
+              newCustomerPhone: phone,
+            ));
+          },
         );
       case 'payments':
         return _payments(db);
