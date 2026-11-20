@@ -110,6 +110,7 @@ void main() {
       expect(find.widgetWithText(FilterChip, 'Yemeksepeti'), findsOneWidget);
       expect(find.text('Değerlendirmeleri Getir'), findsNothing);
       expect(find.textContaining('Tamamlanan ve iptal edilenler'), findsOneWidget);
+      await t.ensureVisible(find.textContaining('Tamamlanan ve iptal edilenler'));
       await t.tap(find.textContaining('Tamamlanan ve iptal edilenler'));
       await t.pumpAndSettle();
       expect(find.text('Teslim Edildi'), findsOneWidget);
