@@ -41,7 +41,7 @@ class QrPublisherClient {
   Future<void> deleteToken() => vault.clear();
 
   Future<Map<String,dynamic>> call(
-    String method, String endpoint, String path, [Json? data],
+    String method, String endpoint, String path, [Json? data]
   ) async {
     final base=checkEndpoint(endpoint);
     final url=base.resolve(path.replaceFirst(RegExp(r'^/'), ''));
