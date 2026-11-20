@@ -15,7 +15,7 @@ void main() {
     ).readPublishedMenu();
 
     expect(requests.map((x)=>x.path),[
-      '/qr-menu/cms/pos-managed-menu.json',
+      '/qr-menu/cms/pos-managed-status.json',
       '/qr-menu/cms/catalog-v1.json',
       '/qr-menu/cms/menu-prices.json',
       '/qr-menu/cms/campaigns.json',
@@ -69,6 +69,7 @@ void main() {
       'ar':'فلافل جديد',
     };
     final reader=QrMenuReader(fetcher:(uri)async{
+      if(uri.path.endsWith('pos-managed-status.json'))return jsonEncode({'schemaVersion':1,'enabled':true});
       if(uri.path.endsWith('pos-managed-menu.json'))return jsonEncode(managed);
       throw StateError('Legacy endpoint must not be read.');
     });
@@ -77,6 +78,33 @@ void main() {
     expect(published.products.first.available,isFalse);
     expect(published.products.first.name,'Falafel Dürüm Yeni');
     expect(published.products.first.legacyKey,'Falafel Dürüm');
+  });
+
+  test('disabled managed feed keeps legacy CMS without fetching missing menu',()async{
+    final requests=<Uri>[];
+    final reader=QrMenuReader(fetcher:(uri)async{
+      requests.add(uri);
+      if(uri.path.endsWith('pos-managed-status.json')) {
+        return jsonEncode({'schemaVersion':1,'enabled':false});
+      }
+      if(uri.path.endsWith('pos-managed-menu.json')) {
+        throw StateError('Inactive optional managed menu must not be requested.');
+      }
+      if(uri.path.endsWith('catalog-v1.json'))return jsonEncode(QrCatalogFixture.catalog());
+      if(uri.path.endsWith('menu-prices.json'))return QrCatalogFixture.priceJson();
+      if(uri.path.endsWith('campaigns.json'))return QrCatalogFixture.campaignJson;
+      throw StateError('Unknown fetch path.');
+    });
+    final published=await reader.readPublishedMenu();
+    expect(published.products,hasLength(53));
+    expect(requests.where((u)=>u.path.endsWith('pos-managed-menu.json')),isEmpty);
+  });
+
+  test('missing status marker HTTP 503 preserves public CMS fallback',()async{
+    final urls=<Uri>[];
+    final result=await QrCatalogFixture.reader(requests:urls).readPublishedMenu();
+    expect(result.products,hasLength(53));
+    expect(urls.first.path,endsWith('pos-managed-status.json'));
   });
 
   test('campaign expiry respects timezone offsets',()async{
