@@ -564,7 +564,8 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
                           style:TextStyle(fontSize:12)),
                       ]),
                       fields([
-                        field(0,'Türkçe · Ürün adı'),
+                        const Text('Türkçe ürün adı ilk sekmede düzenlenir.'),
+                        const SizedBox(height:12),
                         field(1,'English · Product name'),
                         field(2,'العربية · اسم المنتج'),
                         const SizedBox(height:3),
