@@ -102,6 +102,7 @@ void main() {
           'Senkronizasyon',
           'Siparişler',
         ]) {
+          await tester.ensureVisible(find.text(tab).last);
           await tester.tap(find.text(tab).last);
           await tester.pumpAndSettle();
           expect(tester.takeException(), isNull, reason: tab);
