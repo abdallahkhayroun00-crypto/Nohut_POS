@@ -780,6 +780,7 @@ class StaffPanel extends StatelessWidget {
       ),
       for (final person in asMaps(state['employees']))
         ListTile(
+          onTap: () => change(context, person),
           title: Text((person['name'] ?? '').toString()),
           subtitle: Text([
             (person['role'] ?? 'Personel').toString(),
