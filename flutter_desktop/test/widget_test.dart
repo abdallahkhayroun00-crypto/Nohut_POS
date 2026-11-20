@@ -86,7 +86,8 @@ void main() {
         await tester.ensureVisible(find.text('Online Siparişler').first);
         await tester.tap(find.text('Online Siparişler').first);
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Yemeksepeti').first);
+        await tester.ensureVisible(find.widgetWithText(FilterChip, 'Yemeksepeti'));
+        await tester.tap(find.widgetWithText(FilterChip, 'Yemeksepeti'));
         await tester.pumpAndSettle();
         final demo = find.text('Yemeksepeti test alanı');
         await tester.ensureVisible(demo);
