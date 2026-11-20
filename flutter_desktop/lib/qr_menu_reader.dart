@@ -162,16 +162,25 @@ class QrMenuReader {
   }
 
 
-  /// The published managed catalog is authoritative when present.
-  /// Only 404 means no managed file; invalid or inaccessible data fails closed.
+  /// Keep the working public catalog as source of truth until the publisher
+  /// has finished its first commit and enabled the versioned status marker.
+  /// GitHub Pages can report 503 (rather than 404) for a missing optional file.
+  /// After enabling, never silently fall back if the managed catalog is broken.
   Future<PublishedQrMenu?> _readManaged() async {
-    final String raw;
+    final String statusRaw;
     try {
-      raw=await _fetcher(baseUrl.resolve('cms/pos-managed-menu.json'));
-    }on HttpException catch(e){
-      if(e.message.contains('404'))return null;
+      statusRaw=await _fetcher(baseUrl.resolve('cms/pos-managed-status.json'));
+    } on HttpException catch(e) {
+      if(e.message.contains('404')||e.message.contains('503'))return null;
       rethrow;
     }
+    final status=jsonDecode(statusRaw);
+    if(status is! Map||status['schemaVersion']!=1||
+       status['enabled'] is! bool) {
+      throw const FormatException('QR yönetilen katalog durum dosyası geçersiz.');
+    }
+    if(status['enabled']!=true)return null;
+    final raw=await _fetcher(baseUrl.resolve('cms/pos-managed-menu.json'));
     final decoded=jsonDecode(raw);
     if(decoded is! Map||decoded['schemaVersion']!=1||
        decoded['source']!='nohutfalafel/qr-menu'||
