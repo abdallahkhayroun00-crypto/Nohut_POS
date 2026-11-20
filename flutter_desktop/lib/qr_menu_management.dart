@@ -1,0 +1,458 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:flutter/material.dart';
+
+import 'brand.dart';
+import 'operations_ui.dart';
+import 'pos_logic.dart';
+import 'pos_store.dart';
+import 'qr_menu_sync.dart';
+import 'qr_publisher_client.dart';
+
+class QrMenuManagement extends StatefulWidget {
+  const QrMenuManagement({super.key,
+    required this.state,required this.edit,required this.store,required this.sync});
+  final Json state;
+  final EditState edit;
+  final PosStore store;
+  final QrMenuAutoSync sync;
+  @override State<QrMenuManagement> createState()=>_QrMenuManagementState();
+}
+
+class _QrMenuManagementState extends State<QrMenuManagement> {
+  late final QrPublisherClient publisher;
+  Json? menu;
+  String? revision;
+  bool busy=false,changed=false;
+  String info='Yayınlama hizmetine bağlanarak menüyü yükleyin.';
+  String tab='Ürünler',query='';
+  @override void initState(){
+    super.initState();
+    publisher=QrPublisherClient(widget.store.filePath);
+    final saved=widget.state['qrPublisherDraft'];
+    if(saved is Map){
+      menu=copyJson(Map<String,dynamic>.from(saved));
+      revision=widget.state['qrPublisherDraftRevision']?.toString();
+      changed=true;
+      info='Önceki yerel taslak geri yüklendi. Yayımlanmamış değişiklikler var.';
+    }
+  }
+  String get endpoint=>
+    (widget.state['settings']?['qrPublisherUrl']??'http://127.0.0.1:8787').toString();
+  List<Json> get products=>asMaps(menu?['products']);
+  List<Json> get categories=>asMaps(menu?['categories']);
+  List<Json> get campaigns=>asMaps(menu?['campaigns']);
+  String tr(Map p,String key)=>p[key] is Map
+    ?(p[key]['tr']??'').toString():'';
+  Map<String,String> translations(Object? field){
+    final m=field is Map?field:<String,dynamic>{};
+    return {
+      'tr':(m['tr']??'').toString(),
+      'en':(m['en']??'').toString(),
+      'ar':(m['ar']??'').toString(),
+    };
+  }
+  Future<void> load({bool force=false})async{
+    if(busy)return;
+    if(changed&&!force){
+      final yes=await confirmAction(context,'Yerel Taslağı Değiştir?',
+        'Yayımlanmamış yerel düzenlemeler güncel GitHub verisiyle değiştirilecek.',
+        confirm:'Taslağı Değiştir');
+      if(!yes||!mounted)return;
+    }
+    setState(()=>busy=true);
+    try{
+      final remote=await publisher.catalog(endpoint);
+      final raw=remote['catalog'];
+      if(raw is! Map)throw const FormatException('Katalog yanıtı geçersiz.');
+      final data=copyJson(Map<String,dynamic>.from(raw));
+      if(data['products'] is! List||data['categories'] is! List||
+         data['campaigns'] is! List)throw const FormatException('Katalog eksik.');
+      if(!mounted)return;
+      setState((){
+        menu=data;revision=remote['revision']?.toString();
+        changed=false;
+        info='GitHub kataloğu okundu. Kaydet ve Yayınla birbirinden ayrıdır.';
+      });
+      widget.edit((state){
+        state.remove('qrPublisherDraft');
+        state.remove('qrPublisherDraftRevision');
+      });
+    }on FormatException catch(e){
+      if(mounted)setState(()=>info=e.message);
+    }catch(_){
+      if(mounted)setState(()=>info=
+        'GitHub yayınlama hizmetine bağlanılamadı. Ayarlar > Entegrasyonlar kontrol edin.');
+    }finally{if(mounted)setState(()=>busy=false);}
+  }
+  void saveDraft(){
+    if(menu==null)return;
+    final copy=copyJson(menu!);
+    final ok=widget.edit((state){
+      state['qrPublisherDraft']=copy;
+      state['qrPublisherDraftRevision']=revision;
+    });
+    if(mounted)setState((){
+      changed=ok;
+      info=ok?'Taslak yalnızca bu bilgisayarda kaydedildi. Web henüz değişmedi.':
+        'Yerel taslak kaydedilemedi.';
+    });
+  }
+  void updated(){
+    if(mounted)setState(()=>changed=true);
+    saveDraft();
+  }
+  Future<void> publish()async{
+    if(menu==null||revision==null||busy)return;
+    final approved=await confirmAction(context,'QR Menü · Gerçek Yayınlama',
+      'Ürün, kategori, stok, çeviri ve kampanya değişiklikleri '
+      'nohutfalafel/qr-menu ana dalına yazılacak. GitHub Pages sonra güncellenecek. '
+      'Sipariş geçmişi değişmez.',
+      confirm:'GitHub’a Yayınla');
+    if(!approved||!mounted)return;
+    setState(()=>busy=true);
+    try{
+      final answer=await publisher.publish(endpoint,revision!,copyJson(menu!));
+      if(!mounted)return;
+      setState((){
+        revision=answer['revision']?.toString();
+        changed=false;
+        info='GitHub commit oluşturuldu: '+(answer['commit']??'').toString()+
+          '. Pages dağıtımı henüz doğrulanmadı.';
+      });
+      widget.edit((state){
+        state.remove('qrPublisherDraft');
+        state.remove('qrPublisherDraftRevision');
+      });
+    }on FormatException catch(e){
+      if(mounted)setState(()=>info=e.message);
+    }catch(_){
+      if(mounted)setState(()=>info=
+        'Yayınlama sonucu doğrulanamadı. Tekrar göndermeden GitHub geçmişini kontrol edin.');
+    }finally{if(mounted)setState(()=>busy=false);}
+  }
+
+  Future<void> productEditor([Json? original])async{
+    if(menu==null)return;
+    final allCats=categories.where((c)=>c['id']!='all').toList();
+    final category=original?['category']?.toString()??allCats.first['id'].toString();
+    final inputs=[
+      ('Türkçe Ürün Adı',tr(original??{},'name')),
+      ('English · Name',translations(original?['name'])['en']!),
+      ('العربية · الاسم',translations(original?['name'])['ar']!),
+      ('Türkçe Açıklama',translations(original?['description'])['tr']!),
+      ('English · Description',translations(original?['description'])['en']!),
+      ('العربية · الوصف',translations(original?['description'])['ar']!),
+      ('Türkçe Görünür Adı',translations(original?['displayName'])['tr']!),
+      ('English · Display Name',translations(original?['displayName'])['en']!),
+      ('العربية · اسم العرض',translations(original?['displayName'])['ar']!),
+      ('Fiyat (₺)',(original?['price']??'0').toString()),
+      ('Kategori',category),
+      ('Görsel yolu (assets/...)',(original?['image']??'').toString()),
+    ];
+    final values=await askFields(context,
+      original==null?'Yeni Ürün':'Ürün Düzenle · '+tr(original,'name'),
+      inputs,choices:{10:allCats.map((c)=>c['id'].toString()).toList()},
+      validate:(v){
+        if(v.take(3).any((s)=>s.trim().isEmpty)||
+          v.skip(6).take(3).any((s)=>s.trim().isEmpty))
+          return 'TR / EN / AR isimleri gereklidir.';
+        if(v.any((s)=>s.length>2500))return 'Metin çok uzun.';
+        try{parseMoney(v[9]);}catch(_){return 'Fiyatı doğru yazın.';}
+        if(v[11].isNotEmpty&&!RegExp(r'^assets/[a-zA-Z0-9_./-]+\.(png|jpg|jpeg|webp|svg)$')
+          .hasMatch(v[11]))return 'Görsel yolu assets/ ile başlamalı.';
+        if(v[11].contains('..'))return 'Geçersiz görsel yolu.';
+        return null;
+      });
+    if(values==null||!mounted)return;
+    final rows=menu!['products'] as List;
+    final newId=rows.fold<int>(0,(max,e)=>
+      (e is Map && e['id'] is int && (e['id'] as int)>=max)
+        ?(e['id'] as int)+1:max);
+    final item=original==null?<String,dynamic>{
+      'id':newId,'legacyKey':'pos-id-'+newId.toString(),
+      'active':true,'available':true,'order':rows.length,
+    }:Map<String,dynamic>.from(original);
+    item.addAll({
+      'name':{'tr':values[0],'en':values[1],'ar':values[2]},
+      'description':{'tr':values[3],'en':values[4],'ar':values[5]},
+      'displayName':{'tr':values[6],'en':values[7],'ar':values[8]},
+      'price':fromCents(parseMoney(values[9])),
+      'category':values[10],
+      'image':values[11].isEmpty?null:values[11],
+    });
+    if(original==null)rows.add(item);
+    else{
+      final i=rows.indexWhere((r)=>r is Map && r['id']==original['id']);
+      if(i<0)return;
+      rows[i]=item;
+    }
+    updated();
+  }
+  Future<void> categoryEditor([Json? original])async{
+    if(menu==null)return;
+    final values=await askFields(context,
+      original==null?'Yeni Kategori':'Kategori Düzenle',
+      [
+        ('Kategori Kodu (ID)',original?['id']?.toString()??''),
+        ('Türkçe',translations(original?['name'])['tr']!),
+        ('English',translations(original?['name'])['en']!),
+        ('العربية',translations(original?['name'])['ar']!),
+        ('Türkçe Açıklama',translations(original?['description'])['tr']!),
+        ('English · Description',translations(original?['description'])['en']!),
+        ('العربية · الوصف',translations(original?['description'])['ar']!),
+      ],
+      validate:(v){
+        if(!RegExp(r'^[a-z][a-z0-9-]{0,49}$').hasMatch(v[0]))
+          return 'ID: küçük Latin harfleri / rakamlar.';
+        if(original!=null&&v[0]!=original['id'])return 'Mevcut kategori ID değişemez.';
+        if(v.skip(1).take(3).any((x)=>x.isEmpty))return 'TR / EN / AR gerekli.';
+        if(original==null&&categories.any((x)=>x['id']==v[0]))
+          return 'Kategori kodu zaten kullanılıyor.';
+        return null;
+      });
+    if(values==null)return;
+    final rows=menu!['categories'] as List;
+    final item=original==null?<String,dynamic>{
+      'id':values[0],'active':true,'order':rows.length,
+    }:Map<String,dynamic>.from(original);
+    item.addAll({
+      'name':{'tr':values[1],'en':values[2],'ar':values[3]},
+      'description':{'tr':values[4],'en':values[5],'ar':values[6]},
+    });
+    if(original==null)rows.add(item);
+    else rows[rows.indexWhere((r)=>r is Map&&r['id']==original['id'])]=item;
+    updated();
+  }
+  Future<void> campaignEditor([Json? original])async{
+    if(menu==null)return;
+    final v=await askFields(context,
+      original==null?'Yeni Kampanya':'Kampanya Düzenle',
+      [
+        ('ID',original?['id']?.toString()??''),
+        ('Başlık · Türkçe',translations(original?['title'])['tr']!),
+        ('Title · English',translations(original?['title'])['en']!),
+        ('العنوان · العربية',translations(original?['title'])['ar']!),
+        ('Açıklama · Türkçe',translations(original?['description'])['tr']!),
+        ('Description · English',translations(original?['description'])['en']!),
+        ('الوصف · العربية',translations(original?['description'])['ar']!),
+        ('Fiyat ₺',(original?['price']??'0').toString()),
+        ('Poster · assets/..',(original?['poster']??'').toString()),
+        ('Thumbnail · assets/..',(original?['thumbnail']??'').toString()),
+      ],validate:(list){
+        if(!RegExp(r'^[a-z0-9-]{1,70}$').hasMatch(list[0]))
+          return 'Geçersiz kampanya ID.';
+        if(list.skip(1).take(3).any((x)=>x.isEmpty))return 'Çeviri gerekli.';
+        if(original!=null&&list[0]!=original['id'])return 'Kampanya ID değişemez.';
+        try{parseMoney(list[7]);}catch(_){return 'Fiyatı kontrol edin.';}
+        for(final path in [list[8],list[9]]){
+          if(!RegExp(r'^assets/[A-Za-z0-9_./-]+\.(png|jpg|jpeg|webp)$')
+            .hasMatch(path)||path.contains('..'))return 'Poster / Thumbnail yolu geçersiz.';
+        }
+        return null;
+      });
+    if(v==null)return;
+    final rows=menu!['campaigns'] as List;
+    final c=original==null?<String,dynamic>{
+      'active':false,'items':[],
+    }:Map<String,dynamic>.from(original);
+    c.addAll({
+      'id':v[0],
+      'title':{'tr':v[1],'en':v[2],'ar':v[3]},
+      'description':{'tr':v[4],'en':v[5],'ar':v[6]},
+      'price':fromCents(parseMoney(v[7])),
+      'poster':v[8],'thumbnail':v[9],
+    });
+    if(original==null)rows.add(c);
+    else rows[rows.indexWhere((r)=>r is Map&&r['id']==original['id'])]=c;
+    updated();
+  }
+  void toggle(String list,int id,String key,bool value){
+    final rows=menu?[list] as List?;
+    if(rows==null)return;
+    final row=rows.cast<Map>().firstWhere((e)=>e['id']==id);
+    row[key]=value;
+    updated();
+  }
+  void toggleString(String list,String id,String key,bool value){
+    final rows=menu?[list] as List?;
+    if(rows==null)return;
+    final row=rows.cast<Map>().firstWhere((e)=>e['id']==id);
+    row[key]=value;
+    updated();
+  }
+  Future<void> pickImage(Json product)async{
+    if(!Platform.isWindows){
+      setState(()=>info='Görsel yükleme Windows üzerinde desteklenir.');
+      return;
+    }
+    const script=r'Add-Type -AssemblyName System.Windows.Forms; $d=New-Object System.Windows.Forms.OpenFileDialog; $d.Filter="Images (*.png;*.jpg;*.jpeg;*.webp)|*.png;*.jpg;*.jpeg;*.webp"; if($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK){ [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($d.FileName)) }';
+    final encoded=base64Encode([for(final ch in script.codeUnits)...[ch&255,ch>>8]]);
+    setState(()=>busy=true);
+    try{
+      final selected=await Process.run('powershell.exe',
+        ['-STA','-NoProfile','-NonInteractive','-EncodedCommand',encoded])
+        .timeout(const Duration(seconds:90));
+      if(selected.exitCode!=0)throw const FormatException('Windows dosya seçimi başarısız.');
+      final path=selected.stdout.toString().trim();
+      if(path.isEmpty)return;
+      final filename=utf8.decode(base64Decode(path));
+      final file=File(filename),bytes=await file.readAsBytes();
+      final lower=filename.toLowerCase();
+      final mime=lower.endsWith('.png')?'image/png':
+        lower.endsWith('.webp')?'image/webp':'image/jpeg';
+      if(bytes.length>6000000)throw const FormatException('Görsel en fazla 6 MB.');
+      final result=await publisher.uploadImage(endpoint,mime,bytes);
+      final newPath=result['path']?.toString()??'';
+      if(newPath.isEmpty)throw const FormatException('Görsel yolu alınamadı.');
+      final rows=menu!['products'] as List;
+      final index=rows.indexWhere((r)=>r is Map&&r['id']==product['id']);
+      if(index<0)return;
+      (rows[index] as Map)['image']=newPath;
+      updated();
+      if(mounted)setState(()=>info='Görsel GitHub’a yüklendi. '
+        'Menüde görünmesi için değişiklikleri ayrıca Yayınla.');
+    }on FormatException catch(e){
+      if(mounted)setState(()=>info=e.message);
+    }catch(_){
+      if(mounted)setState(()=>info='Resim yüklenemedi. Servis bağlantısını kontrol edin.');
+    }finally{if(mounted)setState(()=>busy=false);}
+  }
+  @override Widget build(BuildContext context){
+    final filtered=products.where((p)=>
+      (p['name'] as Map?)?['tr'].toString().toLowerCase()
+        .contains(query.toLowerCase())==true).toList();
+    return Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[
+      panelTitle('QR Menü Yönetimi'),
+      const Text('Nohut QR Menu · TR / EN / AR · Ürünler, stok, fiyat, kategoriler, '
+        'kampanyalar ve GitHub yayınlama. Değişiklikler önce yerel taslağa kaydedilir.'),
+      const SizedBox(height:13),
+      Card(child:Padding(padding:const EdgeInsets.all(15),
+        child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+          Wrap(spacing:9,runSpacing:9,children:[
+            OutlinedButton.icon(onPressed:busy?null:load,
+              icon:const Icon(Icons.cloud_download_outlined),
+              label:const Text('GitHub’dan Menü Yükle')),
+            OutlinedButton.icon(onPressed:menu==null||busy?null:saveDraft,
+              icon:const Icon(Icons.save_outlined),
+              label:const Text('Taslak Kaydet')),
+            FilledButton.icon(onPressed:menu==null||busy||!changed?null:publish,
+              icon:const Icon(Icons.publish_outlined),
+              label:const Text('Önizle & Yayınla')),
+            OutlinedButton.icon(onPressed:busy?null:()=>widget.sync.syncNow(),
+              icon:const Icon(Icons.sync),
+              label:const Text('POS Menüsünü Eşitle')),
+          ]),
+          if(busy)const LinearProgressIndicator(),
+          const SizedBox(height:8),
+          Text(info,style:const TextStyle(color:NohutBrand.green)),
+          if(menu!=null)Text('Ürün: '+products.length.toString()+
+            ' · Kategori: '+categories.length.toString()+
+            ' · Kampanya: '+campaigns.length.toString()+
+            (changed?' · YAYINLANMAMIŞ TASLAK':' · Güncel taslak')),
+        ]))),
+      if(menu==null)
+        const Card(child:Padding(padding:EdgeInsets.all(20),
+          child:Text('Önce Ayarlar → Entegrasyonlar → Nohut QR Publisher '
+            'bağlantısını test edin ve GitHub menüsünü yükleyin.')))
+      else ...[
+        const SizedBox(height:12),
+        Wrap(spacing:8,children:[
+          for(final name in ['Ürünler','Kategoriler','Kampanyalar','Çeviriler'])
+            ChoiceChip(label:Text(name),selected:tab==name,
+              onSelected:(_)=>setState(()=>tab=name)),
+        ]),
+        const SizedBox(height:12),
+        if(tab=='Ürünler'||tab=='Çeviriler') ...[
+          Row(children:[
+            Expanded(child:TextField(
+              decoration:const InputDecoration(
+                labelText:'Ürün ara · TR / EN / AR',prefixIcon:Icon(Icons.search)),
+              onChanged:(v)=>setState(()=>query=v),
+            )),
+            const SizedBox(width:10),
+            FilledButton.icon(
+              onPressed:()=>productEditor(),
+              icon:const Icon(Icons.add),label:const Text('Yeni Ürün Ekle')),
+          ]),
+          const SizedBox(height:10),
+          for(final p in filtered)
+            Card(child:ListTile(
+              title:Text(tr(p,'name')+' · '+p['price'].toString()+' ₺'),
+              subtitle:Text((translations(p['name'])['en']??'')+
+                ' · '+(translations(p['name'])['ar']??'')+
+                ' · '+p['category'].toString()+
+                (p['available']==false?' · STOKTA YOK':' · Stokta')),
+              leading:IconButton(onPressed:()=>pickImage(p),
+                icon:const Icon(Icons.add_photo_alternate_outlined),
+                tooltip:'Resim Yükle'),
+              trailing:Wrap(mainAxisSize:MainAxisSize.min,spacing:6,children:[
+                Column(mainAxisSize:MainAxisSize.min,children:[
+                  const Text('Aktif',style:TextStyle(fontSize:10)),
+                  Switch(value:p['active']!=false,
+                    onChanged:(v)=>toggle('products',p['id'] as int,'active',v)),
+                ]),
+                Column(mainAxisSize:MainAxisSize.min,children:[
+                  const Text('Stokta',style:TextStyle(fontSize:10)),
+                  Switch(value:p['available']!=false,
+                    onChanged:(v)=>toggle('products',p['id'] as int,'available',v)),
+                ]),
+                IconButton(
+                  onPressed:()=>productEditor(p),
+                  tooltip:'TR / EN / AR · Düzenle',
+                  icon:const Icon(Icons.edit_outlined)),
+                IconButton(
+                  onPressed:()async{
+                    if(await confirmAction(context,'Ürünü Arşivle',
+                      'Ürün geçmişi için ID korunacak; QR menüde gizlenecek.',
+                      confirm:'Pasif Yap')){
+                      toggle('products',p['id'] as int,'active',false);
+                    }
+                  },
+                  tooltip:'Arşivle',icon:const Icon(Icons.archive_outlined)),
+              ]),
+            )),
+        ]else if(tab=='Kategoriler') ...[
+          Align(alignment:Alignment.centerLeft,
+            child:FilledButton.icon(onPressed:()=>categoryEditor(),
+              icon:const Icon(Icons.add),label:const Text('Kategori Ekle'))),
+          for(final c in categories)
+            Card(child:ListTile(
+              title:Text(tr(c,'name')+' · '+c['id'].toString()),
+              subtitle:Text(translations(c['name'])['en']!+
+                ' · '+translations(c['name'])['ar']!),
+              trailing:Wrap(mainAxisSize:MainAxisSize.min,children:[
+                Switch(value:c['active']!=false,
+                  onChanged:c['id']=='all'?null:
+                    (v)=>toggleString('categories',c['id'].toString(),'active',v)),
+                IconButton(onPressed:()=>categoryEditor(c),
+                  icon:const Icon(Icons.edit_outlined)),
+              ]),
+            )),
+        ]else if(tab=='Kampanyalar') ...[
+          Align(alignment:Alignment.centerLeft,
+            child:FilledButton.icon(onPressed:()=>campaignEditor(),
+              icon:const Icon(Icons.add),label:const Text('Kampanya Ekle'))),
+          for(final c in campaigns)
+            Card(child:ListTile(
+              title:Text(tr(c,'title')+' · '+c['price'].toString()+' ₺'),
+              subtitle:Text(translations(c['title'])['en']!+
+                ' · '+translations(c['title'])['ar']!),
+              trailing:Wrap(mainAxisSize:MainAxisSize.min,children:[
+                Switch(value:c['active']==true,
+                  onChanged:(v)=>toggleString(
+                    'campaigns',c['id'].toString(),'active',v)),
+                IconButton(onPressed:()=>campaignEditor(c),
+                  icon:const Icon(Icons.edit_outlined)),
+              ]),
+            )),
+        ],
+        const SizedBox(height:10),
+        const Text('Not: Sil işlemi arşivleme şeklindedir; ürün ID ve geçmiş '
+          'siparişler silinmez. Çeviriler TR / EN / AR olarak ayrı kaydedilir.',
+          style:TextStyle(fontSize:12)),
+      ],
+    ]);
+  }
+}
