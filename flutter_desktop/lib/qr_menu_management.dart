@@ -132,7 +132,13 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
         state.remove('qrPublisherDraft');
         state.remove('qrPublisherDraftRevision');
       });
-    }catch(_){
+    }catch(e){
+      // Never overwrite an existing draft when GitHub is unavailable.
+      if(menu!=null){
+        if(mounted)setState(()=>info='GitHub menüsü yüklenemedi; yerel taslağınız '
+          'korundu. Yayınlama bağlantısını kontrol edin. Hata: $e');
+        return;
+      }
       // Display public content as a local, editable draft. Never claim that
       // the GitHub revision is known or publishing is available offline.
       try{
@@ -157,6 +163,102 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
       }
     }finally{if(mounted)setState(()=>busy=false);}
   }
+  /// Attach an offline draft to the latest GitHub revision without
+  /// dropping local edits. Remote-only records are preserved.
+  Future<void> linkOfflineDraft()async{
+    if(menu==null||revision!=null||busy)return;
+    setState(()=>busy=true);
+    try{
+      final response=await publisher.catalog(endpoint);
+      final remoteRaw=response['catalog'];
+      final remoteRevision=response['revision']?.toString();
+      if(remoteRaw is! Map||remoteRevision==null||remoteRevision.isEmpty)
+        throw const FormatException('GitHub kataloğu veya sürümü alınamadı.');
+      final latest=copyJson(Map<String,dynamic>.from(remoteRaw));
+      if(latest['products'] is! List||latest['categories'] is! List||
+          latest['campaigns'] is! List)
+        throw const FormatException('GitHub kataloğu eksik.');
+      final draft=copyJson(menu!);
+      var remoteAdded=0;
+      for(final field in ['categories','products','campaigns']){
+        final localRows=draft[field] as List;
+        for(final record in latest[field] as List){
+          if(record is! Map)continue;
+          final id=record['id'];
+          final existing=localRows.whereType<Map>().where((r)=>r['id']==id);
+          if(existing.isEmpty){
+            localRows.add(copyJson(Map<String,dynamic>.from(record)));
+            remoteAdded++;
+          }else if(field=='products' &&
+              existing.first['legacyKey']!=record['legacyKey']){
+            throw FormatException('GitHub ürün kimliği değişmiş: $id');
+          }
+        }
+      }
+      if(!mounted)return;
+      final confirmed=await confirmAction(context,
+        'Yerel Taslağı GitHub’a Bağla',
+        'Mevcut taslak silinmeyecek. GitHub’daki $remoteAdded yeni kayıt '
+        'taslağa eklenecek. Ortak ürünlerde sizin yerel düzenlemeleriniz '
+        'öncelikli olacak; bu nedenle fiyat ve stok değişikliklerini '
+        'önizlemede kontrol edin. Henüz webde yayın yapılmayacak.',
+        confirm:'Taslağı Bağla');
+      if(!confirmed||!mounted)return;
+      setState((){
+        menu=draft;
+        revision=remoteRevision;
+        changed=true;
+        info='Taslak GitHub sürümüne bağlandı. $remoteAdded yeni kayıt '
+          'korundu. Önizleyin, ardından GitHub’a Yayınla seçin.';
+      });
+      saveDraft();
+    }on FormatException catch(e){
+      if(mounted)setState(()=>info='Taslak değişmedi: ${e.message}');
+    }catch(_){
+      if(mounted)setState(()=>info='GitHub bağlantısı kurulamadı; '
+        'yerel taslak korundu. Ayarlar > Entegrasyonlar bölümünü kontrol edin.');
+    }finally{if(mounted)setState(()=>busy=false);}
+  }
+
+  Future<void> quickPrice(Json product)async{
+    final controller=TextEditingController(text:(product['price']??0).toString());
+    final result=await showDialog<String>(context:context,builder:(dialog)=>
+      AlertDialog(
+        title:Text('${tr(product,'name')} · Fiyat'),
+        content:SizedBox(width:330,child:Column(
+          mainAxisSize:MainAxisSize.min,
+          crossAxisAlignment:CrossAxisAlignment.start,
+          children:[
+            const Text('Yeni fiyat yalnızca taslağa kaydedilir. '
+              'GitHub’a Yayınla sonrası QR menüde değişir.'),
+            const SizedBox(height:14),
+            TextField(controller:controller,autofocus:true,
+              keyboardType:const TextInputType.numberWithOptions(decimal:true),
+              decoration:const InputDecoration(
+                labelText:'Satış fiyatı',prefixText:'₺ ',
+                border:OutlineInputBorder())),
+          ])),
+        actions:[
+          TextButton(onPressed:()=>Navigator.pop(dialog),
+            child:const Text('Vazgeç')),
+          FilledButton(onPressed:()=>Navigator.pop(dialog,controller.text.trim()),
+            child:const Text('Fiyatı Kaydet')),
+        ],
+      ));
+    controller.dispose();
+    if(result==null)return;
+    try{
+      final price=fromCents(parseMoney(result));
+      final row=(menu?['products'] as List?)?.whereType<Map>()
+        .firstWhere((p)=>p['id']==product['id']);
+      if(row==null)return;
+      row['price']=price;
+      updated();
+    }catch(_){
+      if(mounted)setState(()=>info='Geçersiz fiyat. Örnek: 140 veya 140,50.');
+    }
+  }
+
   void saveDraft(){
     if(menu==null)return;
     final copy=copyJson(menu!);
