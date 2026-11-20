@@ -1,0 +1,13 @@
+name = "nohut-ai-lab"
+main = "worker.js"
+compatibility_date = "2026-11-20"
+workers_dev = true
+
+[vars]
+AI_ENABLED = "false"
+GEMINI_MODEL = "gemini-4-hydrogen"
+
+# Replace the ID after running: wrangler kv namespace create NOHUT_AI
+[[kv_namespaces]]
+binding = "NOHUT_AI"
+id = "REPLACE_WITH_YOUR_CLOUDFLARE_KV_NAMESPACE_ID"
