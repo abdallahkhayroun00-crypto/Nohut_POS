@@ -24,6 +24,7 @@ class QrMenuManagement extends StatefulWidget {
 class _QrMenuManagementState extends State<QrMenuManagement> {
   late final QrPublisherClient publisher;
   Json? menu;
+  Json? sourceSnapshot;
   String? revision;
   bool busy=false,changed=false;
   String info='Yayınlama hizmetine bağlanarak menüyü yükleyin.';
@@ -34,6 +35,8 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
     final saved=widget.state['qrPublisherDraft'];
     if(saved is Map){
       menu=copyJson(Map<String,dynamic>.from(saved));
+      final snapshot=widget.state['qrPublisherDraftSourceSnapshot'];
+      if(snapshot is Map)sourceSnapshot=copyJson(Map<String,dynamic>.from(snapshot));
       revision=widget.state['qrPublisherDraftRevision']?.toString();
       changed=true;
       info='Önceki yerel taslak geri yüklendi. Yayımlanmamış değişiklikler var.';
@@ -124,13 +127,15 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
          data['campaigns'] is! List)throw const FormatException('Katalog eksik.');
       if(!mounted)return;
       setState((){
-        menu=data;revision=remote['revision']?.toString();
+        menu=data;sourceSnapshot=copyJson(data);
+        revision=remote['revision']?.toString();
         changed=false;
         info='GitHub kataloğu okundu. Kaydet ve Yayınla birbirinden ayrıdır.';
       });
       widget.edit((state){
         state.remove('qrPublisherDraft');
         state.remove('qrPublisherDraftRevision');
+        state.remove('qrPublisherDraftSourceSnapshot');
       });
     }catch(e){
       // Never overwrite an existing draft when GitHub is unavailable.
@@ -145,7 +150,8 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
         final fallback=await _readPublicWebsiteDraft();
         if(!mounted)return;
         setState((){
-          menu=fallback;revision=null;changed=true;
+          menu=fallback;sourceSnapshot=copyJson(fallback);
+          revision=null;changed=true;
           info='Resmî QR web menüsü taslak olarak açıldı. Ürünleri ve TR/EN/AR '
             'çevirileri düzenleyebilirsiniz. GitHub yayını için önce '
             'Ayarlar > Entegrasyonlar > Nohut QR Publisher bağlantısını açın. '
@@ -154,6 +160,7 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
         });
         widget.edit((state){
           state['qrPublisherDraft']=copyJson(fallback);
+          state['qrPublisherDraftSourceSnapshot']=copyJson(fallback);
           state.remove('qrPublisherDraftRevision');
         });
       }catch(e){
@@ -206,6 +213,7 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
       if(!confirmed||!mounted)return;
       setState((){
         menu=draft;
+        sourceSnapshot=latest;
         revision=remoteRevision;
         changed=true;
         info='Taslak GitHub sürümüne bağlandı. $remoteAdded yeni kayıt '
@@ -259,12 +267,76 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
     }
   }
 
+  Json? originalProduct(int id){
+    final rows=sourceSnapshot?['products'];
+    if(rows is! List)return null;
+    for(final row in rows){
+      if(row is Map&&row['id']==id)
+        return Map<String,dynamic>.from(row);
+    }
+    return null;
+  }
+  bool isProductEdited(Json p){
+    final original=originalProduct(p['id'] as int);
+    return original==null||jsonEncode(original)!=jsonEncode(p);
+  }
+  List<String> describeChanges(){
+    if(menu==null||sourceSnapshot==null)return [];
+    final result=<String>[];
+    for(final p in products){
+      final old=originalProduct(p['id'] as int);
+      final name=tr(p,'name');
+      if(old==null){
+        result.add('Yeni ürün: $name');
+        continue;
+      }
+      if(old['price']!=p['price'])
+        result.add('$name: fiyat ${old['price']} → ${p['price']} ₺');
+      if(old['available']!=p['available'])
+        result.add('$name: ${p['available']==false?'Tükendi':'Stokta Var'}');
+      if(old['active']!=p['active'])
+        result.add('$name: ${p['active']==false?'QR’den gizlendi':'QR’de gösteriliyor'}');
+      if(old['category']!=p['category'])
+        result.add('$name: kategori değiştirildi');
+      if(jsonEncode(old['name'])!=jsonEncode(p['name'])||
+          jsonEncode(old['displayName'])!=jsonEncode(p['displayName'])||
+          jsonEncode(old['description'])!=jsonEncode(p['description']))
+        result.add('$name: isim / çeviri / açıklama güncellendi');
+      if(old['image']!=p['image'])
+        result.add('$name: görsel değişti');
+    }
+    for(final field in ['categories','campaigns']){
+      final previous=sourceSnapshot![field];
+      final current=menu![field];
+      if(previous is! List||current is! List)continue;
+      for(final c in current){
+        if(c is! Map)continue;
+        final before=previous.whereType<Map>().where((o)=>o['id']==c['id']);
+        if(before.isEmpty||jsonEncode(before.first)!=jsonEncode(c))
+          result.add('${field=='categories'?'Kategori':'Kampanya'} değişti: ${c['id']}');
+      }
+    }
+    return result;
+  }
+  void restoreProduct(Json p){
+    final original=originalProduct(p['id'] as int);
+    if(original==null)return;
+    final rows=menu?['products'] as List?;
+    if(rows==null)return;
+    final index=rows.indexWhere((x)=>x is Map&&x['id']==p['id']);
+    if(index<0)return;
+    rows[index]=copyJson(original);
+    updated();
+  }
+
   void saveDraft(){
     if(menu==null)return;
     final copy=copyJson(menu!);
     final ok=widget.edit((state){
       state['qrPublisherDraft']=copy;
       state['qrPublisherDraftRevision']=revision;
+      if(sourceSnapshot!=null)
+        state['qrPublisherDraftSourceSnapshot']=copyJson(sourceSnapshot!);
     });
     if(mounted)setState((){
       changed=ok;
@@ -350,6 +422,7 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
       if(!mounted)return;
       setState((){
         revision=answer['revision']?.toString();
+        sourceSnapshot=copyJson(menu!);
         changed=false;
         info='GitHub commit oluşturuldu: '+(answer['commit']??'').toString()+
           '. Pages dağıtımı henüz doğrulanmadı.';
@@ -357,6 +430,7 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
       widget.edit((state){
         state.remove('qrPublisherDraft');
         state.remove('qrPublisherDraftRevision');
+        state.remove('qrPublisherDraftSourceSnapshot');
       });
     }on FormatException catch(e){
       if(mounted)setState(()=>info=e.message);
