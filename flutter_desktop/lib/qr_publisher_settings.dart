@@ -1,3 +1,5 @@
+import 'dart:io';
+import 'package:path/path.dart' as paths;
 import 'package:flutter/material.dart';
 import 'operations_ui.dart';
 import 'pos_logic.dart';
@@ -58,6 +60,32 @@ class _QrPublisherSettingsPanelState extends State<QrPublisherSettingsPanel>{
       if(mounted)setState(()=>status='Bağlantı kurulamadı. Yerel servis ve erişim anahtarını kontrol edin.');
     }finally{if(mounted)setState(()=>busy=false);}
   }
+  Future<void> startLocalService() async {
+    if(!Platform.isWindows) {
+      setState(()=>status='Bu kurulum yalnızca Windows içindir.');
+      return;
+    }
+    final base=paths.dirname(Platform.resolvedExecutable);
+    final script=File(paths.join(base,'QRPublisher','start-windows.ps1'));
+    if(!await script.exists()){
+      setState(()=>status='Kurulum scripti bulunamadı. '
+        'Windows Setup paketinden POS güncelleyin.');
+      return;
+    }
+    try {
+      await Process.start('powershell.exe',[
+        '-NoProfile','-ExecutionPolicy','Bypass',
+        '-File',script.path,
+      ],mode:ProcessStartMode.detached);
+      if(mounted)setState(()=>status='Yerel yayınlama servisi başlatılmaya çalışıldı. '
+        'Node.js 22+ ve GitHub App .pem dosyası gerekli. '
+        'Bağlantıyı Test Et ile doğrulayın.');
+    }catch(_){
+      if(mounted)setState(()=>status='PowerShell başlatılamadı. '
+        'Başlat menüsünde Nohut QR Publisher Kurulum seçin.');
+    }
+  }
+
   @override
   Widget build(BuildContext context)=>Card(
     child:Padding(
@@ -68,6 +96,7 @@ class _QrPublisherSettingsPanelState extends State<QrPublisherSettingsPanel>{
           Text('Nohut QR Publisher · GitHub',style:Theme.of(context).textTheme.titleLarge),
           const SizedBox(height:7),
           const Text('GitHub App: 5845851 · nohutfalafel/qr-menu. '
+              'Windows kurulumu yerel erişim anahtarını DPAPI ile otomatik kaydeder. '
               'Önce GitHub App özel anahtarının yalnızca yerel yayınlama '
               'hizmetinde bulunduğundan emin olun. POS bu özel anahtarı istemez.'),
           const SizedBox(height:16),
@@ -87,7 +116,7 @@ class _QrPublisherSettingsPanelState extends State<QrPublisherSettingsPanel>{
             autocorrect:false,
             decoration:InputDecoration(
               labelText:'Yayınlama Erişim Anahtarı · Bir kez kaydet',
-              helperText:'Mevcut anahtar kayıtlıysa bu alanı boş bırakın. '
+              helperText:'Otomatik kurulumdan sonra boş bırakın. '
                 'GitHub Private Key veya Client Secret buraya yazmayın.',
               prefixIcon:const Icon(Icons.key_outlined),
               suffixIcon:IconButton(
@@ -98,6 +127,11 @@ class _QrPublisherSettingsPanelState extends State<QrPublisherSettingsPanel>{
           ),
           const SizedBox(height:12),
           Wrap(spacing:10,runSpacing:10,children:[
+            OutlinedButton.icon(
+              onPressed:busy?null:startLocalService,
+              icon:const Icon(Icons.play_arrow_outlined),
+              label:const Text('Yerel Yayınlama Servisini Başlat'),
+            ),
             FilledButton.icon(
               onPressed:busy?null:save,
               icon:const Icon(Icons.save_outlined),
