@@ -132,9 +132,11 @@ void main() {
       );
       await t.pumpAndSettle();
       expect(find.text('Platform no: PLATFORM-98'), findsOneWidget);
+      await t.ensureVisible(find.widgetWithText(ChoiceChip, 'Bugün'));
       await t.tap(find.widgetWithText(ChoiceChip, 'Bugün'));
       await t.pumpAndSettle();
       expect(find.textContaining('Tamamlanan ve iptal edilenler'), findsOneWidget);
+      await t.ensureVisible(find.textContaining('Tamamlanan ve iptal edilenler'));
       await t.tap(find.textContaining('Tamamlanan ve iptal edilenler'));
       await t.pumpAndSettle();
       expect(find.text('Platform no: PLATFORM-99'), findsOneWidget);
