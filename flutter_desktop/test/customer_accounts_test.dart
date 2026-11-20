@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nohut_falafel_desktop/customer_accounts.dart';
+import 'package:nohut_falafel_desktop/operations.dart';
 import 'package:nohut_falafel_desktop/pos_logic.dart';
 import 'package:nohut_falafel_desktop/pos_store.dart';
 
@@ -76,4 +77,59 @@ void main() {
     expect(linked.containsKey('saveCustomer'), false);
     expect(savedCustomers(state), hasLength(1));
   });
+  test('old Gel-Al order links to an existing customer without changing money', () {
+    final state = emptyPosState();
+    final id = savePickupCustomer(
+      state, name: 'Ayşe', phone: '05330000000');
+    final first = order(1, {'name': 'Eski kayıt', 'phone': ''}, 18000, 5000);
+    final second = order(2, {'id': id, 'name': 'Ayşe'}, 20000, 0);
+    state['orders'] = [first, second];
+    final createdAt = first['createdAt'];
+    expect(pickupOpenAccounts(state), hasLength(2));
+    linkLegacyPickupOrder(
+      state, orderId: 1, existingCustomerId: id);
+    final attached = mutableOrder(state, 1)!;
+    expect((attached['customer'] as Map)['id'], id);
+    expect(attached['createdAt'], createdAt);
+    expect(orderDueCents(attached), 13000);
+    expect(orderPaidCents(attached), 5000);
+    expect(asMaps(attached['customerLinkHistory']), hasLength(1));
+    final accounts = pickupOpenAccounts(state);
+    expect(accounts, hasLength(1));
+    expect(accounts.single.orders, hasLength(2));
+    expect(accounts.single.dueCents, 33000);
+    expect(() => linkLegacyPickupOrder(
+      state, orderId: 1, existingCustomerId: id),
+      throwsFormatException);
+  });
+
+  test('new client creation for legacy Gel-Al never merges on name alone', () {
+    final state = emptyPosState();
+    state['orders'] = [
+      order(1, {'name': 'Ali'}, 10000, 0),
+      order(2, {'name': 'Ali'}, 20000, 0),
+    ];
+    linkLegacyPickupOrder(
+      state, orderId: 1, newCustomerName: 'Ali');
+    linkLegacyPickupOrder(
+      state, orderId: 2, newCustomerName: 'Ali');
+    expect(savedCustomers(state), hasLength(2));
+    expect(pickupOpenAccounts(state), hasLength(2));
+  });
+
+  test('legacy linking fails for settled orders and nonexistent customer IDs', () {
+    final state = emptyPosState();
+    state['orders'] = [order(1, {'name': 'Ali'}, 10000, 0)];
+    expect(() => linkLegacyPickupOrder(
+      state, orderId: 1, existingCustomerId: 999),
+      throwsFormatException);
+    expect((mutableOrder(state, 1)!['customer'] as Map).containsKey('id'), false);
+    recordPayment(
+      mutableOrder(state, 1)!, 10000, 'Kart',
+    );
+    expect(() => linkLegacyPickupOrder(
+      state, orderId: 1, newCustomerName: 'Ali'),
+      throwsFormatException);
+  });
+
 }
