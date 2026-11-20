@@ -42,8 +42,8 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
       info='Önceki yerel taslak geri yüklendi. Yayımlanmamış değişiklikler var.';
     }
   }
-  String get endpoint=>
-    (widget.state['settings']?['qrPublisherUrl']??'http://127.0.0.1:8787').toString();
+  String get endpoint=>QrPublisherClient.configuredEndpoint(
+    widget.state['settings']?['qrPublisherUrl']);
   List<Json> get products=>asMaps(menu?['products']);
   List<Json> get categories=>asMaps(menu?['categories']);
   List<Json> get campaigns=>asMaps(menu?['campaigns']);
@@ -221,7 +221,9 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
       });
       saveDraft();
     }on FormatException catch(e){
-      if(mounted)setState(()=>info='Taslak değişmedi: ${e.message}');
+      if(mounted)setState(()=>info='Taslak değişmedi: ${e.message} '
+        '(Yayınlama adresi: $endpoint). '
+        'Personel paneli 8787, QR Publisher 18787 portunu kullanır.');
     }catch(_){
       if(mounted)setState(()=>info='GitHub bağlantısı kurulamadı; '
         'yerel taslak korundu. Ayarlar > Entegrasyonlar bölümünü kontrol edin.');
