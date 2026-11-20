@@ -23,28 +23,9 @@ class OpenAccountsPanel extends StatefulWidget {
 
 class _OpenAccountsPanelState extends State<OpenAccountsPanel> {
   String query = '';
-  bool includeTables = false;
 
   List<PickupAccount> get accounts {
     final customers = pickupOpenAccounts(widget.state);
-    if (includeTables) {
-      final tableOrders = <int, List<Json>>{};
-      for (final order in asMaps(widget.state['orders'])) {
-        if (order['source'] != 'Masa' || order['cancelled'] == true ||
-            orderDueCents(order) <= 0 || order['table'] is! int) continue;
-        tableOrders.putIfAbsent(order['table'] as int, () => <Json>[]).add(order);
-      }
-      for (final entry in tableOrders.entries) {
-        customers.add(PickupAccount(
-          key: 'table:' + entry.key.toString(),
-          name: 'Masa ' + entry.key.toString(),
-          phone: '',
-          orders: entry.value,
-          dueCents: entry.value.fold<int>(0, (sum, o) =>
-              sum + orderDueCents(o)),
-        ));
-      }
-    }
     final q = query.trim().toLowerCase();
     return customers.where((account) => q.isEmpty ||
         account.name.toLowerCase().contains(q) ||
@@ -62,20 +43,9 @@ class _OpenAccountsPanelState extends State<OpenAccountsPanel> {
       children: [
         Text('Açık Hesaplar', style: Theme.of(context).textTheme.headlineMedium),
         const SizedBox(height: 5),
-        const Text('Ödenmemiş ve kısmen ödenmiş hesaplar; bakiye her siparişin gerçek ödeme kaydından hesaplanır.'),
+        const Text('Gel-Al · Ödenmemiş ve kısmen ödenmiş hesaplar. Bakiye gerçek ödeme kayıtlarından hesaplanır.'),
         const SizedBox(height: 16),
         Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
-          ChoiceChip(
-            label: const Text('Gel-Al'),
-            selected: !includeTables,
-            onSelected: (_) => setState(() => includeTables = false),
-          ),
-          ChoiceChip(
-            label: const Text('Tüm Açık Hesaplar'),
-            selected: includeTables,
-            onSelected: (_) => setState(() => includeTables = true),
-          ),
-          const SizedBox(width: 12),
           Text('Kalan Toplam: ' + formatTry(total),
               style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
           Text('· ' + rows.length.toString() + ' açık hesap'),
@@ -90,7 +60,7 @@ class _OpenAccountsPanelState extends State<OpenAccountsPanel> {
         ),
         const SizedBox(height: 12),
         if (rows.isEmpty)
-          const Card(child: ListTile(title: Text('Bu filtrede açık hesap bulunamadı.')))
+          const Card(child: ListTile(title: Text('Açık Gel-Al hesabı bulunamadı.')))
         else
           for (final account in rows)
             Card(
