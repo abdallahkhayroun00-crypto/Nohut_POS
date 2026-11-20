@@ -95,12 +95,24 @@ async function syncPrices(){
  try{var z=await fetch(QR+'cms/campaigns.json',{cache:'no-store'});if(z.ok){var list=await z.json();if(Array.isArray(list))campaigns=list.filter(function(c){return c.active&&(!c.startsAt||Date.parse(c.startsAt)<=Date.now())&&(!c.endsAt||Date.parse(c.endsAt)>Date.now())})}}catch(e){}
 }
 function el(tag,cls,txt){var n=document.createElement(tag);if(cls)n.className=cls;if(txt!==undefined)n.textContent=txt;return n}
+var realPhotos={
+ 'Vegan Dürüm':'assets/wrap-cutouts/wraps-transparent.webp',
+ 'Falafel Dürüm':'assets/wrap-cutouts/wraps-transparent.webp',
+ 'Falafel Porsiyon':'assets/platter-cutouts/falafel-porsiyon.webp',
+ 'Vegan Özel Tabağı':'assets/platter-cutouts/vegan-2-sembusek-20261029.webp',
+ 'Nohut Özel Tabağı':'assets/platter-cutouts/nohut-1-kibbe-2-sembusek-20261029.webp',
+ 'Beyrut Tabağı':'assets/platter-cutouts/beyrut-2-kiymali-sembusek.webp',
+ 'Bakla Tabağı':'assets/platter-cutouts/bakla-no-yogurt-20261029.webp',
+ 'Layali Lübnan':'assets/dessert-cutouts/lubnan-geceleri-top.webp',
+ 'Tahinli Muhallebi':'assets/dessert-cutouts/tahinli-muhallebi.webp'
+};
+function productPhoto(x){var path=realPhotos[x.tr]||(typeof photoMap!=='undefined'&&photoMap[x.tr]);if(!path)return el('div','photo',emoji(x.cat));var img=el('img','photo');img.src=QR+path;img.loading='lazy';img.alt=itemName(x);img.onerror=function(){img.replaceWith(el('div','photo',emoji(x.cat)))};return img}
 function bubble(message,role,source,items){
  var chat=$('chat'),row=el('div','bubbleRow '+(role==='user'?'user':''));if(role!=='user')row.appendChild(el('span','avatar','✳'));
  var box=el('div','bubble',message);row.appendChild(box);chat.appendChild(row);
  if(source){box.appendChild(el('div','source',source));}
  if(items&&items.length){var cards=el('div','cards');
- items.slice(0,6).forEach(function(x){var card=el('div','product'),photo=el('div','photo',emoji(x.cat||'wrap')),detail=el('div','productTxt'),name=el('div','productName',itemName(x)),pr=el('div','price',x.price?x.price+' TL':'');var a=el('a','','');a.textContent=say('view');a.href=QR;a.target='_blank';a.rel='noopener';detail.append(name,pr,a);card.append(photo,detail);cards.appendChild(card)});
+ items.slice(0,6).forEach(function(x){var card=el('div','product'),photo=productPhoto(x),detail=el('div','productTxt'),name=el('div','productName',itemName(x)),pr=el('div','price',x.price?x.price+' TL':'');var a=el('a','','');a.textContent=say('view');a.href=QR;a.target='_blank';a.rel='noopener';detail.append(name,pr,a);card.append(photo,detail);cards.appendChild(card)});
  chat.appendChild(cards)}
  chat.scrollTop=chat.scrollHeight;
 }
