@@ -504,63 +504,68 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     int? created;
     bool saveRequest(OrderRequest request) => _edit((data) {
       validateCashierDraft(data, request.lines);
+      final existing = addToOrder != null
+          ? mutableOrder(data, addToOrder)
+          : request.source == 'Masa' && request.table != null
+              ? activeTable(data, request.table!)
+              : null;
+      if (addToOrder != null && existing == null) {
+        throw const FormatException('Ek sipariş hesabı bulunamadı.');
+      }
+      if (request.source == 'Masa' && addToOrder == null &&
+          existing?['id'] != request.expectedTableOrderId) {
+        throw const FormatException(
+          'Masa hesabı değişti. Güncel masayı kontrol edip yeniden sipariş açın.',
+        );
+      }
+      if (existing != null) {
+        if (existing['source'] != request.source) {
+          throw const FormatException('Sipariş türü değişti; yeniden açın.');
+        }
+        // The first persisted batch owns the order, even for inactive staff.
+        final firstBatch = asMaps(existing['batches']).firstOrNull;
+        if (firstBatch == null) {
+          throw const FormatException('Siparişin ilk personel kaydı bulunamadı.');
+        }
+        final ownerName = (firstBatch['staff'] ?? 'Kasa (PC)').toString();
+        final ownerId = firstBatch['staffId'] is int
+            ? firstBatch['staffId'] as int : null;
+        addOrderBatch(
+          data,
+          existing['id'] as int,
+          request.lines,
+          cashier: ownerName,
+          staffId: ownerId,
+        );
+        created = existing['id'] as int;
+        return;
+      }
       final person = asMaps(data['employees']).where(
         (entry) =>
             entry['id'] == request.staffId &&
             entry['active'] == true &&
-            '${entry['name'] ?? ''}'.trim().isNotEmpty,
+            (entry['name'] ?? '').toString().trim().isNotEmpty,
       ).firstOrNull;
       if (person == null) {
         throw const FormatException(
           'Sipariş için aktif personel seçilmelidir.',
         );
       }
-      final personName = '${person['name']}';
+      final personName = person['name'].toString();
       final personId = person['id'] as int;
-      if (addToOrder != null) {
-        addOrderBatch(
-          data,
-          addToOrder,
-          request.lines,
-          cashier: personName,
-          staffId: personId,
-        );
-        created = addToOrder;
-      } else {
-        final occupied = request.source == 'Masa'
-            ? activeTable(data, request.table!)
-            : null;
-        if (request.source == 'Masa' &&
-            occupied?['id'] != request.expectedTableOrderId) {
-          throw const FormatException(
-            'Masa hesabı değişti. Güncel masayı kontrol edip yeniden sipariş açın.',
-          );
-        }
-        if (occupied != null) {
-          addOrderBatch(
-            data,
-            occupied['id'] as int,
-            request.lines,
-            cashier: personName,
-            staffId: personId,
-          );
-          created = occupied['id'] as int;
-          return;
-        }
-        final o = newLocalOrder(
-          state: data,
-          source: request.source,
-          table: request.table,
-          pickupChannel: request.pickupChannel,
-          productLines: request.lines,
-          cashier: personName,
-        );
-        ((o['batches'] as List).first as Map)['staffId'] = personId;
-        o['customer'] = request.source == 'Gel-Al'
-            ? linkedPickupCustomer(data, request.customer)
-            : request.customer;
-        created = o['id'] as int;
-      }
+      final o = newLocalOrder(
+        state: data,
+        source: request.source,
+        table: request.table,
+        pickupChannel: request.pickupChannel,
+        productLines: request.lines,
+        cashier: personName,
+      );
+      ((o['batches'] as List).first as Map)['staffId'] = personId;
+      o['customer'] = request.source == 'Gel-Al'
+          ? linkedPickupCustomer(data, request.customer)
+          : request.customer;
+      created = o['id'] as int;
     });
     final request = await showDialog<OrderRequest>(
       context: context,
@@ -582,6 +587,8 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
         },
         table: table,
         adding: addToOrder != null,
+        originalOrder: addToOrder == null
+            ? null : mutableOrder(store.read().data, addToOrder),
         pickupOnly: pickup,
         tableOrders: {
           for (var n = 1; n <= 5; n++)
