@@ -74,7 +74,7 @@ class _QrPublisherSettingsPanelState extends State<QrPublisherSettingsPanel>{
     }
     try {
       await Process.start('powershell.exe',[
-        '-NoProfile','-ExecutionPolicy','Bypass',
+        '-NoProfile','-STA','-ExecutionPolicy','Bypass',
         '-File',script.path,
       ],mode:ProcessStartMode.detached);
       if(mounted)setState(()=>status='Yerel yayınlama servisi başlatılmaya çalışıldı. '
@@ -97,8 +97,9 @@ class _QrPublisherSettingsPanelState extends State<QrPublisherSettingsPanel>{
           const SizedBox(height:7),
           const Text('GitHub App: 5845851 · nohutfalafel/qr-menu. '
               'Windows kurulumu yerel erişim anahtarını DPAPI ile otomatik kaydeder. '
-              'Önce GitHub App özel anahtarının yalnızca yerel yayınlama '
-              'hizmetinde bulunduğundan emin olun. POS bu özel anahtarı istemez.'),
+              'Mevcut GitHub App .pem dosyanız Downloads içinde bulunursa '
+              'otomatik alınır; bulunmazsa Windows dosya seçim penceresi açılır. '
+              'Anahtar POS içine veya GitHub koduna kopyalanmaz.'),
           const SizedBox(height:16),
           TextField(
             controller:url,
@@ -132,6 +133,24 @@ class _QrPublisherSettingsPanelState extends State<QrPublisherSettingsPanel>{
               icon:const Icon(Icons.play_arrow_outlined),
               label:const Text('Yerel Yayınlama Servisini Başlat'),
             ),
+            OutlinedButton.icon(
+              onPressed:busy?null:() async {
+                if(!Platform.isWindows)return;
+                final folder=Directory(paths.join(
+                  Platform.environment['APPDATA'] ?? '',
+                  'NohutFalafel','QrPublisher'));
+                try {
+                  await folder.create(recursive:true);
+                  await Process.start('explorer.exe',[folder.path],
+                    mode:ProcessStartMode.detached);
+                } catch (_) {
+                  if(mounted)setState(()=>status=
+                    'Güvenli anahtar klasörü Windows üzerinde açılamadı.');
+                }
+              },
+              icon:const Icon(Icons.folder_open_outlined),
+              label:const Text('Güvenli Anahtar Klasörünü Aç'),
+            ),
             FilledButton.icon(
               onPressed:busy?null:save,
               icon:const Icon(Icons.save_outlined),
@@ -157,6 +176,11 @@ class _QrPublisherSettingsPanelState extends State<QrPublisherSettingsPanel>{
             child:SelectableText(status),
           ),
           const SizedBox(height:10),
+          const SelectableText(
+            'Güvenli klasör: %APPDATA%\\NohutFalafel\\QrPublisher\\'
+            'github-app-private-key.pem',
+            style:TextStyle(fontSize:12),
+          ),
           const Text('Güvenlik: Erişim anahtarı Windows DPAPI kasasına kaydedilir. '
               'Sadece HTTPS veya aynı bilgisayardaki localhost HTTP kullanılır. '
               'Doğrudan GitHub token/PEM POS içinde saklanmaz.',
