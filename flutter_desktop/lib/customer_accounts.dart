@@ -36,11 +36,6 @@ int savePickupCustomer(
       match = item;
       break;
     }
-    if (phoneKey.isEmpty && previousPhone.isEmpty &&
-        customerNameKey((item['name'] ?? '').toString()) == customerNameKey(cleanName)) {
-      match = item;
-      break;
-    }
   }
   if (match != null) {
     match['name'] = cleanName;
@@ -81,6 +76,58 @@ Json linkedPickupCustomer(Json state, Json draft) {
     );
   }
   return result;
+}
+
+
+/* Associates an already-created, still-unpaid Gel-Al order with a customer.
+ * Never modifies the original products, payments or creation timestamp.
+ * Explicit cashier confirmation is required; no name-only auto matching. */
+void linkLegacyPickupOrder(
+  Json state, {
+  required int orderId,
+  int? existingCustomerId,
+  String? newCustomerName,
+  String newCustomerPhone = '',
+}) {
+  final order = mutableOrder(state, orderId);
+  if (order == null || order['source'] != 'Gel-Al' ||
+      order['cancelled'] == true || orderDueCents(order) <= 0) {
+    throw const FormatException('Yalnızca açık Gel-Al siparişleri eşleştirilebilir.');
+  }
+  final oldCustomer = order['customer'] is Map
+      ? Map<String, dynamic>.from(order['customer'] as Map)
+      : <String, dynamic>{};
+  if (oldCustomer['id'] is int &&
+      savedCustomers(state).any((c) => c['id'] == oldCustomer['id'])) {
+    throw const FormatException('Bu sipariş zaten kayıtlı müşteriye bağlı.');
+  }
+  if ((existingCustomerId != null) == (newCustomerName != null)) {
+    throw const FormatException('Kayıtlı veya yeni müşteri seçin.');
+  }
+  final id = existingCustomerId ?? savePickupCustomer(
+    state, name: newCustomerName!, phone: newCustomerPhone);
+  final customer = savedCustomers(state)
+      .where((c) => c['id'] == id).firstOrNull;
+  if (customer == null) {
+    throw const FormatException('Seçilen müşteri bulunamadı.');
+  }
+  final stamp = DateTime.now().toUtc().toIso8601String();
+  (order.putIfAbsent('customerLinkHistory', () => <dynamic>[]) as List).add({
+    'at': stamp,
+    'previous': oldCustomer,
+    'customerId': id,
+    'by': 'Kasa (PC)',
+  });
+  order['customer'] = <String, dynamic>{
+    ...oldCustomer,
+    'id': id,
+    'name': (customer['name'] ?? '').toString(),
+    'phone': (customer['phone'] ?? '').toString(),
+  };
+  (order.putIfAbsent('events', () => <dynamic>[]) as List).add(
+    'Müşteri kaydı ile eşleştirildi · ' +
+    (customer['name'] ?? '').toString() + ' · ' + stamp,
+  );
 }
 
 /// ID first, then phone for legacy orders. Anonymous name-only accounts
