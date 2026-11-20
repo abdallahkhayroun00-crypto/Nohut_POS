@@ -3,6 +3,8 @@ import 'order_actions.dart';
 import 'product_customization.dart';
 import 'service_metrics.dart';
 import 'simple_settings.dart';
+import 'trendyol_go_readonly.dart';
+import 'trendyol_go_ui.dart';
 import 'sales_reports.dart';
 import 'order_alerts.dart';
 import 'card_terminal.dart';
@@ -28,7 +30,6 @@ import 'pos_store.dart';
 import 'operations.dart';
 import 'operations_ui.dart';
 import 'platform_workflows.dart';
-import 'platform_ui.dart';
 
 part 'order_composer.dart';
 
@@ -124,6 +125,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
   late final ReceiptPrinter receiptPrinter;
   late final PosLanServer lan;
   late final QrMenuAutoSync qrSync;
+  late final TrendyolGoReadonly tgo;
   Timer? _midnightTimer;
   Timer? _serviceTimer;
   final Set<String> seenNotices = {};
@@ -166,6 +168,8 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     lan = PosLanServer(store);
     receiptPrinter = ReceiptPrinter(store);
     qrSync = QrMenuAutoSync(store);
+    tgo = TrendyolGoReadonly(store);
+    unawaited(tgo.start());
     _scheduleIstanbulMidnight();
     _serviceTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (mounted) setState(() {});
@@ -277,6 +281,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
   void dispose() {
     _midnightTimer?.cancel();
     _serviceTimer?.cancel();
+    tgo.dispose();
     qrSync.dispose();
     receiptPrinter.dispose();
     lan.dispose();
@@ -738,7 +743,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
 
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
-    animation: Listenable.merge([store, lan]),
+    animation: Listenable.merge([store, lan, tgo]),
     builder: (ctx, _) {
       final data = store.read().data;
       final width = MediaQuery.sizeOf(context).width;
@@ -1085,6 +1090,13 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
 
   Widget _dashboard(Json db) {
     final orders = asMaps(db['orders']);
+    final remoteToday = tgoOrders(db).where((o) =>
+        onIstanbulDay(o['createdAt'], businessDay)).toList();
+    final remoteValid = remoteToday.where((o) => o['testPackage'] != true &&
+        !['Cancelled', 'UnSupplied'].contains(o['status'])).toList();
+    final remoteSales = remoteToday.where(tgoCountsAsSale).toList();
+    final remoteAmount = remoteSales.fold<int>(0,
+        (sum, o) => sum + (o['totalCents'] as int? ?? 0));
     final todayOrders = orders
         .where(
           (o) =>
@@ -1093,6 +1105,12 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
               o['demoRemoteStatus'] != 'Created',
         )
         .toList();
+    final recentOrders = <Json>[...todayOrders, ...remoteValid]
+      ..sort((a, b) {
+        final day = '${b['numberDay'] ?? ''}'.compareTo('${a['numberDay'] ?? ''}');
+        if (day != 0) return day;
+        return (b['dailyNumber'] as int? ?? 0).compareTo(a['dailyNumber'] as int? ?? 0);
+      });
     // Use PAYMENT timestamps, not order creation dates. A table that
     // pays after midnight belongs to the new day's receipts.
     final todayNetReceipts = ledger(db)
@@ -1182,7 +1200,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
               children: [
                 _metric(
                   'Bugünün Siparişleri · $businessDay',
-                  '${todayOrders.length}',
+                  '${todayOrders.length + remoteValid.length}',
                   Icons.receipt_outlined,
                 ),
                 _metric(
@@ -1206,6 +1224,15 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
         ),
         const SizedBox(height: 15),
         StaffMetrics(state: db, day: businessDay),
+        Card(child: Padding(padding: const EdgeInsets.all(16),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('Trendyol Go · Online Satışlar', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+            Text('Bugün: ${remoteValid.length} sipariş · ${remoteSales.length} teslim · ${formatTry(remoteAmount)} tamamlanan satış'),
+            const Text('Platform satışı, restoranın Nakit/Kart tahsilatı değildir.'),
+            Text('Bağlantı: ' + tgo.status),
+            TextButton(onPressed: () => setState(() { page = 'orders'; onlineOrders = true; }),
+                child: const Text('Online Siparişleri Gör')),
+          ]))),
         Card(
           child: Padding(
             padding: const EdgeInsets.all(18),
@@ -1217,19 +1244,28 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                   style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900),
                 ),
                 const SizedBox(height: 13),
-                if (todayOrders.isEmpty)
+                if (recentOrders.isEmpty)
                   const Text(
                     'Bugün henüz sipariş yok. Eski kayıtlar Siparişler bölümünde saklanır.',
                   ),
-                for (final o in todayOrders.reversed.take(6))
+                for (final o in recentOrders.take(6))
                   ListTile(
                     leading: const Icon(Icons.receipt_long_outlined),
                     title: Text(
                       '#${displayOrderNumber(o)} · ${o['source']}${o['table'] == null ? '' : ' · Masa ${o['table']}'}',
                     ),
-                    subtitle: Text(o['closed'] == true ? 'Kapalı' : 'Açık'),
-                    trailing: Text(formatTry(orderTotalCents(o))),
-                    onTap: () => _focusOrder(o),
+                    subtitle: Text(o['source'] == 'Trendyol Go'
+                        ? 'Platform referansı: ${o['orderNumber']} · ${o['status']}'
+                        : (o['closed'] == true ? 'Kapalı' : 'Açık')),
+                    trailing: Text(formatTry(o['source'] == 'Trendyol Go'
+                        ? (o['totalCents'] as int? ?? 0) : orderTotalCents(o))),
+                    onTap: () {
+                      if (o['source'] == 'Trendyol Go') {
+                        setState(() { page = 'orders'; onlineOrders = true; });
+                      } else {
+                        _focusOrder(o);
+                      }
+                    },
                   ),
               ],
             ),
@@ -1651,6 +1687,23 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
           (orderFrom.isEmpty || date.compareTo(orderFrom) >= 0) &&
           (orderTo.isEmpty || date.compareTo(orderTo) <= 0);
     }).toList();
+    final remoteFiltered = tgoOrders(db).where((o) {
+      final day = '${o['numberDay'] ?? ''}';
+      final search = '${o['orderNumber']} ${displayOrderNumber(o)} ${o['customerNote']} ${o['lines']}'
+          .toLowerCase();
+      return (orderFilter == 'Tümü' || orderFilter == 'Trendyol Go') &&
+          (orderStaff.isEmpty) &&
+          search.contains(orderSearch.toLowerCase()) &&
+          (orderFrom.isEmpty || day.compareTo(orderFrom) >= 0) &&
+          (orderTo.isEmpty || day.compareTo(orderTo) <= 0) &&
+          (orderStatus.isEmpty || o['status'] == orderStatus);
+    }).toList();
+    final combined = <Json>[...filtered, ...remoteFiltered]
+      ..sort((a,b) {
+        final day = '${b['numberDay'] ?? ''}'.compareTo('${a['numberDay'] ?? ''}');
+        if (day != 0) return day;
+        return (b['dailyNumber'] as int? ?? 0).compareTo(a['dailyNumber'] as int? ?? 0);
+      });
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1725,7 +1778,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
               });
             }
           },
-          child: Text('Sipariş Filtreleri · ${filtered.length} kayıt'),
+          child: Text('Sipariş Filtreleri · ${combined.length} kayıt'),
         ),
         Wrap(
           spacing: 7,
@@ -1752,57 +1805,44 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
         Card(
           child: Column(
             children: [
-              if (filtered.isEmpty)
+              if (combined.isEmpty)
                 const ListTile(title: Text('Sipariş bulunamadı')),
-              for (final o in filtered)
+              for (final o in combined)
                 ListTile(
                   leading: CircleAvatar(
                     backgroundColor: cream,
-                    child: Text('${o['table'] ?? '#'}'),
+                    child: o['source'] == 'Trendyol Go'
+                        ? const Icon(Icons.delivery_dining_outlined)
+                        : Text('${o['table'] ?? '#'}'),
                   ),
-                  title: Text('#${displayOrderNumber(o)} · ${o['source']}'),
-                  subtitle: Text(
-                    '${o['numberDay'] ?? ''} · ${o['created'] ?? ''} · ${o['closed'] == true ? 'Kapalı' : o['serviceStatus'] ?? 'Açık'}',
-                  ),
-                  trailing: Text(
-                    o['closed'] == true
-                        ? formatTry(orderTotalCents(o))
-                        : 'Kalan ${formatTry(orderDueCents(o))}',
-                  ),
-                  onTap: () => _showOrder(o['id'] as int),
+                  title: Text('#${displayOrderNumber(o)} · ${o['source'] == 'Masa' ? 'Dükkân · Masa ${o['table']}' : o['source']}'),
+                  subtitle: Text(o['source'] == 'Trendyol Go'
+                      ? '${o['numberDay']} · Trendyol #${o['orderNumber']} · ${o['status']} · Salt okunur'
+                      : '${o['numberDay'] ?? ''} · ${o['created'] ?? ''} · ${o['closed'] == true ? 'Kapalı' : o['serviceStatus'] ?? 'Açık'}'),
+                  trailing: Text(o['source'] == 'Trendyol Go'
+                      ? formatTry(o['totalCents'] as int? ?? 0)
+                      : o['closed'] == true
+                          ? formatTry(orderTotalCents(o))
+                          : 'Kalan ${formatTry(orderDueCents(o))}'),
+                  onTap: () {
+                    if (o['source'] == 'Trendyol Go') {
+                      setState(() => onlineOrders = true);
+                    } else {
+                      _showOrder(o['id'] as int);
+                    }
+                  },
                 ),
             ],
           ),
         ),
+
       ],
     );
   }
 
-  Json? platformDemo;
-  Widget _online(Json db) {
-    platformDemo ??= {...emptyPosState(), 'localMenu': asMaps(db['localMenu'])};
-    seedPlatformMenu(
-      platformDemo!,
-      asMaps(platformDemo!['localMenu'])
-          .where((p) => p['active'] != false)
-          .toList(),
-    );
-    return PlatformPanel(
-      state: platformDemo!,
-      edit: (change) {
-        try {
-          final next = copyJson(platformDemo!);
-          change(next);
-          PosStore.validate(next);
-          setState(() => platformDemo = next);
-          return true;
-        } catch (e) {
-          _notify('$e', error: true);
-          return false;
-        }
-      },
-    );
-  }
+  Widget _online(Json db) => TgoOrdersPanel(
+    orders: tgoOrders(db), integration: tgo,
+  );
 
   Widget _payments(Json db) {
     final locals = asMaps(db['orders'])
@@ -2111,6 +2151,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     edit: _edit,
     store: store,
     qrSync: qrSync,
+    tgoIntegration: tgo,
     staffPanel: _staff(db),
     wifiPanel: _wifi(db),
   );

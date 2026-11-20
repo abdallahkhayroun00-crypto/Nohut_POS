@@ -5,7 +5,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:nohut_falafel_desktop/main.dart';
 import 'package:nohut_falafel_desktop/pos_store.dart';
 import 'package:nohut_falafel_desktop/pos_logic.dart';
-import 'package:nohut_falafel_desktop/platform_workflows.dart';
 import 'package:nohut_falafel_desktop/operations.dart';
 
 void main() {
@@ -41,15 +40,6 @@ void main() {
         s['localMenu'] = [
           {'id': 0, 'name': 'Falafel', 'category': 'wrap', 'price': 100.01},
         ];
-        seedPlatformMenu(s, asMaps(s['localMenu']));
-        final remote = importPlatform(
-          s,
-          platformFixture(s, 'Trendyol Go', 'card'),
-        )!;
-        externalPlatformEvent(s, remote['id'] as int, 'Delivered');
-        sampleClaim(s, remote['id'] as int, 'PAY_BACK');
-        sampleReview(s, 'Trendyol Go');
-        queuePlatform(s, 'sync', 'Trendyol Go', 'Trendyol Go', {});
         openCash(s, 50000);
         store.replace(s, 0);
         store.dispose();
@@ -77,30 +67,20 @@ void main() {
           expect(tester.takeException(), isNull, reason: label);
           expect(find.text(label), findsAtLeastNWidgets(2));
         }
-        for (final tab in ['Personel', 'Bağlantı']) {
+        for (final tab in ['Personel', 'Bağlantı', 'Trendyol Go']) {
           await tester.ensureVisible(find.text(tab).first);
           await tester.tap(find.text(tab).last);
           await tester.pumpAndSettle();
           expect(tester.takeException(), isNull, reason: tab);
         }
+        expect(find.text('Satıcı ID (Cari ID)'), findsOneWidget);
         await tester.ensureVisible(find.text('Siparişler').first);
         await tester.tap(find.text('Siparişler').first);
         await tester.pumpAndSettle();
         await tester.tap(find.text('Online Siparişler').first);
         await tester.pumpAndSettle();
-        for (final tab in [
-          'Mağaza',
-          'Menü',
-          'İade Talepleri',
-          'Değerlendirmeler',
-          'Faturalar',
-          'Senkronizasyon',
-          'Siparişler',
-        ]) {
-          await tester.tap(find.text(tab).last);
-          await tester.pumpAndSettle();
-          expect(tester.takeException(), isNull, reason: tab);
-        }
+        expect(find.textContaining('Trendyol Go siparişi yok'), findsOneWidget);
+        expect(tester.takeException(), isNull, reason: 'Online Siparişler');
         await tester.pumpWidget(const SizedBox.shrink());
         await tester.pumpAndSettle();
       },
