@@ -25,7 +25,7 @@ class _QrPublisherSettingsPanelState extends State<QrPublisherSettingsPanel>{
     super.initState();
     client=QrPublisherClient(widget.databasePath);
     url=TextEditingController(text:
-      (widget.state['settings']?['qrPublisherUrl']??'http://127.0.0.1:8787').toString());
+      QrPublisherClient.configuredEndpoint(widget.state['settings']?['qrPublisherUrl']));
   }
   @override
   void dispose(){url.dispose();secret.dispose();super.dispose();}
@@ -89,11 +89,18 @@ class _QrPublisherSettingsPanelState extends State<QrPublisherSettingsPanel>{
       return;
     }
     try {
+      final address=QrPublisherClient.checkEndpoint(url.text);
+      if(address.scheme!='http'||address.host!='127.0.0.1'||address.port==8787) {
+        if(mounted)setState(()=>status=
+          'Yerel QR Publisher için http://127.0.0.1:18787 kullanın. '
+          '8787 portu Personel Paneli içindir.');
+        return;
+      }
       await Process.start('powershell.exe',[
         '-NoProfile','-STA','-ExecutionPolicy','Bypass',
-        '-File',script.path,
+        '-File',script.path,'-Port',address.port.toString(),
       ],mode:ProcessStartMode.detached);
-      if(mounted)setState(()=>status='Yerel yayınlama servisi başlatılmaya çalışıldı. '
+      if(mounted)setState(()=>status='QR Publisher için $address başlatma komutu gönderildi. '
         'Node.js 22+ ve GitHub App .pem dosyası gerekli. '
         'Bağlantıyı Test Et ile doğrulayın.');
     }catch(_){
@@ -121,7 +128,7 @@ class _QrPublisherSettingsPanelState extends State<QrPublisherSettingsPanel>{
             controller:url,
             decoration:const InputDecoration(
               labelText:'Yayınlama Servisi URL',
-              helperText:'Aynı PC için http://127.0.0.1:8787',
+              helperText:'Aynı PC için http://127.0.0.1:18787 · Personel paneli 8787',
               prefixIcon:Icon(Icons.link),
             ),
           ),
