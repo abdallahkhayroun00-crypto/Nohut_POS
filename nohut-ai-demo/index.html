@@ -126,7 +126,7 @@ function replyLocal(input){
   return {answer:say('product')+'\n'+itemName(found)+' · '+found.price+' TL\n'+(desc||'')+'\n'+say('allergy'),items:[found]};
  }
  if(/(uc kisi|3 kisi|three people|group|ثلاث|3 اشخاص)/i.test(n))return {answer:say('fallback')+'\n'+say('menu'),items:a.filter(function(x){return x.cat==='plate'}).slice(0,4)};
- if(/(ne yesem|oner|tavsiye|recommend|what should|delicious|اول مرة|اقترح|شنو ناكل)/i.test(n))return {answer:say('recommend'),items:a.filter(function(x){return ['Falafel Dürüm','Vegan Dürüm','Beyrut Tabağı','Falafel Porsiyon'].includes(x.tr)).slice(0,4)};
+ if(/(ne yesem|oner|tavsiye|recommend|what should|delicious|اول مرة|اقترح|شنو ناكل)/i.test(n))return {answer:say('recommend'),items:a.filter(function(x){return ['Falafel Dürüm','Vegan Dürüm','Beyrut Tabağı','Falafel Porsiyon'].includes(x.tr)}).slice(0,4)};
  return {answer:say('ask')+'\n'+say('fallback'),items:a.filter(function(x){return x.cat==='wrap'}).slice(0,3)};
 }
 function setLang(next){
