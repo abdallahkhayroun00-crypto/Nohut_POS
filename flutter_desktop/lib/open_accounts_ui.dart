@@ -94,6 +94,7 @@ class _OpenAccountsPanelState extends State<OpenAccountsPanel> {
                       TextField(
                         controller: name,
                         maxLength: 120,
+                        onChanged: (_) => update(() {}),
                         decoration: const InputDecoration(labelText: 'Müşteri Adı *'),
                       ),
                       TextField(
