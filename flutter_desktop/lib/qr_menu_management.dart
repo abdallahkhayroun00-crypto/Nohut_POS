@@ -103,6 +103,66 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
     if(mounted)setState(()=>changed=true);
     saveDraft();
   }
+  Future<void> preview() async {
+    if(menu==null)return;
+    await showDialog<void>(
+      context:context,
+      builder:(dialog)=>AlertDialog(
+        title:const Text('QR Menü · Taslak Önizleme'),
+        content:SizedBox(width:720,height:560,
+          child:ListView(children:[
+            const Text('Bu önizleme POS taslağındaki tüm ürün adlarını, '
+              'fiyatlarını, stok ve görünürlük durumunu gösterir. '
+              'GitHub Pages henüz değişmedi.'),
+            const SizedBox(height:10),
+            for(final p in products)
+              Card(child:Padding(
+                padding:const EdgeInsets.all(12),
+                child:Column(
+                  crossAxisAlignment:CrossAxisAlignment.start,
+                  children:[
+                    Text(translations(p['name'])['tr']!,
+                      style:const TextStyle(fontWeight:FontWeight.bold)),
+                    Text('TR: '+translations(p['description'])['tr']!),
+                    Text('EN: '+translations(p['name'])['en']!+
+                      ' · '+translations(p['description'])['en']!),
+                    Directionality(
+                      textDirection:TextDirection.rtl,
+                      child:Text(translations(p['name'])['ar']!+
+                        ' · '+translations(p['description'])['ar']!)),
+                    Text('₺'+p['price'].toString()+' · '+
+                      (p['active']==false?'GİZLİ':p['available']==false?
+                        'TÜKENDİ':'STOKTA')+' · '+p['category'].toString()),
+                  ],
+                ),
+              )),
+          ])),
+        actions:[
+          TextButton(onPressed:()=>Navigator.pop(dialog),
+            child:const Text('Kapat')),
+        ],
+      ),
+    );
+  }
+
+  void moveCategory(String id,int amount){
+    if(menu==null||id=='all')return;
+    final source=menu!['categories'] as List;
+    final sorted=<Map>[
+      for(final item in source) if(item is Map)item,
+    ]..sort((a,b)=>(a['order'] as int? ?? 0).compareTo(
+      b['order'] as int? ?? 0));
+    final from=sorted.indexWhere((item)=>item['id']==id);
+    final target=from+amount;
+    if(from<1||target<1||target>=sorted.length)return;
+    final moving=sorted.removeAt(from);
+    sorted.insert(target,moving);
+    for(var index=0;index<sorted.length;index++){
+      sorted[index]['order']=index;
+    }
+    updated();
+  }
+
   Future<void> publish()async{
     if(menu==null||revision==null||busy)return;
     final approved=await confirmAction(context,'QR Menü · Gerçek Yayınlama',
@@ -337,9 +397,12 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
             OutlinedButton.icon(onPressed:menu==null||busy?null:saveDraft,
               icon:const Icon(Icons.save_outlined),
               label:const Text('Taslak Kaydet')),
+            OutlinedButton.icon(onPressed:menu==null?null:preview,
+              icon:const Icon(Icons.visibility_outlined),
+              label:const Text('Taslağı Önizle')),
             FilledButton.icon(onPressed:menu==null||busy||!changed?null:publish,
               icon:const Icon(Icons.publish_outlined),
-              label:const Text('Önizle & Yayınla')),
+              label:const Text('GitHub’a Yayınla')),
             OutlinedButton.icon(onPressed:busy?null:()=>widget.sync.syncNow(),
               icon:const Icon(Icons.sync),
               label:const Text('POS Menüsünü Eşitle')),
@@ -426,6 +489,12 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
                 Switch(value:c['active']!=false,
                   onChanged:c['id']=='all'?null:
                     (v)=>toggleString('categories',c['id'].toString(),'active',v)),
+                IconButton(onPressed:c['id']=='all'?null:
+                  ()=>moveCategory(c['id'].toString(),-1),
+                  tooltip:'Yukarı Taşı',icon:const Icon(Icons.arrow_upward)),
+                IconButton(onPressed:c['id']=='all'?null:
+                  ()=>moveCategory(c['id'].toString(),1),
+                  tooltip:'Aşağı Taşı',icon:const Icon(Icons.arrow_downward)),
                 IconButton(onPressed:()=>categoryEditor(c),
                   icon:const Icon(Icons.edit_outlined)),
               ]),
