@@ -68,7 +68,7 @@ if ([string]::IsNullOrWhiteSpace($PrivateKeyFile)) {
 }
 # If the key is neither in the protected folder nor Downloads, allow a
 # one-time Windows file selection. The PEM never goes into the GitHub repo.
-if (-not (Test-Path -LiteralPath $PrivateKeyFile -PathType Leaf)) {
+if ([string]::IsNullOrWhiteSpace($PrivateKeyFile) -or -not (Test-Path -LiteralPath $PrivateKeyFile -PathType Leaf)) {
   Add-Type -AssemblyName System.Windows.Forms
   $picker = New-Object System.Windows.Forms.OpenFileDialog
   $picker.Title = 'Nohut QR Publisher - GitHub App Private Key (.pem) Seç'
@@ -79,7 +79,7 @@ if (-not (Test-Path -LiteralPath $PrivateKeyFile -PathType Leaf)) {
     $PrivateKeyFile = $picker.FileName
   }
 }
-if (-not (Test-Path -LiteralPath $PrivateKeyFile -PathType Leaf)) {
+if ([string]::IsNullOrWhiteSpace($PrivateKeyFile) -or -not (Test-Path -LiteralPath $PrivateKeyFile -PathType Leaf)) {
   throw 'Nohut QR Publisher için .pem seçilmedi. GitHub App anahtarını bir kez seçin.'
 }
 $keyText = Get-Content -LiteralPath $PrivateKeyFile -Raw -Encoding UTF8
