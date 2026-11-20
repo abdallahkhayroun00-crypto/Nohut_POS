@@ -101,6 +101,9 @@ class QrCatalogFixture {
     return QrMenuReader(fetcher:(uri)async{
       requests?.add(uri);
       if(offline)throw const SocketException('offline');
+      if(uri.path.endsWith('/cms/pos-managed-menu.json')) {
+        throw const HttpException('QR HTTP 404');
+      }
       if(uri.path.endsWith('/cms/catalog-v1.json')) {
         return jsonEncode(catalogOverride??catalog());
       }
