@@ -21,6 +21,17 @@ void main() {
     expect(multiple.first.offline,isTrue);
   });
 
+  test('publisher URL defaults to 18787 and migrates old staff port',(){
+    expect(QrPublisherClient.configuredEndpoint(null),
+      'http://127.0.0.1:18787');
+    expect(QrPublisherClient.configuredEndpoint('http://127.0.0.1:8787'),
+      'http://127.0.0.1:18787');
+    expect(QrPublisherClient.configuredEndpoint('http://localhost:8787/'),
+      'http://127.0.0.1:18787');
+    expect(QrPublisherClient.configuredEndpoint('https://publisher.example.org'),
+      'https://publisher.example.org');
+  });
+
   test('publisher bridge allows only HTTPS or local loopback HTTP',(){
     expect(QrPublisherClient.checkEndpoint('http://127.0.0.1:8787').host,
       '127.0.0.1');
