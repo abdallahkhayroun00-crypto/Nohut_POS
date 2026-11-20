@@ -717,42 +717,53 @@ class StaffPanel extends StatelessWidget {
   final EditState edit;
 
   Future<void> change(BuildContext context, [Json? person]) async {
+    // Keep new-employee entry small; full personal information is editable
+    // after creation, preserving the established employee-add workflow.
+    final fields = person == null
+        ? <(String, String)>[
+            ('Ad', ''),
+            ('Yetki', 'Personel'),
+          ]
+        : <(String, String)>[
+            ('Ad', (person['name'] ?? '').toString()),
+            ('Yetki', (person['role'] ?? 'Personel').toString()),
+            ('Telefon (isteğe bağlı)', (person['phone'] ?? '').toString()),
+            ('Görev', (person['jobTitle'] ?? '').toString()),
+            ('İşe Başlama Tarihi', (person['startDate'] ?? '').toString()),
+            ('Notlar', (person['notes'] ?? '').toString()),
+          ];
     final values = await askFields(
       context,
       person == null ? 'Personel Ekle' : 'Personel Bilgilerini Düzenle',
-      [
-        ('Ad Soyad', (person?['name'] ?? '').toString()),
-        ('Yetki', (person?['role'] ?? 'Personel').toString()),
-        ('Telefon (isteğe bağlı)', (person?['phone'] ?? '').toString()),
-        ('Görev', (person?['jobTitle'] ?? '').toString()),
-        ('İşe Başlama Tarihi', (person?['startDate'] ?? '').toString()),
-        ('Notlar', (person?['notes'] ?? '').toString()),
-      ],
+      fields,
       choices: {1: ['Personel', 'Yönetici']},
       validate: (v) {
         if (v[0].trim().isEmpty) return 'Personel adı gerekli';
-        if (v[0].length > 120 || v[2].length > 40 ||
-            v[3].length > 120 || v[4].length > 20 ||
-            v[5].length > 1000) return 'Alan uzunluğu geçersiz';
+        if (v[0].length > 120 ||
+            (v.length > 2 && v[2].length > 40) ||
+            (v.length > 3 && v[3].length > 120) ||
+            (v.length > 4 && v[4].length > 20) ||
+            (v.length > 5 && v[5].length > 1000)) {
+          return 'Alan uzunluğu geçersiz';
+        }
         return null;
       },
     );
     if (values == null) return;
-    edit((s) {
+    edit((state) {
       saveEmployee(
-        s,
+        state,
         person?['id'] as int?,
         values[0].trim(),
         values[1],
         person?['active'] == true || person == null,
       );
-      // Mutate the stored employee map, not an asMaps() copy.
-      final employee = (s['employees'] as List).cast<Map>()
-          .firstWhere((e) => e['name'] == values[0].trim());
-      employee['phone'] = values[2].trim();
-      employee['jobTitle'] = values[3].trim();
-      employee['startDate'] = values[4].trim();
-      employee['notes'] = values[5].trim();
+      final employee = (state['employees'] as List).cast<Map>()
+          .firstWhere((entry) => entry['name'] == values[0].trim());
+      employee['phone'] = values.length > 2 ? values[2].trim() : '';
+      employee['jobTitle'] = values.length > 3 ? values[3].trim() : '';
+      employee['startDate'] = values.length > 4 ? values[4].trim() : '';
+      employee['notes'] = values.length > 5 ? values[5].trim() : '';
     });
   }
 
