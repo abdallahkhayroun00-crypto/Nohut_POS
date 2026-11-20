@@ -9,6 +9,12 @@ if (-not $node) { throw 'Node.js 22+ bulunamadı. Node.js LTS yükleyin.' }
 $version = & $node.Source -p 'Number(process.versions.node.split(".")[0])'
 if ([int]$version -lt 22) { throw 'Node.js 22+ gereklidir.' }
 if ([string]::IsNullOrWhiteSpace($PrivateKeyFile)) {
+  $existingKey = Join-Path $env:APPDATA 'NohutFalafel\QrPublisher\github-app-private-key.pem'
+  if (Test-Path -LiteralPath $existingKey -PathType Leaf) {
+    $PrivateKeyFile = $existingKey
+  }
+}
+if ([string]::IsNullOrWhiteSpace($PrivateKeyFile)) {
   $candidates = @(Get-ChildItem -LiteralPath (Join-Path $env:USERPROFILE 'Downloads') -Filter 'nohut-qr-publisher*.pem' -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending)
   if ($candidates.Count -gt 0) { $PrivateKeyFile = $candidates[0].FullName }
 }
@@ -53,6 +59,17 @@ $env:GITHUB_APP_ID = '5845851'
 $env:GITHUB_APP_PRIVATE_KEY_FILE = $localKey
 $env:QR_PUBLISH_ADMIN_TOKEN = $token
 $env:QR_PUBLISH_PORT = [string]$Port
+$startup = [Environment]::GetFolderPath('Startup')
+$shortcutFile = Join-Path $startup 'Nohut QR Publisher.lnk'
+if (-not (Test-Path -LiteralPath $shortcutFile)) {
+  $shell = New-Object -ComObject WScript.Shell
+  $link = $shell.CreateShortcut($shortcutFile)
+  $link.TargetPath = Join-Path $PSHOME 'powershell.exe'
+  $link.Arguments = '-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $PSCommandPath + '"'
+  $link.WorkingDirectory = $PSScriptRoot
+  $link.Description = 'Nohut QR Publisher · Windows girişinde otomatik başlat'
+  $link.Save()
+}
 Write-Host 'Nohut QR Publisher started on localhost' $Port
 Write-Host 'POS > Ayarlar > Entegrasyonlar > GitHub: Bağlantıyı Test Et'
 & $node.Source (Join-Path $PSScriptRoot 'server.mjs')
