@@ -348,44 +348,67 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
     if(mounted)setState(()=>changed=true);
     saveDraft();
   }
-  Future<void> preview() async {
+  Future<void> preview()async{
     if(menu==null)return;
+    final changes=describeChanges();
     await showDialog<void>(
       context:context,
-      builder:(dialog)=>AlertDialog(
-        title:const Text('QR Menü · Taslak Önizleme'),
-        content:SizedBox(width:720,height:560,
-          child:ListView(children:[
-            const Text('Bu önizleme POS taslağındaki tüm ürün adlarını, '
-              'fiyatlarını, stok ve görünürlük durumunu gösterir. '
-              'GitHub Pages henüz değişmedi.'),
-            const SizedBox(height:10),
-            for(final p in products)
-              Card(child:Padding(
-                padding:const EdgeInsets.all(12),
-                child:Column(
-                  crossAxisAlignment:CrossAxisAlignment.start,
-                  children:[
-                    Text(translations(p['name'])['tr']!,
-                      style:const TextStyle(fontWeight:FontWeight.bold)),
-                    Text('TR: '+translations(p['description'])['tr']!),
-                    Text('EN: '+translations(p['name'])['en']!+
-                      ' · '+translations(p['description'])['en']!),
-                    Directionality(
-                      textDirection:TextDirection.rtl,
-                      child:Text(translations(p['name'])['ar']!+
-                        ' · '+translations(p['description'])['ar']!)),
-                    Text('₺'+p['price'].toString()+' · '+
-                      (p['active']==false?'GİZLİ':p['available']==false?
-                        'TÜKENDİ':'STOKTA')+' · '+p['category'].toString()),
-                  ],
-                ),
-              )),
-          ])),
-        actions:[
-          TextButton(onPressed:()=>Navigator.pop(dialog),
-            child:const Text('Kapat')),
-        ],
+      builder:(dialog)=>Dialog(
+        insetPadding:const EdgeInsets.all(18),
+        child:ConstrainedBox(
+          constraints:const BoxConstraints(maxWidth:780,maxHeight:650),
+          child:Padding(
+            padding:const EdgeInsets.all(20),
+            child:DefaultTabController(length:2,child:Column(
+              crossAxisAlignment:CrossAxisAlignment.stretch,
+              children:[
+                Text('QR Menü · Yayın Önizlemesi',
+                  style:Theme.of(dialog).textTheme.titleLarge),
+                const SizedBox(height:5),
+                const Text('Bu ekran yerel taslağı gösterir. '
+                  'GitHub Pages henüz değişmedi.'),
+                const SizedBox(height:10),
+                const TabBar(tabs:[
+                  Tab(text:'Değişiklikleri İncele'),
+                  Tab(text:'Tüm Ürünler'),
+                ]),
+                Expanded(child:TabBarView(children:[
+                  changes.isEmpty
+                    ?const Center(child:Text(
+                      'Karşılaştırılacak değişiklik yok. '
+                      'Yeni / bağlı olmayan taslakta tüm ürünleri kontrol edin.'))
+                    :ListView.builder(
+                      padding:const EdgeInsets.symmetric(vertical:8),
+                      itemCount:changes.length,
+                      itemBuilder:(context,i)=>ListTile(
+                        leading:const Icon(Icons.change_circle_outlined,
+                          color:NohutBrand.green),
+                        title:Text(changes[i]),
+                      )),
+                  ListView.builder(
+                    padding:const EdgeInsets.symmetric(vertical:8),
+                    itemCount:products.length,
+                    itemBuilder:(context,i){
+                      final p=products[i];
+                      return ListTile(
+                        title:Text(tr(p,'name')),
+                        subtitle:Text('${translations(p['name'])['en']} · '
+                          '${p['category']} · '
+                          '${p['active']==false?'Gizli':p['available']==false?'Tükendi':'Stokta'}'),
+                        trailing:Text('₺${p['price']}',
+                          style:const TextStyle(fontWeight:FontWeight.w700)),
+                      );
+                    }),
+                ])),
+                const SizedBox(height:10),
+                Align(alignment:Alignment.centerRight,
+                  child:FilledButton(
+                    onPressed:()=>Navigator.pop(dialog),
+                    child:const Text('Kapat'))),
+              ],
+            )),
+          ),
+        ),
       ),
     );
   }
@@ -410,7 +433,10 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
 
   Future<void> publish()async{
     if(menu==null||revision==null||busy)return;
+    final differences=describeChanges();
+    final summary=differences.take(6).join('\n');
     final approved=await confirmAction(context,'QR Menü · Gerçek Yayınlama',
+      '${differences.length} değişiklik kontrol edildi.\n$summary\n\n'
       'Ürün, kategori, stok, çeviri ve kampanya değişiklikleri '
       'nohutfalafel/qr-menu ana dalına yazılacak. GitHub Pages sonra güncellenecek. '
       'Sipariş geçmişi değişmez.',
@@ -842,6 +868,19 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
           Divider(color:theme.dividerColor.withOpacity(0.3),height:1),
           const SizedBox(height:10),
           Wrap(spacing:7,runSpacing:7,children:[
+            if(isProductEdited(p)&&originalProduct(p['id'] as int)!=null)
+              OutlinedButton.icon(
+                onPressed:busy?null:()async{
+                  final ok=await confirmAction(context,
+                    'Ürün Değişikliklerini Geri Al',
+                    'Bu ürünün taslaktaki değişiklikleri geri alınacak. '
+                    'Diğer ürünlerin değişiklikleri korunacak.',
+                    confirm:'Ürünü Geri Al');
+                  if(ok&&mounted)restoreProduct(p);
+                },
+                icon:const Icon(Icons.undo_outlined,size:18),
+                label:const Text('Geri Al')),
+
             OutlinedButton.icon(
               onPressed:busy?null:()=>quickPrice(p),
               icon:const Icon(Icons.payments_outlined,size:18),
@@ -966,6 +1005,11 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
               fontSize:12.5,color:Color(0xFF315548))),
             if(menu!=null)...[
               const SizedBox(height:9),
+              if(sourceSnapshot!=null)Text(
+                '${describeChanges().length} taslak değişikliği',
+                style:const TextStyle(
+                  color:Color(0xFF79501C),fontWeight:FontWeight.w700)),
+              const SizedBox(height:5),
               Wrap(spacing:12,runSpacing:5,children:[
                 Text('${products.length} ürün',
                   style:const TextStyle(fontWeight:FontWeight.w600)),
