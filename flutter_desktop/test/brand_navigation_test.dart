@@ -142,7 +142,8 @@ void main() {
       expect(find.text('Platform no: PLATFORM-99'), findsOneWidget);
       expect(find.text('Platform no: PLATFORM-98'), findsNothing);
       expect(find.text('PAY_WITH_CARD'), findsNothing);
-      await t.tap(find.text('Migros Yemek'));
+      await t.ensureVisible(find.widgetWithText(FilterChip, 'Migros Yemek'));
+      await t.tap(find.widgetWithText(FilterChip, 'Migros Yemek'));
       await t.pumpAndSettle();
       expect(find.text('Migros Yemek · Bağlı değil'), findsOneWidget);
       expect(find.byTooltip('Migros Yemek panelini aç'), findsOneWidget);
