@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'brand.dart';
 import 'operations_ui.dart';
 import 'pos_logic.dart';
 import 'qr_publisher_client.dart';
