@@ -5,7 +5,6 @@ import 'order_reporting.dart';
 import 'pos_logic.dart';
 import 'trendyol_go_readonly.dart';
 import 'trendyol_go_ui.dart';
-import 'operations_ui.dart';
 
 const onlinePartners = {
   'Trendyol Go': (
