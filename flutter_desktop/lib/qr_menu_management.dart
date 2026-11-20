@@ -27,7 +27,7 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
   String? revision;
   bool busy=false,changed=false;
   String info='Yayınlama hizmetine bağlanarak menüyü yükleyin.';
-  String tab='Ürünler',query='';
+  String tab='Ürünler',query='',filterCategory='all';
   @override void initState(){
     super.initState();
     publisher=QrPublisherClient(widget.store.filePath);
@@ -689,148 +689,341 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
       if(mounted)setState(()=>info='Resim yüklenemedi. Servis bağlantısını kontrol edin.');
     }finally{if(mounted)setState(()=>busy=false);}
   }
+  Widget productCard(Json p){
+    final visible=p['active']!=false;
+    final available=p['available']!=false;
+    final image=p['image']?.toString()??'';
+    final hasImage=image.startsWith('assets/')&&!image.contains('..')&&
+      !image.toLowerCase().endsWith('.svg');
+    final theme=Theme.of(context);
+    final names=translations(p['name']);
+    final category=categories.where((c)=>c['id']==p['category']).toList();
+    final categoryName=category.isEmpty?p['category'].toString()
+      :tr(category.first,'name');
+    return Card(
+      elevation:0,
+      margin:const EdgeInsets.only(bottom:10),
+      color:theme.colorScheme.surface,
+      shape:RoundedRectangleBorder(
+        borderRadius:BorderRadius.circular(16),
+        side:BorderSide(color:theme.dividerColor.withOpacity(0.28))),
+      child:Padding(
+        padding:const EdgeInsets.all(14),
+        child:Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[
+          Row(crossAxisAlignment:CrossAxisAlignment.center,children:[
+            ClipRRect(
+              borderRadius:BorderRadius.circular(12),
+              child:SizedBox(width:68,height:68,
+                child:hasImage?Image.network(
+                  'https://nohutfalafel.github.io/qr-menu/$image',
+                  fit:BoxFit.cover,
+                  errorBuilder:(_,__,___)=>Container(
+                    color:const Color(0xFFF1F2E9),
+                    child:const Icon(Icons.restaurant_menu_outlined,
+                      color:NohutBrand.green,size:28),
+                  ),
+                ):Container(
+                  color:const Color(0xFFF1F2E9),
+                  child:const Icon(Icons.restaurant_menu_outlined,
+                    color:NohutBrand.green,size:28),
+                ),
+              ),
+            ),
+            const SizedBox(width:14),
+            Expanded(child:Column(
+              crossAxisAlignment:CrossAxisAlignment.start,
+              children:[
+                Text(names['tr']!,
+                  maxLines:1,overflow:TextOverflow.ellipsis,
+                  style:theme.textTheme.titleMedium?.copyWith(
+                    fontWeight:FontWeight.w700,
+                    color:const Color(0xFF173F32))),
+                const SizedBox(height:3),
+                Text('$categoryName · ${names['en']}',
+                  maxLines:1,overflow:TextOverflow.ellipsis,
+                  style:theme.textTheme.bodySmall),
+                const SizedBox(height:7),
+                Wrap(spacing:6,runSpacing:5,children:[
+                  _statusPill(
+                    visible?'QR’de Görünür':'QR’de Gizli',
+                    visible?const Color(0xFFE7F4EC):const Color(0xFFF1EDE8),
+                    visible?const Color(0xFF28613D):const Color(0xFF726558)),
+                  _statusPill(
+                    available?'Stokta Var':'Tükendi',
+                    available?const Color(0xFFE9F2EB):const Color(0xFFFFF0E7),
+                    available?const Color(0xFF28613D):const Color(0xFFAB4B26)),
+                ]),
+              ],
+            )),
+            const SizedBox(width:10),
+            Column(crossAxisAlignment:CrossAxisAlignment.end,children:[
+              Text('₺${p['price']}',
+                style:theme.textTheme.titleLarge?.copyWith(
+                  color:const Color(0xFF173F32),fontWeight:FontWeight.w800)),
+              const SizedBox(height:4),
+              Text('#${p['id']}',style:theme.textTheme.labelSmall),
+            ]),
+          ]),
+          const SizedBox(height:10),
+          Divider(color:theme.dividerColor.withOpacity(0.3),height:1),
+          const SizedBox(height:10),
+          Wrap(spacing:7,runSpacing:7,children:[
+            OutlinedButton.icon(
+              onPressed:busy?null:()=>quickPrice(p),
+              icon:const Icon(Icons.payments_outlined,size:18),
+              label:const Text('Fiyatı Değiştir')),
+            OutlinedButton.icon(
+              onPressed:busy?null:()=>productEditor(p),
+              icon:const Icon(Icons.edit_note_outlined,size:19),
+              label:const Text('Ürünü Düzenle')),
+            OutlinedButton.icon(
+              onPressed:busy?null:()=>pickImage(p),
+              icon:const Icon(Icons.add_photo_alternate_outlined,size:18),
+              label:const Text('Görsel')),
+            OutlinedButton.icon(
+              onPressed:busy?null:()=>toggle('products',p['id'] as int,'available',!available),
+              icon:Icon(available?Icons.remove_shopping_cart_outlined:
+                Icons.check_circle_outline,size:18),
+              label:Text(available?'Tükendi Yap':'Stokta Var Yap')),
+            TextButton.icon(
+              onPressed:busy?null:()=>toggle('products',p['id'] as int,'active',!visible),
+              icon:Icon(visible?Icons.visibility_off_outlined:
+                Icons.visibility_outlined,size:18),
+              label:Text(visible?'QR’den Gizle':'QR’de Göster')),
+          ]),
+        ]),
+      ),
+    );
+  }
+
+  Widget _statusPill(String label,Color background,Color foreground)=>
+    Container(
+      padding:const EdgeInsets.symmetric(horizontal:10,vertical:5),
+      decoration:BoxDecoration(
+        color:background,borderRadius:BorderRadius.circular(30)),
+      child:Text(label,style:TextStyle(
+        fontSize:11,fontWeight:FontWeight.w700,color:foreground)),
+    );
+
   @override Widget build(BuildContext context){
-    final filtered=products.where((p)=>
-      (p['name'] as Map?)?['tr'].toString().toLowerCase()
-        .contains(query.toLowerCase())==true).toList();
+    final search=query.trim().toLowerCase();
+    final filtered=products.where((p){
+      final names=translations(p['name']);
+      final matchesSearch=search.isEmpty||
+        names.values.any((value)=>value.toLowerCase().contains(search))||
+        translations(p['displayName']).values.any(
+          (value)=>value.toLowerCase().contains(search));
+      return matchesSearch&&(filterCategory=='all'||
+        p['category']==filterCategory);
+    }).toList()..sort((a,b)=>
+      ((a['order'] as num?)?.toInt()??0)
+        .compareTo((b['order'] as num?)?.toInt()??0));
+    final theme=Theme.of(context);
     return Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[
       panelTitle('QR Menü Yönetimi'),
-      const Text('Nohut QR Menu · TR / EN / AR · Ürünler, stok, fiyat, kategoriler, '
-        'kampanyalar ve GitHub yayınlama. Değişiklikler önce yerel taslağa kaydedilir.'),
-      const SizedBox(height:13),
-      Card(child:Padding(padding:const EdgeInsets.all(15),
-        child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-          Wrap(spacing:9,runSpacing:9,children:[
-            OutlinedButton.icon(onPressed:busy?null:load,
-              icon:const Icon(Icons.cloud_download_outlined),
-              label:const Text('GitHub’dan Menü Yükle')),
-            OutlinedButton.icon(onPressed:menu==null||busy?null:saveDraft,
-              icon:const Icon(Icons.save_outlined),
-              label:const Text('Taslak Kaydet')),
-            OutlinedButton.icon(onPressed:menu==null?null:preview,
-              icon:const Icon(Icons.visibility_outlined),
-              label:const Text('Taslağı Önizle')),
-            FilledButton.icon(onPressed:menu==null||busy||!changed||revision==null?null:publish,
-              icon:const Icon(Icons.publish_outlined),
-              label:const Text('GitHub’a Yayınla')),
-            OutlinedButton.icon(onPressed:busy?null:()=>widget.sync.syncNow(),
-              icon:const Icon(Icons.sync),
-              label:const Text('POS Menüsünü Eşitle')),
+      const SizedBox(height:4),
+      Text('Menü, fiyat, stok ve çevirileri düzenleyin. '
+        'Önce taslak kaydedilir; yalnızca Yayınla web sitesini değiştirir.',
+        style:theme.textTheme.bodyMedium),
+      const SizedBox(height:15),
+      Card(
+        elevation:0,
+        color:const Color(0xFFF0F5F0),
+        shape:RoundedRectangleBorder(
+          borderRadius:BorderRadius.circular(18),
+          side:const BorderSide(color:Color(0xFFD9E5DD))),
+        child:Padding(
+          padding:const EdgeInsets.all(18),
+          child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+            Row(children:[
+              const Icon(Icons.cloud_sync_outlined,color:NohutBrand.green,size:28),
+              const SizedBox(width:12),
+              Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+                Text('Dijital Menü · Yayın Kontrolü',
+                  style:theme.textTheme.titleMedium?.copyWith(
+                    color:const Color(0xFF173F32),fontWeight:FontWeight.bold)),
+                Text(menu==null?'Önce menüyü yükleyin.'
+                  :revision==null?'Yerel taslak · GitHub bağlantısı gerekli'
+                  :changed?'Yayımlanmamış değişiklikler var'
+                  :'GitHub sürümüyle bağlantı kuruldu',
+                  style:theme.textTheme.bodySmall),
+              ])),
+              if(menu!=null)_statusPill(
+                revision==null?'Çevrimdışı Taslak'
+                  :changed?'Yayın Bekliyor':'GitHub Bağlı',
+                revision==null?const Color(0xFFFFEBDD)
+                  :changed?const Color(0xFFFFEFC8):const Color(0xFFDCEEE3),
+                revision==null?const Color(0xFF99512B)
+                  :const Color(0xFF276144)),
+            ]),
+            const SizedBox(height:14),
+            Wrap(spacing:9,runSpacing:9,children:[
+              OutlinedButton.icon(
+                onPressed:busy?null:load,
+                icon:const Icon(Icons.cloud_download_outlined),
+                label:const Text('GitHub’dan Yükle')),
+              if(menu!=null&&revision==null)
+                FilledButton.tonalIcon(
+                  onPressed:busy?null:linkOfflineDraft,
+                  icon:const Icon(Icons.link),
+                  label:const Text('Taslağı GitHub’a Bağla')),
+              OutlinedButton.icon(
+                onPressed:menu==null||busy?null:saveDraft,
+                icon:const Icon(Icons.save_outlined),
+                label:const Text('Taslağı Kaydet')),
+              OutlinedButton.icon(
+                onPressed:menu==null||busy?null:preview,
+                icon:const Icon(Icons.visibility_outlined),
+                label:const Text('Önizle')),
+              FilledButton.icon(
+                onPressed:menu==null||busy||!changed||revision==null
+                  ?null:publish,
+                icon:const Icon(Icons.cloud_upload_outlined),
+                label:const Text('GitHub’a Yayınla')),
+              OutlinedButton.icon(
+                onPressed:busy?null:()=>widget.sync.syncNow(),
+                icon:const Icon(Icons.sync),
+                label:const Text('POS’u Eşitle')),
+            ]),
+            if(busy)const Padding(
+              padding:EdgeInsets.only(top:10),child:LinearProgressIndicator()),
+            const SizedBox(height:11),
+            Text(info,style:const TextStyle(
+              fontSize:12.5,color:Color(0xFF315548))),
+            if(menu!=null)...[
+              const SizedBox(height:9),
+              Wrap(spacing:12,runSpacing:5,children:[
+                Text('${products.length} ürün',
+                  style:const TextStyle(fontWeight:FontWeight.w600)),
+                Text('${categories.length} kategori',
+                  style:const TextStyle(fontWeight:FontWeight.w600)),
+                Text('${campaigns.length} kampanya',
+                  style:const TextStyle(fontWeight:FontWeight.w600)),
+              ]),
+            ],
           ]),
-          if(busy)const LinearProgressIndicator(),
-          const SizedBox(height:8),
-          Text(info,style:const TextStyle(color:NohutBrand.green)),
-          if(menu!=null)Text('Ürün: '+products.length.toString()+
-            ' · Kategori: '+categories.length.toString()+
-            ' · Kampanya: '+campaigns.length.toString()+
-            (changed?' · YAYINLANMAMIŞ TASLAK':' · Güncel taslak')),
-        ]))),
+        ),
+      ),
       if(menu==null)
-        const Card(child:Padding(padding:EdgeInsets.all(20),
-          child:Text('GitHub’dan Menü Yükle ile önce yayınlama hizmetini deneyin; '
-            'hizmet kapalıysa POS resmî web menüsünü düzenlenebilir taslak '
-            'olarak yüklemeyi dener. Yayın için Entegrasyonlar gerekli.')))
+        const Card(child:Padding(padding:EdgeInsets.all(24),
+          child:Text('GitHub’dan Yükle ile menüyü açın. '
+            'Çevrimdışı taslak oluşturabilirsiniz; yayınlamak için '
+            'Ayarlar > Entegrasyonlar bağlantısı gerekir.')))
       else ...[
-        const SizedBox(height:12),
-        Wrap(spacing:8,children:[
-          for(final name in ['Ürünler','Kategoriler','Kampanyalar','Çeviriler'])
+        const SizedBox(height:15),
+        Wrap(spacing:8,runSpacing:8,children:[
+          for(final name in ['Ürünler','Kategoriler','Kampanyalar'])
             ChoiceChip(label:Text(name),selected:tab==name,
               onSelected:(_)=>setState(()=>tab=name)),
         ]),
         const SizedBox(height:12),
-        if(tab=='Ürünler'||tab=='Çeviriler') ...[
-          Row(children:[
-            Expanded(child:TextField(
+        if(tab=='Ürünler')...[
+          LayoutBuilder(builder:(context,c){
+            final searchBox=TextField(
               decoration:const InputDecoration(
-                labelText:'Ürün ara · TR / EN / AR',prefixIcon:Icon(Icons.search)),
-              onChanged:(v)=>setState(()=>query=v),
-            )),
-            const SizedBox(width:10),
-            FilledButton.icon(
-              onPressed:()=>productEditor(),
-              icon:const Icon(Icons.add),label:const Text('Yeni Ürün Ekle')),
-          ]),
-          const SizedBox(height:10),
-          for(final p in filtered)
-            Card(child:ListTile(
-              title:Text(tr(p,'name')+' · '+p['price'].toString()+' ₺'),
-              subtitle:Text((translations(p['name'])['en']??'')+
-                ' · '+(translations(p['name'])['ar']??'')+
-                ' · '+p['category'].toString()+
-                (p['available']==false?' · STOKTA YOK':' · Stokta')),
-              leading:IconButton(onPressed:()=>pickImage(p),
-                icon:const Icon(Icons.add_photo_alternate_outlined),
-                tooltip:'Resim Yükle'),
-              trailing:Wrap(spacing:6,children:[
-                Column(mainAxisSize:MainAxisSize.min,children:[
-                  const Text('Aktif',style:TextStyle(fontSize:10)),
-                  Switch(value:p['active']!=false,
-                    onChanged:(v)=>toggle('products',p['id'] as int,'active',v)),
-                ]),
-                Column(mainAxisSize:MainAxisSize.min,children:[
-                  const Text('Stokta',style:TextStyle(fontSize:10)),
-                  Switch(value:p['available']!=false,
-                    onChanged:(v)=>toggle('products',p['id'] as int,'available',v)),
-                ]),
-                IconButton(
-                  onPressed:()=>productEditor(p),
-                  tooltip:'TR / EN / AR · Düzenle',
-                  icon:const Icon(Icons.edit_outlined)),
-                IconButton(
-                  onPressed:()async{
-                    if(await confirmAction(context,'Ürünü Arşivle',
-                      'Ürün geçmişi için ID korunacak; QR menüde gizlenecek.',
-                      confirm:'Pasif Yap')){
-                      toggle('products',p['id'] as int,'active',false);
-                    }
-                  },
-                  tooltip:'Arşivle',icon:const Icon(Icons.archive_outlined)),
-              ]),
-            )),
-        ]else if(tab=='Kategoriler') ...[
+                hintText:'Ürün ara · Türkçe / English / العربية',
+                prefixIcon:Icon(Icons.search),
+                border:OutlineInputBorder()),
+              onChanged:(value)=>setState(()=>query=value),
+            );
+            final add=FilledButton.icon(
+              onPressed:busy?null:()=>productEditor(),
+              icon:const Icon(Icons.add),
+              label:const Text('Yeni Ürün Ekle'));
+            return c.maxWidth<700
+              ?Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[
+                searchBox,const SizedBox(height:9),
+                Align(alignment:Alignment.centerLeft,child:add),
+              ])
+              :Row(children:[
+                Expanded(child:searchBox),
+                const SizedBox(width:10),
+                add,
+              ]);
+          }),
+          const SizedBox(height:12),
+          SingleChildScrollView(scrollDirection:Axis.horizontal,
+            child:Row(children:[
+              for(final c in categories)
+                Padding(padding:const EdgeInsets.only(right:7),
+                  child:ChoiceChip(
+                    label:Text(tr(c,'name')),
+                    selected:filterCategory==c['id'],
+                    onSelected:(_)=>setState(()=>
+                      filterCategory=c['id'].toString()),
+                  )),
+            ])),
+          const SizedBox(height:12),
+          Text('${filtered.length} ürün gösteriliyor',
+            style:theme.textTheme.bodySmall),
+          const SizedBox(height:8),
+          if(filtered.isEmpty)
+            const Card(child:Padding(padding:EdgeInsets.all(24),
+              child:Text('Bu filtreyle eşleşen ürün yok.')))
+          else
+            for(final p in filtered)productCard(p),
+        ]else if(tab=='Kategoriler')...[
           Align(alignment:Alignment.centerLeft,
-            child:FilledButton.icon(onPressed:()=>categoryEditor(),
+            child:FilledButton.icon(onPressed:busy?null:()=>categoryEditor(),
               icon:const Icon(Icons.add),label:const Text('Kategori Ekle'))),
+          const SizedBox(height:10),
           for(final c in categories)
-            Card(child:ListTile(
-              title:Text(tr(c,'name')+' · '+c['id'].toString()),
-              subtitle:Text(translations(c['name'])['en']!+
-                ' · '+translations(c['name'])['ar']!),
-              trailing:Wrap(children:[
-                Switch(value:c['active']!=false,
-                  onChanged:c['id']=='all'?null:
-                    (v)=>toggleString('categories',c['id'].toString(),'active',v)),
-                IconButton(onPressed:c['id']=='all'?null:
-                  ()=>moveCategory(c['id'].toString(),-1),
-                  tooltip:'Yukarı Taşı',icon:const Icon(Icons.arrow_upward)),
-                IconButton(onPressed:c['id']=='all'?null:
-                  ()=>moveCategory(c['id'].toString(),1),
-                  tooltip:'Aşağı Taşı',icon:const Icon(Icons.arrow_downward)),
-                IconButton(onPressed:()=>categoryEditor(c),
-                  icon:const Icon(Icons.edit_outlined)),
-              ]),
-            )),
-        ]else if(tab=='Kampanyalar') ...[
+            Card(
+              elevation:0,
+              child:ListTile(
+                title:Text(tr(c,'name'),style:const TextStyle(
+                  fontWeight:FontWeight.bold)),
+                subtitle:Text('${c['id']} · ${translations(c['name'])['en']}'),
+                trailing:Wrap(crossAxisAlignment:WrapCrossAlignment.center,children:[
+                  Tooltip(message:'QR menüde görünür',
+                    child:Switch(value:c['active']!=false,
+                      onChanged:c['id']=='all'||busy?null:(value)=>
+                        toggleString('categories',c['id'].toString(),'active',value))),
+                  IconButton(
+                    onPressed:c['id']=='all'||busy?null:
+                      ()=>moveCategory(c['id'].toString(),-1),
+                    tooltip:'Yukarı Taşı',icon:const Icon(Icons.arrow_upward)),
+                  IconButton(
+                    onPressed:c['id']=='all'||busy?null:
+                      ()=>moveCategory(c['id'].toString(),1),
+                    tooltip:'Aşağı Taşı',icon:const Icon(Icons.arrow_downward)),
+                  IconButton(onPressed:busy?null:()=>categoryEditor(c),
+                    tooltip:'Düzenle',icon:const Icon(Icons.edit_outlined)),
+                ]),
+              ),
+            ),
+        ]else if(tab=='Kampanyalar')...[
           Align(alignment:Alignment.centerLeft,
-            child:FilledButton.icon(onPressed:()=>campaignEditor(),
+            child:FilledButton.icon(
+              onPressed:busy?null:()=>campaignEditor(),
               icon:const Icon(Icons.add),label:const Text('Kampanya Ekle'))),
+          const SizedBox(height:10),
           for(final c in campaigns)
-            Card(child:ListTile(
-              title:Text(tr(c,'title')+' · '+c['price'].toString()+' ₺'),
-              subtitle:Text(translations(c['title'])['en']!+
-                ' · '+translations(c['title'])['ar']!),
-              trailing:Wrap(children:[
-                Switch(value:c['active']==true,
-                  onChanged:(v)=>toggleString(
-                    'campaigns',c['id'].toString(),'active',v)),
-                IconButton(onPressed:()=>campaignEditor(c),
-                  icon:const Icon(Icons.edit_outlined)),
-              ]),
-            )),
+            Card(
+              elevation:0,
+              child:ListTile(
+                title:Text(tr(c,'title'),style:const TextStyle(
+                  fontWeight:FontWeight.bold)),
+                subtitle:Text('₺${c['price']} · ${translations(c['title'])['en']}'),
+                trailing:Wrap(crossAxisAlignment:WrapCrossAlignment.center,children:[
+                  _statusPill(c['active']==true?'Aktif':'Pasif',
+                    c['active']==true?const Color(0xFFE7F4EC):
+                      const Color(0xFFFFF0E7),
+                    c['active']==true?const Color(0xFF28613D):
+                      const Color(0xFFAB4B26)),
+                  Switch(value:c['active']==true,onChanged:busy?null:(value)=>
+                    toggleString('campaigns',c['id'].toString(),'active',value)),
+                  IconButton(onPressed:busy?null:()=>campaignEditor(c),
+                    tooltip:'Kampanyayı Düzenle',
+                    icon:const Icon(Icons.edit_outlined)),
+                ]),
+              ),
+            ),
         ],
-        const SizedBox(height:10),
-        const Text('Not: Sil işlemi arşivleme şeklindedir; ürün ID ve geçmiş '
-          'siparişler silinmez. Çeviriler TR / EN / AR olarak ayrı kaydedilir.',
+        const SizedBox(height:12),
+        const Text('Tüm düzenlemeler önce bu PC’de taslağa kaydedilir. '
+          'QR’den Gizle ürünü silmez; Tükendi Yap ürünü görünür bırakır. '
+          'Eski sipariş kayıtları ve fiyatları değişmez.',
           style:TextStyle(fontSize:12)),
       ],
     ]);
