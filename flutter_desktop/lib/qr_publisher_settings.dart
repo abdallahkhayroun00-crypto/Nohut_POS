@@ -66,10 +66,26 @@ class _QrPublisherSettingsPanelState extends State<QrPublisherSettingsPanel>{
       return;
     }
     final base=paths.dirname(Platform.resolvedExecutable);
-    final script=File(paths.join(base,'QRPublisher','start-windows.ps1'));
-    if(!await script.exists()){
-      setState(()=>status='Kurulum scripti bulunamadı. '
-        'Windows Setup paketinden POS güncelleyin.');
+    final localAppData=Platform.environment['LOCALAPPDATA'];
+    final candidates=<String>[
+      paths.join(base,'QRPublisher','start-windows.ps1'),
+      if(localAppData!=null&&localAppData.isNotEmpty)
+        paths.join(localAppData,'Programs','Nohut Falafel POS',
+          'QRPublisher','start-windows.ps1'),
+    ];
+    File? script;
+    for(final location in candidates){
+      final file=File(location);
+      if(await file.exists()){script=file;break;}
+    }
+    if(script==null){
+      if(!mounted)return;
+      setState(()=>status='QR Publisher başlatma dosyası bulunamadı. '
+        'Windows-Flutter ZIP ile eski sürümde yalnızca EXE yüklenmiş olabilir. '
+        'Yeni NohutFalafel-Windows-Setup paketini kurun veya '
+        'Windows-Flutter klasöründe QRPublisher\\start-windows.ps1 '
+        'dosyasının bulunduğundan emin olun. '
+        'Çalıştırılan EXE klasörü: $base');
       return;
     }
     try {
