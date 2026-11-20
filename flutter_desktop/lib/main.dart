@@ -3,6 +3,7 @@ import 'order_actions.dart';
 import 'product_customization.dart';
 import 'service_metrics.dart';
 import 'simple_settings.dart';
+import 'qr_menu_management.dart';
 import 'customer_accounts.dart';
 import 'open_accounts_ui.dart';
 import 'group_payments.dart';
@@ -172,6 +173,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     ('online', Icons.delivery_dining_outlined, 'Online Siparişler'),
     ('reviews', Icons.star_outline, 'Geri Bildirimler'),
     ('google', Icons.storefront_outlined, 'Google İşletme Profili'),
+    ('qr-menu', Icons.menu_book_outlined, 'QR Menü Yönetimi'),
     ('open-accounts', Icons.account_balance_wallet_outlined, 'Açık Hesaplar'),
     ('payments', Icons.point_of_sale_outlined, 'Kasa & Ödemeler'),
     ('reports', Icons.bar_chart_outlined, 'Raporlar'),
@@ -1485,6 +1487,8 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
           integration: tgo,
           onOpenGoogle: () => setState(() => page = 'google'),
         );
+      case 'qr-menu':
+        return QrMenuManagement(state:db,edit:_edit,store:store,sync:qrSync);
       case 'open-accounts':
         return OpenAccountsPanel(
           state: db,
