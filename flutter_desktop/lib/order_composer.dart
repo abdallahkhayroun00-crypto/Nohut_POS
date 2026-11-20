@@ -6,6 +6,7 @@ class _OrderComposer extends StatefulWidget {
     required this.employees,
     required this.customers,
     this.table,
+    this.originalOrder,
     this.adding = false,
     this.pickupOnly = false,
     this.tableOrders = const {},
@@ -17,6 +18,7 @@ class _OrderComposer extends StatefulWidget {
   final List<Json> employees;
   final List<Json> customers;
   final int? table;
+  final Json? originalOrder;
   final bool adding, pickupOnly;
   final Map<int, Json> tableOrders;
   final bool Function(OrderRequest)? onSubmit;
@@ -517,6 +519,12 @@ class _OrderComposerState extends State<_OrderComposer> {
       0,
       (sum, line) => sum + cents(line['price']) * (line['qty'] as int),
     );
+    final lockedOrder = widget.adding
+        ? widget.originalOrder
+        : source == 'Masa' ? tableOrders[table] : null;
+    final firstBatch = lockedOrder == null
+        ? null : asMaps(lockedOrder['batches']).firstOrNull;
+    final lockedStaff = (firstBatch?['staff'] ?? 'Atanmamış').toString();
     return Dialog(
       child: SizedBox(
         width: (size.width - 48).clamp(280, 1100),
@@ -565,7 +573,8 @@ class _OrderComposerState extends State<_OrderComposer> {
                         onChanged: (v) => setState(() => source = v!),
                       ),
                     ),
-                  SizedBox(
+                  if (lockedOrder == null)
+                    SizedBox(
                       width: 225,
                       child: DropdownButtonFormField<int>(
                         isExpanded: true,
@@ -580,43 +589,37 @@ class _OrderComposerState extends State<_OrderComposer> {
                             if (employee['id'] is int)
                               DropdownMenuItem<int>(
                                 value: employee['id'] as int,
-                                child: Text('${employee['name']}',
-                                    overflow: TextOverflow.ellipsis),
+                                child: Text((employee['name'] ?? '').toString(),
+                                  overflow: TextOverflow.ellipsis),
                               ),
                         ],
                         onChanged: widget.employees.isEmpty
-                            ? null
-                            : (id) => setState(() => selectedEmployeeId = id),
+                            ? null : (id) => setState(() => selectedEmployeeId = id),
                       ),
-                    ),
-                  if (widget.adding ||
-                      (source == 'Masa' && tableOrders[table] != null))
+                    )
+                  else
                     Container(
-                      constraints: const BoxConstraints(maxWidth: 280),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 11, vertical: 12),
+                      key: const ValueKey('locked-original-employee'),
+                      constraints: const BoxConstraints(maxWidth: 350),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
                       decoration: BoxDecoration(
                         color: const Color(0xffEAF2EC),
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: const Row(
+                      child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.how_to_reg_outlined,
-                              color: NohutBrand.green, size: 18),
-                          SizedBox(width: 7),
-                          Flexible(
-                            child: Text(
-                              'Ek sipariş, hesabı açan personele yazılır',
-                              style: TextStyle(
-                                  fontSize: 12, color: NohutBrand.green,
-                                  fontWeight: FontWeight.w600),
-                            ),
-                          ),
+                          const Icon(Icons.lock_outline, color: NohutBrand.green, size: 18),
+                          const SizedBox(width: 8),
+                          Flexible(child: Text(
+                            'Siparişi Alan Personel: ' + lockedStaff + ' · Değiştirilemez',
+                            style: const TextStyle(
+                              color: NohutBrand.green, fontWeight: FontWeight.w700),
+                          )),
                         ],
                       ),
                     ),
-                  if (widget.employees.isEmpty)
+                  if (lockedOrder == null && widget.employees.isEmpty)
                     const Text(
                       'Aktif personel yok. Ayarlar → Personel bölümünden ekleyin.',
                       style: TextStyle(color: Color(0xff9E4A38), fontSize: 12),
@@ -756,7 +759,7 @@ class _OrderComposerState extends State<_OrderComposer> {
                         draft.isEmpty ||
                             draft.any((l) => l['_unavailable'] == true) ||
                             (source == 'Masa' && table == null) ||
-                            selectedEmployeeId == null
+                            (lockedOrder == null && selectedEmployeeId == null)
                         ? null
                         : () {
                             final request = OrderRequest(
