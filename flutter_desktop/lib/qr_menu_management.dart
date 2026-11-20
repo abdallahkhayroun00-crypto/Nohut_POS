@@ -369,39 +369,175 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
   Future<void> productEditor([Json? original])async{
     if(menu==null)return;
     final allCats=categories.where((c)=>c['id']!='all').toList();
-    final category=original?['category']?.toString()??allCats.first['id'].toString();
-    final inputs=[
-      ('Türkçe Ürün Adı',tr(original??{},'name')),
-      ('English · Name',translations(original?['name'])['en']!),
-      ('العربية · الاسم',translations(original?['name'])['ar']!),
-      ('Türkçe Açıklama',translations(original?['description'])['tr']!),
-      ('English · Description',translations(original?['description'])['en']!),
-      ('العربية · الوصف',translations(original?['description'])['ar']!),
-      ('Türkçe Görünür Adı',translations(original?['displayName'])['tr']!),
-      ('English · Display Name',translations(original?['displayName'])['en']!),
-      ('العربية · اسم العرض',translations(original?['displayName'])['ar']!),
-      ('Fiyat (₺)',(original?['price']??'0').toString()),
-      ('Kategori',category),
-      ('Görsel yolu (assets/...)',(original?['image']??'').toString()),
+    if(allCats.isEmpty)return;
+    final originalCategory=original?['category']?.toString();
+    var selectedCategory=allCats.any((c)=>c['id']==originalCategory)
+      ?originalCategory!:allCats.first['id'].toString();
+    final starting=[
+      tr(original??{},'name'),
+      translations(original?['name'])['en']!,
+      translations(original?['name'])['ar']!,
+      translations(original?['description'])['tr']!,
+      translations(original?['description'])['en']!,
+      translations(original?['description'])['ar']!,
+      translations(original?['displayName'])['tr']!,
+      translations(original?['displayName'])['en']!,
+      translations(original?['displayName'])['ar']!,
+      (original?['price']??'0').toString(),
+      (original?['image']??'').toString(),
     ];
-    final values=await askFields(context,
-      original==null?'Yeni Ürün':'Ürün Düzenle · '+tr(original,'name'),
-      inputs,choices:{10:allCats.map((c)=>c['id'].toString()).toList()},
-      validate:(v){
-        if(v.take(3).any((s)=>s.trim().isEmpty)||
-          v.skip(6).take(3).any((s)=>s.trim().isEmpty))
-          return 'TR / EN / AR isimleri gereklidir.';
-        if(v.any((s)=>s.length>2500))return 'Metin çok uzun.';
-        try{parseMoney(v[9]);}catch(_){return 'Fiyatı doğru yazın.';}
-        if(v[11].isNotEmpty&&!RegExp(r'^assets/[a-zA-Z0-9_./-]+\.(png|jpg|jpeg|webp|svg)$')
-          .hasMatch(v[11]))return 'Görsel yolu assets/ ile başlamalı.';
-        if(v[11].contains('..'))return 'Geçersiz görsel yolu.';
-        return null;
-      });
+    final controls=[for(final item in starting)TextEditingController(text:item)];
+    String error='';
+    final values=await showDialog<List<String>>(
+      context:context,
+      builder:(dialog)=>StatefulBuilder(builder:(dialog,refresh){
+        Widget field(int index,String label,{int lines=1})=>Padding(
+          padding:const EdgeInsets.only(bottom:13),
+          child:TextField(
+            controller:controls[index],
+            textDirection:[2,5,8].contains(index)
+              ?TextDirection.rtl:TextDirection.ltr,
+            maxLines:lines,
+            keyboardType:index==9
+              ?const TextInputType.numberWithOptions(decimal:true)
+              :TextInputType.text,
+            decoration:InputDecoration(
+              border:const OutlineInputBorder(),
+              labelText:label,
+              isDense:true,
+            ),
+          ),
+        );
+        Widget fields(List<Widget> children)=>SingleChildScrollView(
+          padding:const EdgeInsets.symmetric(horizontal:4,vertical:14),
+          child:Column(crossAxisAlignment:CrossAxisAlignment.stretch,
+            children:children),
+        );
+        return Dialog(
+          insetPadding:const EdgeInsets.all(20),
+          child:ConstrainedBox(
+            constraints:const BoxConstraints(maxWidth:720,maxHeight:710),
+            child:Padding(
+              padding:const EdgeInsets.all(22),
+              child:DefaultTabController(
+                length:3,
+                child:Column(mainAxisSize:MainAxisSize.min,
+                  crossAxisAlignment:CrossAxisAlignment.stretch,
+                  children:[
+                    Text(original==null?'Yeni Ürün Ekle':'Ürünü Düzenle',
+                      style:Theme.of(dialog).textTheme.titleLarge),
+                    const SizedBox(height:5),
+                    const Text('Temel bilgiler, çeviriler ve açıklamalar '
+                      'ayrı bölümlerde. Kaydet yalnızca yerel taslağı değiştirir.'),
+                    const SizedBox(height:14),
+                    const TabBar(tabs:[
+                      Tab(text:'Ürün ve Fiyat'),
+                      Tab(text:'İsimler · TR/EN/AR'),
+                      Tab(text:'Açıklamalar'),
+                    ]),
+                    const SizedBox(height:8),
+                    Flexible(child:TabBarView(children:[
+                      fields([
+                        field(0,'Ürün Adı · Türkçe'),
+                        field(9,'Fiyat · ₺'),
+                        Padding(
+                          padding:const EdgeInsets.only(bottom:13),
+                          child:DropdownButtonFormField<String>(
+                            value:selectedCategory,
+                            decoration:const InputDecoration(
+                              labelText:'Kategori',border:OutlineInputBorder()),
+                            items:[
+                              for(final c in allCats)
+                                DropdownMenuItem(
+                                  value:c['id'].toString(),
+                                  child:Text(tr(c,'name')),
+                                ),
+                            ],
+                            onChanged:(v){
+                              if(v!=null)refresh(()=>selectedCategory=v);
+                            },
+                          ),
+                        ),
+                        field(10,'Görsel Yolu · assets/...'),
+                        const Text('Yeni görseli ürün listesindeki fotoğraf '
+                          'butonundan seçebilirsiniz. GitHub bağlantısı gerekir.',
+                          style:TextStyle(fontSize:12)),
+                      ]),
+                      fields([
+                        field(0,'Türkçe · Ürün adı'),
+                        field(1,'English · Product name'),
+                        field(2,'العربية · اسم المنتج'),
+                        const SizedBox(height:3),
+                        const Text('Menüde gösterilecek kısa adlar (boş '
+                          'bırakılırsa ürün adı kullanılır):'),
+                        const SizedBox(height:9),
+                        field(6,'Türkçe · Görünür ad'),
+                        field(7,'English · Display name'),
+                        field(8,'العربية · الاسم المعروض'),
+                      ]),
+                      fields([
+                        field(3,'Türkçe · Açıklama',lines:3),
+                        field(4,'English · Description',lines:3),
+                        field(5,'العربية · الوصف',lines:3),
+                      ]),
+                    ])),
+                    if(error.isNotEmpty)Padding(
+                      padding:const EdgeInsets.only(top:8),
+                      child:Text(error,style:TextStyle(
+                        color:Theme.of(dialog).colorScheme.error)),
+                    ),
+                    const Divider(height:22),
+                    Row(mainAxisAlignment:MainAxisAlignment.end,children:[
+                      TextButton(onPressed:()=>Navigator.pop(dialog),
+                        child:const Text('Vazgeç')),
+                      const SizedBox(width:10),
+                      FilledButton.icon(
+                        icon:const Icon(Icons.save_outlined),
+                        label:const Text('Taslağa Kaydet'),
+                        onPressed:(){
+                          final v=[for(final c in controls)c.text.trim()];
+                          for(var i=0;i<3;i++){
+                            if(v[6+i].isEmpty)v[6+i]=v[i];
+                          }
+                          String? problem;
+                          if(v.take(3).any((x)=>x.isEmpty))
+                            problem='TR / EN / AR ürün adlarını girin.';
+                          else if(v.any((x)=>x.length>2500))
+                            problem='Metin çok uzun.';
+                          else if(products.any((p)=>
+                            p['id']!=original?['id']&&
+                            tr(p,'name').trim().toLowerCase()==
+                              v[0].toLowerCase()))
+                            problem='Bu Türkçe ürün adı zaten mevcut.';
+                          if(problem==null){
+                            try{parseMoney(v[9]);}
+                            catch(_){problem='Geçerli bir fiyat girin.';}
+                          }
+                          if(problem==null&&v[10].isNotEmpty&&
+                            (!RegExp(r'^assets/[a-zA-Z0-9_./-]+\.(png|jpg|jpeg|webp|svg)$')
+                              .hasMatch(v[10])||v[10].contains('..')))
+                            problem='Görsel yolu geçersiz (assets/...).';
+                          if(problem!=null){
+                            refresh(()=>error=problem!);
+                            return;
+                          }
+                          Navigator.pop(dialog,[...v.take(10),selectedCategory,v[10]]);
+                        },
+                      ),
+                    ]),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      }),
+    );
+    for(final c in controls){c.dispose();}
     if(values==null||!mounted)return;
     final rows=menu!['products'] as List;
     final newId=rows.fold<int>(0,(max,e)=>
-      (e is Map && e['id'] is int && (e['id'] as int)>=max)
+      (e is Map&&e['id'] is int&&(e['id'] as int)>=max)
         ?(e['id'] as int)+1:max);
     final item=original==null?<String,dynamic>{
       'id':newId,'legacyKey':'pos-id-'+newId.toString(),
@@ -417,12 +553,13 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
     });
     if(original==null)rows.add(item);
     else{
-      final i=rows.indexWhere((r)=>r is Map && r['id']==original['id']);
+      final i=rows.indexWhere((r)=>r is Map&&r['id']==original['id']);
       if(i<0)return;
       rows[i]=item;
     }
     updated();
   }
+
   Future<void> categoryEditor([Json? original])async{
     if(menu==null)return;
     final values=await askFields(context,
