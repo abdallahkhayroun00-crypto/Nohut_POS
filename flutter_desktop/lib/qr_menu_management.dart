@@ -7,6 +7,7 @@ import 'brand.dart';
 import 'operations_ui.dart';
 import 'pos_logic.dart';
 import 'pos_store.dart';
+import 'qr_menu_reader.dart';
 import 'qr_menu_sync.dart';
 import 'qr_publisher_client.dart';
 
@@ -53,6 +54,58 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
       'ar':(m['ar']??'').toString(),
     };
   }
+  /// Allow the manager to inspect and edit an offline draft even before the
+  /// GitHub App local publishing service is running. Publishing stays disabled.
+  Future<Json> _readPublicWebsiteDraft() async {
+    final public=await QrMenuReader().readPublishedMenu();
+    return <String,dynamic>{
+      'schemaVersion':1,
+      'source':'nohutfalafel/qr-menu',
+      'currency':'TRY',
+      'categories':[
+        for(var i=0;i<public.categories.length;i++)
+          {
+            'id':public.categories[i].id,
+            'name':public.categories[i].names,
+            'description':public.categories[i].descriptions,
+            'active':public.categories[i].active,
+            'order':i,
+          }
+      ],
+      'products':[
+        for(var i=0;i<public.products.length;i++)
+          {
+            'id':public.products[i].id,
+            'category':public.products[i].category,
+            'legacyKey':public.products[i].legacyKey??public.products[i].name,
+            'name':public.products[i].names,
+            'displayName':public.products[i].displayNames,
+            'description':public.products[i].descriptions,
+            'price':public.products[i].priceTl,
+            'active':public.products[i].active,
+            'available':public.products[i].available,
+            'image':public.products[i].image,
+            'order':i,
+          }
+      ],
+      'campaigns':[
+        for(final offer in public.campaigns)
+          {
+            'id':offer.id,
+            'active':offer.active,
+            'price':offer.priceTl,
+            'title':offer.title,
+            'description':offer.description,
+            'items':offer.items,
+            'poster':offer.poster,
+            'thumbnail':offer.thumbnail,
+            'startsAt':offer.startsAt?.toIso8601String(),
+            'endsAt':offer.endsAt?.toIso8601String(),
+          }
+      ],
+    };
+  }
+
   Future<void> load({bool force=false})async{
     if(busy)return;
     if(changed&&!force){
@@ -79,11 +132,29 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
         state.remove('qrPublisherDraft');
         state.remove('qrPublisherDraftRevision');
       });
-    }on FormatException catch(e){
-      if(mounted)setState(()=>info=e.message);
     }catch(_){
-      if(mounted)setState(()=>info=
-        'GitHub yayınlama hizmetine bağlanılamadı. Ayarlar > Entegrasyonlar kontrol edin.');
+      // Display public content as a local, editable draft. Never claim that
+      // the GitHub revision is known or publishing is available offline.
+      try{
+        final fallback=await _readPublicWebsiteDraft();
+        if(!mounted)return;
+        setState((){
+          menu=fallback;revision=null;changed=true;
+          info='Resmî QR web menüsü taslak olarak açıldı. Ürünleri ve TR/EN/AR '
+            'çevirileri düzenleyebilirsiniz. GitHub yayını için önce '
+            'Ayarlar > Entegrasyonlar > Nohut QR Publisher bağlantısını açın. '
+            'Bağlandıktan sonra taslağınızı gözden geçirip güncel sürüme '
+            'uyarlayın; bu taslak otomatik yayınlanmaz.';
+        });
+        widget.edit((state){
+          state['qrPublisherDraft']=copyJson(fallback);
+          state.remove('qrPublisherDraftRevision');
+        });
+      }catch(e){
+        if(mounted)setState(()=>info=
+          'QR web menüsü de yüklenemedi: '+e.toString()+
+          '. Ağ bağlantısını ve Menü > Şimdi Eşitle durumunu kontrol edin.');
+      }
     }finally{if(mounted)setState(()=>busy=false);}
   }
   void saveDraft(){
@@ -400,7 +471,7 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
             OutlinedButton.icon(onPressed:menu==null?null:preview,
               icon:const Icon(Icons.visibility_outlined),
               label:const Text('Taslağı Önizle')),
-            FilledButton.icon(onPressed:menu==null||busy||!changed?null:publish,
+            FilledButton.icon(onPressed:menu==null||busy||!changed||revision==null?null:publish,
               icon:const Icon(Icons.publish_outlined),
               label:const Text('GitHub’a Yayınla')),
             OutlinedButton.icon(onPressed:busy?null:()=>widget.sync.syncNow(),
@@ -417,8 +488,9 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
         ]))),
       if(menu==null)
         const Card(child:Padding(padding:EdgeInsets.all(20),
-          child:Text('Önce Ayarlar → Entegrasyonlar → Nohut QR Publisher '
-            'bağlantısını test edin ve GitHub menüsünü yükleyin.')))
+          child:Text('GitHub’dan Menü Yükle ile önce yayınlama hizmetini deneyin; '
+            'hizmet kapalıysa POS resmî web menüsünü düzenlenebilir taslak '
+            'olarak yüklemeyi dener. Yayın için Entegrasyonlar gerekli.')))
       else ...[
         const SizedBox(height:12),
         Wrap(spacing:8,children:[
