@@ -4,7 +4,9 @@ class _OrderComposer extends StatefulWidget {
   const _OrderComposer({
     required this.products,
     required this.employees,
+    required this.customers,
     this.table,
+    this.originalOrder,
     this.adding = false,
     this.pickupOnly = false,
     this.tableOrders = const {},
@@ -14,7 +16,9 @@ class _OrderComposer extends StatefulWidget {
   });
   final List<Product> products;
   final List<Json> employees;
+  final List<Json> customers;
   final int? table;
+  final Json? originalOrder;
   final bool adding, pickupOnly;
   final Map<int, Json> tableOrders;
   final bool Function(OrderRequest)? onSubmit;
@@ -43,6 +47,141 @@ class _OrderComposerState extends State<_OrderComposer> {
     table = widget.table;
     if (widget.pickupOnly || (widget.adding && table == null))
       source = 'Gel-Al';
+  }
+
+
+  Future<void> editPickupCustomer() async {
+    final name = TextEditingController(text: (pickupCustomer['name'] ?? '').toString());
+    final phone = TextEditingController(text: (pickupCustomer['phone'] ?? '').toString());
+    final pickupTime = TextEditingController(text: (pickupCustomer['time'] ?? '').toString());
+    int? customerId = pickupCustomer['id'] as int?;
+    bool save = pickupCustomer['saveCustomer'] == true;
+    String activeSearch = '';
+    final selected = await showDialog<Json>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, update) {
+          final needle = activeSearch.trim().toLowerCase();
+          final digits = customerPhoneKey(needle);
+          final suggestions = needle.length < 2 ? <Json>[] : widget.customers
+              .where((c) =>
+                  (c['name'] ?? '').toString().toLowerCase().contains(needle) ||
+                  (digits.isNotEmpty &&
+                      customerPhoneKey((c['phone'] ?? '').toString())
+                          .contains(digits)))
+              .take(5).toList();
+          return AlertDialog(
+            title: const Text('Gel-Al Bilgileri'),
+            content: SizedBox(
+              width: 460,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: name,
+                      decoration: const InputDecoration(
+                        labelText: 'Ad',
+                        prefixIcon: Icon(Icons.person_outline),
+                      ),
+                      onChanged: (v) => update(() {
+                        activeSearch = v;
+                        customerId = null;
+                      }),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: phone,
+                      keyboardType: TextInputType.phone,
+                      decoration: const InputDecoration(
+                        labelText: 'Telefon',
+                        prefixIcon: Icon(Icons.phone_outlined),
+                      ),
+                      onChanged: (v) => update(() {
+                        activeSearch = v;
+                        customerId = null;
+                      }),
+                    ),
+                    if (suggestions.isNotEmpty) ...[
+                      const SizedBox(height: 7),
+                      const Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text('Kayıtlı müşteriler',
+                            style: TextStyle(fontWeight: FontWeight.w700)),
+                      ),
+                      for (final customer in suggestions)
+                        ListTile(
+                          dense: true,
+                          leading: const Icon(Icons.history),
+                          title: Text((customer['name'] ?? '').toString()),
+                          subtitle: Text((customer['phone'] ?? '').toString()),
+                          onTap: () => update(() {
+                            name.text = (customer['name'] ?? '').toString();
+                            phone.text = (customer['phone'] ?? '').toString();
+                            customerId = customer['id'] as int?;
+                            activeSearch = '';
+                            save = false;
+                          }),
+                        ),
+                    ],
+                    if (customerId != null)
+                      const Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text('Kayıtlı müşteri seçildi',
+                            style: TextStyle(color: Colors.green)),
+                      ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: pickupTime,
+                      decoration: const InputDecoration(
+                        labelText: 'Teslim alma saati',
+                        prefixIcon: Icon(Icons.schedule_outlined),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      value: save,
+                      title: const Text('Müşteriyi Kaydet'),
+                      subtitle: const Text('Bir sonraki Gel-Al siparişinde ad veya telefon ile bulun. Yalnızca bu bilgisayara kaydedilir.'),
+                      onChanged: (v) => update(() => save = v ?? false),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Vazgeç'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  if ((save || customerId != null) && name.text.trim().isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Müşteri adı gerekli.')),
+                    );
+                    return;
+                  }
+                  Navigator.pop(dialogContext, <String, dynamic>{
+                    'name': name.text.trim(),
+                    'phone': phone.text.trim(),
+                    'time': pickupTime.text.trim(),
+                    if (customerId != null) 'id': customerId,
+                    if (save) 'saveCustomer': true,
+                  });
+                },
+                child: const Text('Kaydet'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    name.dispose();
+    phone.dispose();
+    pickupTime.dispose();
+    if (selected != null && mounted) setState(() => pickupCustomer = selected);
   }
 
   void add(Product p, {String note = '', String removed = ''}) {
@@ -380,6 +519,12 @@ class _OrderComposerState extends State<_OrderComposer> {
       0,
       (sum, line) => sum + cents(line['price']) * (line['qty'] as int),
     );
+    final lockedOrder = widget.adding
+        ? widget.originalOrder
+        : source == 'Masa' ? tableOrders[table] : null;
+    final firstBatch = lockedOrder == null
+        ? null : asMaps(lockedOrder['batches']).firstOrNull;
+    final lockedStaff = (firstBatch?['staff'] ?? 'Atanmamış').toString();
     return Dialog(
       child: SizedBox(
         width: (size.width - 48).clamp(280, 1100),
@@ -428,7 +573,8 @@ class _OrderComposerState extends State<_OrderComposer> {
                         onChanged: (v) => setState(() => source = v!),
                       ),
                     ),
-                  SizedBox(
+                  if (lockedOrder == null)
+                    SizedBox(
                       width: 225,
                       child: DropdownButtonFormField<int>(
                         isExpanded: true,
@@ -443,43 +589,37 @@ class _OrderComposerState extends State<_OrderComposer> {
                             if (employee['id'] is int)
                               DropdownMenuItem<int>(
                                 value: employee['id'] as int,
-                                child: Text('${employee['name']}',
-                                    overflow: TextOverflow.ellipsis),
+                                child: Text((employee['name'] ?? '').toString(),
+                                  overflow: TextOverflow.ellipsis),
                               ),
                         ],
                         onChanged: widget.employees.isEmpty
-                            ? null
-                            : (id) => setState(() => selectedEmployeeId = id),
+                            ? null : (id) => setState(() => selectedEmployeeId = id),
                       ),
-                    ),
-                  if (widget.adding ||
-                      (source == 'Masa' && tableOrders[table] != null))
+                    )
+                  else
                     Container(
-                      constraints: const BoxConstraints(maxWidth: 280),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 11, vertical: 12),
+                      key: const ValueKey('locked-original-employee'),
+                      constraints: const BoxConstraints(maxWidth: 350),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
                       decoration: BoxDecoration(
                         color: const Color(0xffEAF2EC),
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: const Row(
+                      child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.how_to_reg_outlined,
-                              color: NohutBrand.green, size: 18),
-                          SizedBox(width: 7),
-                          Flexible(
-                            child: Text(
-                              'Ek sipariş, hesabı açan personele yazılır',
-                              style: TextStyle(
-                                  fontSize: 12, color: NohutBrand.green,
-                                  fontWeight: FontWeight.w600),
-                            ),
-                          ),
+                          const Icon(Icons.lock_outline, color: NohutBrand.green, size: 18),
+                          const SizedBox(width: 8),
+                          Flexible(child: Text(
+                            'Siparişi Alan Personel: ' + lockedStaff + ' · Değiştirilemez',
+                            style: const TextStyle(
+                              color: NohutBrand.green, fontWeight: FontWeight.w700),
+                          )),
                         ],
                       ),
                     ),
-                  if (widget.employees.isEmpty)
+                  if (lockedOrder == null && widget.employees.isEmpty)
                     const Text(
                       'Aktif personel yok. Ayarlar → Personel bölümünden ekleyin.',
                       style: TextStyle(color: Color(0xff9E4A38), fontSize: 12),
@@ -525,24 +665,7 @@ class _OrderComposerState extends State<_OrderComposer> {
                     ),
                   if (source == 'Gel-Al' && !widget.adding)
                     TextButton(
-                      onPressed: () async {
-                        final v = await askFields(context, 'Gel-Al Bilgileri', [
-                          ('Ad', '${pickupCustomer['name'] ?? ''}'),
-                          ('Telefon', '${pickupCustomer['phone'] ?? ''}'),
-                          (
-                            'Teslim alma saati',
-                            '${pickupCustomer['time'] ?? ''}',
-                          ),
-                        ]);
-                        if (v != null && mounted)
-                          setState(
-                            () => pickupCustomer = {
-                              'name': v[0],
-                              'phone': v[1],
-                              'time': v[2],
-                            },
-                          );
-                      },
+                      onPressed: editPickupCustomer,
                       child: Text(
                         pickupCustomer.isEmpty
                             ? 'Müşteri / Saat Bilgisi'
@@ -636,7 +759,7 @@ class _OrderComposerState extends State<_OrderComposer> {
                         draft.isEmpty ||
                             draft.any((l) => l['_unavailable'] == true) ||
                             (source == 'Masa' && table == null) ||
-                            selectedEmployeeId == null
+                            (lockedOrder == null && selectedEmployeeId == null)
                         ? null
                         : () {
                             final request = OrderRequest(

@@ -58,6 +58,8 @@ Source: "{#ReleaseDir}\{#AppExe}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#ReleaseDir}\*.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#ReleaseDir}\data\*"; DestDir: "{app}\data"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#ReleaseDir}\build-manifest.json"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#ReleaseDir}\QRPublisher\server.mjs"; DestDir: "{app}\QRPublisher"; Flags: ignoreversion
+Source: "{#ReleaseDir}\QRPublisher\start-windows.ps1"; DestDir: "{app}\QRPublisher"; Flags: ignoreversion
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
@@ -65,6 +67,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Icons]
 Name: "{userdesktop}\{#AppTitle}"; Filename: "{app}\{#AppExe}"; WorkingDir: "{app}"; Tasks: desktopicon
 Name: "{userprograms}\{#AppTitle}"; Filename: "{app}\{#AppExe}"; WorkingDir: "{app}"
+Name: "{userprograms}\Nohut QR Publisher Kurulum"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\QRPublisher\start-windows.ps1"""; WorkingDir: "{app}\QRPublisher"
 
 [Run]
 Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppTitle}}"; Flags: nowait postinstall skipifsilent

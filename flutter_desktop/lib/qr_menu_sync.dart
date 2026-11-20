@@ -65,19 +65,32 @@ QrMenuSyncResult reconcilePublishedMenu(Json state, PublishedQrMenu published) {
   // Validate ALL mappings before changing any product. Never accidentally
   // overwrite an old order's referenced local product ID.
   final remoteIds=<int>{}, remoteNames=<String>{};
+  final allowedCategories=<String>{
+    for(final c in published.categories)
+      if(c.id!='all'&&RegExp(r'^[a-z][a-z0-9-]{0,49}$').hasMatch(c.id))c.id,
+  };
+  final categoryActive=<String>{
+    for(final c in published.categories)if(c.active)c.id,
+  };
+  if(!published.categories.any((c)=>c.id=='all'&&c.active)||
+     allowedCategories.length<8){
+    throw const FormatException('QR kategori listesi doğrulanamadı.');
+  }
   for(final p in published.products){
-    if(!qrAllowedCategories.contains(p.category) ||
-        !remoteIds.add(p.id) || !remoteNames.add(p.name) ||
-        !p.priceTl.isFinite || p.priceTl < 0 || p.priceTl > 100000) {
+    if(!allowedCategories.contains(p.category)||
+       !remoteIds.add(p.id)||!remoteNames.add(p.name)||
+       !p.priceTl.isFinite||p.priceTl<0||p.priceTl>100000){
       throw const FormatException('QR katalog kimlik/fiyat doğrulaması başarısız.');
     }
     final byId=localById[p.id], byName=localByName[p.name];
-    if(byName!=null && byName['id']!=p.id) {
+    final legacy=p.legacyKey==null?null:localByName[p.legacyKey];
+    if((byName!=null&&byName['id']!=p.id)||
+       (legacy!=null&&legacy['id']!=p.id)){
       throw FormatException('Ürün ID uyuşmazlığı: '+p.name);
     }
-    if(byId!=null &&
-        (byId['category']!=p.category ||
-         (byId['name']!=p.name && byId['qrStableId']!=p.id))) {
+    if(byId!=null&&byId['qrStableId']!=p.id&&
+       (byId['category']!=p.category||
+        (byId['name']!=p.name&&byId['name']!=p.legacyKey))){
       throw FormatException('Mevcut yerel ID çakışıyor: '+p.id.toString());
     }
   }
@@ -88,7 +101,9 @@ QrMenuSyncResult reconcilePublishedMenu(Json state, PublishedQrMenu published) {
     final current=localById[p.id];
     final desired=<String,dynamic>{
       'id':p.id,'qrStableId':p.id,'category':p.category,'name':p.name,
-      'price':p.priceTl,'active':p.active,
+      'price':p.priceTl,
+      'active':p.active && categoryActive.contains(p.category),
+      'available':p.available,
       'names':p.names,'displayName':p.displayNames,
       'description':p.descriptions,'image':p.image,
     };
@@ -112,7 +127,8 @@ QrMenuSyncResult reconcilePublishedMenu(Json state, PublishedQrMenu published) {
   final unlisted=localById.keys.where((id)=>!remoteIds.contains(id)).length;
   final newCategories=[
     for(final category in published.categories)
-      {'id':category.id,'name':category.names,'description':category.descriptions},
+      {'id':category.id,'name':category.names,'description':category.descriptions,
+        'active':category.active,'order':category.order},
   ];
   final newCampaigns=[
     for(final campaign in published.campaigns)

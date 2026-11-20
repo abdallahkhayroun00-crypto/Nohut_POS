@@ -681,9 +681,26 @@ class TrendyolGoReadonly extends ChangeNotifier {
           final key = tgoOrderKey(o);
           final prior = merged[key];
           final changedAt = o['modifiedAt'];
+          // Record when the POS first *observed* courier stages. This is not
+          // an authoritative platform event timestamp.
+          final courierTimeline = asMaps(prior?['courierTimeline']);
+          if (o['pickup'] != true) {
+            void observed(String stage, bool reached) {
+              if (reached && !courierTimeline.any((e) => e['stage'] == stage)) {
+                courierTimeline.add({
+                  'stage': stage,
+                  'observedAt': end.toUtc().toIso8601String(),
+                });
+              }
+            }
+            observed('nearby', o['courierNearby'] == true);
+            observed('picked_up', ['Shipped', 'Delivered'].contains(o['status']));
+            observed('delivered', o['status'] == 'Delivered');
+          }
           // Do not allocate a different display number when platform status changes.
           merged[key] = {
             ...o,
+            'courierTimeline': courierTimeline,
             if (prior?['dailyNumber'] is int)
               'dailyNumber': prior!['dailyNumber'],
             if (prior?['numberDay'] is String) 'numberDay': prior!['numberDay'],

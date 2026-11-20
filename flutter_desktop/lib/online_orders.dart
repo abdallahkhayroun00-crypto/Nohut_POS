@@ -47,7 +47,6 @@ class _OnlineOrdersState extends State<OnlineOrders> {
   bool history = false;
   String query = '', status = '';
   String? selectedDay;
-
   Future<void> _pickDate() async {
     final today = DateTime.parse(widget.businessDay);
     final date = await showDatePicker(
@@ -256,7 +255,6 @@ class _OnlineOrdersState extends State<OnlineOrders> {
         ),
         const SizedBox(height: 5),
         const Text('Tüm platformlar tek ekranda · Bağlantısı olmayan platformlar otomatik sipariş göndermez.'),
-        const SizedBox(height: 14),
         Card(
           child: Padding(
             padding: const EdgeInsets.all(16),

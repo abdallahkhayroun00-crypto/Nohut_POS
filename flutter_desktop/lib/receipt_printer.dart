@@ -71,7 +71,9 @@ class ReceiptPrinter {
         if (!store.replace(next, snap.revision).ok) return;
         var outcome = 'Kuyruğa gönderildi';
         try {
-          await transport(tgoKitchenTicket(order), printer);
+          await transport(tgoKitchenTicket(order),
+             (settings['kitchenPrinterName'] ?? '').toString().trim().isNotEmpty
+               ? settings['kitchenPrinterName'].toString().trim() : printer);
         } catch (_) {
           outcome = 'Kontrol gerekli';
         }

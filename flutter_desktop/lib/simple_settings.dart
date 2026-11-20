@@ -15,6 +15,8 @@ import 'partner_credentials.dart';
 import 'receipt_printer.dart';
 import 'receipt_layout.dart';
 import 'receipt_preview.dart';
+import 'printer_management.dart';
+import 'qr_publisher_settings.dart';
 
 class SimpleSettings extends StatefulWidget {
   const SimpleSettings({
@@ -270,6 +272,11 @@ class _SimpleSettingsState extends State<SimpleSettings> {
           ),
         ],
         if (tab == 'Entegrasyonlar') ...[
+          QrPublisherSettingsPanel(
+            state:widget.state,edit:widget.edit,
+            databasePath:widget.store.filePath,
+          ),
+          const SizedBox(height:12),
           Card(
             child: Padding(
               padding: const EdgeInsets.all(17),
@@ -423,6 +430,8 @@ class _SimpleSettingsState extends State<SimpleSettings> {
             ],
           ),
         if (tab == 'Yazıcı') ...[
+          PrinterManagementPanel(state:widget.state,edit:widget.edit),
+          const SizedBox(height:12),
           printerLayout(
             settings,
             section(
@@ -470,16 +479,12 @@ class _SimpleSettingsState extends State<SimpleSettings> {
                 const SizedBox(height: 12),
                 OutlinedButton.icon(
                   icon: const Icon(Icons.settings_outlined),
-                  label: const Text('Yazıcı Ayarı'),
+                  label: const Text('Gelişmiş Kağıt / Logo / Hizalama Ayarı'),
                   onPressed: () async {
                     final v = await askFields(
                       context,
                       'Yazıcı Ayarı',
                       [
-                        (
-                          'Windows yazıcı adı',
-                          '${settings['printerName'] ?? 'XP-237B'}',
-                        ),
                         (
                           'Kağıt genişliği (mm)',
                           '${settings['paperWidthMm'] ?? 56}',
@@ -503,12 +508,10 @@ class _SimpleSettingsState extends State<SimpleSettings> {
                       ],
                       validate: (v) {
                         final values = v
-                            .skip(1)
                             .map((x) => double.tryParse(x.replaceAll(',', '.')))
                             .toList();
-                        if (v[0].isEmpty ||
-                            values.any((x) => x == null || !x.isFinite))
-                          return 'Yazıcı adı ve sayısal ölçüler gerekli';
+                        if (values.any((x) => x == null || !x.isFinite))
+                          return 'Sayısal ölçüler gerekli';
                         final p = values.cast<double>();
                         try {
                           ReceiptDimensions({
@@ -542,7 +545,6 @@ class _SimpleSettingsState extends State<SimpleSettings> {
                     if (v != null)
                       widget.edit((s) {
                         final cfg = s['settings'] as Map;
-                        cfg['printerName'] = v[0];
                         for (var i = 0; i < 5; i++)
                           cfg[[
                             'paperWidthMm',
@@ -551,7 +553,7 @@ class _SimpleSettingsState extends State<SimpleSettings> {
                             'receiptOffsetMm',
                             'receiptLogoMm',
                           ][i]] = double.parse(
-                            v[i + 1].replaceAll(',', '.'),
+                            v[i].replaceAll(',', '.'),
                           );
                         cfg['receiptScale'] = 'actual';
                       });

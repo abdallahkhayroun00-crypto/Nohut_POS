@@ -65,6 +65,16 @@ if (-not (Test-Path -LiteralPath $database -PathType Leaf)) {
 $dbHash = (Get-FileHash -LiteralPath $database).Hash
 Invoke-Setup $oldSetup ($silent + @('/TASKS=desktopicon', "/DIR=`"$installDir`""))
 $installedExe = Join-Path $installDir $exeName
+foreach ($file in @('server.mjs', 'start-windows.ps1')) {
+    $source = Join-Path (Join-Path $release 'QRPublisher') $file
+    $installed = Join-Path (Join-Path $installDir 'QRPublisher') $file
+    if (-not (Test-Path -LiteralPath $source -PathType Leaf) -or
+        -not (Test-Path -LiteralPath $installed -PathType Leaf) -or
+        (Get-FileHash -LiteralPath $source).Hash -ne
+        (Get-FileHash -LiteralPath $installed).Hash) {
+        throw "Missing or mismatched installed QR Publisher asset: $file"
+    }
+}
 if ((Get-ItemProperty -LiteralPath $uninstallKey).DisplayVersion -ne '0.0.0.0') {
     throw 'First installation is missing from Windows Installed Apps.'
 }
@@ -84,6 +94,10 @@ if ((Get-ItemProperty -LiteralPath $uninstallKey).DisplayVersion -ne $version -o
     (Get-FileHash -LiteralPath $installedManifest).Hash -ne
     (Get-FileHash -LiteralPath (Join-Path $release 'build-manifest.json')).Hash -or
     (Get-FileHash -LiteralPath $installedExe).Hash -ne (Get-FileHash -LiteralPath $exe).Hash -or
+    (Get-FileHash -LiteralPath (Join-Path $installDir 'QRPublisher/server.mjs')).Hash -ne
+    (Get-FileHash -LiteralPath (Join-Path $release 'QRPublisher/server.mjs')).Hash -or
+    (Get-FileHash -LiteralPath (Join-Path $installDir 'QRPublisher/start-windows.ps1')).Hash -ne
+    (Get-FileHash -LiteralPath (Join-Path $release 'QRPublisher/start-windows.ps1')).Hash -or
     $shell.CreateShortcut($desktopLink).TargetPath -ne $installedExe -or
     (Get-FileHash -LiteralPath $database).Hash -ne $dbHash) {
     throw 'Upgrade changed the shortcut or database, or did not replace the installed files.'

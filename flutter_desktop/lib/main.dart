@@ -3,6 +3,10 @@ import 'order_actions.dart';
 import 'product_customization.dart';
 import 'service_metrics.dart';
 import 'simple_settings.dart';
+import 'qr_menu_management.dart';
+import 'customer_accounts.dart';
+import 'open_accounts_ui.dart';
+import 'group_payments.dart';
 import 'trendyol_go_readonly.dart';
 import 'trendyol_go_ui.dart';
 import 'sales_reports.dart';
@@ -169,6 +173,8 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     ('online', Icons.delivery_dining_outlined, 'Online Siparişler'),
     ('reviews', Icons.star_outline, 'Geri Bildirimler'),
     ('google', Icons.storefront_outlined, 'Google İşletme Profili'),
+    ('qr-menu', Icons.menu_book_outlined, 'QR Menü Yönetimi'),
+    ('open-accounts', Icons.account_balance_wallet_outlined, 'Açık Hesaplar'),
     ('payments', Icons.point_of_sale_outlined, 'Kasa & Ödemeler'),
     ('reports', Icons.bar_chart_outlined, 'Raporlar'),
     ('settings', Icons.settings_outlined, 'Ayarlar'),
@@ -500,66 +506,74 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     int? created;
     bool saveRequest(OrderRequest request) => _edit((data) {
       validateCashierDraft(data, request.lines);
+      final existing = addToOrder != null
+          ? mutableOrder(data, addToOrder)
+          : request.source == 'Masa' && request.table != null
+              ? activeTable(data, request.table!)
+              : null;
+      if (addToOrder != null && existing == null) {
+        throw const FormatException('Ek sipariş hesabı bulunamadı.');
+      }
+      if (request.source == 'Masa' && addToOrder == null &&
+          existing?['id'] != request.expectedTableOrderId) {
+        throw const FormatException(
+          'Masa hesabı değişti. Güncel masayı kontrol edip yeniden sipariş açın.',
+        );
+      }
+      if (existing != null) {
+        if (existing['source'] != request.source) {
+          throw const FormatException('Sipariş türü değişti; yeniden açın.');
+        }
+        // The first persisted batch owns the order, even for inactive staff.
+        final firstBatch = asMaps(existing['batches']).firstOrNull;
+        if (firstBatch == null) {
+          throw const FormatException('Siparişin ilk personel kaydı bulunamadı.');
+        }
+        final ownerName = (firstBatch['staff'] ?? 'Kasa (PC)').toString();
+        final ownerId = firstBatch['staffId'] is int
+            ? firstBatch['staffId'] as int : null;
+        addOrderBatch(
+          data,
+          existing['id'] as int,
+          request.lines,
+          cashier: ownerName,
+          staffId: ownerId,
+        );
+        created = existing['id'] as int;
+        return;
+      }
       final person = asMaps(data['employees']).where(
         (entry) =>
             entry['id'] == request.staffId &&
             entry['active'] == true &&
-            '${entry['name'] ?? ''}'.trim().isNotEmpty,
+            (entry['name'] ?? '').toString().trim().isNotEmpty,
       ).firstOrNull;
       if (person == null) {
         throw const FormatException(
           'Sipariş için aktif personel seçilmelidir.',
         );
       }
-      final personName = '${person['name']}';
+      final personName = person['name'].toString();
       final personId = person['id'] as int;
-      if (addToOrder != null) {
-        addOrderBatch(
-          data,
-          addToOrder,
-          request.lines,
-          cashier: personName,
-          staffId: personId,
-        );
-        created = addToOrder;
-      } else {
-        final occupied = request.source == 'Masa'
-            ? activeTable(data, request.table!)
-            : null;
-        if (request.source == 'Masa' &&
-            occupied?['id'] != request.expectedTableOrderId) {
-          throw const FormatException(
-            'Masa hesabı değişti. Güncel masayı kontrol edip yeniden sipariş açın.',
-          );
-        }
-        if (occupied != null) {
-          addOrderBatch(
-            data,
-            occupied['id'] as int,
-            request.lines,
-            cashier: personName,
-            staffId: personId,
-          );
-          created = occupied['id'] as int;
-          return;
-        }
-        final o = newLocalOrder(
-          state: data,
-          source: request.source,
-          table: request.table,
-          pickupChannel: request.pickupChannel,
-          productLines: request.lines,
-          cashier: personName,
-        );
-        ((o['batches'] as List).first as Map)['staffId'] = personId;
-        o['customer'] = request.customer;
-        created = o['id'] as int;
-      }
+      final o = newLocalOrder(
+        state: data,
+        source: request.source,
+        table: request.table,
+        pickupChannel: request.pickupChannel,
+        productLines: request.lines,
+        cashier: personName,
+      );
+      ((o['batches'] as List).first as Map)['staffId'] = personId;
+      o['customer'] = request.source == 'Gel-Al'
+          ? linkedPickupCustomer(data, request.customer)
+          : request.customer;
+      created = o['id'] as int;
     });
     final request = await showDialog<OrderRequest>(
       context: context,
       builder: (ctx) => _OrderComposer(
         products: menu,
+        customers: savedCustomers(store.read().data),
         employees: asMaps(store.read().data['employees'])
             .where((entry) =>
                 entry['active'] == true &&
@@ -575,6 +589,8 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
         },
         table: table,
         adding: addToOrder != null,
+        originalOrder: addToOrder == null
+            ? null : mutableOrder(store.read().data, addToOrder),
         pickupOnly: pickup,
         tableOrders: {
           for (var n = 1; n <= 5; n++)
@@ -1061,6 +1077,96 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     }
   }
 
+  Future<void> _payOpenAccount(List<Json> selectedOrders) async {
+    final ids = selectedOrders.map((o) => o['id'] as int).toList();
+    if (ids.length < 2 || ids.toSet().length != ids.length) {
+      _notify('En az iki farklı Gel-Al siparişi seçin.', error: true);
+      return;
+    }
+    final live = store.read().data;
+    final originals = <int, String>{};
+    var total = 0;
+    String? account;
+    for (final id in ids) {
+      final order = mutableOrder(live, id);
+      if (order == null || order['source'] != 'Gel-Al' ||
+          order['closed'] == true || order['cancelled'] == true ||
+          orderDueCents(order) <= 0) {
+        _notify('Açık hesap değişti. Listeyi yeniden kontrol edin.', error: true);
+        return;
+      }
+      final key = pickupAccountKey(order, live);
+      if (account != null && account != key) {
+        _notify('Farklı müşterilerin hesapları birleştirilemez.', error: true);
+        return;
+      }
+      account = key;
+      originals[id] = jsonEncode(order);
+      total += orderDueCents(order);
+    }
+    final result = await showDialog<(int, String, int?, int?)>(
+      context: context,
+      builder: (ctx) => PaymentEntryDialog(
+        dueCents: total,
+        fixedAmount: true,
+        orderNumber: 'TOPLU GEL-AL',
+        guestName: ids.length.toString() + ' sipariş',
+      ),
+    );
+    if (!mounted || result == null) return;
+    final (amount, method, cashPartOrReceived, mixedReceived) = result;
+    if (amount != total) {
+      _notify('Hesap toplamı değişti. Tekrar deneyin.', error: true);
+      return;
+    }
+    final cash = method == 'Nakit'
+        ? amount
+        : method == 'Karışık' ? cashPartOrReceived : 0;
+    final received = method == 'Nakit'
+        ? cashPartOrReceived
+        : method == 'Karışık' ? mixedReceived : null;
+    final confirmed = await confirmAction(
+      context,
+      'Toplu Ödemeyi Onayla',
+      ids.length.toString() + ' Gel-Al siparişi\nToplam: ' +
+      formatTry(amount) + '\nYöntem: ' + method +
+      (method == 'Karışık'
+        ? '\nNakit: ' + formatTry(cash!) +
+          ' · Kart: ' + formatTry(amount - cash)
+        : '') +
+      '\nKart tahsilatını banka terminalinde ayrıca doğrulayın. '
+      'Bu işlem kart terminaline ödeme göndermez.',
+      confirm: method == 'Nakit'
+          ? 'Nakdi Aldım · Kaydet'
+          : 'Terminalde Onaylandı · Kaydet',
+    );
+    if (!confirmed || !mounted) return;
+    String? combinedReceipt;
+    final operationId = 'gel-al-' +
+        DateTime.now().toUtc().microsecondsSinceEpoch.toString();
+    final ok = _edit((data) {
+      for (final id in ids) {
+        final current = mutableOrder(data, id);
+        if (current == null || jsonEncode(current) != originals[id]) {
+          throw const FormatException(
+            'Hesap işlem sırasında değişti. Ödeme kaydedilmedi.');
+        }
+      }
+      combinedReceipt = recordCombinedPickupPayment(
+        data,
+        orderIds: ids,
+        amountCents: amount,
+        method: method,
+        cashCents: cash,
+        receivedCents: received,
+        transactionId: operationId,
+      );
+    });
+    if (!ok || !mounted) return;
+    _notify('Toplu Gel-Al ödemesi kaydedildi · ' + formatTry(amount));
+    await _offerReceipt(ids.first, receipt: combinedReceipt);
+  }
+
   Future<void> _offerReceipt(int orderId, {String? receipt}) async {
     if (!mounted) return;
     final print = await confirmAction(
@@ -1381,6 +1487,24 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
           integration: tgo,
           onOpenGoogle: () => setState(() => page = 'google'),
         );
+      case 'qr-menu':
+        return QrMenuManagement(state:db,edit:_edit,store:store,sync:qrSync);
+      case 'open-accounts':
+        return OpenAccountsPanel(
+          state: db,
+          onOpenOrder: _focusOrder,
+          onPayOrder: (order) => unawaited(_pay(order)),
+          onPayAccount: (orders) => unawaited(_payOpenAccount(orders)),
+          onLinkCustomer: (orderId, customerId, newName, phone) {
+            _edit((state) => linkLegacyPickupOrder(
+              state,
+              orderId: orderId,
+              existingCustomerId: customerId,
+              newCustomerName: newName,
+              newCustomerPhone: phone,
+            ));
+          },
+        );
       case 'payments':
         return _payments(db);
       case 'reports':
@@ -1498,6 +1622,22 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
         state: db,
         businessDay: businessDay,
         onlineWarning: _onlineDataWarning,
+      ),
+      Card(
+        child: ListTile(
+          leading: const Icon(Icons.account_balance_wallet_outlined),
+          title: const Text('Açık Hesaplar · Gel-Al'),
+          subtitle: Text(
+            pickupOpenAccounts(db).length.toString() +
+            ' müşteri / hesap · Birikmiş ödenmemiş siparişler',
+          ),
+          trailing: Text(
+            formatTry(pickupOpenAccounts(db).fold<int>(
+              0, (sum, account) => sum + account.dueCents)),
+            style: const TextStyle(fontWeight: FontWeight.w800),
+          ),
+          onTap: () => _switch('open-accounts'),
+        ),
       ),
       const SizedBox(height: 16),
       StaffPerformanceChart(state: db, day: businessDay),

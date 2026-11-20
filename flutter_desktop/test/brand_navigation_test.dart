@@ -12,7 +12,7 @@ import 'package:nohut_falafel_desktop/order_reporting.dart';
 
 void main() {
   testWidgets(
-    'eight branded destinations include separate orders and reviews',
+    'ten branded destinations include QR management, open accounts, orders and reviews',
     (t) async {
       final dir = Directory.systemTemp.createTempSync('nohut-brand-');
       final file = '${dir.path}/db';
@@ -79,7 +79,7 @@ void main() {
               w.key is ValueKey<String> &&
               (w.key as ValueKey<String>).value.startsWith('navigation-'),
         ),
-        findsNWidgets(8),
+        findsNWidgets(10),
       );
       expect(find.text('Personel Yönetimi'), findsNothing);
       expect(find.text('Online Siparişler'), findsOneWidget);
@@ -110,6 +110,7 @@ void main() {
       expect(find.widgetWithText(FilterChip, 'Yemeksepeti'), findsOneWidget);
       expect(find.text('Değerlendirmeleri Getir'), findsNothing);
       expect(find.textContaining('Tamamlanan ve iptal edilenler'), findsOneWidget);
+      await t.ensureVisible(find.textContaining('Tamamlanan ve iptal edilenler'));
       await t.tap(find.textContaining('Tamamlanan ve iptal edilenler'));
       await t.pumpAndSettle();
       expect(find.text('Teslim Edildi'), findsOneWidget);
@@ -131,15 +132,18 @@ void main() {
       );
       await t.pumpAndSettle();
       expect(find.text('Platform no: PLATFORM-98'), findsOneWidget);
+      await t.ensureVisible(find.widgetWithText(ChoiceChip, 'Bugün'));
       await t.tap(find.widgetWithText(ChoiceChip, 'Bugün'));
       await t.pumpAndSettle();
       expect(find.textContaining('Tamamlanan ve iptal edilenler'), findsOneWidget);
+      await t.ensureVisible(find.textContaining('Tamamlanan ve iptal edilenler'));
       await t.tap(find.textContaining('Tamamlanan ve iptal edilenler'));
       await t.pumpAndSettle();
       expect(find.text('Platform no: PLATFORM-99'), findsOneWidget);
       expect(find.text('Platform no: PLATFORM-98'), findsNothing);
       expect(find.text('PAY_WITH_CARD'), findsNothing);
-      await t.tap(find.text('Migros Yemek'));
+      await t.ensureVisible(find.widgetWithText(FilterChip, 'Migros Yemek'));
+      await t.tap(find.widgetWithText(FilterChip, 'Migros Yemek'));
       await t.pumpAndSettle();
       expect(find.text('Migros Yemek · Bağlı değil'), findsOneWidget);
       expect(find.byTooltip('Migros Yemek panelini aç'), findsOneWidget);
