@@ -154,20 +154,29 @@ async function handler(req,env){
   if(!enabled)return error("ai_not_configured",503,c);
   if(exhausted)return json({code:"quota_exhausted",retryAfterSec:3600},429,{...c,"Retry-After":"3600"});
   if(cooldown)return json({code:"temporary_limit",retryAfterSec:90},429,{...c,"Retry-After":"90"});
-  const ip=req.headers.get("CF-Connecting-IP")||"unknown";
-  const visitorHash=await hmac(env.HASH_SALT||env.POS_SYNC_SECRET||"nohut-demo-not-secret",ip+"|"+todayPacific());
-  const visitorKey="visit:"+todayPacific()+":"+visitorHash.slice(0,30);
-  const visitorCount=await counter(env.NOHUT_AI,visitorKey);
-  if(visitorCount>=MAX_PER_VISITOR)return json({code:"visitor_limit",retryAfterSec:3600},429,{...c,"Retry-After":"3600"});
   if(Number(req.headers.get("Content-Length")||0)>2000)return error("too_large",413,c);
   const body=await req.json().catch(()=>null),message=body?.message,language=body?.language;
   if(typeof message!=="string"||message.trim().length<2||message.length>MAX_TEXT||!["tr","en","ar"].includes(language))return error("invalid_request",400,c);
   // No customer emails/phone numbers should be sent to the model.
   if(/[\w.+-]+@[\w.-]+\.[a-z]{2,}/i.test(message)||/\+?\d[\d\s().-]{9,}\d/.test(message))return error("personal_data_not_allowed",400,c);
+  // A whole restaurant may share one Wi-Fi IP: limit anonymous browser ID separately.
+  const clientId=typeof body.client_id==="string"&&/^[a-f\d-]{20,50}$/i.test(body.client_id)?body.client_id:null;
+  const ip=req.headers.get("CF-Connecting-IP")||"unknown";
+  const salt=env.HASH_SALT||env.POS_SYNC_SECRET||"nohut-demo-not-secret";
+  const visitorHash=await hmac(salt,(clientId||ip)+"|"+todayPacific());
+  const visitorKey="visit:"+todayPacific()+":"+visitorHash.slice(0,30);
+  const visitorCount=await counter(env.NOHUT_AI,visitorKey);
+  if(visitorCount>=MAX_PER_VISITOR)return json({code:"visitor_limit",retryAfterSec:3600},429,{...c,"Retry-After":"3600"});
+  // A separate wider per-IP ceiling limits resetting browser IDs.
+  const ipHash=await hmac(salt,"ip:"+ip+"|"+todayPacific());
+  const ipKey="ip:"+todayPacific()+":"+ipHash.slice(0,30);
+  const ipCount=await counter(env.NOHUT_AI,ipKey);
+  if(ipCount>=MAX_PER_DAY)return json({code:"network_limit",retryAfterSec:3600},429,{...c,"Retry-After":"3600"});
   // Counter writes are intentionally BEFORE Gemini call. KV counters are soft limits:
   // not atomic under heavy concurrency; add Durable Objects for strict limits.
   await increment(env.NOHUT_AI,daily,used);
   await increment(env.NOHUT_AI,visitorKey,visitorCount);
+  await increment(env.NOHUT_AI,ipKey,ipCount);
   try{
     const popular=await env.NOHUT_AI.get("public:popular:last_7_days","json");
     const answer=await runGemini(message,language,popular,env);
