@@ -9,6 +9,8 @@ Json order(int id, Json customer, int total, int paid) => {
   'source': 'Gel-Al',
   'createdAt': DateTime.utc(2026, 11, 19, id).toIso8601String(),
   'customer': customer,
+  'closed': false,
+  'events': <dynamic>[],
   'batches': [{
     'id': 1,
     'lines': [{'name': 'Falafel Dürüm', 'qty': 1, 'price': total / 100}],
