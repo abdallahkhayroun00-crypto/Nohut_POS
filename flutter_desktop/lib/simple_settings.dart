@@ -479,16 +479,12 @@ class _SimpleSettingsState extends State<SimpleSettings> {
                 const SizedBox(height: 12),
                 OutlinedButton.icon(
                   icon: const Icon(Icons.settings_outlined),
-                  label: const Text('Yazıcı Ayarı'),
+                  label: const Text('Gelişmiş Kağıt / Logo / Hizalama Ayarı'),
                   onPressed: () async {
                     final v = await askFields(
                       context,
                       'Yazıcı Ayarı',
                       [
-                        (
-                          'Windows yazıcı adı',
-                          '${settings['printerName'] ?? 'XP-237B'}',
-                        ),
                         (
                           'Kağıt genişliği (mm)',
                           '${settings['paperWidthMm'] ?? 56}',
@@ -512,12 +508,10 @@ class _SimpleSettingsState extends State<SimpleSettings> {
                       ],
                       validate: (v) {
                         final values = v
-                            .skip(1)
                             .map((x) => double.tryParse(x.replaceAll(',', '.')))
                             .toList();
-                        if (v[0].isEmpty ||
-                            values.any((x) => x == null || !x.isFinite))
-                          return 'Yazıcı adı ve sayısal ölçüler gerekli';
+                        if (values.any((x) => x == null || !x.isFinite))
+                          return 'Sayısal ölçüler gerekli';
                         final p = values.cast<double>();
                         try {
                           ReceiptDimensions({
@@ -551,7 +545,6 @@ class _SimpleSettingsState extends State<SimpleSettings> {
                     if (v != null)
                       widget.edit((s) {
                         final cfg = s['settings'] as Map;
-                        cfg['printerName'] = v[0];
                         for (var i = 0; i < 5; i++)
                           cfg[[
                             'paperWidthMm',
@@ -560,7 +553,7 @@ class _SimpleSettingsState extends State<SimpleSettings> {
                             'receiptOffsetMm',
                             'receiptLogoMm',
                           ][i]] = double.parse(
-                            v[i + 1].replaceAll(',', '.'),
+                            v[i].replaceAll(',', '.'),
                           );
                         cfg['receiptScale'] = 'actual';
                       });
