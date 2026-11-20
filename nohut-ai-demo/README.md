@@ -54,7 +54,7 @@ The Worker uses the official public CMS to validate product names and publishes 
 
 ## Quota safeguards
 
-The Worker has an internal soft limit of 60 calls per Pacific calendar day and 6 per source IP per day. These are NOT Google limits, NOT an assertion that 60 free calls are guaranteed, and NOT a financial hard cap. Cloudflare KV counters are eventually consistent, so high concurrency can overrun them. For a strict cap, use an atomic Durable Object counter plus actual project quota/billing safeguards.
+The Worker has an internal soft limit of 60 calls per Pacific calendar day and 6 per anonymous browser per day (with a separate shared-IP ceiling of 60 per day). These are NOT Google limits, NOT an assertion that 60 free calls are guaranteed, and NOT a financial hard cap. Cloudflare KV counters are eventually consistent, so high concurrency can overrun them. For a strict cap, use an atomic Durable Object counter plus actual project quota/billing safeguards.
 
 An upstream Google 429 triggers a temporary 90-second cooldown, not a claim that the full daily quota is gone. The frontend falls back to local menu responses when the Worker is offline. Public QR menu remains untouched.
 
