@@ -12,6 +12,24 @@ class QrPublisherClient {
   QrPublisherClient(this.databasePath, {this.testToken});
   final String databasePath;
   final String? testToken;
+
+  /// The employee LAN panel owns :8787; publisher uses its own localhost port.
+  static const String defaultLocalEndpoint = 'http://127.0.0.1:18787';
+
+  /// Older installs incorrectly saved the staff HTTP port as publisher URL.
+  /// Migrate only that exact legacy local endpoint; preserve custom HTTPS URLs.
+  static String configuredEndpoint(Object? saved) {
+    final value=(saved??'').toString().trim();
+    if(value.isEmpty)return defaultLocalEndpoint;
+    final old=Uri.tryParse(value);
+    if(old!=null&&old.scheme=='http'&&
+        (old.host=='127.0.0.1'||old.host=='localhost')&&
+        old.port==8787&&(old.path.isEmpty||old.path=='/')&&
+        !old.hasQuery&&!old.hasFragment) {
+      return defaultLocalEndpoint;
+    }
+    return value;
+  }
   File get credentialFile => File(paths.join(
     Platform.environment['APPDATA'] ?? paths.dirname(databasePath),
     'NohutFalafel','qr-publisher-credentials.dpapi',
@@ -25,7 +43,7 @@ class QrPublisherClient {
         !(url.scheme=='https'||(url.scheme=='http'&&
           (url.host=='127.0.0.1'||url.host=='localhost'))))
       throw const FormatException(
-        'HTTPS adresi veya http://127.0.0.1:8787 gerekli.');
+        'HTTPS adresi veya http://127.0.0.1:18787 gerekli.');
     return url;
   }
 
