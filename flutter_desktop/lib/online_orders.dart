@@ -513,9 +513,8 @@ class _OnlineOrdersState extends State<OnlineOrders> {
                   const Text('Trendyol Go · Menü ve Restoran Yönetimi',
                     style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
                   const SizedBox(height: 5),
-                  const Text('Fiyat, ürün/kategori aktif-pasif, çalışma saatleri ve yeni ürün '
-                    'işlemleri için partner paneli. Menü API yazma izni doğrulanana kadar '
-                    'POS eski fiyatları değiştirmez.'),
+                  const Text('Fiyat, ürün ve kategori işlemleri bağlı hesabın resmi '
+                    'Trendyol Go API’sine gönderilir. Canlı işlemler onay gerektirir.'),
                   const SizedBox(height: 10),
                   FilledButton.icon(
                     onPressed: _createTrendyolProductDraft,
@@ -534,18 +533,58 @@ class _OnlineOrdersState extends State<OnlineOrders> {
                     spacing: 8,
                     runSpacing: 8,
                     children: [
-                      for (final label in const [
-                        'Ürün Fiyatı', 'Ürün Aktif / Pasif',
-                        'Kategori Aktif / Pasif', 'Çalışma Saatleri',
-                        'Yeni Ürün Ekle',
-                      ])
-                        OutlinedButton.icon(
-                          onPressed: () => openExternalPage(context, onlinePartners['Trendyol Go']!.url),
-                          icon: const Icon(Icons.open_in_new, size: 16),
-                          label: Text(label),
-                        ),
+                      OutlinedButton.icon(
+                        onPressed: _tgoReady && !_adminBusy
+                            ? () => _manageTrendyol('price') : null,
+                        icon: const Icon(Icons.price_change_outlined, size: 16),
+                        label: const Text('Ürün Fiyatı · API'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: _tgoReady && !_adminBusy
+                            ? () => _manageTrendyol('product') : null,
+                        icon: const Icon(Icons.inventory_2_outlined, size: 16),
+                        label: const Text('Ürün Aktif / Pasif · API'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: _tgoReady && !_adminBusy
+                            ? () => _manageTrendyol('category') : null,
+                        icon: const Icon(Icons.category_outlined, size: 16),
+                        label: const Text('Kategori Aktif / Pasif · API'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: () => openExternalPage(
+                          context, onlinePartners['Trendyol Go']!.url),
+                        icon: const Icon(Icons.open_in_new, size: 16),
+                        label: const Text('Restoran Aç-Kapat / Çalışma Saatleri'),
+                      ),
                     ],
                   ),
+                  if (_priceBatch != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: FilledButton.icon(
+                        onPressed: _adminBusy ? null : _verifyPriceBatch,
+                        icon: const Icon(Icons.verified_outlined),
+                        label: const Text('Fiyat Batch Sonucunu Kontrol Et'),
+                      ),
+                    ),
+                  if (_adminBusy)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 8),
+                      child: LinearProgressIndicator(),
+                    ),
+                  if (_adminNotice.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(_adminNotice,
+                        style: const TextStyle(
+                          color: NohutBrand.green,
+                          fontWeight: FontWeight.w700)),
+                    ),
+                  if (!_tgoReady)
+                    const Text('Canlı API için Ayarlar > Entegrasyonlar üzerinden '
+                      'Trendyol hesabını bağlayın.',
+                      style: TextStyle(color: NohutBrand.muted, fontSize: 12)),
                   const SizedBox(height: 7),
                   const Text('Yeni ürünün yayınlanması ve gerekli bilgiler partner panelindeki '
                     'onay sürecine bağlıdır; POS üzerinden oluşturulmuş sayılmaz.',
