@@ -8,7 +8,7 @@ void main() {
       '{"Name":"Xprinter XP-237B","DriverName":"XP Driver",'
       '"PortName":"USB001","Default":true,"WorkOffline":false,'
       '"PrinterStatus":3}');
-    expect(one,singleElement);
+    expect(one,hasLength(1));
     expect(one.first.name,'Xprinter XP-237B');
     expect(one.first.isDefault,isTrue);
     expect(one.first.offline,isFalse);
