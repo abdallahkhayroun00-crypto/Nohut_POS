@@ -15,6 +15,8 @@ import 'partner_credentials.dart';
 import 'receipt_printer.dart';
 import 'receipt_layout.dart';
 import 'receipt_preview.dart';
+import 'printer_management.dart';
+import 'qr_publisher_settings.dart';
 
 class SimpleSettings extends StatefulWidget {
   const SimpleSettings({
@@ -270,6 +272,11 @@ class _SimpleSettingsState extends State<SimpleSettings> {
           ),
         ],
         if (tab == 'Entegrasyonlar') ...[
+          QrPublisherSettingsPanel(
+            state:widget.state,edit:widget.edit,
+            databasePath:widget.store.filePath,
+          ),
+          const SizedBox(height:12),
           Card(
             child: Padding(
               padding: const EdgeInsets.all(17),
@@ -423,6 +430,8 @@ class _SimpleSettingsState extends State<SimpleSettings> {
             ],
           ),
         if (tab == 'Yazıcı') ...[
+          PrinterManagementPanel(state:widget.state,edit:widget.edit),
+          const SizedBox(height:12),
           printerLayout(
             settings,
             section(
