@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nohut_falafel_desktop/customer_accounts.dart';
-import 'package:nohut_falafel_desktop/operations.dart';
 import 'package:nohut_falafel_desktop/pos_logic.dart';
 import 'package:nohut_falafel_desktop/pos_store.dart';
 
