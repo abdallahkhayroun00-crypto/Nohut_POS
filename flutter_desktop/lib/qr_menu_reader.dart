@@ -11,6 +11,8 @@ class PublishedProductPrice {
     required this.name,
     required this.priceTl,
     this.active = true,
+    this.available = true,
+    this.legacyKey,
     required this.names,
     required this.displayNames,
     required this.descriptions,
@@ -20,14 +22,17 @@ class PublishedProductPrice {
   final String category;
   final String name;
   final double priceTl;
-  final bool active;
+  final bool active, available;
+  final String? legacyKey;
   final Map<String, String> names, displayNames, descriptions;
   final String? image;
 }
 
 class PublishedCategory {
-  const PublishedCategory({required this.id, required this.names, required this.descriptions});
+  const PublishedCategory({required this.id, required this.names, required this.descriptions, this.active=true, this.order=0});
   final String id;
+  final bool active;
+  final int order;
   final Map<String, String> names, descriptions;
 }
 
@@ -74,6 +79,8 @@ class QrMenuReader {
         baseUrl.userInfo.isNotEmpty || baseUrl.hasQuery || baseUrl.hasFragment) {
       throw const FormatException('QR URL must be an HTTPS directory.');
     }
+    final managed = await _readManaged();
+    if (managed != null) return managed;
     final catalog = jsonDecode(await _fetcher(baseUrl.resolve('cms/catalog-v1.json')));
     final cms = jsonDecode(await _fetcher(baseUrl.resolve('cms/menu-prices.json')));
     final campaigns = await _fetcher(baseUrl.resolve('cms/campaigns.json'));
@@ -151,6 +158,76 @@ class QrMenuReader {
     return PublishedQrMenu(
       products:List.unmodifiable(products),categories:List.unmodifiable(categories),
       campaigns:parseCampaigns(campaigns),retrievedAtUtc:DateTime.now().toUtc(),
+    );
+  }
+
+
+  /// The published managed catalog is authoritative when present.
+  /// Only 404 means no managed file; invalid or inaccessible data fails closed.
+  Future<PublishedQrMenu?> _readManaged() async {
+    final String raw;
+    try {
+      raw=await _fetcher(baseUrl.resolve('cms/pos-managed-menu.json'));
+    }on HttpException catch(e){
+      if(e.message.contains('404'))return null;
+      rethrow;
+    }
+    final decoded=jsonDecode(raw);
+    if(decoded is! Map||decoded['schemaVersion']!=1||
+       decoded['source']!='nohutfalafel/qr-menu'||
+       decoded['currency']!='TRY'||decoded['products'] is! List||
+       decoded['categories'] is! List||decoded['campaigns'] is! List) {
+      throw const FormatException('QR yönetilen katalog biçimi geçersiz.');
+    }
+    final categoryIds=<String>{},categories=<PublishedCategory>[];
+    for(final c in decoded['categories'] as List){
+      if(c is! Map||c['id'] is! String||
+          !categoryIds.add(c['id'] as String)||
+          c['active'] is! bool||c['order'] is! int) {
+        throw const FormatException('QR kategori kaydı geçersiz.');
+      }
+      categories.add(PublishedCategory(
+        id:c['id'] as String,
+        names:readLanguages(c['name'],requiredText:true),
+        descriptions:readLanguages(c['description']),
+        active:c['active'] as bool,order:c['order'] as int,
+      ));
+    }
+    final ids=<int>{},names=<String>{},products=<PublishedProductPrice>[];
+    for(final p in decoded['products'] as List){
+      if(p is! Map||p['id'] is! int||p['category'] is! String||
+         !categoryIds.contains(p['category'])||p['category']=='all'||
+         !ids.add(p['id'] as int)||p['active'] is! bool||
+         p['available'] is! bool||p['legacyKey'] is! String){
+        throw const FormatException('QR yönetilen ürün kimliği geçersiz.');
+      }
+      final namesLocalized=readLanguages(p['name'],requiredText:true);
+      if(!names.add(namesLocalized['tr']!)||
+         p['price'] is! num||
+         !((p['price'] as num).toDouble().isFinite)||
+         (p['price'] as num)<0||(p['price'] as num)>100000){
+        throw const FormatException('QR ürün adı/fiyatı geçersiz.');
+      }
+      products.add(PublishedProductPrice(
+        id:p['id'] as int,category:p['category'] as String,
+        name:namesLocalized['tr']!,priceTl:(p['price'] as num).toDouble(),
+        names:namesLocalized,
+        displayNames:readLanguages(p['displayName'],requiredText:true),
+        descriptions:readLanguages(p['description']),
+        active:p['active'] as bool,available:p['available'] as bool,
+        legacyKey:p['legacyKey'] as String,
+        image:readProductImage(p['image']),
+      ));
+    }
+    if(products.length<40||products.length>500||
+       categories.length<8||!categoryIds.contains('all')){
+      throw const FormatException('QR yönetilen katalog eksik.');
+    }
+    return PublishedQrMenu(
+      products:List.unmodifiable(products),
+      categories:List.unmodifiable(categories),
+      campaigns:parseCampaigns(jsonEncode(decoded['campaigns'])),
+      retrievedAtUtc:DateTime.now().toUtc(),
     );
   }
 
