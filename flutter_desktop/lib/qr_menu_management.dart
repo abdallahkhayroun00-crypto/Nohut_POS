@@ -387,7 +387,7 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
               leading:IconButton(onPressed:()=>pickImage(p),
                 icon:const Icon(Icons.add_photo_alternate_outlined),
                 tooltip:'Resim Yükle'),
-              trailing:Wrap(mainAxisSize:MainAxisSize.min,spacing:6,children:[
+              trailing:Wrap(spacing:6,children:[
                 Column(mainAxisSize:MainAxisSize.min,children:[
                   const Text('Aktif',style:TextStyle(fontSize:10)),
                   Switch(value:p['active']!=false,
@@ -422,7 +422,7 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
               title:Text(tr(c,'name')+' · '+c['id'].toString()),
               subtitle:Text(translations(c['name'])['en']!+
                 ' · '+translations(c['name'])['ar']!),
-              trailing:Wrap(mainAxisSize:MainAxisSize.min,children:[
+              trailing:Wrap(children:[
                 Switch(value:c['active']!=false,
                   onChanged:c['id']=='all'?null:
                     (v)=>toggleString('categories',c['id'].toString(),'active',v)),
@@ -439,7 +439,7 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
               title:Text(tr(c,'title')+' · '+c['price'].toString()+' ₺'),
               subtitle:Text(translations(c['title'])['en']!+
                 ' · '+translations(c['title'])['ar']!),
-              trailing:Wrap(mainAxisSize:MainAxisSize.min,children:[
+              trailing:Wrap(children:[
                 Switch(value:c['active']==true,
                   onChanged:(v)=>toggleString(
                     'campaigns',c['id'].toString(),'active',v)),
