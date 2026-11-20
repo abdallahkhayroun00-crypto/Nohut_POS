@@ -94,6 +94,30 @@ jobs:
           foreach ($dll in @('msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll')) {
             Copy-Item -LiteralPath (Join-Path $runtime.FullName $dll) -Destination $release
           }
+      - name: Bundle QR publisher for portable Windows and Setup packages
+        shell: pwsh
+        run: |
+          $source = 'flutter_desktop/windows/installer/qr-publisher'
+          $release = 'flutter_desktop/build/windows/x64/runner/Release'
+          $destination = Join-Path $release 'QRPublisher'
+          New-Item -ItemType Directory -Path $destination -Force | Out-Null
+          foreach ($file in @('server.mjs', 'start-windows.ps1')) {
+            $from = Join-Path $source $file
+            if (-not (Test-Path -LiteralPath $from -PathType Leaf)) {
+              throw "QR Publisher build source missing: $from"
+            }
+            Copy-Item -LiteralPath $from -Destination (Join-Path $destination $file) -Force
+          }
+          node --check (Join-Path $destination 'server.mjs')
+          if ($LASTEXITCODE -ne 0) { throw 'QR Publisher JavaScript syntax check failed' }
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Join-Path $destination 'start-windows.ps1'), [ref]$tokens, [ref]$errors
+          ) | Out-Null
+          if ($errors.Count -ne 0) { throw ($errors | Out-String) }
+          Write-Host 'QRPublisher/server.mjs and start-windows.ps1 bundled in Windows portable output.'
+
       - name: Record release checksums and source revision
         shell: pwsh
         run: |
