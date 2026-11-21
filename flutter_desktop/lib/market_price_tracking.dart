@@ -329,6 +329,13 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
       );
 
   Widget watchCard(Json item) {
+    final linkedStores = nohutStorePlaces.where(
+      (p) => p.id == (item['storeId'] ?? '').toString()).toList();
+    final localStore = linkedStores.isEmpty ? null : linkedStores.single;
+    final storeLabel = localStore?.label ??
+      (item['market'] ?? '').toString();
+    final storeAddress = localStore?.address ??
+      (item['depotName'] ?? '').toString();
     final price = item['priceCents'] is int ? item['priceCents'] as int : null;
     final old = item['previousPriceCents'] is int
         ? item['previousPriceCents'] as int : null;
@@ -378,7 +385,7 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
                     style: const TextStyle(fontSize: 17, height: 1.2,
                       fontWeight: FontWeight.w800, color: NohutBrand.ink)),
                   const SizedBox(height: 5),
-                  Text((item['market'] ?? '').toString() + '  ·  ' +
+                  Text(storeLabel + '  ·  ' +
                     (item['unit'] ?? '').toString(),
                     style: const TextStyle(fontSize: 12,
                       color: NohutBrand.muted, fontWeight: FontWeight.w600)),
@@ -440,7 +447,7 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
               const Icon(Icons.storefront_outlined, size: 15,
                 color: NohutBrand.muted),
               const SizedBox(width: 5),
-              Expanded(child: Text((item['depotName'] ?? '').toString(),
+              Expanded(child: Text(storeAddress,
                 maxLines: 1, overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontSize: 11,
                   color: NohutBrand.muted))),
