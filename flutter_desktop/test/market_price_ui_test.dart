@@ -61,7 +61,7 @@ void main() {
     expect(find.text('Son Fiyat Değişiklikleri'), findsOneWidget);
     expect(find.text('Hakmar'), findsOneWidget);
     expect(find.byIcon(Icons.image_not_supported_outlined), findsOneWidget);
-    expect(find.text('55,00 TL'), findsOneWidget);
+    expect(find.text('Önce 55,00 TL'), findsOneWidget);
     expect(find.text('42,00 TL'), findsOneWidget);
     expect(find.text('-23,6%'), findsOneWidget);
     expect(find.text('Hakmar Serdivan'), findsOneWidget);
