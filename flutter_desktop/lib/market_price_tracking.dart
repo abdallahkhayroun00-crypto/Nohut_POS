@@ -91,6 +91,13 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
     if (mounted) setState(() => info = message);
   }
 
+  void _toast(String message) {
+    if (!mounted) return;
+    notice(message);
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(content: Text(message)));
+  }
+
   Future<void> findBranches() async {
     if (loading) return;
     if (!enabled) {
@@ -335,9 +342,9 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
       if (save == null) return;
       final content = exportMarketWatch(widget.state);
       await File(save.path).writeAsString(content, flush: true);
-      notice('Market takibi yedeği kaydedildi. Dosyayı dükkân PC’sine aktarın.');
+      _toast('Market takibi yedeği kaydedildi. Dosyayı dükkân PC’sine aktarın.');
     } catch (e) {
-      notice('Dışa aktarma başarısız: $e');
+      _toast('Dışa aktarma başarısız: $e');
     } finally {
       if (mounted) setState(() => loading = false);
     }
@@ -389,11 +396,12 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
           results = [];
           info = backup.count.toString() + ' ürün içe aktarıldı.';
         });
+        _toast(info);
       } else {
-        notice('İçe aktarma kaydedilemedi.');
+        _toast('İçe aktarma kaydedilemedi.');
       }
     } catch (e) {
-      notice('Dosya içe aktarılamadı: $e');
+      _toast('Dosya içe aktarılamadı: $e');
     } finally {
       if (mounted) setState(() => loading = false);
     }
