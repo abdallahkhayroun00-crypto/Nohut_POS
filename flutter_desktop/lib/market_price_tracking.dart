@@ -26,6 +26,7 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
   String market = 'BİM', info = 'Konumu girip yakındaki şubeyi seçin.';
   String? branch;
   bool loading = false;
+  String alertFilter = 'Tümü';
   List<MarketDepot> branches = const [];
   List<MarketQuote> results = const [];
 
@@ -169,66 +170,180 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
       ' ' + p(t.hour) + ':' + p(t.minute);
   }
 
+  Widget _sectionLabel(IconData icon, String title, String caption) =>
+      Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+        Container(
+          width: 42, height: 42,
+          decoration: BoxDecoration(
+            color: const Color(0xffEBF2ED),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Icon(icon, size: 21, color: NohutBrand.green),
+        ),
+        const SizedBox(width: 12),
+        Expanded(child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title, style: const TextStyle(
+              fontSize: 20, fontWeight: FontWeight.w800,
+              color: NohutBrand.ink,
+            )),
+            const SizedBox(height: 3),
+            Text(caption, style: const TextStyle(
+              fontSize: 12, color: NohutBrand.muted,
+            )),
+          ],
+        )),
+      ]);
+
+  Widget _pill(String label, IconData icon, Color color, Color background) =>
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+        decoration: BoxDecoration(
+          color: background, borderRadius: BorderRadius.circular(30),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(icon, size: 15, color: color),
+          const SizedBox(width: 5),
+          Text(label, style: TextStyle(
+            fontSize: 12, color: color, fontWeight: FontWeight.w800,
+          )),
+        ]),
+      );
+
   Widget watchCard(Json item) {
     final price = item['priceCents'] is int ? item['priceCents'] as int : null;
     final old = item['previousPriceCents'] is int
-      ? item['previousPriceCents'] as int : null;
-    final kind = item['change'];
-    final down = kind == 'down', up = kind == 'up';
-    final delta = old != null && price != null && old > 0
-      ? (price - old) * 100 / old : 0.0;
-    final colored = down ? Colors.green.shade700 : up
-      ? Colors.red.shade700 : Colors.blueGrey;
-    return Card(
+        ? item['previousPriceCents'] as int : null;
+    final down = item['change'] == 'down';
+    final up = item['change'] == 'up';
+    final changed = (up || down) && old != null && old > 0 && price != null;
+    final delta = changed ? (price - old) * 100 / old : 0.0;
+    final trendColor = down ? const Color(0xff23734D)
+        : up ? const Color(0xffAE4C38) : NohutBrand.muted;
+    final trendSurface = down ? const Color(0xffEAF6EE)
+        : up ? const Color(0xffFCEFEA) : const Color(0xffF1F3F0);
+    final label = down ? 'Fiyat Düştü' : up ? 'Zam Geldi' : 'İlk Fiyat';
+    final trendIcon = down ? Icons.south_east_rounded
+        : up ? Icons.north_east_rounded : Icons.remove_rounded;
+    return Container(
       key: ValueKey('market-' + item['key'].toString()),
-      child: Padding(padding: const EdgeInsets.all(16),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            Icon(down ? Icons.trending_down : up
-              ? Icons.trending_up : Icons.sell_outlined, color: colored),
-            const SizedBox(width: 10),
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text((item['title'] ?? '').toString(),
-                  style: const TextStyle(fontSize: 17,
-                    fontWeight: FontWeight.bold)),
-                Text((item['market'] ?? '').toString() + ' · ' +
-                  (item['depotName'] ?? '').toString() + ' · ' +
-                  (item['unit'] ?? '').toString(),
-                  style: const TextStyle(fontSize: 12, color: Colors.black54)),
-              ],
-            )),
-            Chip(label: Text(down ? 'Fiyat Düştü'
-              : up ? 'Zam Geldi' : 'İlk Fiyat')),
-            IconButton(onPressed: () => remove(item),
-              tooltip: 'Takipten çıkar', icon: const Icon(Icons.close)),
-          ]),
-          const SizedBox(height: 8),
-          Wrap(spacing: 12, crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              if ((up || down) && old != null && old > 0)
-                Text(money(old), style: const TextStyle(
-                  decoration: TextDecoration.lineThrough,
-                  color: Colors.black54, fontSize: 16)),
-              Text(price == null ? 'Fiyat yok' : money(price),
-                style: const TextStyle(fontWeight: FontWeight.bold,
-                  fontSize: 25)),
-              if ((up || down) && old != null && old > 0 && price != null)
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(19),
+        border: Border.all(color: const Color(0xffDCE8DE)),
+        boxShadow: const [
+          BoxShadow(color: Color(0x0B18372C),
+            blurRadius: 18, offset: Offset(0, 5)),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: IntrinsicHeight(child: Row(children: [
+        Container(width: 5, color: trendColor),
+        Expanded(child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 17, 12, 15),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Container(width: 44, height: 44,
+                decoration: BoxDecoration(
+                  color: const Color(0xffF1F4EF),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(Icons.local_grocery_store_outlined,
+                  color: NohutBrand.green, size: 22),
+              ),
+              const SizedBox(width: 11),
+              Expanded(child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text((item['title'] ?? '').toString(),
+                    maxLines: 2, overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 17, height: 1.2,
+                      fontWeight: FontWeight.w800, color: NohutBrand.ink)),
+                  const SizedBox(height: 5),
+                  Text((item['market'] ?? '').toString() + '  ·  ' +
+                    (item['unit'] ?? '').toString(),
+                    style: const TextStyle(fontSize: 12,
+                      color: NohutBrand.muted, fontWeight: FontWeight.w600)),
+                ],
+              )),
+              IconButton(
+                icon: const Icon(Icons.more_horiz_rounded),
+                tooltip: 'Takipten çıkar',
+                color: NohutBrand.muted,
+                visualDensity: VisualDensity.compact,
+                onPressed: () => remove(item),
+              ),
+            ]),
+            const SizedBox(height: 15),
+            Row(children: [
+              _pill(label, trendIcon, trendColor, trendSurface),
+              const Spacer(),
+              if (changed)
                 Text((delta > 0 ? '+' : '') +
                   delta.toStringAsFixed(1).replaceAll('.', ',') + '%',
-                  style: TextStyle(color: colored,
-                    fontWeight: FontWeight.bold)),
+                  style: TextStyle(
+                    fontSize: 19, fontWeight: FontWeight.w900,
+                    color: trendColor,
+                  )),
             ]),
-          const SizedBox(height: 8),
-          Text('Son kontrol: ' + date(item['lastCheckedAt']) +
-            ((up || down) ? ' · Son değişim: ' +
-              date(item['lastChangedAt']) : ''),
-            style: const TextStyle(color: Colors.black54, fontSize: 11)),
-          if (item['discount'] == true)
-            const Text('Kaynak indirim işareti (mağazada doğrulanmadı).',
-              style: TextStyle(fontSize: 11, color: Colors.black54)),
-        ]),
-      ),
+            const SizedBox(height: 17),
+            Wrap(crossAxisAlignment: WrapCrossAlignment.end,
+              spacing: 16, runSpacing: 7, children: [
+                if (changed)
+                  Column(crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('ÖNCEKİ', style: TextStyle(
+                        fontSize: 10, letterSpacing: 1.2,
+                        fontWeight: FontWeight.w800,
+                        color: NohutBrand.muted)),
+                      const SizedBox(height: 4),
+                      Text(money(old), style: const TextStyle(
+                        fontSize: 17, color: NohutBrand.muted,
+                        decoration: TextDecoration.lineThrough)),
+                    ]),
+                Column(crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(changed ? 'YENİ FİYAT' : 'SON FİYAT',
+                      style: const TextStyle(
+                        fontSize: 10, letterSpacing: 1.2,
+                        color: NohutBrand.muted,
+                        fontWeight: FontWeight.w800)),
+                    const SizedBox(height: 4),
+                    Text(price == null ? 'Bulunamadı' : money(price),
+                      style: const TextStyle(fontSize: 28,
+                        height: 1.1, fontWeight: FontWeight.w900,
+                        color: NohutBrand.green)),
+                  ]),
+              ]),
+            const SizedBox(height: 16),
+            const Divider(height: 1, color: Color(0xffE8EEE8)),
+            const SizedBox(height: 11),
+            Row(children: [
+              const Icon(Icons.storefront_outlined, size: 15,
+                color: NohutBrand.muted),
+              const SizedBox(width: 5),
+              Expanded(child: Text((item['depotName'] ?? '').toString(),
+                maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 11,
+                  color: NohutBrand.muted))),
+              const SizedBox(width: 8),
+              const Icon(Icons.schedule_outlined, size: 14,
+                color: NohutBrand.muted),
+              const SizedBox(width: 4),
+              Text(date(item['lastCheckedAt']),
+                style: const TextStyle(fontSize: 11,
+                  color: NohutBrand.muted)),
+            ]),
+            if (item['discount'] == true) ...[
+              const SizedBox(height: 8),
+              const Text('Kaynak indirim işareti · Mağazada doğrulanmadı',
+                style: TextStyle(fontSize: 11,
+                  color: NohutBrand.muted)),
+            ],
+          ]),
+        )),
+      ])),
     );
   }
 
