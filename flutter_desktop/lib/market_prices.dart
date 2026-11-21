@@ -281,6 +281,10 @@ bool applyMarketQuote(Json state, MarketQuote quote) {
           'market': quote.market,
           'depotName': quote.depotName,
           'title': quote.title,
+          if (marketImageUrl(item['imageUrl']) != null)
+            'imageUrl': marketImageUrl(item['imageUrl']),
+          if (marketImageUrl(item['customImageUrl']) != null)
+            'customImageUrl': marketImageUrl(item['customImageUrl']),
           'oldPriceCents': old,
           'newPriceCents': quote.priceCents,
           'direction': direction,
