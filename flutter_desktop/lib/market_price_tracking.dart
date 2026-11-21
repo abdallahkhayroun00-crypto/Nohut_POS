@@ -328,147 +328,250 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
         ]),
       );
 
+  Widget _missingProductPhoto() => Center(
+    child: Column(mainAxisSize: MainAxisSize.min, children: [
+      const Icon(Icons.add_photo_alternate_outlined,
+        size: 30, color: NohutBrand.green),
+      const SizedBox(height: 6),
+      const Text('FOTOĞRAF EKLE',
+        textAlign: TextAlign.center,
+        style: TextStyle(fontSize: 9,
+          letterSpacing: 0.7, fontWeight: FontWeight.w800,
+          color: NohutBrand.green)),
+    ]),
+  );
+
+  Widget _productPhoto(Json item, double size) {
+    final url = marketImageUrl(item['customImageUrl']) ??
+        marketImageUrl(item['imageUrl']);
+    return Tooltip(
+      message: url == null ? 'Gerçek ürün fotoğrafı ekle'
+          : 'Ürün fotoğrafını değiştir',
+      child: InkWell(
+        onTap: () => _editPhoto(item),
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          width: size, height: size,
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            color: const Color(0xffF3F5EF),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xffE0E9DF))),
+          child: Stack(fit: StackFit.expand, children: [
+            if (url == null)
+              _missingProductPhoto()
+            else Image.network(url,
+              fit: BoxFit.contain,
+              cacheWidth: 450,
+              cacheHeight: 450,
+              loadingBuilder: (context, child, progress) {
+                if (progress == null) return child;
+                return const Center(child: SizedBox(
+                  height: 20, width: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2)));
+              },
+              errorBuilder: (context, error, stack) =>
+                  _missingProductPhoto(),
+            ),
+            Positioned(right: 6, bottom: 6,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(8),
+                  boxShadow: const [BoxShadow(
+                    color: Color(0x11000000), blurRadius: 5)]),
+                child: const Padding(
+                  padding: EdgeInsets.all(5),
+                  child: Icon(Icons.photo_camera_outlined, size: 15,
+                    color: NohutBrand.green)))),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _editPhoto(Json item) async {
+    final controller = TextEditingController(
+      text: (item['customImageUrl'] ?? '').toString());
+    final result = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Ürün Fotoğrafı'),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 430),
+          child: Column(mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text((item['title'] ?? '').toString(),
+                style: const TextStyle(fontWeight: FontWeight.w800)),
+              const SizedBox(height: 13),
+              TextField(
+                controller: controller,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  labelText: 'Gerçek ürün fotoğrafı URL (HTTPS)',
+                  hintText: 'https://.../urun.jpg',
+                  border: OutlineInputBorder()),
+              ),
+              const SizedBox(height: 10),
+              const Text('Market Fiyatı görseli varsa otomatik gelir. '
+                'Eksikse yalnızca bu ürünün gerçek fotoğraf bağlantısını girin.',
+                style: TextStyle(color: NohutBrand.muted, fontSize: 12)),
+            ]),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Vazgeç')),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, '__source__'),
+            child: const Text('Kaynak Fotoğrafı')),
+          FilledButton(
+            onPressed: () {
+              final url = marketImageUrl(controller.text);
+              if (url == null) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                  content: Text('Geçerli HTTPS fotoğraf bağlantısı girin.')));
+                return;
+              }
+              Navigator.pop(dialogContext, url);
+            },
+            child: const Text('Fotoğrafı Kaydet')),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (!mounted || result == null) return;
+    widget.edit((db) {
+      final products = trackedMarketProducts(db);
+      for (final product in products) {
+        if (product['key'] != item['key']) continue;
+        if (result == '__source__') {
+          product.remove('customImageUrl');
+        } else {
+          product['customImageUrl'] = result;
+        }
+        break;
+      }
+      editMarketPriceState(db, (settings) => settings['tracked'] = products);
+    });
+  }
+
   Widget watchCard(Json item) {
     final linkedStores = nohutStorePlaces.where(
       (p) => p.id == (item['storeId'] ?? '').toString()).toList();
     final localStore = linkedStores.isEmpty ? null : linkedStores.single;
     final storeLabel = localStore?.label ??
-      (item['market'] ?? '').toString();
+        (item['market'] ?? '').toString();
     final storeAddress = localStore?.address ??
-      (item['depotName'] ?? '').toString();
+        (item['depotName'] ?? '').toString();
     final price = item['priceCents'] is int ? item['priceCents'] as int : null;
     final old = item['previousPriceCents'] is int
         ? item['previousPriceCents'] as int : null;
     final down = item['change'] == 'down';
     final up = item['change'] == 'up';
-    final changed = (up || down) && old != null && old > 0 && price != null;
+    final changed = (down || up) && price != null && old != null && old > 0;
     final delta = changed ? (price - old) * 100 / old : 0.0;
-    final trendColor = down ? const Color(0xff23734D)
-        : up ? const Color(0xffAE4C38) : NohutBrand.muted;
-    final trendSurface = down ? const Color(0xffEAF6EE)
-        : up ? const Color(0xffFCEFEA) : const Color(0xffF1F3F0);
-    final label = down ? 'Fiyat Düştü' : up ? 'Zam Geldi' : 'İlk Fiyat';
-    final trendIcon = down ? Icons.south_east_rounded
-        : up ? Icons.north_east_rounded : Icons.remove_rounded;
-    return Container(
-      key: ValueKey('market-' + item['key'].toString()),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(19),
-        border: Border.all(color: const Color(0xffDCE8DE)),
-        boxShadow: const [
-          BoxShadow(color: Color(0x0B18372C),
-            blurRadius: 18, offset: Offset(0, 5)),
-        ],
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: IntrinsicHeight(child: Row(children: [
-        Container(width: 5, color: trendColor),
-        Expanded(child: Padding(
-          padding: const EdgeInsets.fromLTRB(18, 17, 12, 15),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Container(width: 44, height: 44,
-                decoration: BoxDecoration(
-                  color: const Color(0xffF1F4EF),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: const Icon(Icons.local_grocery_store_outlined,
-                  color: NohutBrand.green, size: 22),
-              ),
-              const SizedBox(width: 11),
-              Expanded(child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text((item['title'] ?? '').toString(),
-                    maxLines: 2, overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 17, height: 1.2,
-                      fontWeight: FontWeight.w800, color: NohutBrand.ink)),
-                  const SizedBox(height: 5),
-                  Text(storeLabel + '  ·  ' +
-                    (item['unit'] ?? '').toString(),
-                    style: const TextStyle(fontSize: 12,
-                      color: NohutBrand.muted, fontWeight: FontWeight.w600)),
-                ],
-              )),
-              IconButton(
-                icon: const Icon(Icons.more_horiz_rounded),
-                tooltip: 'Takipten çıkar',
-                color: NohutBrand.muted,
-                visualDensity: VisualDensity.compact,
-                onPressed: () => remove(item),
-              ),
-            ]),
-            const SizedBox(height: 15),
-            Row(children: [
-              _pill(label, trendIcon, trendColor, trendSurface),
-              const Spacer(),
-              if (changed)
-                Text((delta > 0 ? '+' : '') +
-                  delta.toStringAsFixed(1).replaceAll('.', ',') + '%',
-                  style: TextStyle(
-                    fontSize: 19, fontWeight: FontWeight.w900,
-                    color: trendColor,
-                  )),
-            ]),
-            const SizedBox(height: 17),
-            Wrap(crossAxisAlignment: WrapCrossAlignment.end,
-              spacing: 16, runSpacing: 7, children: [
-                if (changed)
-                  Column(crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('ÖNCEKİ', style: TextStyle(
-                        fontSize: 10, letterSpacing: 1.2,
-                        fontWeight: FontWeight.w800,
-                        color: NohutBrand.muted)),
-                      const SizedBox(height: 4),
-                      Text(money(old), style: const TextStyle(
-                        fontSize: 17, color: NohutBrand.muted,
-                        decoration: TextDecoration.lineThrough)),
-                    ]),
-                Column(crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(changed ? 'YENİ FİYAT' : 'SON FİYAT',
-                      style: const TextStyle(
-                        fontSize: 10, letterSpacing: 1.2,
-                        color: NohutBrand.muted,
-                        fontWeight: FontWeight.w800)),
-                    const SizedBox(height: 4),
-                    Text(price == null ? 'Bulunamadı' : money(price),
-                      style: const TextStyle(fontSize: 28,
-                        height: 1.1, fontWeight: FontWeight.w900,
-                        color: NohutBrand.green)),
-                  ]),
-              ]),
-            const SizedBox(height: 16),
-            const Divider(height: 1, color: Color(0xffE8EEE8)),
-            const SizedBox(height: 11),
-            Row(children: [
-              const Icon(Icons.storefront_outlined, size: 15,
-                color: NohutBrand.muted),
-              const SizedBox(width: 5),
+    final trendColor = down ? const Color(0xff287B51)
+        : up ? const Color(0xffAF503F) : NohutBrand.muted;
+    final trendBackground = down ? const Color(0xffE5F5E9)
+        : up ? const Color(0xffFCEBE6) : const Color(0xffEDF1ED);
+    return LayoutBuilder(builder: (context, constraints) {
+      final photoSize = constraints.maxWidth < 440 ? 102.0 : 128.0;
+      return Container(
+        key: ValueKey('market-' + item['key'].toString()),
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: const Color(0xffD8E5DB)),
+          boxShadow: const [BoxShadow(
+            color: Color(0x0B153D2B), blurRadius: 17, offset: Offset(0, 5))],
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(15, 15, 13, 15),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _productPhoto(item, photoSize),
+                const SizedBox(width: 15),
+                Expanded(child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Row(crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(child: Text((item['title'] ?? '').toString(),
+                          maxLines: 3, overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 16,
+                            height: 1.15, fontWeight: FontWeight.w900,
+                            color: NohutBrand.ink))),
+                        IconButton(
+                          tooltip: 'Takipten çıkar',
+                          visualDensity: VisualDensity.compact,
+                          icon: const Icon(Icons.close_rounded,
+                            size: 18, color: NohutBrand.muted),
+                          onPressed: () => remove(item)),
+                      ]),
+                    const SizedBox(height: 5),
+                    Text(storeLabel + '  ·  ' +
+                      (item['unit'] ?? '').toString(),
+                      style: const TextStyle(color: NohutBrand.muted,
+                        fontSize: 12, fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 13),
+                    Wrap(spacing: 9, runSpacing: 6,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        _pill(down ? 'İndirim' : up ? 'Zam' : 'İlk Fiyat',
+                          down ? Icons.south_east_rounded
+                            : up ? Icons.north_east_rounded
+                            : Icons.remove_rounded,
+                          trendColor, trendBackground),
+                        if (changed) Text(
+                          (delta > 0 ? '+' : '') +
+                          delta.toStringAsFixed(1).replaceAll('.', ',') + '%',
+                          style: TextStyle(fontSize: 15,
+                            color: trendColor, fontWeight: FontWeight.w900)),
+                      ]),
+                    const SizedBox(height: 12),
+                    Wrap(spacing: 11, runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.end, children: [
+                        Text(price == null ? 'Fiyat yok' : money(price),
+                          style: const TextStyle(fontSize: 28, height: 1.1,
+                            color: NohutBrand.green,
+                            fontWeight: FontWeight.w900)),
+                        if (changed)
+                          Text(money(old),
+                            style: const TextStyle(
+                              decoration: TextDecoration.lineThrough,
+                              color: NohutBrand.muted, fontSize: 15)),
+                      ]),
+                  ],
+                )),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 15, vertical: 11),
+            color: const Color(0xffF7FAF6),
+            child: Row(children: [
+              const Icon(Icons.place_outlined,
+                size: 15, color: NohutBrand.muted),
+              const SizedBox(width: 6),
               Expanded(child: Text(storeAddress,
                 maxLines: 1, overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 11,
-                  color: NohutBrand.muted))),
+                style: const TextStyle(
+                  color: NohutBrand.muted, fontSize: 11))),
               const SizedBox(width: 8),
-              const Icon(Icons.schedule_outlined, size: 14,
-                color: NohutBrand.muted),
+              const Icon(Icons.schedule_outlined,
+                size: 14, color: NohutBrand.muted),
               const SizedBox(width: 4),
               Text(date(item['lastCheckedAt']),
-                style: const TextStyle(fontSize: 11,
-                  color: NohutBrand.muted)),
+                style: const TextStyle(
+                  color: NohutBrand.muted, fontSize: 11)),
             ]),
-            if (item['discount'] == true) ...[
-              const SizedBox(height: 8),
-              const Text('Kaynak indirim işareti · Mağazada doğrulanmadı',
-                style: TextStyle(fontSize: 11,
-                  color: NohutBrand.muted)),
-            ],
-          ]),
-        )),
-      ])),
-    );
+          ),
+        ]),
+      );
+    });
   }
 
   Widget _alerts(List<Json> watched) {
