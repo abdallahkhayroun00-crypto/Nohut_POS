@@ -459,17 +459,9 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
         ]),
       );
 
-  Widget _missingProductPhoto() => Center(
-    child: Column(mainAxisSize: MainAxisSize.min, children: [
-      const Icon(Icons.add_photo_alternate_outlined,
-        size: 30, color: NohutBrand.green),
-      const SizedBox(height: 6),
-      const Text('FOTOĞRAF EKLE',
-        textAlign: TextAlign.center,
-        style: TextStyle(fontSize: 9,
-          letterSpacing: 0.7, fontWeight: FontWeight.w800,
-          color: NohutBrand.green)),
-    ]),
+  Widget _missingProductPhoto() => const Center(
+    child: Icon(Icons.image_not_supported_outlined,
+      size: 27, color: NohutBrand.muted),
   );
 
   Widget _productPhoto(Json item, double size) {
