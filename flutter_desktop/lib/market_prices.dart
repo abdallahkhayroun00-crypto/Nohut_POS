@@ -213,6 +213,46 @@ void addTrackedMarketQuote(Json state, MarketQuote quote, {String? storeId}) {
   editMarketPriceState(state, (s) => s['tracked'] = products);
 }
 
+/// Persistent price events. Only actual changes create alerts; first prices,
+/// unchanged checks, and API errors never generate notifications.
+List<Json> marketPriceAlerts(Json state) {
+  final source = marketPriceState(state)['priceAlerts'];
+  if (source is! List) return <Json>[];
+  return [
+    for (final value in source)
+      if (value is Map) Map<String, dynamic>.from(value),
+  ];
+}
+
+List<Json> unreadMarketPriceAlerts(Json state) {
+  final alerts = marketPriceAlerts(state)
+      .where((alert) => alert['readAt'] == null).toList();
+  alerts.sort((a, b) =>
+      (b['createdAt'] ?? '').toString().compareTo(
+          (a['createdAt'] ?? '').toString()));
+  return alerts;
+}
+
+int markMarketPriceAlertsRead(Json state, Iterable<String> ids,
+    {DateTime? at}) {
+  final requested = ids.toSet();
+  if (requested.isEmpty) return 0;
+  final alerts = marketPriceAlerts(state);
+  final stamp = (at ?? DateTime.now()).toUtc().toIso8601String();
+  var updated = 0;
+  for (final alert in alerts) {
+    if (requested.contains((alert['id'] ?? '').toString()) &&
+        alert['readAt'] == null) {
+      alert['readAt'] = stamp;
+      updated++;
+    }
+  }
+  if (updated > 0) {
+    editMarketPriceState(state, (settings) => settings['priceAlerts'] = alerts);
+  }
+  return updated;
+}
+
 /// Do not silently replace missing products with similar items or other shops.
 /// Preserve the last change alert until the next actual price change.
 bool applyMarketQuote(Json state, MarketQuote quote) {
@@ -225,9 +265,35 @@ bool applyMarketQuote(Json state, MarketQuote quote) {
             marketBrandKey(quote.market)) continue;
     final old = item['priceCents'];
     if (old is int && old > 0 && old != quote.priceCents) {
+      final direction = quote.priceCents < old ? 'down' : 'up';
       item['previousPriceCents'] = old;
-      item['change'] = quote.priceCents < old ? 'down' : 'up';
+      item['change'] = direction;
       item['lastChangedAt'] = quote.observedAt;
+      final alerts = marketPriceAlerts(state);
+      final alertId = quote.key + '|' + quote.observedAt + '|' +
+          quote.priceCents.toString();
+      if (!alerts.any((entry) => entry['id'] == alertId)) {
+        alerts.insert(0, <String, dynamic>{
+          'id': alertId,
+          'key': quote.key,
+          'productId': quote.productId,
+          'storeId': item['storeId'],
+          'market': quote.market,
+          'depotName': quote.depotName,
+          'title': quote.title,
+          'oldPriceCents': old,
+          'newPriceCents': quote.priceCents,
+          'direction': direction,
+          'createdAt': quote.observedAt,
+          'readAt': null,
+        });
+      }
+      // Bound local history while keeping unread notices first.
+      if (alerts.length > 100) {
+        alerts.removeRange(100, alerts.length);
+      }
+      editMarketPriceState(state, (settings) =>
+          settings['priceAlerts'] = alerts);
       changed = true;
     }
     item['priceCents'] = quote.priceCents;
