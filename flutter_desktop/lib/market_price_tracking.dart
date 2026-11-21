@@ -973,13 +973,12 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
                           fontWeight: FontWeight.w800)),
                     ]),
                     const SizedBox(height: 9),
-                    const Text('Market Fiyat Takibi',
+                    const Text('Fiyatları tek bakışta gör.',
                       style: TextStyle(
                         fontFamily: NohutBrand.headingFont,
-                        color: Colors.white, fontSize: 29)),
+                        color: Colors.white, fontSize: 27)),
                     const SizedBox(height: 7),
-                    const Text('BİM · A101 · Hakmar\n'
-                      'Güncel fiyatlar, zamlar ve indirimler bir ekranda.',
+                    const Text('Gerçek şubeler · Ürün fotoğrafları · Fiyat değişiklikleri',
                       style: TextStyle(color: Color(0xffDFEAE1),
                         height: 1.45, fontSize: 13)),
                   ])),
