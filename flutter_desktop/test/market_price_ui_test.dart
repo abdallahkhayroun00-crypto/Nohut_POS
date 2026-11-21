@@ -26,6 +26,10 @@ void main() {
     await tester.tap(find.text('Kaynak Ayarları'));
     await tester.pumpAndSettle();
     expect(find.text('Canlı fiyat kaynağı (deneysel)'), findsOneWidget);
+    expect(find.byKey(const ValueKey('market-refresh-interval')),
+      findsOneWidget);
+    expect(find.text('12 Saat'), findsOneWidget);
+    expect(find.text('Yeni Kategori'), findsOneWidget);
     expect(find.text('Ürün Ara'), findsOneWidget);
     expect(find.text('Takibe Ekle'), findsNothing);
     for (final unwanted in [
@@ -33,6 +37,22 @@ void main() {
     ]) {
       expect(find.text(unwanted), findsNothing);
     }
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('manager creates a new price-watch category in the filter',
+      (tester) async {
+    await helpers.mountManager(tester, helpers.seed());
+    await helpers.click(tester, 'Market Fiyat Takibi');
+    final add = find.text('Yeni Kategori');
+    await tester.ensureVisible(add);
+    await tester.tap(add);
+    await tester.pumpAndSettle();
+    expect(find.text('Yeni Kategori Oluştur'), findsOneWidget);
+    await tester.enterText(find.byType(TextField).last, 'Soslar');
+    await tester.tap(find.text('Kategori Ekle'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Soslar (0)'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
