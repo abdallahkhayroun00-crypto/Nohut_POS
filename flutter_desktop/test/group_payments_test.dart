@@ -173,7 +173,9 @@ void main() {
     ), throwsFormatException);
     expect((mutableOrder(state, 1)!['payments'] as List), hasLength(1));
     expect((mutableOrder(state, 2)!['payments'] as List), isEmpty);
-    expect(state['combinedPayments'], isEmpty);
+    // Atomic failure must not create a combined transaction entry.
+    // Legacy seed states may omit the key until first successful payment.
+    expect(asMaps(state['combinedPayments']), isEmpty);
   });
 
   test('empty pre-existing guest allocation is safely assigned and settled', () {
