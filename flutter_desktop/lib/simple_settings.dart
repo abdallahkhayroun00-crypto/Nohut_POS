@@ -45,6 +45,64 @@ class SimpleSettings extends StatefulWidget {
 
 class _SimpleSettingsState extends State<SimpleSettings> {
   String tab = 'Genel', search = '';
+  Widget _quickTile(String name, IconData icon, String description) =>
+      Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(13),
+        child: InkWell(
+          onTap: () => setState(() => tab = name),
+          borderRadius: BorderRadius.circular(13),
+          child: Container(
+            height: 104,
+            padding: const EdgeInsets.all(13),
+            decoration: BoxDecoration(
+              border: Border.all(color: const Color(0xffDCE8DE)),
+              borderRadius: BorderRadius.circular(13),
+            ),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  Icon(icon, size: 21, color: NohutBrand.green),
+                  const Spacer(),
+                  const Icon(Icons.arrow_forward_rounded,
+                    color: NohutBrand.muted, size: 17),
+                ]),
+                const Spacer(),
+                Text(name, maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: NohutBrand.green,
+                    fontSize: 14, fontWeight: FontWeight.w800)),
+                Text(description, maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: NohutBrand.muted, fontSize: 11)),
+              ]),
+          ),
+        ),
+      );
+
+  Widget _quickGrid(Map settings) => LayoutBuilder(
+    builder: (context, constraints) {
+      final cols = constraints.maxWidth >= 900 ? 4 :
+        constraints.maxWidth >= 510 ? 2 : 1;
+      final tileWidth = (constraints.maxWidth - 12 * (cols - 1)) / cols;
+      final entries = <(String, IconData, String)>[
+        ('Bildirimler', Icons.notifications_active_outlined, 'Masa ve online sesleri'),
+        ('Entegrasyonlar', Icons.hub_outlined, 'Platform bağlantıları'),
+        ('Yazıcı', Icons.print_outlined,
+          (settings['printerName'] ?? 'XP-237B').toString()),
+        ('Menü', Icons.menu_book_outlined,
+          settings['qrAutoSync'] != false ? 'QR eşitleme açık' : 'QR eşitleme kapalı'),
+        ('Güvenlik', Icons.shield_outlined, 'Erişim durumu'),
+        ('Yedekleme', Icons.backup_outlined, 'SQLite ve dosyalar'),
+      ];
+      return Wrap(spacing: 12, runSpacing: 12, children: [
+        for (final entry in entries)
+          SizedBox(width: tileWidth,
+            child: _quickTile(entry.$1, entry.$2, entry.$3)),
+      ]);
+    },
+  );
+
   Widget printerLayout(Map settings, Widget controls) {
     final preview = section(
       'Fiş Önizleme',
@@ -147,8 +205,12 @@ class _SimpleSettingsState extends State<SimpleSettings> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        panelTitle('Ayarlar'),
-        const Text('Restoran yönetimi, platform bağlantıları, yazıcılar ve veri güvenliği.'),
+        const Text('İşletme Ayarları · Yönetim ve Bağlantılar',
+          style: TextStyle(color: NohutBrand.green,
+            fontSize: 19, fontWeight: FontWeight.w800)),
+        const SizedBox(height: 4),
+        const Text('Her bölümü ayrı yönetin. Değişiklikler bu bilgisayarda saklanır.',
+          style: TextStyle(color: NohutBrand.muted, fontSize: 12)),
         const SizedBox(height: 16),
         Wrap(
           spacing: 8,
@@ -189,28 +251,52 @@ class _SimpleSettingsState extends State<SimpleSettings> {
         const SizedBox(height: 16),
         if (tab == 'Personel' && widget.staffPanel != null) widget.staffPanel!,
         if (tab == 'Bağlantı' && widget.wifiPanel != null) widget.wifiPanel!,
-        if (tab == 'Genel')
-          section(
-            'Bildirimler',
-            'Personelden gelen siparişler yönetici ekranında görünür.',
-            [
-              SwitchListTile(
-                title: const Text('Yeni sipariş sesi'),
-                value: settings['soundAlerts'] != false,
-                onChanged: (v) => widget.edit((s) {
-                  (s.putIfAbsent('settings', () => <String, dynamic>{})
-                          as Map)['soundAlerts'] =
-                      v;
-                }),
-              ),
-              const ListTile(
-                leading: Icon(Icons.table_restaurant),
-                title: Text('5 masa · Ortak hesaplar'),
-                subtitle: Text('Telefon ve laptop aynı siparişleri kullanır.'),
-              ),
-            ],
-          ),
+        if (tab == 'Genel') ...[
+          section('Hızlı Ayarlar', 'Doğrudan ilgili bölüme gidin.',
+            [_quickGrid(settings)]),
+          const SizedBox(height: 10),
+          section('Bağlantı Durumu',
+            'API bilgisi kaydetmek canlı entegrasyon başlatmaz.', [
+            ListTile(
+              leading: Icon(widget.tgoIntegration.status.startsWith('Bağlı ·')
+                ? Icons.check_circle_outline : Icons.info_outline,
+                color: widget.tgoIntegration.status.startsWith('Bağlı ·')
+                  ? NohutBrand.green : NohutBrand.gold),
+              title: const Text('Trendyol Go'),
+              subtitle: Text(widget.tgoIntegration.status),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => setState(() => tab = 'Entegrasyonlar'),
+            ),
+            const ListTile(
+              leading: Icon(Icons.link_off_outlined,
+                color: NohutBrand.gold),
+              title: Text('Migros Yemek · Yemeksepeti'),
+              subtitle: Text('Canlı sipariş API bağlantısı henüz yok.'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.print_outlined),
+              title: const Text('Fiş Yazıcısı'),
+              subtitle: Text((settings['printerName'] ?? 'XP-237B')
+                .toString()),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => setState(() => tab = 'Yazıcı'),
+            ),
+          ]),
+        ],
         if (tab == 'Bildirimler') ...[
+          section('Masa / Gel-Al Sesleri',
+            'Personel siparişleri online platformlardan bağımsızdır.', [
+            SwitchListTile.adaptive(
+              secondary: const Icon(Icons.table_restaurant_outlined,
+                color: NohutBrand.green),
+              title: const Text('Yeni sipariş sesi'),
+              value: settings['soundAlerts'] != false,
+              onChanged: (v) => widget.edit((db) {
+                (db.putIfAbsent('settings', () => <String, dynamic>{})
+                    as Map)['soundAlerts'] = v;
+              }),
+            ),
+          ]),
           section(
             'Online Sipariş Alarm 2.0',
             'Trendyol Go, Yemeksepeti ve Migros Yemek için ortak kuyruk. '
@@ -435,8 +521,8 @@ class _SimpleSettingsState extends State<SimpleSettings> {
           printerLayout(
             settings,
             section(
-              'Ödemede sor, istenirse yazdır',
-              'Sipariş ve ek ürünlerde otomatik çıktı alınmaz. Ödeme kaydında fiş isteği sorulur.',
+              'Müşteri Hesap Fişi',
+              'Masa/Gel-Al hesap özeti ödeme öncesi elle yazdırılabilir. Ödeme sonrası tekrar sorulur; mali fiş değildir.',
               [
                 ListTile(
                   leading: const Icon(Icons.print_outlined),
