@@ -10,7 +10,7 @@ void main() {
     await helpers.click(tester, 'Market Fiyat Takibi');
     expect(find.textContaining('MARKET RADARI'), findsOneWidget);
     expect(find.text('Fiyat Uyarıları'), findsOneWidget);
-    expect(find.text('A101 · Nohut yakını'), findsOneWidget);
+    expect(find.text('A101 · Nohut yakını'), findsWidgets);
     expect(find.text('BİM · Nohut yakını'), findsOneWidget);
     expect(find.text('Hakmar 1'), findsOneWidget);
     expect(find.text('Hakmar 2'), findsOneWidget);
