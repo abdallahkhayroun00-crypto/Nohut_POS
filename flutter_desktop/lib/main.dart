@@ -156,6 +156,8 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
   Json? latestNotice;
   final Queue<Json> _staffPopupQueue = Queue<Json>();
   bool _staffPopupOpen = false;
+  bool _marketPopupOpen = false;
+  final Set<String> _seenMarketPopupIds = {};
   bool orderModalOpen = false;
   String businessDay = istanbulDay(DateTime.now());
   List<Product> menu = const [];
@@ -249,6 +251,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       asMaps(store.read().data['staffNotices']).map((n) => '${n['id']}'),
     );
     store.addListener(_staffActivity);
+    _scheduleMarketPopup();
     // Migration completes before the print worker can inspect old jobs.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // Menu initialization precedes staff order acceptance.
@@ -627,6 +630,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
 
   void _staffActivity() {
     if (!mounted) return;
+    _scheduleMarketPopup();
     final incoming = asMaps(store.read().data['staffNotices'])
         .where((n) => !seenNotices.contains('${n['id']}'))
         .toList();
@@ -649,6 +653,111 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       }
     }
     _scheduleStaffPopup();
+  }
+
+  void _scheduleMarketPopup() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _showMarketPopup();
+    });
+  }
+
+  void _showMarketPopup() {
+    if (!mounted || _marketPopupOpen || _staffPopupOpen ||
+        orderModalOpen || _staffPopupQueue.isNotEmpty) return;
+    final alerts = unreadMarketPriceAlerts(store.read().data)
+        .where((a) => !_seenMarketPopupIds.contains(
+            (a['id'] ?? '').toString())).toList();
+    if (alerts.isEmpty) return;
+    for (final alert in alerts) {
+      _seenMarketPopupIds.add((alert['id'] ?? '').toString());
+    }
+    _marketPopupOpen = true;
+    final displayed = alerts.take(6).toList();
+    showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: Row(children: [
+          const Icon(Icons.notifications_active_rounded,
+            color: Color(0xffB45E32)),
+          const SizedBox(width: 9),
+          Expanded(child: Text(
+            alerts.length == 1 ? 'Market Fiyat Uyarısı' :
+                'Market Fiyat Uyarıları (' + alerts.length.toString() + ')')),
+        ]),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: Column(mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Takip edilen ürünlerde yeni fiyat değişikliği '
+                'algılandı.', style: TextStyle(fontSize: 12)),
+              const SizedBox(height: 12),
+              for (final alert in displayed)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.all(11),
+                  decoration: BoxDecoration(
+                    color: const Color(0xffF4F7F3),
+                    borderRadius: BorderRadius.circular(12)),
+                  child: Row(children: [
+                    Icon(alert['direction'] == 'down'
+                      ? Icons.south_east_rounded : Icons.north_east_rounded,
+                      color: alert['direction'] == 'down'
+                        ? const Color(0xff277A4E)
+                        : const Color(0xffB3453A)),
+                    const SizedBox(width: 10),
+                    Expanded(child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text((alert['title'] ?? '').toString(),
+                          maxLines: 2, overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 13,
+                            fontWeight: FontWeight.w800)),
+                        Text((alert['depotName'] ?? alert['market'] ?? '').toString(),
+                          style: const TextStyle(fontSize: 11)),
+                        Text(
+                          ((alert['oldPriceCents'] as num) / 100)
+                            .toStringAsFixed(2).replaceAll('.', ',') +
+                          ' TL  →  ' +
+                          ((alert['newPriceCents'] as num) / 100)
+                            .toStringAsFixed(2).replaceAll('.', ',') + ' TL',
+                          style: const TextStyle(fontWeight: FontWeight.w800)),
+                      ],
+                    )),
+                  ]),
+                ),
+              if (alerts.length > displayed.length)
+                Text('+' + (alerts.length - displayed.length).toString() +
+                  ' diğer uyarı Market Fiyat Takibi sayfasında',
+                  style: const TextStyle(fontSize: 11)),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, 'later'),
+            child: const Text('Sonra')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, 'view'),
+            child: const Text('Uyarıları Gör')),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(ctx, 'read'),
+            icon: const Icon(Icons.done_all_rounded, size: 18),
+            label: const Text('Tümünü Okundu İşaretle')),
+        ],
+      ),
+    ).then((action) {
+      _marketPopupOpen = false;
+      if (!mounted) return;
+      if (action == 'read') {
+        _edit((db) => markMarketPriceAlertsRead(db,
+          alerts.map((a) => (a['id'] ?? '').toString())));
+      } else if (action == 'view') {
+        setState(() => page = 'market-prices');
+      }
+      _scheduleStaffPopup();
+    });
   }
 
   void _scheduleStaffPopup() {
