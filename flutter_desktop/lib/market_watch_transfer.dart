@@ -60,6 +60,14 @@ List<Json> orderedMarketWatchProducts(List<Json> products) {
   ordered.sort((a, b) {
     final byGroup = priority(a).compareTo(priority(b));
     if (byGroup != 0) return byGroup;
+    if (hasMarketPriceChange(a) && hasMarketPriceChange(b)) {
+      final aDate = DateTime.tryParse((a['lastChangedAt'] ?? '').toString());
+      final bDate = DateTime.tryParse((b['lastChangedAt'] ?? '').toString());
+      if (aDate != null && bDate != null) {
+        final time = bDate.compareTo(aDate);
+        if (time != 0) return time;
+      }
+    }
     final byName = _normal((a['title'] ?? '').toString())
         .compareTo(_normal((b['title'] ?? '').toString()));
     return byName != 0 ? byName :
