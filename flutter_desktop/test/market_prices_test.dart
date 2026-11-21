@@ -89,6 +89,17 @@ void main() {
     expect(entry['productId'], 'marul-1');
   });
 
+  test('24h 12h 6h and 1h refresh options default safely to 12h', () {
+    expect(marketPriceRefreshChoices, [24, 12, 6, 1]);
+    expect(marketPriceRefreshHours(null), 12);
+    expect(marketPriceRefreshHours('1'), 12);
+    expect(marketPriceRefreshHours(0), 12);
+    expect(marketPriceRefreshHours(25), 12);
+    for (final hours in marketPriceRefreshChoices) {
+      expect(marketPriceRefreshHours(hours), hours);
+    }
+  });
+
   test('validates input coordinates, radius and absent values', () {
     expect(validMarketCoordinates(40.75, 30.35, 4), isTrue);
     expect(validMarketCoordinates(null, 30.35, 4), isFalse);
