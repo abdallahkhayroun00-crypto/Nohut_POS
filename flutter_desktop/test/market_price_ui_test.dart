@@ -10,6 +10,10 @@ void main() {
     await helpers.click(tester, 'Market Fiyat Takibi');
     expect(find.textContaining('MARKET RADARI'), findsOneWidget);
     expect(find.text('Fiyat Uyarıları'), findsOneWidget);
+    expect(find.text('Dışa Aktar'), findsOneWidget);
+    expect(find.text('İçe Aktar'), findsOneWidget);
+    expect(find.textContaining('Sebze ('), findsOneWidget);
+    expect(find.textContaining('Baharat ('), findsOneWidget);
     expect(find.text('A101 Bağlar'), findsWidgets);
     expect(find.text('BİM İstiklal'), findsOneWidget);
     expect(find.text('Hakmar Karadere'), findsOneWidget);
@@ -52,6 +56,8 @@ void main() {
     await helpers.mountManager(tester, seed);
     await helpers.click(tester, 'Market Fiyat Takibi');
     expect(find.text('Göbek Marul'), findsOneWidget);
+    expect(find.text('Sebze'), findsOneWidget);
+    expect(find.text('Hakmar'), findsOneWidget);
     expect(find.text('FOTOĞRAF EKLE'), findsOneWidget);
     expect(find.text('55,00 TL'), findsOneWidget);
     expect(find.text('42,00 TL'), findsOneWidget);
