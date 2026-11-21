@@ -39,6 +39,7 @@ class _PartnerCredentialsCardState extends State<PartnerCredentialsCard> {
   bool busy = true;
   bool saved = false;
   String restaurantId = '';
+  String chainId = '';
   String message = '';
 
   @override
@@ -54,6 +55,7 @@ class _PartnerCredentialsCardState extends State<PartnerCredentialsCard> {
       setState(() {
         saved = details != null && details['apiKey'] != null;
         restaurantId = '${details?['restaurantId'] ?? ''}';
+        chainId = '${details?['chainId'] ?? ''}';
         message = '';
         busy = false;
       });
@@ -69,35 +71,55 @@ class _PartnerCredentialsCardState extends State<PartnerCredentialsCard> {
     if (busy) return;
     final keyOnly = widget.partner == 'Migros Yemek';
     final id = TextEditingController(text: restaurantId);
+    final chain = TextEditingController(text: chainId);
     final key = TextEditingController();
     final secret = TextEditingController();
     final result = await showDialog<List<String>>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('${widget.partner} · API Bilgileri'),
+        title: Text('${widget.partner} · API Hazırlığı'),
         content: SizedBox(
           width: 435,
           child: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text(
-                  'Kaydetme işlemi canlı entegrasyonu başlatmaz. '
-                  'Restoran API sözleşmesi ve gerekli izinler ayrıca doğrulanacaktır.',
-                ),
+                const Text('Bu adım erişim bilgilerini Windows üzerinde '
+                  'güvenli saklar. Canlı sipariş entegrasyonunu başlatmaz.',
+                  style: TextStyle(fontSize: 13)),
                 const SizedBox(height: 12),
                 TextField(
                   controller: id,
                   decoration: const InputDecoration(
-                    labelText: 'Restoran / Şube kimliği'),
+                    labelText: 'Restoran ID / Şube kimliği',
+                    prefixIcon: Icon(Icons.storefront_outlined),
+                    border: OutlineInputBorder()),
                 ),
+                if (keyOnly) ...[
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: chain,
+                    decoration: const InputDecoration(
+                      labelText: 'Zincir ID (varsa)',
+                      prefixIcon: Icon(Icons.hub_outlined),
+                      border: OutlineInputBorder()),
+                  ),
+                  const SizedBox(height: 7),
+                  const Text('Migros paneli → Restoran Bilgileri → '
+                    'POS Entegrasyonları. Şubeyi ve yetkiyi doğrulayın.',
+                    style: TextStyle(fontSize: 11,
+                      color: NohutBrand.muted)),
+                ],
                 const SizedBox(height: 10),
                 TextField(
                   controller: key,
                   obscureText: true,
                   enableSuggestions: false,
                   autocorrect: false,
-                  decoration: const InputDecoration(labelText: 'API Key / Client ID'),
+                  decoration: const InputDecoration(
+                    labelText: 'API Key / Client ID',
+                    prefixIcon: Icon(Icons.vpn_key_outlined),
+                    border: OutlineInputBorder()),
                 ),
                 if (!keyOnly) ...[
                   const SizedBox(height: 10),
@@ -118,13 +140,14 @@ class _PartnerCredentialsCardState extends State<PartnerCredentialsCard> {
               child: const Text('Vazgeç')),
           FilledButton(
             onPressed: () => Navigator.pop(ctx,
-                [id.text.trim(), key.text.trim(), secret.text.trim()]),
+                [id.text.trim(), key.text.trim(), secret.text.trim(),
+                 chain.text.trim()]),
             child: const Text('Güvenli Kaydet'),
           ),
         ],
       ),
     );
-    id.dispose(); key.dispose(); secret.dispose();
+    id.dispose(); chain.dispose(); key.dispose(); secret.dispose();
     if (result == null || !mounted) return;
     if (result[0].isEmpty) {
       setState(() => message = 'Restoran / şube kimliği gerekli.');
@@ -143,13 +166,16 @@ class _PartnerCredentialsCardState extends State<PartnerCredentialsCard> {
       }
       await vault.save({
         'restaurantId': result[0],
+        'chainId': result[3],
         'apiKey': nextKey,
         'apiSecret': nextSecret,
       });
       if (mounted) setState(() {
         saved = true;
         restaurantId = result[0];
-        message = 'Bilgiler DPAPI ile korundu. API erişimi henüz etkin değil.';
+        chainId = result[3];
+        message = 'DPAPI ile kaydedildi. Migros API bağlantısı '
+            'henüz doğrulanmadı.';
       });
     } on FormatException catch (e) {
       if (mounted) setState(() => message = e.message);
@@ -183,6 +209,7 @@ class _PartnerCredentialsCardState extends State<PartnerCredentialsCard> {
       if (mounted) setState(() {
         saved = false;
         restaurantId = '';
+        chainId = '';
         message = 'Kaydedilen bilgiler silindi.';
       });
     } catch (_) {
@@ -218,13 +245,14 @@ class _PartnerCredentialsCardState extends State<PartnerCredentialsCard> {
                             color: NohutBrand.green, fontSize: 17)),
                     Text(
                       saved
-                          ? 'API bilgileri saklandı · Restoran entegrasyonu etkin değil'
-                          : 'Bağlı değil · Restoran API yetkisi gerekli',
+                          ? 'Bilgiler şifreli kaydedildi · Canlı API bağlantısı yok'
+                          : 'Bağlı değil · POS API yetkisi ve dokümanı gerekli',
                       style: const TextStyle(color: NohutBrand.muted,
                           fontSize: 12),
                     ),
                     if (restaurantId.isNotEmpty)
-                      Text('Şube: $restaurantId',
+                      Text('Restoran: $restaurantId' +
+                        (chainId.isEmpty ? '' : ' · Zincir: $chainId'),
                           style: const TextStyle(fontSize: 12)),
                   ],
                 ),
