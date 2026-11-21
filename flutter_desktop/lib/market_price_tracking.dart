@@ -511,99 +511,144 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       _sectionLabel(Icons.add_circle_outline_rounded,
         'Yeni Ürün Takibe Ekle',
-        'Ürün ara, doğru ambalajı ve şubeyi seç, bir kere ekle.'),
-      const SizedBox(height: 18),
+        'Yakınınızdaki dört market hazır · Enlem / boylam yazmanız gerekmiyor.'),
+      const SizedBox(height: 19),
+      const Text('MAĞAZA SEÇ',
+        style: TextStyle(color: NohutBrand.muted,
+          fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 1.1)),
+      const SizedBox(height: 9),
+      Wrap(spacing: 8, runSpacing: 8, children: [
+        for (final candidate in nohutStorePlaces)
+          ChoiceChip(
+            label: Text(candidate.label),
+            selected: storeId == candidate.id,
+            avatar: Icon(Icons.storefront_outlined, size: 17,
+              color: storeId == candidate.id
+                  ? Colors.white : NohutBrand.green),
+            onSelected: (_) => selectStore(candidate.id),
+          ),
+      ]),
+      const SizedBox(height: 14),
+      Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: const Color(0xffF3F7F2),
+          borderRadius: BorderRadius.circular(13),
+          border: Border.all(color: const Color(0xffE0EBDF))),
+        child: Wrap(
+          spacing: 13, runSpacing: 9,
+          crossAxisAlignment: WrapCrossAlignment.center, children: [
+            const Icon(Icons.place_outlined,
+              color: NohutBrand.green, size: 22),
+            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(place.label,
+                style: const TextStyle(color: NohutBrand.ink,
+                  fontSize: 14, fontWeight: FontWeight.w800)),
+              const Text('Serdivan, Sakarya · Google Maps konumu',
+                style: TextStyle(
+                  fontSize: 11, color: NohutBrand.muted)),
+            ]),
+            if (selected != null)
+              _pill('Kaynak şubesi eşleşti', Icons.check_circle_outline,
+                const Color(0xff27734B), const Color(0xffE3F2E8)),
+            OutlinedButton.icon(
+              onPressed: loading ? null : findBranches,
+              icon: const Icon(Icons.link_rounded, size: 17),
+              label: Text(selected == null
+                  ? 'Şubeyi Eşleştir' : 'Eşleştirmeyi Değiştir'),
+            ),
+          ],
+        ),
+      ),
+      if (selected != null)
+        Padding(
+          padding: const EdgeInsets.only(top: 9),
+          child: Text('Fiyat kaynağındaki şube: ' + selected!.name,
+            style: const TextStyle(
+              fontSize: 11, color: NohutBrand.muted)),
+        ),
+      if (branches.isNotEmpty) ...[
+        const SizedBox(height: 13),
+        const Text('YAKIN KAYNAK ŞUBELERİ',
+          style: TextStyle(fontSize: 11, letterSpacing: 1,
+            color: NohutBrand.muted, fontWeight: FontWeight.w800)),
+        const SizedBox(height: 8),
+        for (final depot in branches)
+          Container(
+            margin: const EdgeInsets.only(bottom: 7),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xffE3EAE1))),
+            child: Wrap(spacing: 10, runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center, children: [
+              const Icon(Icons.store_mall_directory_outlined,
+                size: 18, color: NohutBrand.green),
+              SizedBox(width: 230, child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(depot.name, style: const TextStyle(
+                    fontSize: 13, fontWeight: FontWeight.w700,
+                    color: NohutBrand.ink)),
+                  Text('Kaynak kaydı · Yaklaşık ' +
+                    storeDistanceMeters(place.latitude, place.longitude,
+                      depot.latitude!, depot.longitude!)
+                      .round().toString() + ' m',
+                    style: const TextStyle(
+                      fontSize: 11, color: NohutBrand.muted)),
+                ])),
+              OutlinedButton.icon(
+                onPressed: () => confirmBranch(depot.id),
+                icon: const Icon(Icons.check_rounded, size: 17),
+                label: const Text('Eşleştir'),
+              ),
+            ]),
+          ),
+        const Text('Google Maps konumu ile fiyat verisi şubesi '
+          'farklı kayıt sistemleridir; doğru şubeyi onaylayın.',
+          style: TextStyle(fontSize: 11, color: NohutBrand.muted)),
+      ],
+      const SizedBox(height: 19),
       TextField(
         controller: search,
         decoration: const InputDecoration(
-          hintText: 'Göbek Marul, İnci Patates, Limon Tuzu...',
+          hintText: 'Örn. Limon Tuzu, İnci Patates, Göbek Marul...',
           prefixIcon: Icon(Icons.search_rounded),
           labelText: 'Ürün adı',
         ),
         onSubmitted: (_) => findProducts(),
       ),
-      const SizedBox(height: 12),
-      Wrap(spacing: 7, runSpacing: 8, children: [
+      const SizedBox(height: 11),
+      Wrap(spacing: 7, runSpacing: 7, children: [
         for (final example in examples)
           ActionChip(
-            label: Text(example.$1 + '  ·  ' + example.$2),
+            label: Text(example.$1),
             avatar: const Icon(Icons.north_east_rounded, size: 15),
-            onPressed: () => setState(() {
+            onPressed: () {
               search.text = example.$1;
-              market = example.$2;
-              branch = null;
-              results = [];
-            }),
+              selectStore(example.$2);
+            },
           ),
       ]),
-      const SizedBox(height: 17),
-      const Text('MARKET SEÇ',
-        style: TextStyle(color: NohutBrand.muted,
-          fontWeight: FontWeight.w800, fontSize: 11, letterSpacing: 1.1)),
-      const SizedBox(height: 8),
-      Wrap(spacing: 8, children: [
-        for (final m in markets)
-          ChoiceChip(
-            label: Text(m), selected: market == m,
-            onSelected: (_) => setState(() {
-              market = m; branch = null; results = [];
-            }),
-          ),
-      ]),
-      const SizedBox(height: 15),
-      if (available.isEmpty)
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          decoration: BoxDecoration(
-            color: const Color(0xffF5F7F3),
-            borderRadius: BorderRadius.circular(12)),
-          child: const Row(children: [
-            Icon(Icons.store_mall_directory_outlined,
-              size: 19, color: NohutBrand.muted),
-            SizedBox(width: 10),
-            Expanded(child: Text('Şube seçmek için aşağıdaki kaynak '
-              'ayarlarından Şubeleri Bul seçin.',
-              style: TextStyle(fontSize: 12, color: NohutBrand.muted))),
-          ]),
-        )
-      else DropdownButtonFormField<String>(
-        key: ValueKey(market),
-        initialValue: branch,
-        isExpanded: true,
-        decoration: const InputDecoration(
-          labelText: 'Market şubesi',
-          prefixIcon: Icon(Icons.storefront_outlined)),
-        items: [
-          for (final depot in available)
-            DropdownMenuItem<String>(
-              value: depot.id,
-              child: Text(depot.name + ' · ' + depot.market,
-                overflow: TextOverflow.ellipsis)),
-        ],
-        onChanged: (value) => setState(() {
-          branch = value; results = [];
-        }),
-      ),
-      const SizedBox(height: 13),
+      const SizedBox(height: 14),
       Align(alignment: Alignment.centerRight,
         child: FilledButton.icon(
-          onPressed: enabled && !loading && selected != null
-            ? findProducts : null,
+          onPressed: loading ? null : findProducts,
           icon: const Icon(Icons.search_rounded, size: 18),
           label: const Text('Ürün Ara'),
         )),
       if (loading)
-        const Padding(padding: EdgeInsets.only(top: 12),
+        const Padding(padding: EdgeInsets.only(top: 11),
           child: LinearProgressIndicator()),
       if (info.isNotEmpty)
-        Padding(padding: const EdgeInsets.only(top: 12),
+        Padding(padding: const EdgeInsets.only(top: 11),
           child: Text(info,
-            style: const TextStyle(fontSize: 12, color: NohutBrand.muted))),
+            style: const TextStyle(
+              fontSize: 12, color: NohutBrand.muted))),
       if (results.isNotEmpty) ...[
         const SizedBox(height: 12),
         const Divider(height: 18),
-        Text('ARAMA SONUÇLARI  ·  ' + results.length.toString(),
+        Text('ARAMA SONUÇLARI · ' + results.length.toString(),
           style: const TextStyle(fontSize: 11,
             fontWeight: FontWeight.w800, letterSpacing: 1,
             color: NohutBrand.muted)),
@@ -616,8 +661,7 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
               color: const Color(0xffF7F9F5),
               borderRadius: BorderRadius.circular(13),
               border: Border.all(color: const Color(0xffE6EEE7))),
-            child: Wrap(
-              spacing: 12, runSpacing: 9,
+            child: Wrap(spacing: 12, runSpacing: 9,
               crossAxisAlignment: WrapCrossAlignment.center,
               alignment: WrapAlignment.spaceBetween,
               children: [
@@ -625,18 +669,16 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(q.title, style: const TextStyle(
-                        color: NohutBrand.ink, fontSize: 14,
-                        fontWeight: FontWeight.w800)),
+                        fontSize: 14, fontWeight: FontWeight.w800,
+                        color: NohutBrand.ink)),
                       const SizedBox(height: 3),
                       Text(q.market + ' · ' + q.depotName + ' · ' + q.unit,
                         style: const TextStyle(
                           fontSize: 11, color: NohutBrand.muted)),
-                    ]),
-                ),
+                    ])),
                 Text(money(q.priceCents),
-                  style: const TextStyle(
-                    fontSize: 16, fontWeight: FontWeight.w900,
-                    color: NohutBrand.green)),
+                  style: const TextStyle(fontSize: 16,
+                    fontWeight: FontWeight.w900, color: NohutBrand.green)),
                 OutlinedButton.icon(
                   onPressed: trackedKeys.contains(q.key) ? null : () {
                     widget.edit((db) => addTrackedMarketQuote(db, q));
@@ -648,59 +690,45 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
                   label: Text(trackedKeys.contains(q.key)
                     ? 'Eklendi' : 'Takibe Ekle'),
                 ),
-              ],
-            ),
+              ]),
           ),
       ],
       const SizedBox(height: 15),
-      Theme(data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+      Theme(data: Theme.of(context).copyWith(
+          dividerColor: Colors.transparent),
         child: Material(
           type: MaterialType.transparency,
           child: ExpansionTile(
-          initiallyExpanded: true,
-          tilePadding: EdgeInsets.zero,
-          childrenPadding: EdgeInsets.zero,
-          leading: const Icon(Icons.tune_rounded, color: NohutBrand.green),
-          title: const Text('Kaynak ve Konum Ayarları',
-            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
-          subtitle: const Text('Deneysel bağlantı · Şube keşfi',
-            style: TextStyle(fontSize: 11)),
-          children: [
-            SwitchListTile.adaptive(
-              contentPadding: EdgeInsets.zero,
-              value: enabled,
-              onChanged: (v) => widget.edit((db) =>
-                editMarketPriceState(db, (s) => s['enabled'] = v)),
-              title: const Text('Canlı fiyat kaynağı (deneysel)',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
-              subtitle: const Text('Resmî API değildir. Ticari kullanımdan önce '
-                'kaynak izinlerini doğrulayın.', style: TextStyle(fontSize: 11)),
-            ),
-            Wrap(spacing: 9, runSpacing: 10,
-              crossAxisAlignment: WrapCrossAlignment.center, children: [
-                SizedBox(width: 145, child: TextField(
-                  controller: latitude,
-                  decoration: const InputDecoration(
-                    labelText: 'Enlem', prefixIcon: Icon(Icons.place_outlined)))),
-                SizedBox(width: 145, child: TextField(
-                  controller: longitude,
-                  decoration: const InputDecoration(
-                    labelText: 'Boylam', prefixIcon: Icon(Icons.place_outlined)))),
-                SizedBox(width: 110, child: TextField(
-                  controller: radius,
-                  decoration: const InputDecoration(
-                    labelText: 'Yarıçap (km)'))),
-                OutlinedButton.icon(
-                  onPressed: enabled && !loading ? findBranches : null,
-                  icon: const Icon(Icons.location_searching_rounded),
-                  label: const Text('Şubeleri Bul')),
-              ]),
-            const SizedBox(height: 9),
-            const SelectableText('Kullanım koşulları: ' + marketPriceTerms,
-              style: TextStyle(fontSize: 11, color: NohutBrand.muted)),
-          ],
+            initiallyExpanded: false,
+            tilePadding: EdgeInsets.zero,
+            childrenPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.tune_rounded,
+              color: NohutBrand.green),
+            title: const Text('Kaynak Ayarları',
+              style: TextStyle(fontSize: 14,
+                fontWeight: FontWeight.w800)),
+            subtitle: const Text('Deneysel fiyat bağlantısı',
+              style: TextStyle(fontSize: 11)),
+            children: [
+              SwitchListTile.adaptive(
+                contentPadding: EdgeInsets.zero,
+                value: enabled,
+                onChanged: (v) => widget.edit((db) =>
+                  editMarketPriceState(db, (s) => s['enabled'] = v)),
+                title: const Text('Canlı fiyat kaynağı (deneysel)',
+                  style: TextStyle(
+                    fontSize: 13, fontWeight: FontWeight.w700)),
+                subtitle: const Text('Resmî API değildir. '
+                  'Ticari kullanımdan önce kaynak izinlerini doğrulayın.',
+                  style: TextStyle(fontSize: 11)),
+              ),
+              const SelectableText('Kullanım koşulları: ' +
+                marketPriceTerms, style: TextStyle(
+                  fontSize: 11, color: NohutBrand.muted)),
+            ],
           ),
-        )),
+        ),
+      ),
     ]),
   );
 
