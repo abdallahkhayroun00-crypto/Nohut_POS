@@ -14,6 +14,42 @@ void main() {
     unit: 'Adet', priceCents: price, observedAt: at,
   );
 
+  test('four exact market locations are saved, with distinct Hakmar branches', () {
+    expect(nohutStorePlaces, hasLength(4));
+    expect(nohutStorePlaces[0].id, 'a101');
+    expect(nohutStorePlaces[0].latitude, 40.7647916);
+    expect(nohutStorePlaces[0].longitude, 30.3604948);
+    expect(nohutStorePlaces[1].latitude, 40.7634139);
+    expect(nohutStorePlaces[1].longitude, 30.3610601);
+    expect(nohutStorePlaces[2].latitude, 40.7666496);
+    expect(nohutStorePlaces[2].longitude, 30.3589871);
+    expect(nohutStorePlaces[3].latitude, 40.7630785);
+    expect(nohutStorePlaces[3].longitude, 30.3568336);
+    expect(nohutStorePlaces[2].id, isNot(nohutStorePlaces[3].id));
+  });
+
+  test('API branch selection must match brand AND physical coordinates', () {
+    const nearby = [
+      MarketDepot('a101-correct', 'A101', 'A101 Şube',
+          latitude: 40.7648, longitude: 30.3605),
+      MarketDepot('a101-wrong', 'A101', 'Other A101',
+          latitude: 40.78, longitude: 30.38),
+      MarketDepot('bim-wrong', 'BİM', 'BİM',
+          latitude: 40.7648, longitude: 30.3605),
+      MarketDepot('no-coordinates', 'A101', 'Unknown'),
+    ];
+    final matched = matchMarketDepots(nohutStorePlaces.first, nearby);
+    expect(matched.map((d) => d.id).toList(), ['a101-correct']);
+    expect(MarketDepot.parse({
+      'id': 'a101-correct', 'marketName': 'A101',
+      'sellerName': 'A101 Şube',
+      'location': {'lat': 40.7648, 'lon': 30.3605},
+    })?.latitude, 40.7648);
+    expect(storeDistanceMeters(
+        40.7666496, 30.3589871, 40.7630785, 30.3568336),
+        greaterThan(300));
+  });
+
   test('validates input coordinates, radius and absent values', () {
     expect(validMarketCoordinates(40.75, 30.35, 4), isTrue);
     expect(validMarketCoordinates(null, 30.35, 4), isFalse);
