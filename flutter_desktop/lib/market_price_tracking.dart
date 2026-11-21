@@ -23,51 +23,56 @@ class MarketPriceTracking extends StatefulWidget {
 
 class _MarketPriceTrackingState extends State<MarketPriceTracking> {
   late final MarketPriceClient api;
-  late final TextEditingController search, latitude, longitude, radius;
-  String market = 'BİM', info = 'Konumu girip yakındaki şubeyi seçin.';
-  String? branch;
+  late final TextEditingController search;
+  String storeId = 'a101';
+  String info = 'Dört market konumu hazır. Ürün aramak için kaynak şubesini eşleştirin.';
   bool loading = false;
   String alertFilter = 'Tümü';
   List<MarketDepot> branches = const [];
   List<MarketQuote> results = const [];
 
-  static const markets = ['BİM', 'A101', 'Hakmar'];
   static const examples = [
-    ('İnci Patates', 'BİM'), ('Limon Tuzu', 'A101'),
-    ('Göbek Marul', 'Hakmar'), ('Patlıcan', 'Hakmar'),
+    ('İnci Patates', 'bim'), ('Limon Tuzu', 'a101'),
+    ('Göbek Marul', 'hakmar-1'), ('Patlıcan', 'hakmar-2'),
   ];
 
   @override
   void initState() {
     super.initState();
     api = widget.api ?? MarketPriceClient();
-    final config = marketPriceState(widget.state);
     search = TextEditingController();
-    latitude = TextEditingController(text: (config['latitude'] ?? '').toString());
-    longitude = TextEditingController(text: (config['longitude'] ?? '').toString());
-    radius = TextEditingController(text: (config['distance'] ?? 4).toString());
   }
 
   @override
   void dispose() {
-    search.dispose(); latitude.dispose(); longitude.dispose(); radius.dispose();
+    search.dispose();
     if (widget.api == null) api.close();
     super.dispose();
   }
 
   Json get config => marketPriceState(widget.state);
   bool get enabled => config['enabled'] == true;
-  double? get lat => double.tryParse(latitude.text.trim().replaceAll(',', '.'));
-  double? get lon => double.tryParse(longitude.text.trim().replaceAll(',', '.'));
-  double? get km => double.tryParse(radius.text.trim().replaceAll(',', '.'));
-  List<MarketDepot> get available => branches.where((d) =>
-    d.market.toLowerCase().contains(market.toLowerCase())).toList();
+
+  MarketStorePlace get place =>
+      nohutStorePlaces.firstWhere((item) => item.id == storeId);
 
   MarketDepot? get selected {
-    for (final depot in available) {
-      if (depot.id == branch) return depot;
-    }
-    return null;
+    final matches = config['storeMatches'];
+    if (matches is! Map || matches[storeId] is! Map) return null;
+    final saved = matches[storeId] as Map;
+    final id = (saved['depotId'] ?? '').toString();
+    final market = (saved['market'] ?? '').toString();
+    if (id.isEmpty || market.isEmpty) return null;
+    return MarketDepot(id, market, (saved['name'] ?? market).toString());
+  }
+
+  void selectStore(String id) {
+    setState(() {
+      storeId = id;
+      branches = [];
+      results = [];
+      info = 'Mağaza seçildi. Ürün aramadan önce kaynak şubesini eşleştirin.';
+    });
   }
 
   void notice(String message) {
@@ -75,48 +80,112 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
   }
 
   Future<void> findBranches() async {
-    if (!enabled || !validMarketCoordinates(lat, lon, km)) {
-      notice('Canlı kaynağı etkinleştirip geçerli konum girin.');
+    if (loading) return;
+    if (!enabled) {
+      notice('Canlı veri için Kaynak Ayarları bölümünden kaynağı açın. '
+          'Önce kullanım koşullarını doğrulayın.');
       return;
     }
-    setState(() { loading = true; info = 'Şubeler aranıyor...'; });
+    final target = place;
+    setState(() {
+      loading = true;
+      branches = [];
+      results = [];
+      info = 'Seçilen mağaza yakınındaki kaynak şubeler aranıyor...';
+    });
     try {
-      final data = await api.nearby(lat!, lon!, km!);
-      if (!mounted) return;
-      widget.edit((db) => editMarketPriceState(db, (s) {
-        s['latitude'] = lat; s['longitude'] = lon; s['distance'] = km;
-      }));
+      final all = await api.nearby(target.latitude, target.longitude, 4);
+      final candidates = matchMarketDepots(
+          target, all, maximumDistanceMeters: 300);
+      if (!mounted || storeId != target.id) return;
       setState(() {
-        branches = data; branch = null; results = [];
-        info = data.isEmpty ? 'Şube bulunamadı; veri kapsamı sınırlı olabilir.'
-          : 'Bir şube seçin. Deneysel şube listesi eksik olabilir.';
+        branches = candidates;
+        info = candidates.isEmpty
+          ? 'Kaynakta bu Google Maps konumuna yakın doğrulanabilir '
+              'şube bulunamadı. Yanlış markete otomatik bağlanılmadı.'
+          : 'Aşağıdaki kaynak şubeyi kontrol edip eşleştirin. '
+              'Google Maps konumu tek başına API şube ID değildir.';
       });
     } catch (e) {
-      notice('Şube sorgusu başarısız: ' + e.toString());
+      notice('Şube eşleştirmesi başarısız: ' + e.toString() +
+          '. Deneysel kaynak çalışmıyor olabilir.');
     } finally {
       if (mounted) setState(() => loading = false);
     }
   }
 
+  void confirmBranch(String? depotId) {
+    if (depotId == null) return;
+    final matching = branches.where((d) => d.id == depotId).toList();
+    if (matching.length != 1) return;
+    final depot = matching.single;
+    final placeId = storeId;
+    final ok = widget.edit((db) {
+      editMarketPriceState(db, (s) {
+        final matches = s['storeMatches'] is Map
+            ? Map<String, dynamic>.from(s['storeMatches'] as Map)
+            : <String, dynamic>{};
+        matches[placeId] = {
+          'depotId': depot.id,
+          'market': depot.market,
+          'name': depot.name,
+          'matchedAt': DateTime.now().toUtc().toIso8601String(),
+        };
+        s['storeMatches'] = matches;
+        // Background refresh uses a common locality; each product
+        // remains locked to the selected provider depot ID.
+        s['latitude'] = 40.7650391;
+        s['longitude'] = 30.3602224;
+        s['distance'] = 4.0;
+      });
+    });
+    if (ok) {
+      setState(() {
+        branches = [];
+        results = [];
+        info = 'Şube eşleştirildi: ' + depot.name +
+            '. Ürün arayabilirsiniz.';
+      });
+    }
+  }
+
   Future<void> findProducts() async {
-    if (!enabled || selected == null || search.text.trim().length < 2 ||
-        !validMarketCoordinates(lat, lon, km)) {
-      notice('Ürün adı, konum ve şube seçin.');
+    if (loading) return;
+    if (search.text.trim().length < 2) {
+      notice('Önce ürün adını yazın.');
       return;
     }
-    final depot = selected!;
-    setState(() { loading = true; results = []; info = 'Ürün aranıyor...'; });
+    if (!enabled) {
+      notice('Fiyat kaynağı kapalı. Kaynak Ayarları üzerinden '
+          'gerekli izinleri doğruladıktan sonra etkinleştirin.');
+      return;
+    }
+    final depot = selected;
+    if (depot == null) {
+      notice('Önce bu marketi kaynak şubeyle eşleştirin.');
+      return;
+    }
+    final current = place;
+    setState(() {
+      loading = true;
+      results = [];
+      info = 'Ürün aranıyor...';
+    });
     try {
       final found = await api.search(
-        keywords: search.text, depotId: depot.id, market: depot.market,
-        latitude: lat!, longitude: lon!, distance: km!,
+        keywords: search.text,
+        depotId: depot.id,
+        market: depot.market,
+        latitude: current.latitude,
+        longitude: current.longitude,
+        distance: 4,
       );
-      if (!mounted) return;
+      if (!mounted || current.id != storeId) return;
       setState(() {
         results = found;
         info = found.isEmpty
-          ? 'Eşleşen fiyat bulunamadı. Stokta yok anlamına gelmez.'
-          : 'Marka, ambalaj ve gramajı doğrulayarak Takibe Ekle seçin.';
+          ? 'Bu mağaza için eşleşen fiyat yok. Ürün stokta yok anlamına gelmez.'
+          : 'Ürünün markasını ve ambalajını kontrol edip Takibe Ekle seçin.';
       });
     } catch (e) {
       notice('Ürün sorgusu başarısız: ' + e.toString());
