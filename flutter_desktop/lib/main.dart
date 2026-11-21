@@ -251,7 +251,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       asMaps(store.read().data['staffNotices']).map((n) => '${n['id']}'),
     );
     store.addListener(_staffActivity);
-    _scheduleMarketPopup();
+    if (widget.startServer) _scheduleMarketPopup();
     // Migration completes before the print worker can inspect old jobs.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // Menu initialization precedes staff order acceptance.
@@ -662,7 +662,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
   }
 
   void _showMarketPopup() {
-    if (!mounted || _marketPopupOpen || _staffPopupOpen ||
+    if (!widget.startServer || !mounted || _marketPopupOpen || _staffPopupOpen ||
         orderModalOpen || _staffPopupQueue.isNotEmpty) return;
     final alerts = unreadMarketPriceAlerts(store.read().data)
         .where((a) => !_seenMarketPopupIds.contains(
