@@ -351,7 +351,10 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
   }
 
   Future<void> _createCategory() async {
-    final controller = TextEditingController();
+    // Let the dialog own its editing state until the route animation ends.
+    // Disposing a TextEditingController immediately after showDialog returns
+    // can crash Flutter while EditableText is still animating out.
+    String draft = '';
     final proposed = await showDialog<String>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -359,7 +362,7 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
         content: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 370),
           child: TextField(
-            controller: controller,
+            onChanged: (value) => draft = value,
             autofocus: true,
             maxLength: 32,
             textCapitalization: TextCapitalization.words,
@@ -376,12 +379,11 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
             child: const Text('Vazgeç')),
           FilledButton(
             onPressed: () =>
-              Navigator.pop(dialogContext, controller.text.trim()),
+              Navigator.pop(dialogContext, draft.trim()),
             child: const Text('Kategori Ekle')),
         ],
       ),
     );
-    controller.dispose();
     if (!mounted || proposed == null) return;
     if (!validMarketCategoryName(proposed)) {
       _toast('Kategori adı 2–32 karakter olmalı.');
