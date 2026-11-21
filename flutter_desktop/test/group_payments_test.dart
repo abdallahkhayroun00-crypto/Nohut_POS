@@ -107,18 +107,86 @@ void main() {
     expect((mutableOrder(state, 2)!['payments'] as List), isEmpty);
   });
 
-  test('split-guest order is rejected without touching either payment record', () {
+
+  test('combined payment settles split guest and unsplit Gel-Al together', () {
     final state = emptyPosState();
-    final a = makePickup(1, 12, 10000);
-    a['guestChecks'] = [{'id': 1, 'name': 'Ayşe', 'allocations': []}];
-    state['orders'] = [a, makePickup(2, 12, 10000)];
-    expect(() => recordCombinedPickupPayment(
-      state,
-      orderIds: [1, 2],
-      amountCents: 20000,
-      method: 'Nakit',
-      receivedCents: 20000,
+    final split = makePickup(1, 12, 18000);
+    split['guestChecks'] = [
+      {'id': 1, 'name': 'Ali', 'allocations': [
+        {'key': '1:0', 'cents': 9000},
+      ]},
+      {'id': 2, 'name': 'Ayşe', 'allocations': [
+        {'key': '1:0', 'cents': 9000},
+      ]},
+    ];
+    state['orders'] = [split, makePickup(2, 12, 10000)];
+    recordCombinedPickupPayment(state,
+      orderIds: [1, 2], amountCents: 28000, method: 'Kart',
+      transactionId: 'split-together');
+    expect(orderDueCents(mutableOrder(state, 1)!), 0);
+    expect(orderDueCents(mutableOrder(state, 2)!), 0);
+    final payments = mutableOrder(state, 1)!['payments'] as List;
+    expect(payments, hasLength(2));
+    expect(payments.map((p) => p['guestCheckId']).toSet(), {1, 2});
+    expect(payments.every((p) =>
+      p['combinedPaymentId'] == 'split-together'), true);
+  });
+
+  test('product-partial payment can group settle only outstanding remainder', () {
+    final state = emptyPosState();
+    final partial = makePickup(1, 12, 18000);
+    partial['guestChecks'] = [
+      {'id': 1, 'name': 'Ürün ödemesi', 'allocations': [
+        {'key': '1:0', 'cents': 6000},
+      ]},
+    ];
+    partial['payments'] = [{
+      'method': 'Nakit', 'amount': 60.0,
+      'guestCheckId': 1, 'reversed': false,
+    }];
+    state['orders'] = [partial, makePickup(2, 12, 10000)];
+    recordCombinedPickupPayment(state,
+      orderIds: [1, 2], amountCents: 22000,
+      method: 'Karışık', cashCents: 9000,
+      receivedCents: 11000, transactionId: 'partial-group');
+    expect(orderDueCents(mutableOrder(state, 1)!), 0);
+    expect(orderDueCents(mutableOrder(state, 2)!), 0);
+    final guests = mutableOrder(state, 1)!['guestChecks'] as List;
+    expect(guests, hasLength(2));
+    expect(guests.last['name'], 'Kalan hesap');
+    expect(orderPaidCents(mutableOrder(state, 1)!), 18000);
+    expect((state['combinedPayments'] as List).single['id'], 'partial-group');
+  });
+
+  test('inconsistent old split payment aborts group transaction atomically', () {
+    final state = emptyPosState();
+    final split = makePickup(1, 12, 10000, paid: 1000);
+    split['guestChecks'] = [
+      {'id': 1, 'name': 'Unmatched', 'allocations': [
+        {'key': '1:0', 'cents': 10000},
+      ]},
+    ];
+    state['orders'] = [split, makePickup(2, 12, 10000)];
+    expect(() => recordCombinedPickupPayment(state,
+      orderIds: [1, 2], amountCents: 19000,
+      method: 'Nakit', receivedCents: 20000,
     ), throwsFormatException);
+    expect((mutableOrder(state, 1)!['payments'] as List), hasLength(1));
     expect((mutableOrder(state, 2)!['payments'] as List), isEmpty);
+    expect(state['combinedPayments'], isEmpty);
+  });
+
+  test('empty pre-existing guest allocation is safely assigned and settled', () {
+    final state = emptyPosState();
+    final split = makePickup(1, 12, 10000);
+    split['guestChecks'] = [
+      {'id': 1, 'name': 'Empty', 'allocations': []},
+    ];
+    state['orders'] = [split, makePickup(2, 12, 10000)];
+    recordCombinedPickupPayment(state,
+      orderIds: [1, 2], amountCents: 20000,
+      method: 'Nakit', receivedCents: 20000);
+    expect(orderDueCents(mutableOrder(state, 1)!), 0);
+    expect(orderDueCents(mutableOrder(state, 2)!), 0);
   });
 }
