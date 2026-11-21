@@ -66,6 +66,18 @@ void main() {
     expect(marketBrandKey('BIM'), 'bim');
     expect(marketBrandKey('Hakmar Express'), 'hakmar');
     expect(marketBrandKey('A101'), isNot(marketBrandKey('BİM')));
+    final state = emptyPosState();
+    const first = MarketQuote(
+      productId: 'test-bim', title: 'Patates', market: 'BİM',
+      depotId: 'bim-42', depotName: 'BİM İstiklal',
+      priceCents: 11500, unit: '1 Kg', observedAt: '2026-11-21');
+    const lower = MarketQuote(
+      productId: 'test-bim', title: 'Patates', market: 'BIM',
+      depotId: 'bim-42', depotName: 'BIM Istiklal',
+      priceCents: 10900, unit: '1 Kg', observedAt: '2026-11-22');
+    addTrackedMarketQuote(state, first);
+    expect(applyMarketQuote(state, lower), isTrue);
+    expect(trackedMarketProducts(state).single['priceCents'], 10900);
   });
 
   test('tracked product preserves exact physical store link', () {
