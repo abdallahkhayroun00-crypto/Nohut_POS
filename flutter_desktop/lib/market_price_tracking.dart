@@ -585,7 +585,9 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
       ],
       const SizedBox(height: 15),
       Theme(data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
+        child: Material(
+          type: MaterialType.transparency,
+          child: ExpansionTile(
           initiallyExpanded: true,
           tilePadding: EdgeInsets.zero,
           childrenPadding: EdgeInsets.zero,
@@ -628,6 +630,7 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
             const SelectableText('Kullanım koşulları: ' + marketPriceTerms,
               style: TextStyle(fontSize: 11, color: NohutBrand.muted)),
           ],
+          ),
         )),
     ]),
   );
