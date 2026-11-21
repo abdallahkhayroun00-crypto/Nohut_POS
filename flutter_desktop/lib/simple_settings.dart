@@ -358,53 +358,103 @@ class _SimpleSettingsState extends State<SimpleSettings> {
           ),
         ],
         if (tab == 'Entegrasyonlar') ...[
-          QrPublisherSettingsPanel(
-            state:widget.state,edit:widget.edit,
-            databasePath:widget.store.filePath,
+          section(
+            'Platform Bağlantıları',
+            'Bağlantı durumları ayrı tutulur. Kayıtlı API anahtarı '
+            'canlı sipariş veya yetki onayı değildir.',
+            [
+              ListTile(
+                leading: Icon(
+                  widget.tgoIntegration.status.startsWith('Bağlı ·')
+                    ? Icons.check_circle_outline
+                    : Icons.info_outline,
+                  color: widget.tgoIntegration.status.startsWith('Bağlı ·')
+                    ? NohutBrand.green : NohutBrand.gold),
+                title: const Text('Trendyol Go by Uber Eats'),
+                subtitle: Text(
+                  widget.tgoIntegration.status +
+                  '\\nSon başarılı eşitleme: ' +
+                  (widget.tgoIntegration.lastSync.isNotEmpty
+                    ? widget.tgoIntegration.lastSync : 'Henüz yok') +
+                  (widget.tgoIntegration.error.isEmpty ? '' :
+                    '\\nHata: ' + widget.tgoIntegration.error)),
+              ),
+              const Divider(height: 8),
+              const ListTile(
+                leading: Icon(Icons.link_off_outlined,
+                  color: NohutBrand.gold),
+                title: Text('Yemeksepeti'),
+                subtitle: Text('Canlı sipariş API bağlantısı yok. '
+                  'Yetki ve sipariş endpoints doğrulanmalı.'),
+              ),
+              const ListTile(
+                leading: Icon(Icons.link_off_outlined,
+                  color: NohutBrand.gold),
+                title: Text('Migros Yemek'),
+                subtitle: Text('Canlı sipariş API bağlantısı yok. '
+                  'Restoran / şube onayı ve gerçek API erişimi gerekli.'),
+              ),
+            ],
           ),
-          const SizedBox(height:12),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(17),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Entegrasyon Sağlığı',
-                    style: TextStyle(color: NohutBrand.green,
-                        fontWeight: FontWeight.w800, fontSize: 18)),
-                  const SizedBox(height: 9),
-                  ListTile(
-                    leading: Icon(
-                      widget.tgoIntegration.status.startsWith('Bağlı ·')
-                        ? Icons.check_circle_outline : Icons.info_outline,
-                      color: widget.tgoIntegration.status.startsWith('Bağlı ·')
-                        ? NohutBrand.green : NohutBrand.gold,
-                    ),
-                    title: const Text('Trendyol Go by Uber Eats'),
-                    subtitle: Text(
-                      '${widget.tgoIntegration.status}'
-                      '\\nSon başarılı eşitleme: '
-                      '${widget.tgoIntegration.lastSync.isNotEmpty ? widget.tgoIntegration.lastSync : 'Henüz yok'}'
-                      '${widget.tgoIntegration.error.isEmpty ? '' : '\\nHata: ${widget.tgoIntegration.error}'}',
-                    ),
+          const SizedBox(height: 12),
+          section(
+            'Platform API Bilgileri',
+            'Şifreli Windows saklama · API bilgilerini paylaşmayın. '
+            'Partner sözleşmesi ve izinler ayrıca doğrulanır.',
+            [
+              LayoutBuilder(builder: (context, constraints) {
+                final wide = constraints.maxWidth >= 700;
+                final cards = [
+                  PartnerCredentialsCard(
+                    partner: 'Yemeksepeti',
+                    databasePath: widget.store.filePath,
+                    portalUrl: onlinePartners['Yemeksepeti']!.url,
+                    documentationUrl: 'https://integration.yemeksepeti.com/en/',
                   ),
-                  const ListTile(
-                    leading: Icon(Icons.link_off_outlined, color: NohutBrand.gold),
-                    title: Text('Yemeksepeti · Migros Yemek'),
-                    subtitle: Text('API bilgilerini kaydetmek entegrasyonu açmaz. '
-                        'Canlı bağlantı ve Test Connection, resmi restoran API erişimi '
-                        'sağlanana kadar kullanılamaz.'),
+                  PartnerCredentialsCard(
+                    partner: 'Migros Yemek',
+                    databasePath: widget.store.filePath,
+                    portalUrl: onlinePartners['Migros Yemek']!.url,
                   ),
-                  const ListTile(
-                    leading: Icon(Icons.info_outline, color: NohutBrand.muted),
-                    title: Text('Google İşletme Profili'),
-                    subtitle: Text('OAuth bağlantısı ve yetkiler Google '
-                        'İşletme Profili sayfasından kontrol edilir.'),
-                  ),
+                ];
+                return wide
+                  ? Row(crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: cards[0]),
+                      const SizedBox(width: 12),
+                      Expanded(child: cards[1]),
+                    ])
+                  : Column(children: [
+                      cards[0], const SizedBox(height: 8), cards[1],
+                    ]);
+              }),
+              const SizedBox(height: 10),
+              ExpansionTile(
+                leading: const Icon(Icons.fact_check_outlined,
+                  color: NohutBrand.green),
+                title: const Text('Migros API Kurulum Kontrol Listesi'),
+                subtitle: const Text('Paneldeki bilgileri doğrulamadan '
+                  'canlı bağlantı başlatılamaz.'),
+                children: const [
+                  ListTile(dense: true,
+                    title: Text('1 · Restoran / şube kimliğini doğrulayın')),
+                  ListTile(dense: true,
+                    title: Text('2 · Yetkili POS entegrasyonu iznini alın')),
+                  ListTile(dense: true,
+                    title: Text('3 · Resmi API kimlik bilgileri ve dökümana '
+                      'erişimi teyit edin')),
+                  ListTile(dense: true,
+                    title: Text('4 · Test siparişi, iptal, ödeme tipi ve '
+                      'mükerrer sipariş senaryolarını doğrulayın')),
+                  ListTile(dense: true,
+                    title: Text('5 · Canlı bağlantı henüz bu sürümde yok'),
+                    subtitle: Text('Kaydetmek, Migros siparişlerini '
+                      'otomatik çekmez.')),
                 ],
               ),
-            ),
+            ],
           ),
+          const SizedBox(height: 12),
           TgoSettingsPanel(integration: widget.tgoIntegration),
           if (asMaps(widget.state['tgoOperationAudit']).isNotEmpty)
             Card(
@@ -424,26 +474,19 @@ class _SimpleSettingsState extends State<SimpleSettings> {
               ),
             ),
           const SizedBox(height: 12),
-          const SizedBox(height: 12),
-          PartnerCredentialsCard(
-            partner: 'Yemeksepeti',
+          QrPublisherSettingsPanel(
+            state: widget.state,
+            edit: widget.edit,
             databasePath: widget.store.filePath,
-            portalUrl: onlinePartners['Yemeksepeti']!.url,
-            documentationUrl: 'https://integration.yemeksepeti.com/en/',
-          ),
-          PartnerCredentialsCard(
-            partner: 'Migros Yemek',
-            databasePath: widget.store.filePath,
-            portalUrl: onlinePartners['Migros Yemek']!.url,
           ),
           const SizedBox(height: 12),
           Card(
             child: ListTile(
-              leading: const Icon(Icons.storefront_outlined),
+              leading: const Icon(Icons.storefront_outlined,
+                color: NohutBrand.green),
               title: const Text('Google İşletme Profili'),
               subtitle: const Text(
-                'Google Cloud proje onayı ve hesap yetkilendirmesi',
-              ),
+                'Google Cloud proje onayı ve hesap yetkilendirmesi'),
               trailing: const Icon(Icons.arrow_forward),
               onTap: widget.onOpenGoogle,
             ),
