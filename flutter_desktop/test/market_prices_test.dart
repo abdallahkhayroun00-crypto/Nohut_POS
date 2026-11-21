@@ -85,6 +85,36 @@ void main() {
     expect(validMarketCoordinates(40.75, 30.35, 51), isFalse);
   });
 
+  test('imageUrl accepts only HTTPS and never invents missing photos', () {
+    expect(marketImageUrl('https://marketfiyati.org.tr/images/item.png'),
+        'https://marketfiyati.org.tr/images/item.png');
+    expect(marketImageUrl('http://example.com/photo.jpg'), isNull);
+    expect(marketImageUrl('file:///C:/secret.png'), isNull);
+    expect(marketImageUrl('https://user:password@site.com/x.png'), isNull);
+    expect(marketImageUrl('//site.com/x.png'), isNull);
+    expect(marketImageUrl(''), isNull);
+
+    final product = {
+      'id': 'feast-1', 'title': 'Feast Patates 1 Kg',
+      'imageUrl': 'https://images.example.org/feast.png',
+    };
+    final offer = {
+      'marketAdi': 'BİM', 'depotId': 'bim-1', 'price': 115,
+    };
+    final found = MarketQuote.parse(product, offer, '2026-11-21T12:00:00Z')!;
+    expect(found.imageUrl, 'https://images.example.org/feast.png');
+
+    final state = emptyPosState();
+    addTrackedMarketQuote(state, found, storeId: 'bim');
+    expect(trackedMarketProducts(state).single['imageUrl'], found.imageUrl);
+    final changed = MarketQuote.parse({
+      ...product, 'imageUrl': 'http://not-allowed.example.com/item.png',
+    }, {...offer, 'price': 110}, '2026-11-22T12:00:00Z')!;
+    applyMarketQuote(state, changed);
+    expect(trackedMarketProducts(state).single['imageUrl'], found.imageUrl);
+    expect(trackedMarketProducts(state).single['priceCents'], 11000);
+  });
+
   test('untrusted response cannot produce missing or zero prices', () {
     final product = {
       'id': '123', 'title': 'Limon Tuzu',
