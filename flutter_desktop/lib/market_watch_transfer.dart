@@ -344,6 +344,8 @@ class MarketWatchMergePlan {
     required this.conflicts,
     required this.mappingsAdded,
     required this.mappingsKept,
+    required this.categoriesAdded,
+    required this.categories,
     required this.products,
     required this.matches,
   });
@@ -353,6 +355,8 @@ class MarketWatchMergePlan {
   final int conflicts;
   final int mappingsAdded;
   final int mappingsKept;
+  final int categoriesAdded;
+  final List<String> categories;
   final List<Json> products;
   final Json matches;
   int get total => products.length;
@@ -376,6 +380,20 @@ MarketWatchMergePlan planMarketWatchMerge(
   var duplicates = 0;
   var added = 0;
   final conflictingStores = <String>{};
+  final categories = marketWatchCustomCategories(posState);
+  var categoriesAdded = 0;
+  for (final incoming in backup.customCategories) {
+    if ([...marketWatchCategories, ...categories]
+        .any((name) => name.toLowerCase() == incoming.toLowerCase())) {
+      continue;
+    }
+    if (categories.length >= 20) {
+      conflicts++;
+      continue;
+    }
+    categories.add(incoming);
+    categoriesAdded++;
+  }
 
   for (final store in nohutStorePlaces) {
     final incoming = backup.storeMatches[store.id];
@@ -428,7 +446,21 @@ MarketWatchMergePlan planMarketWatchMerge(
       conflicts++;
       continue;
     }
-    products.add(Map<String, dynamic>.from(incoming));
+    final newEntry = Map<String, dynamic>.from(incoming);
+    final requestedCategory = newEntry['category'];
+    if (requestedCategory is String &&
+        backup.customCategories.any(
+          (name) => name.toLowerCase() == requestedCategory.toLowerCase())) {
+      final compatible = categories.where((name) =>
+          name.toLowerCase() == requestedCategory.toLowerCase()).toList();
+      if (compatible.isEmpty) {
+        conflicts++;
+        continue;
+      }
+      // Preserve the receiving computer's spelling if case differs.
+      newEntry['category'] = compatible.first;
+    }
+    products.add(newEntry);
     existingKeys.add(key);
     added++;
   }
@@ -436,6 +468,7 @@ MarketWatchMergePlan planMarketWatchMerge(
   return MarketWatchMergePlan(
     added: added, duplicates: duplicates, conflicts: conflicts,
     mappingsAdded: mappingsAdded, mappingsKept: mappingsKept,
+    categoriesAdded: categoriesAdded, categories: categories,
     products: products, matches: matches,
   );
 }
@@ -449,6 +482,10 @@ MarketWatchMergePlan mergeMarketWatchBackup(
   final current = marketPriceState(posState);
   current['tracked'] = result.products;
   current['storeMatches'] = result.matches;
+  current['customCategories'] = result.categories;
+  // Frequency is a personal PC preference. Import it only for a new setup.
+  current['refreshIntervalHours'] ??=
+      marketPriceRefreshHours(backup.settings['refreshIntervalHours']);
 
   // A new receiving PC needs the locality to refresh imported watches.
   // Do not replace existing local settings or turn a data source on.
