@@ -366,39 +366,71 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
       final backup = parseMarketWatch(utf8.decode(bytes));
       if (!mounted) return;
       final existing = trackedMarketProducts(widget.state).length;
+      final preview = planMarketWatchMerge(widget.state, backup);
       final accepted = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('Market Takibini İçe Aktar'),
-          content: Text(
-            backup.count.toString() + ' ürün ve ' +
-            backup.storeMatches.length.toString() + ' şube eşleştirmesi bulundu.\n\n' +
-            'Bu işlem yalnızca Market Fiyat Takibi verilerini değiştirir. ' +
-            'Bu bilgisayardaki ' + existing.toString() + ' takip edilen ürünün yerine ' +
-            'dosyadakiler gelecek.\n\n' +
-            'Siparişler, kasa, menü ve personel verileri değişmeyecek.'),
+          title: const Text('Market Takibini Birleştir'),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 480),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('Bu PC: ' + existing.toString() +
+                    ' ürün  ·  Dosya: ' + backup.count.toString() + ' ürün'),
+                const SizedBox(height: 12),
+                Text('+ ' + preview.added.toString() +
+                  ' yeni ürün eklenecek',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800, color: NohutBrand.green)),
+                Text(preview.duplicates.toString() +
+                  ' zaten takipte (atlanacak)'),
+                Text(preview.mappingsAdded.toString() +
+                  ' yeni market şubesi bağlanacak'),
+                if (preview.conflicts > 0)
+                  Text(preview.conflicts.toString() +
+                    ' şube uyuşmazlığı veya sınır nedeniyle atlanacak',
+                    style: const TextStyle(color: Colors.deepOrange)),
+                const SizedBox(height: 12),
+                const Text('Mevcut ürünler, fiyatlar, fotoğraflar, '
+                  'kategoriler ve mağaza eşleştirmeleri korunur. '
+                  'Sipariş, kasa ve personel verileri değişmez. '
+                  'Canlı veri bağlantısı bu PC üzerinde ayrıca etkinleştirilir.',
+                  style: TextStyle(fontSize: 12, color: NohutBrand.muted)),
+              ],
+            ),
+          ),
           actions: [
             TextButton(onPressed: () => Navigator.pop(ctx, false),
               child: const Text('Vazgeç')),
-            FilledButton(onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('İçe Aktar ve Değiştir')),
+            FilledButton(
+              onPressed: preview.added > 0 || preview.mappingsAdded > 0
+                ? () => Navigator.pop(ctx, true) : null,
+              child: const Text('Ekle ve Birleştir')),
           ],
         ),
       );
       if (accepted != true || !mounted) return;
-      final ok = widget.edit((db) => applyMarketWatchBackup(db, backup));
+      MarketWatchMergePlan? finalResult;
+      final ok = widget.edit((db) {
+        finalResult = mergeMarketWatchBackup(db, backup);
+      });
       if (ok && mounted) {
+        final result = finalResult!;
         setState(() {
           alertFilter = 'Tümü';
           categoryFilter = 'Tümü';
-          addProductExpanded = backup.count == 0;
+          addProductExpanded = result.total == 0;
           branches = [];
           results = [];
-          info = backup.count.toString() + ' ürün içe aktarıldı.';
+          info = result.added.toString() + ' ürün eklendi · ' +
+            result.duplicates.toString() + ' mevcut ürün korundu · ' +
+            result.conflicts.toString() + ' uyuşmazlık atlandı.';
         });
         _toast(info);
       } else {
-        _toast('İçe aktarma kaydedilemedi.');
+        _toast('Birleştirme kaydedilemedi.');
       }
     } catch (e) {
       _toast('Dosya içe aktarılamadı: $e');
