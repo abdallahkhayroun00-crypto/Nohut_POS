@@ -315,6 +315,61 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
     );
   }
 
+  Future<void> _createCategory() async {
+    final controller = TextEditingController();
+    final proposed = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Yeni Kategori Oluştur'),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 370),
+          child: TextField(
+            controller: controller,
+            autofocus: true,
+            maxLength: 32,
+            textCapitalization: TextCapitalization.words,
+            decoration: const InputDecoration(
+              labelText: 'Kategori adı',
+              hintText: 'Örn. Soslar, İçecekler, Temizlik',
+              border: OutlineInputBorder()),
+            onSubmitted: (value) =>
+              Navigator.pop(dialogContext, value.trim()),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Vazgeç')),
+          FilledButton(
+            onPressed: () =>
+              Navigator.pop(dialogContext, controller.text.trim()),
+            child: const Text('Kategori Ekle')),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (!mounted || proposed == null) return;
+    if (!validMarketCategoryName(proposed)) {
+      _toast('Kategori adı 2–32 karakter olmalı.');
+      return;
+    }
+    String? error;
+    final ok = widget.edit((state) {
+      try {
+        addMarketWatchCategory(state, proposed);
+      } on FormatException catch (e) {
+        error = e.message;
+      }
+    });
+    if (error != null) {
+      _toast(error!);
+    } else if (ok) {
+      setState(() => categoryFilter = proposed);
+      _toast('Yeni kategori eklendi: ' + proposed);
+    } else {
+      _toast('Kategori kaydedilemedi.');
+    }
+  }
+
   void _setProductCategory(Json entry, String category) {
     widget.edit((db) {
       final products = trackedMarketProducts(db);
@@ -388,6 +443,8 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
                   ' zaten takipte (atlanacak)'),
                 Text(preview.mappingsAdded.toString() +
                   ' yeni market şubesi bağlanacak'),
+                Text(preview.categoriesAdded.toString() +
+                  ' yeni kategori eklenecek'),
                 if (preview.conflicts > 0)
                   Text(preview.conflicts.toString() +
                     ' şube uyuşmazlığı veya sınır nedeniyle atlanacak',
@@ -405,7 +462,8 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
             TextButton(onPressed: () => Navigator.pop(ctx, false),
               child: const Text('Vazgeç')),
             FilledButton(
-              onPressed: preview.added > 0 || preview.mappingsAdded > 0
+              onPressed: preview.added > 0 ||
+                  preview.mappingsAdded > 0 || preview.categoriesAdded > 0
                 ? () => Navigator.pop(ctx, true) : null,
               child: const Text('Ekle ve Birleştir')),
           ],
@@ -727,7 +785,7 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
                   child: Icon(Icons.tune_rounded,
                     color: NohutBrand.muted, size: 16)),
                 itemBuilder: (_) => [
-                  for (final choice in marketWatchCategories.skip(1))
+                  for (final choice in marketWatchCategoryOptions(widget.state).skip(1))
                     PopupMenuItem(
                       value: choice,
                       child: Row(children: [
@@ -788,14 +846,14 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
           hasMarketPriceChange(item) && item['change'] == 'down') ||
         (alertFilter == 'Zam' &&
           hasMarketPriceChange(item) && item['change'] == 'up')).toList();
+    final categories = marketWatchCategoryOptions(widget.state)
+        .skip(1).toList();
     final changed = orderedMarketWatchProducts(
-        shown.where(hasMarketPriceChange).toList());
+        shown.where(hasMarketPriceChange).toList(),
+        categories: categories);
     final unchanged = orderedMarketWatchProducts(
-        shown.where((item) => !hasMarketPriceChange(item)).toList());
-    const categories = [
-      'Sebze', 'Baharat', 'Bakliyat',
-      'Konserve', 'Dondurulmuş', 'Diğer',
-    ];
+        shown.where((item) => !hasMarketPriceChange(item)).toList(),
+        categories: categories);
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       _sectionLabel(Icons.notifications_active_outlined,
         'Fiyat Uyarıları',
@@ -824,7 +882,7 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
       const SizedBox(height: 9),
       Wrap(spacing: 7, runSpacing: 7,
         crossAxisAlignment: WrapCrossAlignment.center, children: [
-          for (final category in marketWatchCategories)
+          for (final category in marketWatchCategoryOptions(widget.state))
             ChoiceChip(
               label: Text(category + ' (' +
                 watched.where((item) =>
@@ -834,6 +892,14 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
               selected: categoryFilter == category,
               onSelected: (_) => setState(() => categoryFilter = category),
             ),
+          ActionChip(
+            avatar: const Icon(Icons.add_circle_outline_rounded,
+              size: 17, color: NohutBrand.green),
+            label: const Text('Yeni Kategori',
+              style: TextStyle(fontWeight: FontWeight.w800,
+                color: NohutBrand.green)),
+            onPressed: _createCategory,
+          ),
         ]),
       const SizedBox(height: 17),
       if ((config['lastRefreshError'] ?? '').toString().isNotEmpty)
@@ -1154,6 +1220,44 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
                 subtitle: const Text('Resmî API değildir. '
                   'Ticari kullanımdan önce kaynak izinlerini doğrulayın.',
                   style: TextStyle(fontSize: 11)),
+              ),
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Row(children: [
+                  const Icon(Icons.schedule_outlined,
+                    color: NohutBrand.green, size: 20),
+                  const SizedBox(width: 10),
+                  const Expanded(child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Otomatik Fiyat Kontrolü',
+                        style: TextStyle(fontSize: 13,
+                          fontWeight: FontWeight.w800)),
+                      Text('POS açıkken seçilen aralıkta; '
+                        'en fazla yaklaşık 5 dk gecikme olabilir.',
+                        style: TextStyle(
+                          color: NohutBrand.muted, fontSize: 11)),
+                    ],
+                  )),
+                  DropdownButton<int>(
+                    key: const ValueKey('market-refresh-interval'),
+                    value: marketPriceRefreshHours(
+                      config['refreshIntervalHours']),
+                    items: [
+                      for (final hours in marketPriceRefreshChoices)
+                        DropdownMenuItem(
+                          value: hours,
+                          child: Text(hours.toString() + ' Saat')),
+                    ],
+                    onChanged: (hours) {
+                      if (hours == null) return;
+                      widget.edit((state) => editMarketPriceState(
+                        state, (settings) =>
+                          settings['refreshIntervalHours'] = hours));
+                    },
+                  ),
+                ]),
               ),
               const SelectableText('Kullanım koşulları: ' +
                 marketPriceTerms, style: TextStyle(
