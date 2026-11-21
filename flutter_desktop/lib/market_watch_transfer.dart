@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'market_prices.dart';
+import 'market_refresh_schedule.dart' as clock_schedule;
 import 'pos_logic.dart';
 
 /// Portable, versioned backup for market watchlists ONLY (not POS orders).
@@ -163,6 +164,8 @@ String exportMarketWatch(Json posState) {
       'longitude': market['longitude'],
       'distance': market['distance'],
       'refreshIntervalHours': marketPriceRefreshHours(market['refreshIntervalHours']),
+      if (clock_schedule.validMarketRefreshClock(market['refreshAt']) != null)
+        'refreshAt': market['refreshAt'],
       // Local user's explicit opt-in can be transferred intentionally.
       'enabled': market['enabled'] == true,
     },
@@ -333,6 +336,11 @@ MarketWatchBackup parseMarketWatch(String text) {
     throw const FormatException('Geçersiz otomatik kontrol sıklığı.');
   }
   settings['refreshIntervalHours'] = marketPriceRefreshHours(hours);
+  final clock = sourceSettings['refreshAt'];
+  if (clock != null && clock_schedule.validMarketRefreshClock(clock) == null) {
+    throw const FormatException('Geçersiz otomatik kontrol saati.');
+  }
+  if (clock != null) settings['refreshAt'] = clock;
   return MarketWatchBackup(products, matches, settings, customCategories);
 }
 
@@ -487,6 +495,10 @@ MarketWatchMergePlan mergeMarketWatchBackup(
   // Frequency is a personal PC preference. Import it only for a new setup.
   current['refreshIntervalHours'] ??=
       marketPriceRefreshHours(backup.settings['refreshIntervalHours']);
+  if (clock_schedule.validMarketRefreshClock(current['refreshAt']) == null &&
+      clock_schedule.validMarketRefreshClock(backup.settings['refreshAt']) != null) {
+    current['refreshAt'] = backup.settings['refreshAt'];
+  }
 
   // A new receiving PC needs the locality to refresh imported watches.
   // Do not replace existing local settings or turn a data source on.
