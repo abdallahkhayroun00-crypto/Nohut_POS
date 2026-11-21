@@ -197,6 +197,79 @@ void main() {
     expect(trackedMarketProducts(target), hasLength(1));
   });
 
+  test('new custom category appears in filters and can be assigned to watches', () {
+    final state = source();
+    expect(marketWatchCategoryOptions(state), contains('Tümü'));
+    expect(marketWatchCategoryOptions(state), isNot(contains('Soslar')));
+    addMarketWatchCategory(state, 'Soslar');
+    expect(marketWatchCustomCategories(state), ['Soslar']);
+    expect(marketWatchCategoryOptions(state),
+      ['Tümü', 'Sebze', 'Baharat', 'Bakliyat',
+        'Konserve', 'Dondurulmuş', 'Soslar', 'Diğer']);
+    expect(() => addMarketWatchCategory(state, 'soslar'),
+      throwsFormatException);
+    expect(() => addMarketWatchCategory(state, 'Tümü'),
+      throwsFormatException);
+    expect(() => addMarketWatchCategory(state, 'X'),
+      throwsFormatException);
+    expect(() => addMarketWatchCategory(state, ' A '),
+      throwsFormatException);
+    final products = trackedMarketProducts(state);
+    products.first['category'] = 'Soslar';
+    editMarketPriceState(state, (c) => c['tracked'] = products);
+    expect(marketProductCategory(trackedMarketProducts(state).single), 'Soslar');
+    expect(orderedMarketWatchProducts([
+      {'key': 'x', 'title': 'Nohut'},
+      {'key': 'y', 'title': 'Humus Sos', 'category': 'Soslar'},
+    ], categories: marketWatchCategoryOptions(state).skip(1).toList())
+        .map((e) => e['key']).toList(), ['x', 'y']);
+  });
+
+  test('custom categories and refresh interval survive export and additive import', () {
+    final from = source();
+    addMarketWatchCategory(from, 'İçecekler');
+    final watched = trackedMarketProducts(from);
+    watched.first['category'] = 'İçecekler';
+    editMarketPriceState(from, (config) {
+      config['tracked'] = watched;
+      config['refreshIntervalHours'] = 6;
+    });
+    final backup = parseMarketWatch(exportMarketWatch(from));
+    expect(backup.customCategories, ['İçecekler']);
+    expect(backup.tracked.single['category'], 'İçecekler');
+    expect(backup.settings['refreshIntervalHours'], 6);
+    final target = emptyPosState();
+    final preview = planMarketWatchMerge(target, backup);
+    expect(preview.categoriesAdded, 1);
+    expect(preview.added, 1);
+    mergeMarketWatchBackup(target, backup);
+    expect(marketWatchCustomCategories(target), ['İçecekler']);
+    expect(trackedMarketProducts(target).single['category'], 'İçecekler');
+    expect(marketPriceRefreshHours(
+      marketPriceState(target)['refreshIntervalHours']), 6);
+    expect(marketPriceState(target)['enabled'], false);
+  });
+
+  test('local categories and refresh interval win when merging files', () {
+    final local = source();
+    addMarketWatchCategory(local, 'Soslar');
+    editMarketPriceState(local, (config) {
+      config['refreshIntervalHours'] = 24;
+    });
+    final other = source();
+    addMarketWatchCategory(other, 'soslar');
+    addMarketWatchCategory(other, 'Temizlik');
+    editMarketPriceState(other, (config) {
+      config['refreshIntervalHours'] = 1;
+    });
+    final backup = parseMarketWatch(exportMarketWatch(other));
+    final result = mergeMarketWatchBackup(local, backup);
+    expect(result.categoriesAdded, 1);
+    expect(marketWatchCustomCategories(local), ['Soslar', 'Temizlik']);
+    expect(marketPriceRefreshHours(
+      marketPriceState(local)['refreshIntervalHours']), 24);
+  });
+
   test('malformed, wrong version, duplicate, tampered branch and bad category rejected', () {
     final raw = jsonDecode(exportMarketWatch(source())) as Map<String, dynamic>;
     expect(() => parseMarketWatch('not json'), throwsFormatException);
