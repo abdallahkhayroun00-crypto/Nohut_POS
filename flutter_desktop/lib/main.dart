@@ -25,6 +25,7 @@ import 'dart:async';
 import 'dart:collection';
 
 import 'receipt_printer.dart';
+import 'receipt_preview.dart';
 import 'qr_menu_sync.dart';
 
 import 'dart:convert';
@@ -1294,6 +1295,53 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     await _offerReceipt(ids.first, receipt: combinedReceipt);
   }
 
+  /// Customer-facing NON-fiscal bill preview available before payment.
+  /// Unlike queuePaymentReceipt, it never writes a print job or a payment.
+  Future<void> _printBillBeforePayment(Json order) async {
+    if (isPlatform(order) ||
+        !['Masa', 'Gel-Al'].contains(order['source'])) return;
+    final settings = store.read().data['settings'] as Map?;
+    final selectedPrinter =
+        (settings?['printerName'] ?? '').toString().trim();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Ödeme Öncesi Hesap Fişi · #'+
+          displayOrderNumber(order).toString()),
+        content: SizedBox(
+          width: 330,
+          child: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('Bu belge sadece hesap özetidir. '
+                'Ödeme almaz, siparişi kapatmaz, mali fiş yerine geçmez.',
+                style: TextStyle(color: NohutBrand.muted, fontSize: 12)),
+              const SizedBox(height: 11),
+              ReceiptPreview(order: order, settings: settings),
+            ]),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Vazgeç')),
+          FilledButton.icon(
+            onPressed: selectedPrinter.isEmpty ? null :
+                () => Navigator.pop(ctx, true),
+            icon: const Icon(Icons.print_outlined, size: 18),
+            label: const Text('Ön Fiş Yazdır')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      await windowsPrint(billText(order), selectedPrinter, settings: settings);
+      _notify('Hesap özeti yazıcıya gönderildi. Ödeme kaydedilmedi.');
+    } catch (e) {
+      _notify('Ön fiş yazdırılamadı: $e', error: true);
+    }
+  }
+
   Future<void> _offerReceipt(int orderId, {String? receipt}) async {
     if (!mounted) return;
     final print = await confirmAction(
@@ -1920,6 +1968,16 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                     ],
                   ),
                 ),
+                if (o['source'] == 'Masa' || o['source'] == 'Gel-Al')
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: OutlinedButton.icon(
+                      key: ValueKey('prepay-print-' + id.toString()),
+                      onPressed: () => _printBillBeforePayment(o),
+                      icon: const Icon(Icons.print_outlined),
+                      label: const Text('Ön Fiş Yazdır'),
+                    ),
+                  ),
                 if (!closed &&
                     (o['source'] == 'Masa' || o['source'] == 'Gel-Al'))
                   OutlinedButton.icon(
@@ -2373,7 +2431,20 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                                 '#${displayOrderNumber(o)} · ${o['table'] == null ? o['source'] : "Masa ${o['table']}"}',
                               ),
                               subtitle: Text(orderStamp(o)),
-                              trailing: Text(remaining(o)),
+                              trailing: isRemote(o)
+                                ? Text(remaining(o))
+                                : Row(mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(remaining(o)),
+                                    IconButton(
+                                      key: ValueKey('orders-print-' +
+                                        o['id'].toString()),
+                                      tooltip: 'Ön Fiş Yazdır',
+                                      icon: const Icon(Icons.print_outlined),
+                                      onPressed: () =>
+                                        _printBillBeforePayment(o),
+                                    ),
+                                  ]),
                               onTap: () => openOrder(o),
                             ),
                         ],
@@ -2408,14 +2479,26 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                                 DataCell(Text(formatTry(total(o)))),
                                 DataCell(Text(remaining(o))),
                                 DataCell(
-                                  TextButton(
-                                    onPressed: () => openOrder(o),
-                                    child: Text(
-                                      isRemote(o)
+                                  Wrap(spacing: 4, runSpacing: 3,
+                                    crossAxisAlignment:
+                                      WrapCrossAlignment.center,
+                                    children: [
+                                    TextButton(
+                                      onPressed: () => openOrder(o),
+                                      child: Text(isRemote(o)
                                           ? 'Platform Siparişi'
-                                          : 'Hesabı Aç',
+                                          : 'Hesabı Aç'),
                                     ),
-                                  ),
+                                    if (!isRemote(o))
+                                      IconButton(
+                                        key: ValueKey('orders-print-' +
+                                          o['id'].toString()),
+                                        tooltip: 'Ön Fiş Yazdır',
+                                        icon: const Icon(
+                                          Icons.print_outlined, size: 19),
+                                        onPressed: () =>
+                                          _printBillBeforePayment(o)),
+                                  ]),
                                 ),
                               ],
                             ),
