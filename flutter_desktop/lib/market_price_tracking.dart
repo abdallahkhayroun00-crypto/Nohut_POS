@@ -28,6 +28,7 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
   String info = 'Dört market konumu hazır. Ürün aramak için kaynak şubesini eşleştirin.';
   bool loading = false;
   String alertFilter = 'Tümü';
+  bool addProductExpanded = true;
   List<MarketDepot> branches = const [];
   List<MarketQuote> results = const [];
 
@@ -41,6 +42,7 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
     super.initState();
     api = widget.api ?? MarketPriceClient();
     search = TextEditingController();
+    addProductExpanded = trackedMarketProducts(widget.state).isEmpty;
   }
 
   @override
@@ -656,6 +658,26 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
     ]);
   }
 
+  Widget _resultPhoto(MarketQuote quote) {
+    final url = quote.imageUrl;
+    return Container(
+      width: 74, height: 74,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: const Color(0xffF3F5EF),
+        borderRadius: BorderRadius.circular(13),
+        border: Border.all(color: const Color(0xffE2EBE1))),
+      child: url == null
+        ? const Icon(Icons.image_not_supported_outlined,
+            color: NohutBrand.muted, size: 27)
+        : Image.network(url,
+            fit: BoxFit.contain, cacheWidth: 220,
+            errorBuilder: (context, error, stack) =>
+              const Icon(Icons.image_not_supported_outlined,
+                color: NohutBrand.muted, size: 27)),
+    );
+  }
+
   Widget _searchPanel(Set<Object?> trackedKeys) => Container(
     decoration: BoxDecoration(
       color: Colors.white,
@@ -666,9 +688,21 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
     ),
     padding: const EdgeInsets.all(21),
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      _sectionLabel(Icons.add_circle_outline_rounded,
-        'Yeni Ürün Takibe Ekle',
-        'Yakınınızdaki dört market hazır · Enlem / boylam yazmanız gerekmiyor.'),
+      Row(children: [
+        Expanded(child: _sectionLabel(Icons.add_circle_outline_rounded,
+          'Yeni Ürün Takibe Ekle',
+          '4 market seçimi · Gerçek ürün fotoğrafları · Fiyat takibi')),
+        const SizedBox(width: 8),
+        OutlinedButton.icon(
+          onPressed: () => setState(
+            () => addProductExpanded = !addProductExpanded),
+          icon: Icon(addProductExpanded
+            ? Icons.keyboard_arrow_up_rounded
+            : Icons.add_rounded, size: 19),
+          label: Text(addProductExpanded ? 'Kapat' : 'Ürün Ekle'),
+        ),
+      ]),
+      if (addProductExpanded) ...[
       const SizedBox(height: 19),
       const Text('MAĞAZA SEÇ',
         style: TextStyle(color: NohutBrand.muted,
@@ -826,6 +860,7 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
               crossAxisAlignment: WrapCrossAlignment.center,
               alignment: WrapAlignment.spaceBetween,
               children: [
+                _resultPhoto(q),
                 SizedBox(width: 250,
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -891,6 +926,7 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
           ),
         ),
       ),
+      ],
     ]),
   );
 
