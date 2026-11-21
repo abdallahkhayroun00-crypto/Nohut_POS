@@ -53,6 +53,8 @@ void main() {
         expect(t.takeException(), isNull);
       }
       expect(find.text('inPOS'), findsNothing);
+      // Audio controls were intentionally consolidated under Bildirimler.
+      await helpers.click(t, 'Bildirimler');
       expect(find.text('Yeni sipariş sesi'), findsOneWidget);
     },
   );
