@@ -75,6 +75,12 @@ void main() {
     applyMarketQuote(seed, lower);
     await helpers.mountManager(tester, seed);
     await helpers.click(tester, 'Market Fiyat Takibi');
+    expect(find.text('Göbek Marul'), findsNWidgets(2));
+    expect(find.byKey(const ValueKey('market-unread-alerts')), findsOneWidget);
+    expect(find.text('Okunmamış Fiyat Uyarıları (1)'), findsOneWidget);
+    await tester.tap(find.text('Okundu'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('market-unread-alerts')), findsNothing);
     expect(find.text('Göbek Marul'), findsOneWidget);
     // Changed vegetables appear in the priority group, not as Sebze heading.
     expect(find.textContaining('Sebze (1)'), findsOneWidget);
