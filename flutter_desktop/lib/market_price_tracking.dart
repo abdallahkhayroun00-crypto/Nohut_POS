@@ -363,8 +363,10 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
     if (error != null) {
       _toast(error!);
     } else if (ok) {
-      setState(() => categoryFilter = proposed);
-      _toast('Yeni kategori eklendi: ' + proposed);
+      // Keep cards visible so the manager can assign them to the new group.
+      setState(() => categoryFilter = 'Tümü');
+      _toast('Kategori eklendi: ' + proposed +
+        '. Ürün kartındaki kategori ayarından seçebilirsiniz.');
     } else {
       _toast('Kategori kaydedilemedi.');
     }
