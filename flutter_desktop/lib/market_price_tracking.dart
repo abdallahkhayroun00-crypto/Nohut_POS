@@ -709,25 +709,75 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
     });
   }
 
+  Widget _cardGroup(String title, List<Json> products, Color groupColor) {
+    if (products.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 17),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Padding(padding: const EdgeInsets.only(bottom: 10),
+          child: Row(children: [
+            Container(width: 4, height: 21,
+              decoration: BoxDecoration(color: groupColor,
+                borderRadius: BorderRadius.circular(4))),
+            const SizedBox(width: 9),
+            Text(title, style: const TextStyle(
+              fontSize: 16, fontWeight: FontWeight.w800,
+              color: NohutBrand.ink)),
+            const SizedBox(width: 8),
+            Text('(' + products.length.toString() + ')',
+              style: const TextStyle(color: NohutBrand.muted)),
+          ])),
+        LayoutBuilder(builder: (context, constraints) {
+          final width = constraints.maxWidth;
+          final columns = width >= 1020 ? 3 : width >= 620 ? 2 : 1;
+          final cardWidth = (width - (columns - 1) * 12) / columns;
+          return Wrap(spacing: 12, runSpacing: 12, children: [
+            for (final item in products)
+              SizedBox(width: cardWidth, child: watchCard(item)),
+          ]);
+        }),
+      ]),
+    );
+  }
+
   Widget _alerts(List<Json> watched) {
-    final visible = watched.where((item) => alertFilter == 'Tümü' ||
-      (alertFilter == 'İndirim' && item['change'] == 'down') ||
-      (alertFilter == 'Zam' && item['change'] == 'up')).toList();
+    // Real changes ALWAYS lead the page; unchanged products stay together by
+    // category. Category and trend tabs both filter the same watch records.
+    final categoryItems = watched.where((item) =>
+        categoryFilter == 'Tümü' ||
+        marketProductCategory(item) == categoryFilter).toList();
+    final shown = categoryItems.where((item) =>
+        alertFilter == 'Tümü' ||
+        (alertFilter == 'İndirim' &&
+          hasMarketPriceChange(item) && item['change'] == 'down') ||
+        (alertFilter == 'Zam' &&
+          hasMarketPriceChange(item) && item['change'] == 'up')).toList();
+    final changed = orderedMarketWatchProducts(
+        shown.where(hasMarketPriceChange).toList());
+    final unchanged = orderedMarketWatchProducts(
+        shown.where((item) => !hasMarketPriceChange(item)).toList());
+    const categories = [
+      'Sebze', 'Baharat', 'Bakliyat',
+      'Konserve', 'Dondurulmuş', 'Diğer',
+    ];
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       _sectionLabel(Icons.notifications_active_outlined,
-        'Fiyat Uyarıları', 'Aynı ürün · Aynı market şubesi · Gerçek fiyat değişimi'),
+        'Fiyat Uyarıları',
+        'İndirim ve zamlar en üstte · Ürünler kategoriye göre yan yana'),
       const SizedBox(height: 13),
-      Wrap(spacing: 7, runSpacing: 7, crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
+      Wrap(spacing: 7, runSpacing: 7,
+        crossAxisAlignment: WrapCrossAlignment.center, children: [
           for (final filter in const ['Tümü', 'İndirim', 'Zam'])
             ChoiceChip(
               label: Text(filter == 'Tümü'
                 ? 'Tümü  (' + watched.length.toString() + ')'
                 : filter == 'İndirim'
                   ? 'Fiyat Düştü  (' +
-                      watched.where((p) => p['change'] == 'down').length.toString() + ')'
+                    watched.where((p) => hasMarketPriceChange(p) &&
+                      p['change'] == 'down').length.toString() + ')'
                   : 'Zam Geldi  (' +
-                      watched.where((p) => p['change'] == 'up').length.toString() + ')'),
+                    watched.where((p) => hasMarketPriceChange(p) &&
+                      p['change'] == 'up').length.toString() + ')'),
               selected: alertFilter == filter,
               onSelected: (_) => setState(() => alertFilter = filter),
               avatar: Icon(filter == 'İndirim' ? Icons.south_east_rounded
@@ -735,7 +785,21 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
                 : Icons.widgets_outlined, size: 17),
             ),
         ]),
-      const SizedBox(height: 15),
+      const SizedBox(height: 9),
+      Wrap(spacing: 7, runSpacing: 7,
+        crossAxisAlignment: WrapCrossAlignment.center, children: [
+          for (final category in marketWatchCategories)
+            ChoiceChip(
+              label: Text(category + ' (' +
+                watched.where((item) =>
+                  category == 'Tümü' ||
+                  marketProductCategory(item) == category).length.toString() +
+                ')'),
+              selected: categoryFilter == category,
+              onSelected: (_) => setState(() => categoryFilter = category),
+            ),
+        ]),
+      const SizedBox(height: 17),
       if ((config['lastRefreshError'] ?? '').toString().isNotEmpty)
         Container(
           margin: const EdgeInsets.only(bottom: 12),
@@ -744,50 +808,43 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
             color: const Color(0xffFCF2E9),
             borderRadius: BorderRadius.circular(12)),
           child: Row(children: [
-            const Icon(Icons.info_outline, color: Color(0xff9A6040), size: 19),
+            const Icon(Icons.info_outline,
+              color: Color(0xff9A6040), size: 19),
             const SizedBox(width: 9),
             Expanded(child: Text(config['lastRefreshError'].toString(),
-              style: const TextStyle(fontSize: 12, color: Color(0xff78432A)))),
+              style: const TextStyle(fontSize: 12,
+                color: Color(0xff78432A)))),
           ]),
         ),
-      if (visible.isEmpty)
+      if (shown.isEmpty)
         Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 37),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
           decoration: BoxDecoration(
-            color: Colors.white, borderRadius: BorderRadius.circular(20),
+            color: Colors.white, borderRadius: BorderRadius.circular(18),
             border: Border.all(color: const Color(0xffDEE8DF))),
           child: Column(children: [
-            Container(
-              width: 72, height: 72,
-              decoration: const BoxDecoration(
-                color: Color(0xffEDF4EC), shape: BoxShape.circle),
-              child: const Icon(Icons.monitor_heart_outlined,
-                color: NohutBrand.green, size: 31),
-            ),
-            const SizedBox(height: 13),
-            Text(watched.isEmpty ? 'Henüz takip edilen ürün yok'
-                : 'Bu filtrede fiyat değişimi yok',
-              style: const TextStyle(fontSize: 17,
-                color: NohutBrand.ink, fontWeight: FontWeight.w800)),
-            const SizedBox(height: 6),
+            const Icon(Icons.inventory_2_outlined,
+              size: 32, color: NohutBrand.green),
+            const SizedBox(height: 9),
             Text(watched.isEmpty
-              ? 'Aşağıdan İnci Patates, Limon Tuzu veya sebzeleri takibe ekleyin.'
-              : 'Fiyat değiştiğinde burada gösterilecek.',
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: NohutBrand.muted,
-                fontSize: 12)),
+              ? 'Henüz takip edilen ürün yok'
+              : 'Bu filtrede fiyat değişimi yok',
+              style: const TextStyle(fontSize: 16,
+                color: NohutBrand.ink, fontWeight: FontWeight.w800)),
           ]),
         )
-      else LayoutBuilder(builder: (context, constraints) {
-        final cardWidth = constraints.maxWidth >= 980
-          ? (constraints.maxWidth - 16) / 2
-          : constraints.maxWidth;
-        return Wrap(spacing: 16, runSpacing: 16, children: [
-          for (final item in visible)
-            SizedBox(width: cardWidth, child: watchCard(item)),
-        ]);
-      }),
+      else ...[
+        if (changed.isNotEmpty)
+          _cardGroup('Son Fiyat Değişiklikleri', changed,
+            const Color(0xffB45E32)),
+        for (final category in categories)
+          if (unchanged.any((item) =>
+              marketProductCategory(item) == category))
+            _cardGroup(category,
+              unchanged.where((item) =>
+                marketProductCategory(item) == category).toList(),
+              const Color(0xff39734D)),
+      ],
     ]);
   }
 
