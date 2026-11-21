@@ -180,7 +180,7 @@ MarketWatchBackup parseMarketWatch(String text) {
       'depotName': _string(entry, 'depotName', maxLength: 500),
       'unit': entry['unit'] is String
           ? (entry['unit'] as String).substring(
-              0, (entry['unit'] as String).length.clamp(0, 200)) : '',
+              0, ((entry['unit'] as String).length > 200 ? 200 : (entry['unit'] as String).length)) : '',
       'priceCents': price,
       if (storeId != null) 'storeId': storeId,
       for (final field in _productFields)
@@ -205,7 +205,7 @@ MarketWatchBackup parseMarketWatch(String text) {
         value['googleMapsFeatureId'] != store.googleMapsFeatureId ||
         marketBrandKey((value['market'] ?? '').toString()) !=
             marketBrandKey(store.market)) {
-      throw FormatException('undefined şube eşleşmesi geçersiz.');
+      throw FormatException('Şube eşleşmesi geçersiz.');
     }
     matches[store.id] = <String, dynamic>{
       'storeId': store.id,
