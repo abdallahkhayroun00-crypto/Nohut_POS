@@ -545,6 +545,13 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
                               decoration: TextDecoration.lineThrough,
                               color: NohutBrand.muted, fontSize: 15)),
                       ]),
+                    if (item['discount'] == true)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 6),
+                        child: Text('Kaynakta indirim etiketi · Mağazada teyit edilmedi',
+                          maxLines: 2,
+                          style: TextStyle(fontSize: 10,
+                            color: NohutBrand.muted))),
                   ],
                 )),
               ],
