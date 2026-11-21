@@ -622,7 +622,8 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
       Wrap(spacing: 7, runSpacing: 7, children: [
         for (final example in examples)
           ActionChip(
-            label: Text(example.$1),
+            label: Text(example.$1 + '  ·  ' +
+              nohutStorePlaces.firstWhere((p) => p.id == example.$2).label),
             avatar: const Icon(Icons.north_east_rounded, size: 15),
             onPressed: () {
               search.text = example.$1;
