@@ -52,6 +52,7 @@ void main() {
     await helpers.mountManager(tester, seed);
     await helpers.click(tester, 'Market Fiyat Takibi');
     expect(find.text('Göbek Marul'), findsOneWidget);
+    expect(find.text('FOTOĞRAF EKLE'), findsOneWidget);
     expect(find.text('55,00 TL'), findsOneWidget);
     expect(find.text('42,00 TL'), findsOneWidget);
     expect(find.text('-23,6%'), findsOneWidget);
@@ -61,6 +62,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Göbek Marul'), findsNothing);
     expect(find.text('Bu filtrede fiyat değişimi yok'), findsOneWidget);
+    expect(find.text('FOTOĞRAF EKLE'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 }
