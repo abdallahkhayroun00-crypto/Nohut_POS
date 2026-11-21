@@ -653,7 +653,8 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
             crossAxisAlignment: WrapCrossAlignment.center,
             spacing: 15,
             children: [
-              SizedBox(width: 410,
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 410),
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(mainAxisSize: MainAxisSize.min, children: [
