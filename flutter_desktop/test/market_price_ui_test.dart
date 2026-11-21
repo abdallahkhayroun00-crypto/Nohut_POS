@@ -10,10 +10,12 @@ void main() {
     await helpers.click(tester, 'Market Fiyat Takibi');
     expect(find.textContaining('MARKET RADARI'), findsOneWidget);
     expect(find.text('Fiyat Uyarıları'), findsOneWidget);
-    expect(find.text('A101 · Nohut yakını'), findsWidgets);
-    expect(find.text('BİM · Nohut yakını'), findsOneWidget);
-    expect(find.text('Hakmar 1'), findsOneWidget);
-    expect(find.text('Hakmar 2'), findsOneWidget);
+    expect(find.text('A101 Bağlar'), findsWidgets);
+    expect(find.text('BİM İstiklal'), findsOneWidget);
+    expect(find.text('Hakmar Karadere'), findsOneWidget);
+    expect(find.text('Hakmar Mavi Durak'), findsOneWidget);
+    expect(find.textContaining('Kemalpaşa Mah. Bağlar Cad. No:82'),
+      findsOneWidget);
     expect(find.text('Enlem'), findsNothing);
     expect(find.text('Boylam'), findsNothing);
     await tester.ensureVisible(find.text('Kaynak Ayarları'));
