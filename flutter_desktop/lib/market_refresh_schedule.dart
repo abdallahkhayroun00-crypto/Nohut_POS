@@ -65,6 +65,12 @@ bool marketRefreshIsDue(Map<String, dynamic> settings, DateTime now,
   final anchor = validMarketRefreshClock(settings['refreshAt']);
   if (anchor != null) {
     final slot = latestMarketRefreshSlotUtc(utcNow, hours, anchor);
+    final configured = DateTime.tryParse(
+        (settings['refreshConfiguredAt'] ?? '').toString());
+    if (configured != null && !slot.isAfter(configured.toUtc())) {
+      // Setting a clock at 10:00 must not trigger yesterday's 11:00 slot.
+      return false;
+    }
     return last == null || last.toUtc().isBefore(slot);
   }
   return last == null ||
