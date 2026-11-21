@@ -373,11 +373,11 @@ class _SimpleSettingsState extends State<SimpleSettings> {
                 title: const Text('Trendyol Go by Uber Eats'),
                 subtitle: Text(
                   widget.tgoIntegration.status +
-                  '\\nSon başarılı eşitleme: ' +
+                  '\nSon başarılı eşitleme: ' +
                   (widget.tgoIntegration.lastSync.isNotEmpty
                     ? widget.tgoIntegration.lastSync : 'Henüz yok') +
                   (widget.tgoIntegration.error.isEmpty ? '' :
-                    '\\nHata: ' + widget.tgoIntegration.error)),
+                    '\nHata: ' + widget.tgoIntegration.error)),
               ),
               const Divider(height: 8),
               const ListTile(
