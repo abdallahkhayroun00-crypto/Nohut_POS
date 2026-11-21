@@ -689,9 +689,11 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
                 tooltip: 'Kategori değiştir',
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(minWidth: 140),
-                icon: const Icon(Icons.tune_rounded,
-                  color: NohutBrand.muted, size: 16),
                 onSelected: (value) => _setProductCategory(item, value),
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+                  child: Icon(Icons.tune_rounded,
+                    color: NohutBrand.muted, size: 16)),
                 itemBuilder: (_) => [
                   for (final choice in marketWatchCategories.skip(1))
                     PopupMenuItem(
