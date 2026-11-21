@@ -17,6 +17,8 @@ import 'online_order_alarm.dart';
 import 'online_orders.dart';
 import 'google_business.dart';
 import 'google_business_ui.dart';
+import 'market_prices.dart';
+import 'market_price_tracking.dart';
 import 'card_terminal.dart';
 
 import 'dart:async';
@@ -146,6 +148,8 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
   late final OnlineOrderSoundPlayer onlineSound;
   late final OnlineOrderAlarm onlineAlarm;
   late final GoogleBusiness google;
+  late final MarketPriceClient marketApi;
+  Timer? _marketPriceTimer;
   Timer? _midnightTimer;
   Timer? _serviceTimer;
   final Set<String> seenNotices = {};
@@ -177,6 +181,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     ('open-accounts', Icons.account_balance_wallet_outlined, 'Açık Hesaplar'),
     ('payments', Icons.point_of_sale_outlined, 'Kasa & Ödemeler'),
     ('reports', Icons.bar_chart_outlined, 'Raporlar'),
+    ('market-prices', Icons.trending_up_outlined, 'Market Fiyat Takibi'),
     ('settings', Icons.settings_outlined, 'Ayarlar'),
   ];
 
@@ -184,6 +189,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
   void initState() {
     super.initState();
     store = PosStore(databaseFile: widget.databaseFile);
+    marketApi = MarketPriceClient();
     final initial = store.read(), migrated = copyJson(initial.data);
     final settings =
         migrated.putIfAbsent('settings', () => <String, dynamic>{}) as Map;
@@ -224,6 +230,14 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     if (widget.startServer) {
       unawaited(tgo.start());
       unawaited(google.load());
+    }
+    if (widget.startServer) {
+      _marketPriceTimer = Timer.periodic(const Duration(hours: 6), (_) {
+        unawaited(refreshMarketPrices(store, marketApi));
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        unawaited(refreshMarketPrices(store, marketApi));
+      });
     }
     _scheduleIstanbulMidnight();
     _serviceTimer = Timer.periodic(const Duration(seconds: 30), (_) {
@@ -335,7 +349,9 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
   @override
   void dispose() {
     _midnightTimer?.cancel();
+    _marketPriceTimer?.cancel();
     _serviceTimer?.cancel();
+    marketApi.close();
     tgo.dispose();
     onlineAlarm.dispose();
     google.dispose();
@@ -1509,6 +1525,8 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
         return _payments(db);
       case 'reports':
         return _reports(db);
+      case 'market-prices':
+        return MarketPriceTracking(state: db, edit: _edit, store: store, api: marketApi);
       case 'settings':
         return _settings(db);
       default:
