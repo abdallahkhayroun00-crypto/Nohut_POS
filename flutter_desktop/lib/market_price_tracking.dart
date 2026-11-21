@@ -336,13 +336,18 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
     if (!mounted || selected == null) return;
     final chosen = selected.hour.toString().padLeft(2, '0') + ':' +
         selected.minute.toString().padLeft(2, '0');
-    widget.edit((db) => editMarketPriceState(
-      db, (settings) => settings['refreshAt'] = chosen));
+    widget.edit((db) => editMarketPriceState(db, (settings) {
+      settings['refreshAt'] = chosen;
+      settings['refreshConfiguredAt'] =
+          DateTime.now().toUtc().toIso8601String();
+    }));
   }
 
   void _clearRefreshTime() {
-    widget.edit((db) => editMarketPriceState(
-      db, (settings) => settings.remove('refreshAt')));
+    widget.edit((db) => editMarketPriceState(db, (settings) {
+      settings.remove('refreshAt');
+      settings.remove('refreshConfiguredAt');
+    }));
   }
 
   Future<void> _createCategory() async {
@@ -1361,8 +1366,11 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
                     onChanged: (hours) {
                       if (hours == null) return;
                       widget.edit((state) => editMarketPriceState(
-                        state, (settings) =>
-                          settings['refreshIntervalHours'] = hours));
+                        state, (settings) {
+                          settings['refreshIntervalHours'] = hours;
+                          settings['refreshConfiguredAt'] =
+                              DateTime.now().toUtc().toIso8601String();
+                        }));
                     },
                   ),
                 ]),
