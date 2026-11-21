@@ -11,6 +11,52 @@ const marketWatchCategories = <String>[
   'Konserve', 'Dondurulmuş', 'Diğer',
 ];
 
+/// Custom categories live in the market-watch slice, not the restaurant menu.
+bool validMarketCategoryName(Object? value) {
+  if (value is! String || value.trim() != value ||
+      value.length < 2 || value.length > 32) return false;
+  return !RegExp(r'[\\x00-\\x1F\\x7F<>]').hasMatch(value);
+}
+
+List<String> marketWatchCustomCategories(Json state) {
+  final raw = marketPriceState(state)['customCategories'];
+  if (raw is! List) return <String>[];
+  final result = <String>[];
+  final seen = marketWatchCategories.map((e) => e.toLowerCase()).toSet();
+  for (final value in raw) {
+    if (!validMarketCategoryName(value)) continue;
+    final name = value as String;
+    if (seen.add(name.toLowerCase()) && result.length < 20) {
+      result.add(name);
+    }
+  }
+  return result;
+}
+
+List<String> marketWatchCategoryOptions(Json state) => [
+  ...marketWatchCategories.take(marketWatchCategories.length - 1),
+  ...marketWatchCustomCategories(state),
+  'Diğer',
+];
+
+void addMarketWatchCategory(Json state, String rawName) {
+  final name = rawName.trim();
+  if (!validMarketCategoryName(name)) {
+    throw const FormatException('Kategori adı 2–32 karakter olmalı.');
+  }
+  final all = marketWatchCategoryOptions(state);
+  if (all.any((x) => x.toLowerCase() == name.toLowerCase())) {
+    throw const FormatException('Bu kategori zaten mevcut.');
+  }
+  final custom = marketWatchCustomCategories(state);
+  if (custom.length >= 20) {
+    throw const FormatException('En fazla 20 özel kategori eklenebilir.');
+  }
+  editMarketPriceState(state, (settings) {
+    settings['customCategories'] = [...custom, name];
+  });
+}
+
 String _normal(String input) => input.toLowerCase()
     .replaceAll('i\u0307', 'i').replaceAll('ı', 'i')
     .replaceAll('ş', 's').replaceAll('ğ', 'g')
@@ -20,8 +66,8 @@ String _normal(String input) => input.toLowerCase()
 /// Best-effort initial category. Manager choice is always authoritative.
 String marketProductCategory(Json item) {
   final manual = item['category'];
-  if (manual is String && marketWatchCategories.skip(1).contains(manual)) {
-    return manual;
+  if (validMarketCategoryName(manual)) {
+    return manual as String;
   }
   final name = _normal((item['title'] ?? '').toString());
   if (RegExp(r'dondurul|feast |frozen|parmak patates|citir patates')
@@ -48,14 +94,14 @@ bool hasMarketPriceChange(Json item) =>
 
 /// Returns changed items at the top, then the remaining items in category
 /// groups. Within each category, items sort by their displayed title.
-List<Json> orderedMarketWatchProducts(List<Json> products) {
+List<Json> orderedMarketWatchProducts(List<Json> products,
+    {List<String>? categories}) {
   final ordered = [...products];
-  const categories = [
-    'Sebze', 'Baharat', 'Bakliyat', 'Konserve', 'Dondurulmuş', 'Diğer',
-  ];
+  final groups = categories ?? marketWatchCategories.skip(1).toList();
   int priority(Json item) {
     if (hasMarketPriceChange(item)) return 0;
-    return 1 + categories.indexOf(marketProductCategory(item));
+    final position = groups.indexOf(marketProductCategory(item));
+    return position < 0 ? groups.length + 1 : position + 1;
   }
   ordered.sort((a, b) {
     final byGroup = priority(a).compareTo(priority(b));
@@ -77,10 +123,12 @@ List<Json> orderedMarketWatchProducts(List<Json> products) {
 }
 
 class MarketWatchBackup {
-  const MarketWatchBackup(this.tracked, this.storeMatches, this.settings);
+  const MarketWatchBackup(
+      this.tracked, this.storeMatches, this.settings, this.customCategories);
   final List<Json> tracked;
   final Json storeMatches;
   final Json settings;
+  final List<String> customCategories;
   int get count => tracked.length;
 }
 
@@ -108,10 +156,12 @@ String exportMarketWatch(Json posState) {
     'exportedAt': DateTime.now().toUtc().toIso8601String(),
     'tracked': safeProducts,
     'storeMatches': matches,
+    'customCategories': marketWatchCustomCategories(posState),
     'settings': {
       'latitude': market['latitude'],
       'longitude': market['longitude'],
       'distance': market['distance'],
+      'refreshIntervalHours': marketPriceRefreshHours(market['refreshIntervalHours']),
       // Local user's explicit opt-in can be transferred intentionally.
       'enabled': market['enabled'] == true,
     },
@@ -140,6 +190,22 @@ MarketWatchBackup parseMarketWatch(String text) {
   if (list is! List || list.length > 500) {
     throw const FormatException('Geçersiz ürün listesi (en fazla 500).');
   }
+  final rawCategories = raw['customCategories'];
+  if (rawCategories != null && rawCategories is! List) {
+    throw const FormatException('Kategori listesi geçersiz.');
+  }
+  final customCategories = <String>[];
+  final seenCategories = marketWatchCategories
+      .map((name) => name.toLowerCase()).toSet();
+  for (final entry in (rawCategories is List ? rawCategories : const [])) {
+    if (!validMarketCategoryName(entry) ||
+        !seenCategories.add((entry as String).toLowerCase()) ||
+        customCategories.length >= 20) {
+      throw const FormatException('Yedekte geçersiz veya yinelenen kategori.');
+    }
+    customCategories.add(entry);
+  }
+  final allowedCategories = {...marketWatchCategories, ...customCategories};
   final allowedIds = nohutStorePlaces.map((p) => p.id).toSet();
   final ids = <String>{};
   final products = <Json>[];
@@ -162,7 +228,7 @@ MarketWatchBackup parseMarketWatch(String text) {
     }
     final category = entry['category'];
     if (category != null &&
-        (!marketWatchCategories.skip(1).contains(category))) {
+        (!allowedCategories.contains(category) || category == 'Tümü')) {
       throw const FormatException('Geçersiz ürün kategorisi.');
     }
     final change = entry['change'];
@@ -260,7 +326,13 @@ MarketWatchBackup parseMarketWatch(String text) {
     throw const FormatException('Fiyat kaynağı ayarı geçersiz.');
   }
   settings['enabled'] = sourceSettings['enabled'];
-  return MarketWatchBackup(products, matches, settings);
+  final hours = sourceSettings['refreshIntervalHours'];
+  if (hours != null &&
+      (hours is! int || !marketPriceRefreshChoices.contains(hours))) {
+    throw const FormatException('Geçersiz otomatik kontrol sıklığı.');
+  }
+  settings['refreshIntervalHours'] = marketPriceRefreshHours(hours);
+  return MarketWatchBackup(products, matches, settings, customCategories);
 }
 
 /// A non-destructive preview. Existing products and branch mappings win.
