@@ -62,7 +62,10 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
     final saved = matches[storeId] as Map;
     final id = (saved['depotId'] ?? '').toString();
     final market = (saved['market'] ?? '').toString();
-    if (id.isEmpty || market.isEmpty) return null;
+    if (id.isEmpty || market.isEmpty || saved['confirmed'] != true ||
+        (saved['googleMapsFeatureId'] ?? '').toString() !=
+            place.googleMapsFeatureId ||
+        marketBrandKey(market) != marketBrandKey(place.market)) return null;
     return MarketDepot(id, market, (saved['name'] ?? market).toString());
   }
 
@@ -114,37 +117,81 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
     }
   }
 
-  void confirmBranch(String? depotId) {
-    if (depotId == null) return;
-    final matching = branches.where((d) => d.id == depotId).toList();
-    if (matching.length != 1) return;
-    final depot = matching.single;
-    final placeId = storeId;
+  Future<void> confirmBranch(String? depotId) async {
+    if (depotId == null || loading) return;
+    final candidates = matchMarketDepots(place, branches);
+    final matches = candidates.where((d) => d.id == depotId).toList();
+    if (matches.length != 1) return;
+    final depot = matches.single;
+    final target = place;
+    final distance = storeDistanceMeters(target.latitude, target.longitude,
+        depot.latitude!, depot.longitude!).round();
+    final confirmed = await showDialog<bool>(context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Market Fiyatı şubesini bağla'),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 440),
+          child: Column(mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(target.label, style: const TextStyle(
+                fontWeight: FontWeight.w800, fontSize: 18)),
+              const SizedBox(height: 5),
+              Text(target.address),
+              const Divider(height: 25),
+              const Text('MARKET FİYATI KAYDI', style: TextStyle(
+                color: NohutBrand.muted, fontSize: 11,
+                fontWeight: FontWeight.w800)),
+              Text(depot.name, style: const TextStyle(
+                fontSize: 15, fontWeight: FontWeight.bold)),
+              Text('Kaynak şube ID: ' + depot.id),
+              Text('Haritaya göre yaklaşık ' +
+                  distance.toString() + ' m uzaklıkta',
+                style: const TextStyle(
+                  color: NohutBrand.muted, fontSize: 12)),
+              const SizedBox(height: 10),
+              const Text('Aynı marketin doğru fiziksel şubesi olduğundan '
+                'emin olmadan bağlamayın. Kaynak API adresi doğrulamıyor.',
+                style: TextStyle(color: NohutBrand.muted)),
+          ]),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Vazgeç')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Bu şubeyi bağla')),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted || storeId != target.id) return;
     final ok = widget.edit((db) {
-      editMarketPriceState(db, (s) {
-        final matches = s['storeMatches'] is Map
-            ? Map<String, dynamic>.from(s['storeMatches'] as Map)
+      editMarketPriceState(db, (settings) {
+        final saved = settings['storeMatches'] is Map
+            ? Map<String, dynamic>.from(settings['storeMatches'] as Map)
             : <String, dynamic>{};
-        matches[placeId] = {
+        saved[target.id] = {
           'depotId': depot.id,
           'market': depot.market,
           'name': depot.name,
+          'storeId': target.id,
+          'branchName': target.branchName,
+          'address': target.address,
+          'googleMapsFeatureId': target.googleMapsFeatureId,
+          'distanceMeters': distance,
+          'confirmed': true,
           'matchedAt': DateTime.now().toUtc().toIso8601String(),
         };
-        s['storeMatches'] = matches;
-        // Background refresh uses a common locality; each product
-        // remains locked to the selected provider depot ID.
-        s['latitude'] = 40.7650391;
-        s['longitude'] = 30.3602224;
-        s['distance'] = 4.0;
+        settings['storeMatches'] = saved;
+        settings['latitude'] = 40.7650391;
+        settings['longitude'] = 30.3602224;
+        settings['distance'] = 4.0;
       });
     });
     if (ok) {
       setState(() {
         branches = [];
         results = [];
-        info = 'Şube eşleştirildi: ' + depot.name +
-            '. Ürün arayabilirsiniz.';
+        info = 'Bağlantı kaydedildi: ' + target.label + ' → ' +
+            depot.name + '. Artık ürün arayabilirsiniz.';
       });
     }
   }
@@ -545,6 +592,9 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
               Text(place.label,
                 style: const TextStyle(color: NohutBrand.ink,
                   fontSize: 14, fontWeight: FontWeight.w800)),
+              Text(place.address,
+                style: const TextStyle(fontSize: 12,
+                  color: NohutBrand.muted)),
               const Text('Serdivan, Sakarya · Google Maps konumu',
                 style: TextStyle(
                   fontSize: 11, color: NohutBrand.muted)),
@@ -682,7 +732,8 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
                     fontWeight: FontWeight.w900, color: NohutBrand.green)),
                 OutlinedButton.icon(
                   onPressed: trackedKeys.contains(q.key) ? null : () {
-                    widget.edit((db) => addTrackedMarketQuote(db, q));
+                    widget.edit((db) => addTrackedMarketQuote(db, q,
+                        storeId: storeId));
                     notice('Ürün takibe eklendi.');
                   },
                   icon: Icon(trackedKeys.contains(q.key)
