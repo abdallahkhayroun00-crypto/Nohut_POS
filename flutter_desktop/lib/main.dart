@@ -656,6 +656,32 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     _scheduleStaffPopup();
   }
 
+  Widget _marketAlertProductImage(Json alert) {
+    final watched = trackedMarketProducts(store.read().data)
+        .where((p) => p['key'] == alert['key']).toList();
+    final product = watched.isEmpty ? <String, dynamic>{} : watched.first;
+    final imageUrl = marketImageUrl(alert['customImageUrl']) ??
+        marketImageUrl(product['customImageUrl']) ??
+        marketImageUrl(alert['imageUrl']) ??
+        marketImageUrl(product['imageUrl']);
+    return Container(
+      width: 61, height: 61,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        border: Border.all(color: const Color(0xffDEE7DC)),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: imageUrl == null
+        ? const Icon(Icons.image_outlined, color: NohutBrand.muted)
+        : Image.network(imageUrl, fit: BoxFit.contain,
+            cacheWidth: 190,
+            errorBuilder: (context, error, stack) =>
+                const Icon(Icons.image_outlined,
+                  color: NohutBrand.muted)),
+    );
+  }
+
   void _scheduleMarketPopup() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _showMarketPopup();
@@ -702,11 +728,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                     color: const Color(0xffF4F7F3),
                     borderRadius: BorderRadius.circular(12)),
                   child: Row(children: [
-                    Icon(alert['direction'] == 'down'
-                      ? Icons.south_east_rounded : Icons.north_east_rounded,
-                      color: alert['direction'] == 'down'
-                        ? const Color(0xff277A4E)
-                        : const Color(0xffB3453A)),
+                    _marketAlertProductImage(alert),
                     const SizedBox(width: 10),
                     Expanded(child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -715,8 +737,15 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                           maxLines: 2, overflow: TextOverflow.ellipsis,
                           style: const TextStyle(fontSize: 13,
                             fontWeight: FontWeight.w800)),
-                        Text((alert['depotName'] ?? alert['market'] ?? '').toString(),
-                          style: const TextStyle(fontSize: 11)),
+                        Text(
+                          (alert['direction'] == 'down' ? '↓ İndirim · ' :
+                            '↑ Zam · ') +
+                          (alert['depotName'] ?? alert['market'] ?? '').toString(),
+                          style: TextStyle(fontSize: 11,
+                            color: alert['direction'] == 'down'
+                              ? const Color(0xff277A4E)
+                              : const Color(0xffB3453A),
+                            fontWeight: FontWeight.w800)),
                         Text(
                           ((alert['oldPriceCents'] as num) / 100)
                             .toStringAsFixed(2).replaceAll('.', ',') +
@@ -726,6 +755,17 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                           style: const TextStyle(fontWeight: FontWeight.w800)),
                       ],
                     )),
+                    const SizedBox(width: 5),
+                    TextButton(
+                      key: ValueKey('popup-market-read-' +
+                        alert['id'].toString()),
+                      onPressed: () {
+                        _edit((db) => markMarketPriceAlertsRead(
+                          db, [alert['id'].toString()]));
+                        Navigator.pop(ctx, 'later');
+                      },
+                      child: const Text('Okundu'),
+                    ),
                   ]),
                 ),
               if (alerts.length > displayed.length)
