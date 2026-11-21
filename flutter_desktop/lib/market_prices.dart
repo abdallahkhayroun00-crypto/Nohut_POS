@@ -255,9 +255,12 @@ Future<MarketPriceRefresh> refreshMarketPrices(
   final entries = trackedMarketProducts(store.read().data).take(50).toList();
   if (entries.isEmpty) return const MarketPriceRefresh(0, 0, 0);
   final last = DateTime.tryParse((settings['lastRefreshAttempt'] ?? '').toString());
-  if (!force && last != null &&
-      DateTime.now().toUtc().difference(last.toUtc()) <
-          const Duration(hours: 12)) return const MarketPriceRefresh(0, 0, 0);
+  if (last != null) {
+    final elapsed = DateTime.now().toUtc().difference(last.toUtc());
+    final minimum = force ? const Duration(minutes: 2)
+        : const Duration(hours: 12);
+    if (elapsed < minimum) return const MarketPriceRefresh(0, 0, 0);
+  }
 
   // Throttle before requests; concurrent retries cannot accidentally hammer
   // the unofficial upstream service.
@@ -272,7 +275,10 @@ Future<MarketPriceRefresh> refreshMarketPrices(
 
   var unavailable = 0, failed = 0;
   final fetched = <MarketQuote>[];
-  for (final item in entries) {
+  for (var index = 0; index < entries.length; index++) {
+    // The third-party reference requests at least 1 second between calls.
+    if (index > 0) await Future<void>.delayed(const Duration(seconds: 1));
+    final item = entries[index];
     try {
       final quote = await client.lookup(
         productId: (item['productId'] ?? '').toString(),
