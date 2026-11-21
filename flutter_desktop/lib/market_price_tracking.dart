@@ -866,6 +866,81 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
     );
   }
 
+  Widget _unreadPriceAlerts() {
+    final unread = unreadMarketPriceAlerts(widget.state);
+    if (unread.isEmpty) return const SizedBox.shrink();
+    return Container(
+      key: const ValueKey('market-unread-alerts'),
+      margin: const EdgeInsets.only(bottom: 18),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xffFFF9F0),
+        border: Border.all(color: const Color(0xffECD9B5)),
+        borderRadius: BorderRadius.circular(17),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Wrap(spacing: 12, runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          alignment: WrapAlignment.spaceBetween, children: [
+          Text('Okunmamış Fiyat Uyarıları (' +
+            unread.length.toString() + ')',
+            style: const TextStyle(color: NohutBrand.ink,
+              fontSize: 15, fontWeight: FontWeight.w900)),
+          OutlinedButton.icon(
+            onPressed: () => widget.edit((db) => markMarketPriceAlertsRead(
+              db, unread.map((item) => item['id'].toString()))),
+            icon: const Icon(Icons.done_all, size: 17),
+            label: const Text('Tümünü Okundu İşaretle')),
+        ]),
+        const SizedBox(height: 10),
+        for (final alert in unread.take(8))
+          Container(
+            margin: const EdgeInsets.only(bottom: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(11)),
+            child: Row(children: [
+              Icon(alert['direction'] == 'down'
+                ? Icons.south_east_rounded : Icons.north_east_rounded,
+                color: alert['direction'] == 'down'
+                  ? const Color(0xff277A4E)
+                  : const Color(0xffB3453A),
+                size: 22),
+              const SizedBox(width: 9),
+              Expanded(child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text((alert['title'] ?? '').toString(),
+                    maxLines: 2, overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800, fontSize: 12)),
+                  Text((alert['depotName'] ?? alert['market'] ?? '').toString() +
+                    ' · ' +
+                    money((alert['oldPriceCents'] as num).toInt()) +
+                    ' → ' +
+                    money((alert['newPriceCents'] as num).toInt()),
+                    maxLines: 2, style: const TextStyle(fontSize: 11,
+                      color: NohutBrand.muted)),
+                ],
+              )),
+              const SizedBox(width: 8),
+              TextButton.icon(
+                key: ValueKey('market-read-' + alert['id'].toString()),
+                onPressed: () => widget.edit((db) =>
+                    markMarketPriceAlertsRead(db, [alert['id'].toString()])),
+                icon: const Icon(Icons.done_rounded, size: 15),
+                label: const Text('Okundu')),
+            ]),
+          ),
+        if (unread.length > 8)
+          Text('+' + (unread.length - 8).toString() +
+            ' okunmamış uyarı. Tümünü okundu işaretleyebilirsiniz.',
+            style: const TextStyle(fontSize: 11,
+              color: NohutBrand.muted)),
+      ]),
+    );
+  }
+
   Widget _alerts(List<Json> watched) {
     // Real changes ALWAYS lead the page; unchanged products stay together by
     // category. Category and trend tabs both filter the same watch records.
@@ -1431,6 +1506,7 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
         ),
       ),
       const SizedBox(height: 24),
+      _unreadPriceAlerts(),
       _alerts(watched),
       const SizedBox(height: 26),
       _searchPanel(keys),
