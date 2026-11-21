@@ -5,6 +5,7 @@ import 'package:file_selector/file_selector.dart';
 
 import 'brand.dart';
 import 'market_prices.dart';
+import 'market_refresh_schedule.dart' as clock_schedule;
 import 'market_watch_transfer.dart';
 import 'operations_ui.dart';
 import 'pos_logic.dart';
@@ -313,6 +314,35 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
         color: selected ? Colors.white : color,
         fontWeight: FontWeight.w800, fontSize: 11)),
     );
+  }
+
+  Future<void> _selectRefreshTime() async {
+    final existing = clock_schedule.validMarketRefreshClock(
+      config['refreshAt']);
+    final initial = existing == null
+        ? const TimeOfDay(hour: 11, minute: 0)
+        : TimeOfDay(hour: int.parse(existing.substring(0, 2)),
+            minute: int.parse(existing.substring(3, 5)));
+    final selected = await showTimePicker(
+      context: context,
+      initialTime: initial,
+      helpText: 'Türkiye Saati · Otomatik Kontrol',
+      builder: (pickerContext, child) => MediaQuery(
+        data: MediaQuery.of(pickerContext).copyWith(
+            alwaysUse24HourFormat: true),
+        child: child!,
+      ),
+    );
+    if (!mounted || selected == null) return;
+    final chosen = selected.hour.toString().padLeft(2, '0') + ':' +
+        selected.minute.toString().padLeft(2, '0');
+    widget.edit((db) => editMarketPriceState(
+      db, (settings) => settings['refreshAt'] = chosen));
+  }
+
+  void _clearRefreshTime() {
+    widget.edit((db) => editMarketPriceState(
+      db, (settings) => settings.remove('refreshAt')));
   }
 
   Future<void> _createCategory() async {
@@ -1195,6 +1225,7 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
           ),
       ],
       const SizedBox(height: 15),
+      ],
       Theme(data: Theme.of(context).copyWith(
           dividerColor: Colors.transparent),
         child: Material(
@@ -1236,8 +1267,8 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
                       Text('Otomatik Fiyat Kontrolü',
                         style: TextStyle(fontSize: 13,
                           fontWeight: FontWeight.w800)),
-                      Text('POS açıkken seçilen aralıkta; '
-                        'en fazla yaklaşık 5 dk gecikme olabilir.',
+                      Text('POS açıkken seçilen saatlerde; '
+                        'yaklaşık 1 dk gecikme olabilir.',
                         style: TextStyle(
                           color: NohutBrand.muted, fontSize: 11)),
                     ],
@@ -1261,6 +1292,53 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
                   ),
                 ]),
               ),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 7),
+                child: Wrap(
+                  spacing: 12, runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    const Icon(Icons.access_time_rounded,
+                      size: 20, color: NohutBrand.green),
+                    Text(
+                      clock_schedule.validMarketRefreshClock(
+                            config['refreshAt']) == null
+                        ? 'Başlangıç saati: Seçilmedi'
+                        : 'Başlangıç saati: ' +
+                          config['refreshAt'].toString() + ' (Türkiye)',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: NohutBrand.ink, fontSize: 13)),
+                    OutlinedButton.icon(
+                      key: const ValueKey('market-refresh-time'),
+                      onPressed: _selectRefreshTime,
+                      icon: const Icon(Icons.schedule_rounded, size: 17),
+                      label: const Text('Saat Seç')),
+                    if (clock_schedule.validMarketRefreshClock(
+                            config['refreshAt']) != null)
+                      TextButton(
+                        onPressed: _clearRefreshTime,
+                        child: const Text('Saati Sıfırla')),
+                  ],
+                ),
+              ),
+              if (clock_schedule.validMarketRefreshClock(
+                  config['refreshAt']) != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(
+                    marketPriceRefreshHours(config['refreshIntervalHours']) == 1
+                      ? 'Her saat, :' +
+                        config['refreshAt'].toString().substring(3) +
+                        ' dakikada kontrol edilir.'
+                      : 'Kontrol saatleri: ' +
+                        clock_schedule.marketRefreshClockLabels(
+                          marketPriceRefreshHours(config['refreshIntervalHours']),
+                          config['refreshAt'].toString()).join(' · '),
+                    style: const TextStyle(
+                      color: NohutBrand.muted, fontSize: 11),
+                  ),
+                ),
               const SelectableText('Kullanım koşulları: ' +
                 marketPriceTerms, style: TextStyle(
                   fontSize: 11, color: NohutBrand.muted)),
@@ -1268,7 +1346,6 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
           ),
         ),
       ),
-      ],
     ]),
   );
 
