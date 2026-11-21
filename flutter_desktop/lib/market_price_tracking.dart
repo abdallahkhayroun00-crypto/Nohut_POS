@@ -1,7 +1,11 @@
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:file_selector/file_selector.dart';
 
 import 'brand.dart';
 import 'market_prices.dart';
+import 'market_watch_transfer.dart';
 import 'operations_ui.dart';
 import 'pos_logic.dart';
 import 'pos_store.dart';
@@ -28,6 +32,7 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
   String info = 'Dört market konumu hazır. Ürün aramak için kaynak şubesini eşleştirin.';
   bool loading = false;
   String alertFilter = 'Tümü';
+  String categoryFilter = 'Tümü';
   bool addProductExpanded = true;
   List<MarketDepot> branches = const [];
   List<MarketQuote> results = const [];
@@ -276,6 +281,120 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
         ..removeWhere((p) => p['key'] == item['key']);
       editMarketPriceState(db, (s) => s['tracked'] = next);
     });
+  }
+
+  Color _marketColor(Object? market) {
+    switch (marketBrandKey((market ?? '').toString())) {
+      case 'bim': return const Color(0xffD52D35);
+      case 'a101': return const Color(0xff1674C6);
+      case 'hakmar': return const Color(0xff26894C);
+      default: return NohutBrand.green;
+    }
+  }
+
+  Widget _marketPill(String label, Object? market, {bool selected = false}) {
+    final color = _marketColor(market);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: selected ? color : color.withValues(alpha: 0.09),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: selected ? 1 : 0.2))),
+      child: Text(label, style: TextStyle(
+        color: selected ? Colors.white : color,
+        fontWeight: FontWeight.w800, fontSize: 11)),
+    );
+  }
+
+  void _setProductCategory(Json entry, String category) {
+    widget.edit((db) {
+      final products = trackedMarketProducts(db);
+      for (final product in products) {
+        if (product['key'] == entry['key']) {
+          product['category'] = category;
+          break;
+        }
+      }
+      editMarketPriceState(db, (settings) => settings['tracked'] = products);
+    });
+  }
+
+  Future<void> _exportWatchlist() async {
+    if (loading) return;
+    setState(() => loading = true);
+    try {
+      const types = <XTypeGroup>[
+        XTypeGroup(label: 'Nohut Market Takip', extensions: ['json']),
+      ];
+      final save = await getSaveLocation(
+        suggestedName: 'Nohut_Market_Takip.nohut.json',
+        acceptedTypeGroups: types,
+      );
+      if (save == null) return;
+      final content = exportMarketWatch(widget.state);
+      await File(save.path).writeAsString(content, flush: true);
+      notice('Market takibi yedeği kaydedildi. Dosyayı dükkân PC’sine aktarın.');
+    } catch (e) {
+      notice('Dışa aktarma başarısız: $e');
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
+  }
+
+  Future<void> _importWatchlist() async {
+    if (loading) return;
+    setState(() => loading = true);
+    try {
+      const types = <XTypeGroup>[
+        XTypeGroup(label: 'Nohut Market Takip', extensions: ['json']),
+      ];
+      final chosen = await openFile(acceptedTypeGroups: types);
+      if (chosen == null || !mounted) return;
+      final bytes = await chosen.readAsBytes();
+      if (bytes.length > 1024 * 1024) {
+        throw const FormatException('Dosya 1 MB sınırından büyük.');
+      }
+      final backup = parseMarketWatch(utf8.decode(bytes));
+      if (!mounted) return;
+      final existing = trackedMarketProducts(widget.state).length;
+      final accepted = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Market Takibini İçe Aktar'),
+          content: Text(
+            backup.count.toString() + ' ürün ve ' +
+            backup.storeMatches.length.toString() + ' şube eşleştirmesi bulundu.\n\n' +
+            'Bu işlem yalnızca Market Fiyat Takibi verilerini değiştirir. ' +
+            'Bu bilgisayardaki ' + existing.toString() + ' takip edilen ürünün yerine ' +
+            'dosyadakiler gelecek.\n\n' +
+            'Siparişler, kasa, menü ve personel verileri değişmeyecek.'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Vazgeç')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('İçe Aktar ve Değiştir')),
+          ],
+        ),
+      );
+      if (accepted != true || !mounted) return;
+      final ok = widget.edit((db) => applyMarketWatchBackup(db, backup));
+      if (ok && mounted) {
+        setState(() {
+          alertFilter = 'Tümü';
+          categoryFilter = 'Tümü';
+          addProductExpanded = backup.count == 0;
+          branches = [];
+          results = [];
+          info = backup.count.toString() + ' ürün içe aktarıldı.';
+        });
+      } else {
+        notice('İçe aktarma kaydedilemedi.');
+      }
+    } catch (e) {
+      notice('Dosya içe aktarılamadı: $e');
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
   }
 
   String money(int value) =>
