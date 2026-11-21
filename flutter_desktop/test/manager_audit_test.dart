@@ -46,8 +46,22 @@ void main() {
       (t) async {
         final file = await mountManager(t, seed());
         await click(t, 'Sipariş Al');
-        await click(t, 'Ekle');
-        await t.tap(find.byType(DropdownButtonFormField<int>));
+        final falafelCard = find.ancestor(
+          of: find.text('Falafel').first,
+          matching: find.byType(Card),
+        );
+        final addFalafel = find.descendant(
+          of: falafelCard.first,
+          matching: find.text('Ekle'),
+        );
+        await t.ensureVisible(addFalafel);
+        await t.tap(addFalafel);
+        await t.pumpAndSettle();
+        await t.tap(find.byType(DropdownButtonFormField<int>).first);
+        await t.pumpAndSettle();
+        await t.tap(find.text('Abdallah').last);
+        await t.pumpAndSettle();
+        await t.tap(find.byType(DropdownButtonFormField<int>).last);
         await t.pumpAndSettle();
         await t.tap(find.textContaining('Masa 1').last);
         await t.pumpAndSettle();

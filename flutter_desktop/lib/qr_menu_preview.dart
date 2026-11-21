@@ -29,7 +29,9 @@ class QrMenuSyncPanel extends StatelessWidget {
           : sync.busy
               ? 'Web sitesi kontrol ediliyor...'
               : error != null
-                  ? 'Bağlantı hatası · çevrimdışı menü korunuyor'
+                  ? (error.startsWith('FormatException')
+                      ? 'QR veri doğrulama hatası · yerel menü korunuyor'
+                      : 'Bağlantı hatası · çevrimdışı menü korunuyor')
                   : success != null
                       ? 'Güncel · otomatik kontrol etkin'
                       : 'İlk kontrol bekleniyor';

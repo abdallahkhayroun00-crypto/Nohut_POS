@@ -5,20 +5,34 @@ import 'operations.dart';
 import 'operations_ui.dart';
 import 'pos_logic.dart';
 import 'order_reporting.dart';
+import 'report_activity.dart';
 
 class SalesReports extends StatefulWidget {
-  const SalesReports({super.key, required this.state, required this.edit});
+  const SalesReports({
+    super.key, required this.state, required this.edit, this.onlineWarning,
+  });
   final Json state;
   final EditState edit;
+  final String? onlineWarning;
   @override
   State<SalesReports> createState() => _SalesReportsState();
 }
 
 class _SalesReportsState extends State<SalesReports> {
+  static const tabs = [
+    'Genel Bakış',
+    'Yoğunluk',
+    'Trendyol Analitik',
+    'Satışlar',
+    'Ürünler',
+    'Hazırlık Süresi',
+    'İptaller',
+    'Mutabakat',
+  ];
   String from = istanbulDay(DateTime.now()),
       to = istanbulDay(DateTime.now()),
       source = 'Tümü',
-      tab = 'Özet';
+      tab = 'Genel Bakış';
   bool includes(String stamp) {
     final d = DateTime.tryParse(stamp);
     if (d == null) return false;
@@ -52,45 +66,113 @@ class _SalesReportsState extends State<SalesReports> {
     width: 220,
     child: Card(
       child: Padding(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(17),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, color: NohutBrand.gold),
-            const SizedBox(height: 12),
-            Text(label),
-            Text(
-              amount,
-              style: const TextStyle(
-                fontSize: 27,
-                fontWeight: FontWeight.w700,
-                color: NohutBrand.green,
+            Container(
+              decoration: BoxDecoration(
+                color: const Color(0xffEAF2EC),
+                borderRadius: BorderRadius.circular(12),
               ),
+              padding: const EdgeInsets.all(9),
+              child: Icon(icon, color: NohutBrand.green, size: 20),
+            ),
+            const SizedBox(height: 12),
+            Text(label, style: const TextStyle(
+                color: NohutBrand.muted, fontSize: 12)),
+            const SizedBox(height: 4),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(amount, style: const TextStyle(
+                fontSize: 25, fontWeight: FontWeight.w800,
+                color: NohutBrand.green)),
             ),
           ],
         ),
       ),
     ),
   );
+  Widget _summaryInsight(IconData icon, String label, String value) =>
+      Container(
+        constraints: const BoxConstraints(minWidth: 185),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: const Color(0xffF4F7F3),
+          borderRadius: BorderRadius.circular(13),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: NohutBrand.green, size: 21),
+            const SizedBox(width: 10),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: const TextStyle(
+                  color: NohutBrand.muted, fontSize: 11)),
+                Text(value, style: const TextStyle(
+                  color: NohutBrand.green, fontWeight: FontWeight.w800,
+                  fontSize: 16)),
+              ],
+            ),
+          ],
+        ),
+      );
+
+  Widget _productBar(String name, int quantity, int revenue, int maximum) {
+    final ratio = maximum <= 0
+        ? 0.0
+        : (revenue / maximum).clamp(0.0, 1.0).toDouble();
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 9),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(child: Text(name,
+                  style: const TextStyle(fontWeight: FontWeight.w600))),
+              const SizedBox(width: 8),
+              Text('$quantity adet',
+                  style: const TextStyle(color: NohutBrand.muted)),
+              const SizedBox(width: 12),
+              Text(formatTry(revenue),
+                  style: const TextStyle(fontWeight: FontWeight.w800)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          LinearProgressIndicator(
+            value: ratio,
+            minHeight: 7,
+            borderRadius: BorderRadius.circular(8),
+            backgroundColor: const Color(0xffEDF1EC),
+            color: NohutBrand.green,
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final entries = ledger(widget.state)
         .where(
-          (e) => includes(e.stamp) && (source == 'Tümü' || e.source == source),
+          (e) =>
+              includes(e.stamp) &&
+              const ['Masa', 'Gel-Al'].contains(e.source) &&
+              (source == 'Tümü' || e.source == source),
         )
         .toList();
     final sold = sales(widget.state)
         .where(
-          (e) => includes(e.stamp) && (source == 'Tümü' || e.source == source),
+          (e) =>
+              includes(e.stamp) &&
+              const ['Masa', 'Gel-Al'].contains(e.source) &&
+              (source == 'Tümü' || e.source == source),
         )
         .toList();
-    final counts = hourlyOrderCounts(
-      asMaps(widget.state['orders']),
-      from: from,
-      to: to,
-      source: source,
-      staff: '',
-    );
+    final activity = ReportActivity(widget.state, includes, source);
     final net = entries.fold<int>(0, (n, e) => n + e.amount),
         refund = entries
             .where((e) => e.amount < 0)
@@ -110,13 +192,38 @@ class _SalesReportsState extends State<SalesReports> {
             .toList();
     final sorted = products.entries.toList()
       ..sort((a, b) => b.value.$2.compareTo(a.value.$2));
+    final onlineProducts = activity.onlineProducts.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    final trendyolOrders = asMaps(widget.state['trendyolGoOrders'])
+        .where((order) => order['testPackage'] != true &&
+            includes((order['createdAt'] ?? '').toString()) &&
+            (source == 'Tümü' || source == 'Trendyol Go'))
+        .toList();
+    final hourly = <int, int>{};
+    for (final order in trendyolOrders) {
+      final created = DateTime.tryParse((order['createdAt'] ?? '').toString());
+      if (created == null) continue;
+      final hour = created.toUtc().add(const Duration(hours: 3)).hour;
+      hourly[hour] = (hourly[hour] ?? 0) + 1;
+    }
+    final maximumHour = hourly.values.fold<int>(0, (a, b) => a > b ? a : b);
+    final courierMilestones = <String, int>{};
+    for (final stage in const ['nearby', 'picked_up', 'delivered']) {
+      courierMilestones[stage] = trendyolOrders.where((o) =>
+          asMaps(o['courierTimeline']).any((e) => e['stage'] == stage))
+          .length;
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         panelTitle('Raporlar'),
-        const Text(
-          'Satış, tahsilat ve yoğunluğu anlaşılır bir özetle takip et.',
-        ),
+        const Text('Tarih aralığı ve sipariş kaynağı seçin.'),
+        if (widget.onlineWarning != null)
+          Card(child: ListTile(
+            leading: const Icon(Icons.info_outline, color: NohutBrand.gold),
+            title: const Text('Online platform verileri eksik olabilir'),
+            subtitle: Text(widget.onlineWarning!),
+          )),
         const SizedBox(height: 16),
         Card(
           child: Padding(
@@ -168,7 +275,14 @@ class _SalesReportsState extends State<SalesReports> {
                     isExpanded: true,
                     decoration: const InputDecoration(labelText: 'Kaynak'),
                     items:
-                        ['Tümü', 'Masa', 'Gel-Al', 'Trendyol Go', 'Yemeksepeti']
+                        [
+                              'Tümü',
+                              'Masa',
+                              'Gel-Al',
+                              'Trendyol Go',
+                              'Yemeksepeti',
+                              'Migros Yemek',
+                            ]
                             .map(
                               (s) => DropdownMenuItem(value: s, child: Text(s)),
                             )
@@ -185,16 +299,25 @@ class _SalesReportsState extends State<SalesReports> {
           spacing: 10,
           runSpacing: 10,
           children: [
-            metric('Net tahsilat', formatTry(net), Icons.payments_outlined),
-            metric('İadeler', formatTry(refund), Icons.undo),
             metric(
-              'Satılan ürün',
+              'Yerel net tahsilat',
+              formatTry(net),
+              Icons.payments_outlined,
+            ),
+            metric(
+              'Trendyol Go satışları',
+              formatTry(activity.onlineSales),
+              Icons.delivery_dining_outlined,
+            ),
+            metric('Yerel iadeler', formatTry(refund), Icons.undo),
+            metric(
+              'Yerel ürün adedi',
               '${sold.fold<int>(0, (n, e) => n + e.quantity)}',
               Icons.restaurant_outlined,
             ),
             metric(
               'Sipariş sayısı',
-              '${counts.fold<int>(0, (a, b) => a + b)}',
+              '${activity.orderCount}',
               Icons.receipt_long_outlined,
             ),
           ],
@@ -203,7 +326,7 @@ class _SalesReportsState extends State<SalesReports> {
         Wrap(
           spacing: 8,
           children: [
-            for (final name in ['Özet', 'Tahsilat', 'Ürünler', 'Mutabakat'])
+            for (final name in tabs)
               ChoiceChip(
                 label: Text(name),
                 selected: tab == name,
@@ -212,87 +335,206 @@ class _SalesReportsState extends State<SalesReports> {
           ],
         ),
         const SizedBox(height: 16),
-        if (tab == 'Özet')
+        if (tab == 'Genel Bakış') ...[
           Card(
             child: Padding(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.all(19),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  panelTitle('Saatlik yoğunluk'),
-                  const Text('Yeni sipariş sayısı · İstanbul saati'),
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    height: 150,
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        for (var h = 0; h < 24; h++)
-                          Expanded(
-                            child: Tooltip(
-                              message: '$h:00 · ${counts[h]} sipariş',
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 2,
-                                ),
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.end,
-                                  children: [
-                                    if (counts[h] > 0)
-                                      Text(
-                                        '${counts[h]}',
-                                        style: const TextStyle(fontSize: 11),
-                                      ),
-                                    Container(
-                                      height:
-                                          counts.reduce(
-                                                (a, b) => a > b ? a : b,
-                                              ) ==
-                                              0
-                                          ? 2
-                                          : 100 *
-                                                counts[h] /
-                                                counts.reduce(
-                                                  (a, b) => a > b ? a : b,
-                                                ),
-                                      decoration: BoxDecoration(
-                                        color: NohutBrand.green,
-                                        borderRadius: BorderRadius.circular(4),
-                                      ),
-                                    ),
-                                    if (h % 3 == 0)
-                                      Text(
-                                        '$h',
-                                        style: const TextStyle(fontSize: 11),
-                                      )
-                                    else
-                                      const SizedBox(height: 16),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  OutlinedButton.icon(
-                    onPressed: () =>
-                        export('nohut-yogunluk', hourlyCountsCsv(counts)),
-                    icon: const Icon(Icons.download),
-                    label: const Text('Yoğunluk CSV'),
+                  Text('Dönem Özeti', style: Theme.of(context).textTheme.titleLarge),
+                  const SizedBox(height: 7),
+                  const Text('Yerel tahsilat ve platform satış tutarı farklı muhasebe kalemleridir.',
+                      style: TextStyle(color: NohutBrand.muted, fontSize: 12)),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 24,
+                    runSpacing: 12,
+                    children: [
+                      _summaryInsight(Icons.timer_outlined, 'Ortalama hazırlık',
+                          activity.prepAverage == null ? '—' : '${activity.prepAverage} dk'),
+                      _summaryInsight(Icons.cancel_outlined, 'İptal / karşılanamadı',
+                          '${activity.cancellations.length}'),
+                      _summaryInsight(Icons.delivery_dining_outlined, 'Trendyol teslim edilen',
+                          '${activity.onlineCount}'),
+                    ],
                   ),
                 ],
               ),
             ),
           ),
-        if (tab == 'Tahsilat')
+          const SizedBox(height: 10),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(19),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Öne çıkan yerel ürünler',
+                      style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 4),
+                  const Text('Satış kayıtlarına dayalı ürün dağılımı · Tahsilat değildir.',
+                      style: TextStyle(fontSize: 12, color: NohutBrand.muted)),
+                  const SizedBox(height: 14),
+                  if (sorted.isEmpty)
+                    const Text('Bu tarih aralığında yerel ürün kaydı yok.'),
+                  for (final entry in sorted.take(5))
+                    _productBar(
+                      entry.key, entry.value.$1, entry.value.$2,
+                      sorted.first.value.$2,
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ],
+        if (tab == 'Yoğunluk')
+          DemandCharts(
+            activity: activity,
+            export: () => export('nohut-yogunluk', activity.csv),
+          ),
+        if (tab == 'Hazırlık Süresi')
+          Card(
+            child: Column(
+              children: [
+                ListTile(
+                  title: const Text('Tamamlanan hazırlıklar'),
+                  subtitle: Text(
+                    'Ölçülen sipariş · ${activity.prepared.length}',
+                  ),
+                  trailing: Text(
+                    activity.prepAverage == null
+                        ? '—'
+                        : '${activity.prepAverage} dk ort.',
+                  ),
+                ),
+                for (final (duration, order) in activity.prepared)
+                  ListTile(
+                    title: Text(
+                      '#${displayOrderNumber(order)} · ${order['source']}',
+                    ),
+                    subtitle: Text(istanbulStamp(order['readyAt'])),
+                    trailing: Text('${duration.inMinutes} dk'),
+                  ),
+              ],
+            ),
+          ),
+        if (tab == 'Trendyol Analitik') ...[
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text('Trendyol Go · Sipariş ve Kurye Analizi',
+                    style: Theme.of(context).textTheme.titleLarge),
+                  const SizedBox(height: 5),
+                  const Text('Bu rakamlar yalnızca POS tarafından alınmış platform kayıtlarına dayanır. '
+                    'Eksik senkronizasyon gerçek sıfır sipariş anlamına gelmez.'),
+                  const SizedBox(height: 14),
+                  Wrap(spacing: 12, runSpacing: 10, children: [
+                    _summaryInsight(Icons.receipt_long_outlined,
+                      'Alınan sipariş', trendyolOrders.length.toString()),
+                    _summaryInsight(Icons.check_circle_outline,
+                      'Teslim edilen', trendyolOrders.where((o) =>
+                        o['status'] == 'Delivered').length.toString()),
+                    _summaryInsight(Icons.cancel_outlined,
+                      'İptal / karşılanamadı', trendyolOrders.where((o) =>
+                        o['status'] == 'Cancelled' || o['status'] == 'UnSupplied').length.toString()),
+                    _summaryInsight(Icons.payments_outlined,
+                      'Teslim edilen toplam', formatTry(
+                        trendyolOrders.where((o) => o['status'] == 'Delivered')
+                          .fold<int>(0, (sum, o) => sum +
+                            (o['totalCents'] as int? ?? 0)))),
+                  ]),
+                  const Divider(height: 28),
+                  const Text('Kurye Takip · POS gözlemleri',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 9),
+                  for (final row in const [
+                    ('nearby', 'Kurye Yaklaşıyor'),
+                    ('picked_up', 'Kuryeye Teslim Edildi'),
+                    ('delivered', 'Müşteriye Teslim Edildi'),
+                  ])
+                    ListTile(
+                      dense: true,
+                      title: Text(row.$2),
+                      trailing: Text((courierMilestones[row.$1] ?? 0).toString(),
+                        style: const TextStyle(fontWeight: FontWeight.w800)),
+                    ),
+                  const Text('Olay saatleri, platformun gerçek olay zamanı değil, '
+                    'POS tarafından ilk görülen zamandır.',
+                    style: TextStyle(fontSize: 12, color: NohutBrand.muted)),
+                  const Divider(height: 28),
+                  const Text('Sipariş Yoğunluğu · Saatlik',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 10),
+                  for (var hour = 0; hour < 24; hour++)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(children: [
+                        SizedBox(width: 55, child: Text(
+                          hour.toString().padLeft(2, '0') + ':00')),
+                        Expanded(child: LinearProgressIndicator(
+                          value: maximumHour == 0 ? 0 :
+                            ((hourly[hour] ?? 0) / maximumHour).toDouble(),
+                          minHeight: 8,
+                          borderRadius: BorderRadius.circular(6),
+                        )),
+                        const SizedBox(width: 9),
+                        SizedBox(width: 28, child: Text(
+                          (hourly[hour] ?? 0).toString(),
+                          textAlign: TextAlign.right)),
+                      ]),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ],
+        if (tab == 'İptaller')
+          Card(
+            child: Column(
+              children: [
+                ListTile(
+                  title: Text(
+                    '${activity.cancellations.length} iptal / karşılanamadı',
+                  ),
+                ),
+                for (final (date, order) in activity.cancellations)
+                  ListTile(
+                    title: Text(
+                      '#${displayOrderNumber(order)} · ${order['source']}',
+                    ),
+                    subtitle: Text(
+                      [
+                            istanbulStamp(date),
+                            order['cancelReason'],
+                            order['voidReason'],
+                          ]
+                          .where(
+                            (part) => part != null && '$part'.trim().isNotEmpty,
+                          )
+                          .join(' · '),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        if (tab == 'Satışlar')
           Card(
             child: Padding(
               padding: const EdgeInsets.all(20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  ListTile(
+                    title: const Text('Trendyol Go · Teslim edilen siparişler'),
+                    subtitle: Text(
+                      '${activity.onlineCount} sipariş · Platform toplamı',
+                    ),
+                    trailing: Text(formatTry(activity.onlineSales)),
+                  ),
                   FilledButton.icon(
                     onPressed: () =>
                         export('nohut-tahsilat', ledgerCsv(entries)),
@@ -329,19 +571,31 @@ class _SalesReportsState extends State<SalesReports> {
                   FilledButton.icon(
                     onPressed: () => export('nohut-urunler', salesCsv(sold)),
                     icon: const Icon(Icons.download),
-                    label: const Text('Ürün Satışları CSV'),
+                    label: const Text('Yerel Ürün Satışları CSV'),
                   ),
                   if (sorted.isEmpty)
                     const Padding(
                       padding: EdgeInsets.all(25),
-                      child: Text('Bu dönemde ürün satışı yok.'),
+                      child: Text('Bu dönemde yerel ürün satışı yok.'),
                     ),
                   for (final e in sorted)
-                    ListTile(
-                      title: Text(e.key),
-                      subtitle: Text('${e.value.$1} adet'),
-                      trailing: Text(formatTry(e.value.$2)),
+                    _productBar(
+                      e.key,
+                      e.value.$1,
+                      e.value.$2,
+                      sorted.first.value.$2,
                     ),
+                  if (onlineProducts.isNotEmpty) ...[
+                    const Divider(),
+                    const ListTile(
+                      title: Text('Trendyol Go · Teslim edilen ürünler'),
+                    ),
+                    for (final e in onlineProducts)
+                      ListTile(
+                        title: Text(e.key),
+                        trailing: Text('${e.value} adet'),
+                      ),
+                  ],
                 ],
               ),
             ),
@@ -386,7 +640,4 @@ class _SalesReportsState extends State<SalesReports> {
       ],
     );
   }
-
-  String hourlyCountsCsv(List<int> counts) =>
-      '\uFEFFSaat,Sipariş\r\n${[for (var h = 0; h < 24; h++) '$h,${counts[h]}'].join('\r\n')}\r\n';
 }

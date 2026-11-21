@@ -101,6 +101,10 @@ class QrCatalogFixture {
     return QrMenuReader(fetcher:(uri)async{
       requests?.add(uri);
       if(offline)throw const SocketException('offline');
+      if(uri.path.endsWith('/cms/pos-managed-status.json')) {
+        // Github Pages may report 503 for a not-yet-published optional marker.
+        throw const HttpException('QR HTTP 503');
+      }
       if(uri.path.endsWith('/cms/catalog-v1.json')) {
         return jsonEncode(catalogOverride??catalog());
       }

@@ -65,8 +65,8 @@ void main() {
         expect(find.text('Genel Bakış'), findsWidgets);
         expect(find.byType(MaterialApp), findsOneWidget);
         for (final label in [
-          'Masalar',
-          'Siparişler',
+          'Masalar & Siparişler',
+          'Online Siparişler',
           'Kasa & Ödemeler',
           'Raporlar',
           'Ayarlar',
@@ -83,10 +83,15 @@ void main() {
           await tester.pumpAndSettle();
           expect(tester.takeException(), isNull, reason: tab);
         }
-        await tester.ensureVisible(find.text('Siparişler').first);
-        await tester.tap(find.text('Siparişler').first);
-        await tester.pumpAndSettle();
+        await tester.ensureVisible(find.text('Online Siparişler').first);
         await tester.tap(find.text('Online Siparişler').first);
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(find.widgetWithText(FilterChip, 'Yemeksepeti'));
+        await tester.tap(find.widgetWithText(FilterChip, 'Yemeksepeti'));
+        await tester.pumpAndSettle();
+        final demo = find.text('Yemeksepeti test alanı');
+        await tester.ensureVisible(demo);
+        await tester.tap(demo);
         await tester.pumpAndSettle();
         for (final tab in [
           'Mağaza',
@@ -97,6 +102,7 @@ void main() {
           'Senkronizasyon',
           'Siparişler',
         ]) {
+          await tester.ensureVisible(find.text(tab).last);
           await tester.tap(find.text(tab).last);
           await tester.pumpAndSettle();
           expect(tester.takeException(), isNull, reason: tab);

@@ -15,6 +15,7 @@ void main() {
     ).readPublishedMenu();
 
     expect(requests.map((x)=>x.path),[
+      '/qr-menu/cms/pos-managed-status.json',
       '/qr-menu/cms/catalog-v1.json',
       '/qr-menu/cms/menu-prices.json',
       '/qr-menu/cms/campaigns.json',
@@ -34,6 +35,76 @@ void main() {
     expect(data.products.singleWhere((p)=>p.id==52).name,'Layali Lübnan');
     expect(data.campaigns.single.title['ar'],isNotEmpty);
     expect(data.retrievedAtUtc.isUtc,isTrue);
+  });
+
+  test('accepts safe official SVG product artwork',() async {
+    final data=QrCatalogFixture.catalog(invalidImage:
+      'assets/side-cutouts/kibbe-1-adet-transparent.svg');
+    final published=await QrCatalogFixture.reader(
+      catalogOverride:data).readPublishedMenu();
+    expect(published.products.first.image,endsWith('.svg'));
+  });
+
+  test('managed QR catalog overrides legacy prices and availability',()async{
+    final catalog=QrCatalogFixture.catalog();
+    final managed={
+      ...catalog,
+      'categories':[
+        for(final pair in catalog['categories'] as List)
+          {...pair as Map,'active':true,'order':(catalog['categories'] as List).indexOf(pair)},
+      ],
+      'products':[
+        for(final product in catalog['products'] as List)
+          {
+            ...product as Map,
+            'active':true,'available':product['id']!=0,
+            'order':product['id'],'legacyKey':(product['name'] as Map)['tr'],
+          },
+      ],
+    };
+    ((managed['products'] as List).first as Map)['price']=177;
+    ((managed['products'] as List).first as Map)['name']={
+      'tr':'Falafel Dürüm Yeni',
+      'en':'Falafel Wrap New',
+      'ar':'فلافل جديد',
+    };
+    final reader=QrMenuReader(fetcher:(uri)async{
+      if(uri.path.endsWith('pos-managed-status.json'))return jsonEncode({'schemaVersion':1,'enabled':true});
+      if(uri.path.endsWith('pos-managed-menu.json'))return jsonEncode(managed);
+      throw StateError('Legacy endpoint must not be read.');
+    });
+    final published=await reader.readPublishedMenu();
+    expect(published.products.first.priceTl,177);
+    expect(published.products.first.available,isFalse);
+    expect(published.products.first.name,'Falafel Dürüm Yeni');
+    expect(published.products.first.legacyKey,'Falafel Dürüm');
+  });
+
+  test('disabled managed feed keeps legacy CMS without fetching missing menu',()async{
+    final requests=<Uri>[];
+    final reader=QrMenuReader(fetcher:(uri)async{
+      requests.add(uri);
+      if(uri.path.endsWith('pos-managed-status.json')) {
+        return jsonEncode({'schemaVersion':1,'enabled':false});
+      }
+      if(uri.path.endsWith('pos-managed-menu.json')) {
+        throw StateError('Inactive optional managed menu must not be requested.');
+      }
+      if(uri.path.endsWith('catalog-v1.json'))return jsonEncode(QrCatalogFixture.catalog());
+      if(uri.path.endsWith('menu-prices.json'))return QrCatalogFixture.priceJson();
+      if(uri.path.endsWith('campaigns.json'))return QrCatalogFixture.campaignJson;
+      throw StateError('Unknown fetch path.');
+    });
+    final published=await reader.readPublishedMenu();
+    expect(published.products,hasLength(53));
+    expect(requests.where((u)=>u.path.endsWith('pos-managed-menu.json')),isEmpty);
+  });
+
+  test('missing status marker HTTP 503 preserves public CMS fallback',()async{
+    final urls=<Uri>[];
+    final result=await QrCatalogFixture.reader(requests:urls).readPublishedMenu();
+    expect(result.products,hasLength(53));
+    expect(urls.first.path,endsWith('pos-managed-status.json'));
   });
 
   test('campaign expiry respects timezone offsets',()async{

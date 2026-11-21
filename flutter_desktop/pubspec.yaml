@@ -1,7 +1,7 @@
 name: nohut_falafel_desktop
 description: Nohut Falafel Windows POS desktop with local SQLite and employee QR LAN.
 publish_to: none
-version: 0.5.0+5
+version: 0.6.7+13
 
 environment:
   sdk: '>=3.10.0 <4.0.0'
@@ -9,8 +9,11 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  crypto: ^3.0.7
+  ffi: ^2.2.0
   sqlite3: ^3.7.1
   qr_flutter: ^4.1.0
+  file_selector: ^1.1.0
   path: ^1.9.1
 
 dev_dependencies:
@@ -25,6 +28,7 @@ flutter:
     - assets/staff.html
     - assets/printing/
     - assets/brand/
+    - assets/notifications/
     - assets/brand/fonts/
   fonts:
     - family: Barlow Semi Condensed

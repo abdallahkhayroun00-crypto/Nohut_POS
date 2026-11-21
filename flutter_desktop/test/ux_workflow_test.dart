@@ -110,8 +110,12 @@ void main() {
       await tester.tap(find.text('İçecekler').last);
       await tester.pumpAndSettle();
       expect(find.text('Not: Sos ayrı'), findsOneWidget);
-      final table = find.byType(DropdownButtonFormField<int>);
-      await tester.tap(table);
+      final fields = find.byType(DropdownButtonFormField<int>);
+      await tester.tap(fields.first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Abdallah').last);
+      await tester.pumpAndSettle();
+      await tester.tap(fields.last);
       await tester.pumpAndSettle();
       await tester.tap(find.textContaining('Masa 1').last);
       await tester.pumpAndSettle();
@@ -164,7 +168,7 @@ void main() {
       expect(tester.takeException(), isNull);
       await tester.tap(find.byTooltip('Menüyü aç'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Masalar').last);
+      await tester.tap(find.text('Masalar & Siparişler').last);
       await tester.pumpAndSettle();
       expect(find.text('Masa 5'), findsOneWidget);
       expect(tester.takeException(), isNull);
@@ -204,13 +208,19 @@ void main() {
       expect(find.text('Kasayı Aç'), findsNothing);
       expect(find.text('Kasayı Kapat'), findsNothing);
       expect(find.text('Yazdırma Kuyruğu'), findsNothing);
-      await tester.ensureVisible(find.text('Siparişler').first);
-      await tester.tap(find.text('Siparişler').first);
-      await tester.pumpAndSettle();
       await tester.ensureVisible(find.text('Online Siparişler').first);
       await tester.tap(find.text('Online Siparişler').first);
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Örnek Online Kart'));
+      await tester.ensureVisible(find.widgetWithText(FilterChip, 'Yemeksepeti'));
+      await tester.tap(find.widgetWithText(FilterChip, 'Yemeksepeti'));
+      await tester.pumpAndSettle();
+      final demo = find.text('Yemeksepeti test alanı');
+      await tester.ensureVisible(demo);
+      await tester.tap(demo);
+      await tester.pumpAndSettle();
+      final sampleOrder = find.text('Örnek Online Kart');
+      await tester.ensureVisible(sampleOrder);
+      await tester.tap(sampleOrder);
       await tester.pumpAndSettle();
       expect(find.textContaining('Kabul bekliyor'), findsWidgets);
       final real = PosStore(databaseFile: file);
@@ -221,4 +231,3 @@ void main() {
     },
   );
 }
-
