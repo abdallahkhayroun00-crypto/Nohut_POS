@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'market_refresh_schedule.dart' as schedule;
 import 'pos_logic.dart';
 import 'pos_store.dart';
 
@@ -368,12 +369,8 @@ Future<MarketPriceRefresh> refreshMarketPrices(
   }
   final entries = trackedMarketProducts(store.read().data).take(50).toList();
   if (entries.isEmpty) return const MarketPriceRefresh(0, 0, 0);
-  final last = DateTime.tryParse((settings['lastRefreshAttempt'] ?? '').toString());
-  if (last != null) {
-    final elapsed = DateTime.now().toUtc().difference(last.toUtc());
-    final minimum = force ? const Duration(minutes: 2)
-        : Duration(hours: marketPriceRefreshHours(settings['refreshIntervalHours']));
-    if (elapsed < minimum) return const MarketPriceRefresh(0, 0, 0);
+  if (!schedule.marketRefreshIsDue(settings, DateTime.now(), force: force)) {
+    return const MarketPriceRefresh(0, 0, 0);
   }
 
   // Throttle before requests; concurrent retries cannot accidentally hammer
