@@ -81,7 +81,9 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
       storeId = id;
       branches = [];
       results = [];
-      info = 'Mağaza seçildi. Ürün aramadan önce kaynak şubesini eşleştirin.';
+      info = selected == null
+        ? 'Mağaza seçildi. Kaynak şubesini eşleştirin.'
+        : 'Şube hazır. Ürün arayabilirsiniz.';
     });
   }
 
@@ -903,9 +905,18 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
           ChoiceChip(
             label: Text(candidate.label),
             selected: storeId == candidate.id,
+            selectedColor: _marketColor(candidate.market),
+            backgroundColor:
+              _marketColor(candidate.market).withValues(alpha: 0.06),
+            side: BorderSide(color:
+              _marketColor(candidate.market).withValues(alpha: 0.32)),
+            labelStyle: TextStyle(
+              color: storeId == candidate.id
+                ? Colors.white : _marketColor(candidate.market),
+              fontWeight: FontWeight.w800),
             avatar: Icon(Icons.storefront_outlined, size: 17,
               color: storeId == candidate.id
-                  ? Colors.white : NohutBrand.green),
+                  ? Colors.white : _marketColor(candidate.market)),
             onSelected: (_) => selectStore(candidate.id),
           ),
       ]),
@@ -1062,6 +1073,7 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
                         style: const TextStyle(
                           fontSize: 11, color: NohutBrand.muted)),
                     ])),
+                _marketPill(q.market, q.market),
                 Text(money(q.priceCents),
                   style: const TextStyle(fontSize: 16,
                     fontWeight: FontWeight.w900, color: NohutBrand.green)),
@@ -1178,6 +1190,24 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
                     ? refresh : null,
                   icon: const Icon(Icons.sync_rounded),
                   label: const Text('Fiyatları Kontrol Et')),
+                const SizedBox(height: 8),
+                Wrap(spacing: 8, runSpacing: 7,
+                  alignment: WrapAlignment.end, children: [
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      side: const BorderSide(color: Color(0xAAFFFFFF))),
+                    onPressed: loading ? null : _exportWatchlist,
+                    icon: const Icon(Icons.file_download_outlined, size: 17),
+                    label: const Text('Dışa Aktar')),
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      side: const BorderSide(color: Color(0xAAFFFFFF))),
+                    onPressed: loading ? null : _importWatchlist,
+                    icon: const Icon(Icons.file_upload_outlined, size: 17),
+                    label: const Text('İçe Aktar')),
+                ]),
               ]),
             ],
           ),
