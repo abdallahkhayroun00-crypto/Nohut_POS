@@ -164,6 +164,13 @@ class MarketQuote {
   }
 }
 
+/// Hours between automatic checks. Twelve hours is the default. Values are
+/// whitelisted so a malformed setting cannot overload the unofficial source.
+const marketPriceRefreshChoices = <int>[24, 12, 6, 1];
+
+int marketPriceRefreshHours(Object? value) =>
+    value is int && marketPriceRefreshChoices.contains(value) ? value : 12;
+
 Json marketPriceState(Json state) => state['marketPrices'] is Map
   ? Map<String, dynamic>.from(state['marketPrices'] as Map)
   : <String, dynamic>{};
@@ -365,7 +372,7 @@ Future<MarketPriceRefresh> refreshMarketPrices(
   if (last != null) {
     final elapsed = DateTime.now().toUtc().difference(last.toUtc());
     final minimum = force ? const Duration(minutes: 2)
-        : const Duration(hours: 12);
+        : Duration(hours: marketPriceRefreshHours(settings['refreshIntervalHours']));
     if (elapsed < minimum) return const MarketPriceRefresh(0, 0, 0);
   }
 
