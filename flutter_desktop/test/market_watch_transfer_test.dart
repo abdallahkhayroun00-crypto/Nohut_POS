@@ -86,7 +86,9 @@ void main() {
     final target = emptyPosState();
     target['customUnrelatedPosSetting'] = {'keep': 'yes'};
     final untouched = jsonEncode(target['orders']);
-    applyMarketWatchBackup(target, backup);
+    final merged = mergeMarketWatchBackup(target, backup);
+    expect(merged.added, 1);
+    expect(merged.mappingsAdded, 1);
     expect(jsonEncode(target['orders']), untouched);
     expect(target['customUnrelatedPosSetting'], {'keep': 'yes'});
     final watch = trackedMarketProducts(target).single;
@@ -94,19 +96,105 @@ void main() {
     expect(watch['priceCents'], 5450);
     expect(watch['storeId'], 'a101');
     expect(watch['customImageUrl'], 'https://example.org/my-limon.png');
-    expect(marketPriceState(target)['enabled'], true);
+    expect(marketPriceState(target)['enabled'], false);
     expect(marketPriceState(target)['storeMatches']['a101']['confirmed'],
       true);
   });
 
-  test('import overwrites watchlist only and repeated import is idempotent', () {
+  test('import adds only and repeated import is idempotent', () {
     final existing = source();
     final backup = parseMarketWatch(exportMarketWatch(existing));
     existing['orders'] = [{'id': 991, 'closed': true}];
-    applyMarketWatchBackup(existing, backup);
-    applyMarketWatchBackup(existing, backup);
+    final first = mergeMarketWatchBackup(existing, backup);
+    final second = mergeMarketWatchBackup(existing, backup);
+    expect(first.added, 0);
+    expect(first.duplicates, 1);
+    expect(second.added, 0);
+    expect(second.duplicates, 1);
     expect(trackedMarketProducts(existing), hasLength(1));
     expect((existing['orders'] as List).single['id'], 991);
+  });
+
+  test('merge adds only missing products and keeps local edits and newer prices', () {
+    final local = source();
+    editMarketPriceState(local, (settings) {
+      settings['tracked'] = trackedMarketProducts(local).map((p) => {
+        ...p,
+        'priceCents': 6200,
+        'category': 'Diğer',
+        'customImageUrl': 'https://example.org/local-choice.jpg',
+      }).toList();
+    });
+    final importedState = source();
+    addTrackedMarketQuote(importedState, const MarketQuote(
+      productId: 'sumak-10', title: 'Sumak 100 gr',
+      market: 'A101', depotId: 'source-a101-4',
+      depotName: 'A101 Bağlar', unit: '100 gr',
+      priceCents: 6900, observedAt: '2026-11-21T22:00:00Z',
+    ), storeId: 'a101');
+    final backup = parseMarketWatch(exportMarketWatch(importedState));
+    final preview = planMarketWatchMerge(local, backup);
+    expect(preview.added, 1);
+    expect(preview.duplicates, 1);
+    expect(preview.conflicts, 0);
+    expect(trackedMarketProducts(local), hasLength(1)); // preview is pure
+
+    final applied = mergeMarketWatchBackup(local, backup);
+    expect(applied.added, 1);
+    final products = trackedMarketProducts(local);
+    expect(products, hasLength(2));
+    final limon = products.firstWhere((p) => p['productId'] == 'limon-4');
+    expect(limon['priceCents'], 6200);
+    expect(limon['category'], 'Diğer');
+    expect(limon['customImageUrl'], 'https://example.org/local-choice.jpg');
+    expect(products.where((p) => p['productId'] == 'sumak-10'), hasLength(1));
+    expect(marketPriceState(local)['enabled'], true); // preserved locally
+    final second = mergeMarketWatchBackup(local, backup);
+    expect(second.added, 0);
+    expect(second.duplicates, 2);
+  });
+
+  test('different verified branch mapping is never silently replaced', () {
+    final local = source();
+    editMarketPriceState(local, (settings) {
+      final mappings = Map<String, dynamic>.from(
+        settings['storeMatches'] as Map);
+      final store = Map<String, dynamic>.from(mappings['a101'] as Map);
+      store['depotId'] = 'local-a101-other-depot';
+      mappings['a101'] = store;
+      settings['storeMatches'] = mappings;
+    });
+    final sourceState = source();
+    addTrackedMarketQuote(sourceState, const MarketQuote(
+      productId: 'new-12', title: 'Diyar Kimyon 75 gr',
+      market: 'A101', depotId: 'source-a101-4',
+      depotName: 'A101 Bağlar', unit: '75 gr',
+      priceCents: 3900, observedAt: '2026-11-21T22:00:00Z',
+    ), storeId: 'a101');
+    final backup = parseMarketWatch(exportMarketWatch(sourceState));
+    final preview = planMarketWatchMerge(local, backup);
+    expect(preview.added, 0);
+    expect(preview.duplicates, 1);
+    expect(preview.conflicts, 2); // 1 branch + 1 new product
+    final result = mergeMarketWatchBackup(local, backup);
+    expect(result.added, 0);
+    expect(trackedMarketProducts(local), hasLength(1));
+    expect(marketPriceState(local)['storeMatches']['a101']['depotId'],
+      'local-a101-other-depot');
+  });
+
+  test('merge keeps other POS state and never imports enabled flag', () {
+    final target = emptyPosState();
+    target['orders'] = [{'id': 1234, 'paid': true}];
+    final backup = parseMarketWatch(exportMarketWatch(source()));
+    final result = mergeMarketWatchBackup(target, backup);
+    expect(result.added, 1);
+    expect(result.mappingsAdded, 1);
+    expect(marketPriceState(target)['enabled'], false);
+    expect((target['orders'] as List).single['id'], 1234);
+    expect(marketPriceState(target)['storeMatches']['a101']['confirmed'], true);
+    expect(mergeMarketWatchBackup(target, backup).added, 0);
+    expect(trackedMarketProducts(target), hasLength(1));
   });
 
   test('malformed, wrong version, duplicate, tampered branch and bad category rejected', () {
