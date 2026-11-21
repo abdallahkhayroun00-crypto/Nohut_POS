@@ -581,7 +581,8 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
     final stores = nohutStorePlaces.where(
       (p) => p.id == (item['storeId'] ?? '').toString()).toList();
     final localStore = stores.isEmpty ? null : stores.single;
-    final storeLabel = localStore?.label ?? (item['market'] ?? '').toString();
+    final storeLabel = localStore?.label ??
+        (item['depotName'] ?? item['market'] ?? '').toString();
     final storeAddress = localStore?.address ??
         (item['depotName'] ?? '').toString();
     final brand = localStore?.market ?? (item['market'] ?? '').toString();
@@ -593,7 +594,7 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
     final down = item['change'] == 'down';
     final up = item['change'] == 'up';
     final changed = hasMarketPriceChange(item);
-    final delta = changed ? (price! - old!) * 100 / old : 0.0;
+    final delta = changed ? (price! - old!) * 100 / old! : 0.0;
     final trend = down ? const Color(0xff25784B)
       : up ? const Color(0xffB64637) : NohutBrand.muted;
     return LayoutBuilder(builder: (context, constraints) {
@@ -605,11 +606,8 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
-          border: Border(
-            top: const BorderSide(color: Color(0xffE2E9E1)),
-            right: const BorderSide(color: Color(0xffE2E9E1)),
-            bottom: const BorderSide(color: Color(0xffE2E9E1)),
-            left: BorderSide(color: marketColor, width: 4)),
+          border: Border.all(
+            color: marketColor.withValues(alpha: 0.35)), 
         ),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Padding(
@@ -678,11 +676,11 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
                     fontWeight: FontWeight.w800)),
                 const SizedBox(width: 8),
               ],
-              Tooltip(message: storeAddress, child: Text(
+              Expanded(child: Tooltip(message: storeAddress, child: Text(
                 storeLabel, maxLines: 1, overflow: TextOverflow.ellipsis,
                 style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700,
-                  color: marketColor))),
-              const Spacer(),
+                  color: marketColor)))),
+              const SizedBox(width: 4),
               Text(date(item['lastCheckedAt']),
                 style: const TextStyle(color: NohutBrand.muted, fontSize: 9)),
               PopupMenuButton<String>(
