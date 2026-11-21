@@ -171,6 +171,337 @@ const marketPriceRefreshChoices = <int>[24, 12, 6, 1];
 int marketPriceRefreshHours(Object? value) =>
     value is int && marketPriceRefreshChoices.contains(value) ? value : 12;
 
+/// Optional clock anchor for interval checks, in Europe/Istanbul (UTC+03).
+/// With 12h and 11:00 the planned slots are 11:00 and 23:00 daily.
+String? marketPriceRefreshTime(Object? value) =>
+    value is String &&
+    RegExp(r'^(?:[01]\d|2[0-3]):[0-5]\d state['marketPrices'] is Map
+  ? Map<String, dynamic>.from(state['marketPrices'] as Map)
+  : <String, dynamic>{};
+
+List<Json> trackedMarketProducts(Json state) {
+  final source = marketPriceState(state)['tracked'];
+  if (source is! List) return <Json>[];
+  return [
+    for (final v in source)
+      if (v is Map) Map<String, dynamic>.from(v),
+  ];
+}
+
+bool validMarketCoordinates(num? lat, num? lon, num? radius) =>
+    lat != null && lon != null && radius != null &&
+    lat.isFinite && lon.isFinite && radius.isFinite &&
+    lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180 &&
+    radius > 0 && radius <= 50;
+
+void editMarketPriceState(Json state, void Function(Json) update) {
+  final settings = marketPriceState(state);
+  update(settings);
+  state['marketPrices'] = settings;
+}
+
+void addTrackedMarketQuote(Json state, MarketQuote quote, {String? storeId}) {
+  final products = trackedMarketProducts(state);
+  if (products.any((p) => p['key'] == quote.key)) return;
+  products.add({
+    'key': quote.key, 'productId': quote.productId,
+    if (storeId != null && nohutStorePlaces.any((p) => p.id == storeId))
+      'storeId': storeId,
+    'title': quote.title, 'market': quote.market, 'depotId': quote.depotId,
+    'depotName': quote.depotName, 'unit': quote.unit,
+    'priceCents': quote.priceCents, 'lastCheckedAt': quote.observedAt,
+    'sourceTime': quote.sourceTime, 'discount': quote.discount,
+    if (quote.imageUrl != null) 'imageUrl': quote.imageUrl,
+  });
+  editMarketPriceState(state, (s) => s['tracked'] = products);
+}
+
+/// Do not silently replace missing products with similar items or other shops.
+/// Preserve the last change alert until the next actual price change.
+bool applyMarketQuote(Json state, MarketQuote quote) {
+  var changed = false;
+  final products = trackedMarketProducts(state);
+  for (final item in products) {
+    if (item['key'] != quote.key || item['productId'] != quote.productId ||
+        item['depotId'] != quote.depotId ||
+        marketBrandKey(item['market'].toString()) !=
+            marketBrandKey(quote.market)) continue;
+    final old = item['priceCents'];
+    if (old is int && old > 0 && old != quote.priceCents) {
+      item['previousPriceCents'] = old;
+      item['change'] = quote.priceCents < old ? 'down' : 'up';
+      item['lastChangedAt'] = quote.observedAt;
+      changed = true;
+    }
+    item['priceCents'] = quote.priceCents;
+    item['lastCheckedAt'] = quote.observedAt;
+    item['sourceTime'] = quote.sourceTime;
+    item['discount'] = quote.discount;
+    if (quote.imageUrl != null) item['imageUrl'] = quote.imageUrl;
+    editMarketPriceState(state, (s) => s['tracked'] = products);
+    break;
+  }
+  return changed;
+}
+
+class MarketPriceClient {
+  MarketPriceClient({HttpClient? client}) : _client = client ?? HttpClient();
+  final HttpClient _client;
+  static final Uri _api = Uri.parse('https://api.marketfiyati.org.tr');
+
+  Future<Object?> _post(String path, Json payload) async {
+    if (!const [
+      '/api/v2/nearest', '/api/v2/search', '/api/v2/searchByIdentity',
+    ].contains(path)) throw const FormatException('Geçersiz fiyat isteği.');
+    final request = await _client.postUrl(_api.replace(path: path))
+      .timeout(const Duration(seconds: 12));
+    request.followRedirects = false;
+    request.headers.contentType = ContentType.json;
+    request.headers.set(HttpHeaders.acceptHeader, 'application/json');
+    request.write(jsonEncode(payload));
+    final response = await request.close().timeout(const Duration(seconds: 15));
+    if (response.statusCode != 200) {
+      await response.drain<void>();
+      throw HttpException('Market fiyat yanıtı: HTTP ' +
+          response.statusCode.toString());
+    }
+    if (response.contentLength > 1024 * 1024) {
+      throw const FormatException('Fiyat verisi çok büyük.');
+    }
+    final bytes = BytesBuilder(copy: false);
+    await for (final part in response.timeout(const Duration(seconds: 15))) {
+      bytes.add(part);
+      if (bytes.length > 1024 * 1024) {
+        throw const FormatException('Fiyat verisi çok büyük.');
+      }
+    }
+    return jsonDecode(utf8.decode(bytes.takeBytes()));
+  }
+
+  /// Experimental source endpoint. There is no guaranteed list of all shops.
+  Future<List<MarketDepot>> nearby(
+      double latitude, double longitude, double distance) async {
+    if (!validMarketCoordinates(latitude, longitude, distance)) {
+      throw const FormatException('Geçerli konum gerekli.');
+    }
+    final raw = await _post('/api/v2/nearest', {
+      'latitude': latitude, 'longitude': longitude, 'distance': distance,
+    });
+    if (raw is! List) throw const FormatException('Şube yanıtı geçersiz.');
+    final depots = <MarketDepot>[];
+    for (final item in raw) {
+      final depot = MarketDepot.parse(item);
+      if (depot != null) depots.add(depot);
+    }
+    return depots;
+  }
+
+  Future<List<MarketQuote>> search({
+    required String keywords, required String depotId, required String market,
+    required double latitude, required double longitude,
+    required double distance,
+  }) async {
+    if (keywords.trim().length < 2 || depotId.isEmpty ||
+        !validMarketCoordinates(latitude, longitude, distance)) {
+      throw const FormatException('Ürün, şube ve konumu kontrol edin.');
+    }
+    final raw = await _post('/api/v2/search', {
+      'keywords': keywords.trim(), 'pages': 0, 'size': 25,
+      'latitude': latitude, 'longitude': longitude, 'distance': distance,
+      'depots': [depotId], 'market_names': [market],
+    });
+    return _quotes(raw, depotId, market);
+  }
+
+  Future<MarketQuote?> lookup({
+    required String productId, required String depotId,
+    required String market, required double latitude,
+    required double longitude, required double distance,
+  }) async {
+    if (productId.isEmpty || depotId.isEmpty ||
+        !validMarketCoordinates(latitude, longitude, distance)) return null;
+    final raw = await _post('/api/v2/searchByIdentity', {
+      'identity': productId, 'identityType': 'id',
+      'pages': 0, 'size': 1,
+      'latitude': latitude, 'longitude': longitude, 'distance': distance,
+      'depots': [depotId],
+    });
+    for (final quote in _quotes(raw, depotId, market)) {
+      if (quote.productId == productId) return quote;
+    }
+    return null;
+  }
+
+  List<MarketQuote> _quotes(Object? response, String depotId, String market) {
+    if (response is! Map || response['content'] is! List) {
+      throw const FormatException('Ürün verisi geçersiz.');
+    }
+    final now = DateTime.now().toUtc().toIso8601String();
+    final results = <MarketQuote>[];
+    for (final item in response['content'] as List) {
+      if (item is! Map || item['productDepotInfoList'] is! List) continue;
+      for (final offer in item['productDepotInfoList'] as List) {
+        final quote = MarketQuote.parse(item, offer, now);
+        if (quote != null && quote.depotId == depotId &&
+            marketBrandKey(quote.market) == marketBrandKey(market) &&
+            !results.any((entry) => entry.key == quote.key)) {
+          results.add(quote);
+        }
+      }
+    }
+    return results;
+  }
+
+  void close() => _client.close(force: true);
+}
+
+class MarketPriceRefresh {
+  const MarketPriceRefresh(this.updated, this.unavailable, this.failed);
+  final int updated, unavailable, failed;
+}
+
+Future<MarketPriceRefresh> refreshMarketPrices(
+  PosStore store, MarketPriceClient client, {bool force = false}) async {
+  final settings = marketPriceState(store.read().data);
+  if (settings['enabled'] != true) return const MarketPriceRefresh(0, 0, 0);
+  final lat = settings['latitude'], lon = settings['longitude'];
+  final distance = settings['distance'];
+  if (lat is! num || lon is! num || distance is! num ||
+      !validMarketCoordinates(lat, lon, distance)) {
+    return const MarketPriceRefresh(0, 0, 0);
+  }
+  final entries = trackedMarketProducts(store.read().data).take(50).toList();
+  if (entries.isEmpty) return const MarketPriceRefresh(0, 0, 0);
+  if (!marketPriceRefreshDue(settings, DateTime.now(), force: force)) {
+    return const MarketPriceRefresh(0, 0, 0);
+  }
+
+  // Throttle before requests; concurrent retries cannot accidentally hammer
+  // the unofficial upstream service.
+  final first = store.read();
+  final pending = copyJson(first.data);
+  editMarketPriceState(pending, (s) {
+    s['lastRefreshAttempt'] = DateTime.now().toUtc().toIso8601String();
+  });
+  if (!store.replace(pending, first.revision).ok) {
+    return const MarketPriceRefresh(0, 0, 0);
+  }
+
+  var unavailable = 0, failed = 0;
+  final fetched = <MarketQuote>[];
+  for (var index = 0; index < entries.length; index++) {
+    // The third-party reference requests at least 1 second between calls.
+    if (index > 0) await Future<void>.delayed(const Duration(seconds: 1));
+    final item = entries[index];
+    // Every observed price belongs to its confirmed physical branch, not a
+    // generic Serdivan query. Legacy watch records retain the older context.
+    final watchStoreId = (item['storeId'] ?? '').toString();
+    final stores = nohutStorePlaces.where((p) => p.id == watchStoreId).toList();
+    final watchedStore = stores.isEmpty ? null : stores.single;
+    if (watchedStore != null) {
+      final matches = settings['storeMatches'];
+      final saved = matches is Map ? matches[watchStoreId] : null;
+      if (saved is! Map ||
+          (saved['depotId'] ?? '').toString() !=
+              (item['depotId'] ?? '').toString() ||
+          marketBrandKey((saved['market'] ?? '').toString()) !=
+              marketBrandKey(watchedStore.market)) {
+        unavailable++;
+        continue;
+      }
+    }
+    try {
+      final quote = await client.lookup(
+        productId: (item['productId'] ?? '').toString(),
+        depotId: (item['depotId'] ?? '').toString(),
+        market: (item['market'] ?? '').toString(),
+        latitude: watchedStore?.latitude ?? lat.toDouble(),
+        longitude: watchedStore?.longitude ?? lon.toDouble(),
+        distance: distance.toDouble(),
+      );
+      if (quote == null) {
+        unavailable++;
+      } else {
+        fetched.add(quote);
+      }
+    } catch (_) {
+      failed++;
+    }
+  }
+  for (var attempt = 0; attempt < 3; attempt++) {
+    final current = store.read();
+    final next = copyJson(current.data);
+    for (final quote in fetched) {
+      applyMarketQuote(next, quote);
+    }
+    editMarketPriceState(next, (s) {
+      s['lastRefreshResult'] = DateTime.now().toUtc().toIso8601String();
+      s['lastRefreshError'] = failed > 0
+          ? '$failed ürün kontrol edilemedi; önceki fiyatlar korundu.'
+          : unavailable > 0
+              ? '$unavailable ürün/şube için fiyat bulunamadı.'
+              : '';
+    });
+    if (store.replace(next, current.revision).ok) break;
+  }
+  return MarketPriceRefresh(fetched.length, unavailable, failed);
+}
+).hasMatch(value)
+        ? value : null;
+
+List<String> marketPriceRefreshClockLabels(int interval, String startTime) {
+  final start = marketPriceRefreshTime(startTime);
+  if (start == null) return const [];
+  final hours = marketPriceRefreshHours(interval);
+  final beginning = int.parse(start.substring(0, 2)) * 60 +
+      int.parse(start.substring(3));
+  final slots = <String>[];
+  for (var step = 0; step < 24; step += hours) {
+    final minute = (beginning + step * 60) % (24 * 60);
+    final hh = (minute ~/ 60).toString().padLeft(2, '0');
+    final mm = (minute % 60).toString().padLeft(2, '0');
+    slots.add('$hh:$mm');
+  }
+  slots.sort();
+  return slots;
+}
+
+/// Latest eligible slot, regardless of the PC timezone: Turkey uses UTC+03
+/// year-round. After sleep/offline time, the next local poll catches up once.
+DateTime latestMarketPriceRefreshSlotUtc(
+    DateTime now, int intervalHours, String startTime) {
+  final start = marketPriceRefreshTime(startTime);
+  if (start == null) throw const FormatException('Geçersiz kontrol saati.');
+  const istanbulOffset = Duration(hours: 3);
+  final turkeyNow = now.toUtc().add(istanbulOffset);
+  final beginning = DateTime.utc(turkeyNow.year, turkeyNow.month,
+    turkeyNow.day, int.parse(start.substring(0, 2)),
+    int.parse(start.substring(3)));
+  final period = Duration(hours: marketPriceRefreshHours(intervalHours));
+  final periodsElapsed = (turkeyNow.difference(beginning).inMicroseconds /
+      period.inMicroseconds).floor();
+  return beginning.add(Duration(
+    microseconds: period.inMicroseconds * periodsElapsed))
+      .subtract(istanbulOffset);
+}
+
+bool marketPriceRefreshDue(Json settings, DateTime now, {bool force = false}) {
+  final last = DateTime.tryParse(
+      (settings['lastRefreshAttempt'] ?? '').toString());
+  final current = now.toUtc();
+  if (last != null && current.difference(last.toUtc()) <
+      const Duration(minutes: 2)) return false;
+  if (force) return true;
+  final interval = marketPriceRefreshHours(settings['refreshIntervalHours']);
+  final at = marketPriceRefreshTime(settings['refreshAt']);
+  if (at != null) {
+    final slot = latestMarketPriceRefreshSlotUtc(current, interval, at);
+    return last == null || last.toUtc().isBefore(slot);
+  }
+  return last == null ||
+      current.difference(last.toUtc()) >= Duration(hours: interval);
+}
+
 Json marketPriceState(Json state) => state['marketPrices'] is Map
   ? Map<String, dynamic>.from(state['marketPrices'] as Map)
   : <String, dynamic>{};
