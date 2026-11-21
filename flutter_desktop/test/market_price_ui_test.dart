@@ -56,7 +56,9 @@ void main() {
     await helpers.mountManager(tester, seed);
     await helpers.click(tester, 'Market Fiyat Takibi');
     expect(find.text('Göbek Marul'), findsOneWidget);
-    expect(find.text('Sebze'), findsOneWidget);
+    // Changed vegetables appear in the priority group, not as Sebze heading.
+    expect(find.textContaining('Sebze (1)'), findsOneWidget);
+    expect(find.text('Son Fiyat Değişiklikleri'), findsOneWidget);
     expect(find.text('Hakmar'), findsOneWidget);
     expect(find.byIcon(Icons.image_not_supported_outlined), findsOneWidget);
     expect(find.text('55,00 TL'), findsOneWidget);
