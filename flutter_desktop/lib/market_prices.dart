@@ -15,21 +15,49 @@ const marketPriceTerms = 'https://marketfiyati.org.tr/kullanim-kosullari';
 /// against an ID until the user explicitly confirms a nearby API depot.
 class MarketStorePlace {
   const MarketStorePlace(this.id, this.market, this.label,
-      this.latitude, this.longitude);
-  final String id, market, label;
+      this.latitude, this.longitude, {
+      required this.address,
+      required this.googleMapsFeatureId,
+      required this.branchName,
+  });
+  final String id, market, label, address, googleMapsFeatureId, branchName;
   final double latitude, longitude;
 }
 
+/// Retailer store/branch identity supplied by the restaurant. A Google Maps
+/// feature identifier is NOT a Market Fiyatı depotId. The latter is discovered
+/// from the price service and confirmed against the selected retailer/branch.
 const nohutStorePlaces = <MarketStorePlace>[
-  MarketStorePlace('a101', 'A101', 'A101 · Nohut yakını',
-      40.7647916, 30.3604948),
-  MarketStorePlace('bim', 'BİM', 'BİM · Nohut yakını',
-      40.7634139, 30.3610601),
-  MarketStorePlace('hakmar-1', 'Hakmar', 'Hakmar 1',
-      40.7666496, 30.3589871),
-  MarketStorePlace('hakmar-2', 'Hakmar', 'Hakmar 2',
-      40.7630785, 30.3568336),
+  MarketStorePlace('a101', 'A101', 'A101 Bağlar',
+    40.7647916, 30.3604948,
+    branchName: 'BAĞLAR / SERDİVAN',
+    address: 'Kemalpaşa Mah. Bağlar Cad. No:82, Serdivan / Sakarya',
+    googleMapsFeatureId: '0x14ccb3001ac3d21b:0xd4c18ae2a8c14266'),
+  MarketStorePlace('bim', 'BİM', 'BİM İstiklal',
+    40.7634139, 30.3610601,
+    branchName: 'İSTİKLAL / SERDİVAN',
+    address: 'İstiklal Mah. Bağlar Cad. Oğuzhan Sk. Bodrum Kat 2, Serdivan / Sakarya',
+    googleMapsFeatureId: '0x14ccb29220c5b4a5:0xb2f6cd54c19427b5'),
+  MarketStorePlace('hakmar-1', 'Hakmar', 'Hakmar Karadere',
+    40.7666496, 30.3589871,
+    branchName: 'KARADERE',
+    address: 'İstiklal Mah. Karadere Sk. No:9, 54050 Serdivan / Sakarya',
+    googleMapsFeatureId: '0x14ccb300337eb5f9:0xf844275840b564d9'),
+  MarketStorePlace('hakmar-2', 'Hakmar', 'Hakmar Mavi Durak',
+    40.7630785, 30.3568336,
+    branchName: 'MAVİ DURAK',
+    address: 'Kemalpaşa Mah. Döner Sk. No:29/A, 54050 Serdivan / Sakarya',
+    googleMapsFeatureId: '0x14ccb2902b5902ff:0x61bed91bd9283862'),
 ];
+
+String marketBrandKey(String input) {
+  final lower = input.trim().toLowerCase()
+      .replaceAll('i\u0307', 'i').replaceAll('ı', 'i');
+  if (lower.startsWith('a101')) return 'a101';
+  if (lower.startsWith('bim')) return 'bim';
+  if (lower.startsWith('hakmar')) return 'hakmar';
+  return lower;
+}
 
 class MarketDepot {
   const MarketDepot(this.id, this.market, this.name,
@@ -72,7 +100,7 @@ double storeDistanceMeters(double lat1, double lon1,
 List<MarketDepot> matchMarketDepots(MarketStorePlace place,
     List<MarketDepot> all, {double maximumDistanceMeters = 300}) {
   final candidates = all.where((depot) =>
-      depot.market.toLowerCase().contains(place.market.toLowerCase()) &&
+      marketBrandKey(depot.market) == marketBrandKey(place.market) &&
       depot.latitude != null && depot.longitude != null &&
       storeDistanceMeters(place.latitude, place.longitude,
           depot.latitude!, depot.longitude!) <= maximumDistanceMeters).toList();
@@ -145,11 +173,13 @@ void editMarketPriceState(Json state, void Function(Json) update) {
   state['marketPrices'] = settings;
 }
 
-void addTrackedMarketQuote(Json state, MarketQuote quote) {
+void addTrackedMarketQuote(Json state, MarketQuote quote, {String? storeId}) {
   final products = trackedMarketProducts(state);
   if (products.any((p) => p['key'] == quote.key)) return;
   products.add({
     'key': quote.key, 'productId': quote.productId,
+    if (storeId != null && nohutStorePlaces.any((p) => p.id == storeId))
+      'storeId': storeId,
     'title': quote.title, 'market': quote.market, 'depotId': quote.depotId,
     'depotName': quote.depotName, 'unit': quote.unit,
     'priceCents': quote.priceCents, 'lastCheckedAt': quote.observedAt,
@@ -338,12 +368,30 @@ Future<MarketPriceRefresh> refreshMarketPrices(
     // The third-party reference requests at least 1 second between calls.
     if (index > 0) await Future<void>.delayed(const Duration(seconds: 1));
     final item = entries[index];
+    // Every observed price belongs to its confirmed physical branch, not a
+    // generic Serdivan query. Legacy watch records retain the older context.
+    final watchStoreId = (item['storeId'] ?? '').toString();
+    final stores = nohutStorePlaces.where((p) => p.id == watchStoreId).toList();
+    final watchedStore = stores.isEmpty ? null : stores.single;
+    if (watchedStore != null) {
+      final matches = settings['storeMatches'];
+      final saved = matches is Map ? matches[watchStoreId] : null;
+      if (saved is! Map ||
+          (saved['depotId'] ?? '').toString() !=
+              (item['depotId'] ?? '').toString() ||
+          marketBrandKey((saved['market'] ?? '').toString()) !=
+              marketBrandKey(watchedStore.market)) {
+        unavailable++;
+        continue;
+      }
+    }
     try {
       final quote = await client.lookup(
         productId: (item['productId'] ?? '').toString(),
         depotId: (item['depotId'] ?? '').toString(),
         market: (item['market'] ?? '').toString(),
-        latitude: lat.toDouble(), longitude: lon.toDouble(),
+        latitude: watchedStore?.latitude ?? lat.toDouble(),
+        longitude: watchedStore?.longitude ?? lon.toDouble(),
         distance: distance.toDouble(),
       );
       if (quote == null) {
