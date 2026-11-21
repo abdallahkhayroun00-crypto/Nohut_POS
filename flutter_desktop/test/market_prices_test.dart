@@ -17,6 +17,17 @@ void main() {
   test('four exact market locations are saved, with distinct Hakmar branches', () {
     expect(nohutStorePlaces, hasLength(4));
     expect(nohutStorePlaces[0].id, 'a101');
+    expect(nohutStorePlaces[0].address,
+      'Kemalpaşa Mah. Bağlar Cad. No:82, Serdivan / Sakarya');
+    expect(nohutStorePlaces[1].branchName, 'İSTİKLAL / SERDİVAN');
+    expect(nohutStorePlaces[1].address,
+      contains('Oğuzhan Sk. Bodrum Kat 2'));
+    expect(nohutStorePlaces[2].address,
+      contains('Karadere Sk. No:9'));
+    expect(nohutStorePlaces[3].address,
+      contains('Döner Sk. No:29/A'));
+    expect(nohutStorePlaces.map((e) => e.googleMapsFeatureId).toSet(),
+      hasLength(4));
     expect(nohutStorePlaces[0].latitude, 40.7647916);
     expect(nohutStorePlaces[0].longitude, 30.3604948);
     expect(nohutStorePlaces[1].latitude, 40.7634139);
@@ -48,6 +59,22 @@ void main() {
     expect(storeDistanceMeters(
         40.7666496, 30.3589871, 40.7630785, 30.3568336),
         greaterThan(300));
+  });
+
+  test('BİM/BIM spelling links to the same retailer, never to A101', () {
+    expect(marketBrandKey('BİM'), 'bim');
+    expect(marketBrandKey('BIM'), 'bim');
+    expect(marketBrandKey('Hakmar Express'), 'hakmar');
+    expect(marketBrandKey('A101'), isNot(marketBrandKey('BİM')));
+  });
+
+  test('tracked product preserves exact physical store link', () {
+    final state = emptyPosState();
+    addTrackedMarketQuote(state, quote(), storeId: 'hakmar-2');
+    final entry = trackedMarketProducts(state).single;
+    expect(entry['storeId'], 'hakmar-2');
+    expect(entry['depotId'], 'hakmar-1');
+    expect(entry['productId'], 'marul-1');
   });
 
   test('validates input coordinates, radius and absent values', () {
