@@ -15,7 +15,8 @@ const marketWatchCategories = <String>[
 bool validMarketCategoryName(Object? value) {
   if (value is! String || value.trim() != value ||
       value.length < 2 || value.length > 32) return false;
-  return !RegExp(r'[\\x00-\\x1F\\x7F<>]').hasMatch(value);
+  return !value.runes.any((code) => code < 32 || code == 127) &&
+      !value.contains('<') && !value.contains('>');
 }
 
 List<String> marketWatchCustomCategories(Json state) {
