@@ -213,8 +213,8 @@ bool applyMarketQuote(Json state, MarketQuote quote) {
   for (final item in products) {
     if (item['key'] != quote.key || item['productId'] != quote.productId ||
         item['depotId'] != quote.depotId ||
-        item['market'].toString().toLowerCase() !=
-            quote.market.toLowerCase()) continue;
+        marketBrandKey(item['market'].toString()) !=
+            marketBrandKey(quote.market)) continue;
     final old = item['priceCents'];
     if (old is int && old > 0 && old != quote.priceCents) {
       item['previousPriceCents'] = old;
@@ -332,7 +332,7 @@ class MarketPriceClient {
       for (final offer in item['productDepotInfoList'] as List) {
         final quote = MarketQuote.parse(item, offer, now);
         if (quote != null && quote.depotId == depotId &&
-            quote.market.toLowerCase() == market.toLowerCase() &&
+            marketBrandKey(quote.market) == marketBrandKey(market) &&
             !results.any((entry) => entry.key == quote.key)) {
           results.add(quote);
         }
