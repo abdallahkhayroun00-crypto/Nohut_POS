@@ -158,6 +158,50 @@ void main() {
     expect(MarketQuote.parse(product, {...offer, 'depotId': ''}, ''), isNull);
   });
 
+  test('real price increase/decrease creates unread alert; first price does not', () {
+    final state = emptyPosState();
+    addTrackedMarketQuote(state, quote(price: 5500));
+    expect(marketPriceAlerts(state), isEmpty);
+    expect(applyMarketQuote(state,
+      quote(price: 4200, at: '2026-11-22T11:00:00Z')), isTrue);
+    var unread = unreadMarketPriceAlerts(state);
+    expect(unread, hasLength(1));
+    expect(unread.single['direction'], 'down');
+    expect(unread.single['title'], 'Göbek Marul');
+    expect(unread.single['oldPriceCents'], 5500);
+    expect(unread.single['newPriceCents'], 4200);
+    expect(unread.single['readAt'], isNull);
+    expect(applyMarketQuote(state,
+      quote(price: 4200, at: '2026-11-22T12:00:00Z')), isFalse);
+    expect(unreadMarketPriceAlerts(state), hasLength(1));
+    expect(applyMarketQuote(state,
+      quote(price: 6000, at: '2026-11-22T13:00:00Z')), isTrue);
+    unread = unreadMarketPriceAlerts(state);
+    expect(unread, hasLength(2));
+    expect(unread.first['direction'], 'up');
+    expect(unread.first['oldPriceCents'], 4200);
+    expect(unread.first['newPriceCents'], 6000);
+    expect(markMarketPriceAlertsRead(state, [unread.last['id'] as String],
+      at: DateTime.utc(2026, 11, 22, 14)), 1);
+    expect(unreadMarketPriceAlerts(state), hasLength(1));
+    expect(markMarketPriceAlertsRead(state,
+      unread.map((a) => a['id'] as String)), 1);
+    expect(unreadMarketPriceAlerts(state), isEmpty);
+    expect(marketPriceAlerts(state), hasLength(2));
+    expect(markMarketPriceAlertsRead(state,
+      ['nonexistent']), 0);
+  });
+
+  test('no alerts for product from another physical depot or retailer', () {
+    final state = emptyPosState();
+    addTrackedMarketQuote(state, quote());
+    expect(applyMarketQuote(state,
+      quote(branch: 'hakmar-2', price: 7000)), isFalse);
+    expect(applyMarketQuote(state,
+      quote(market: 'BİM', price: 7000)), isFalse);
+    expect(marketPriceAlerts(state), isEmpty);
+  });
+
   test('watch key is product AND branch; initial observation is not a discount', () {
     final state = emptyPosState();
     addTrackedMarketQuote(state, quote());
