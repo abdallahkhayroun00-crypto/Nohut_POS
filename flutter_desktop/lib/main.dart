@@ -232,9 +232,9 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       unawaited(google.load());
     }
     if (widget.startServer) {
-      // Check locally every five minutes; the persisted per-market setting
+      // Check locally every minute; the persisted per-market setting
       // (24h/12h/6h/1h) and lastRefreshAttempt gate actual network requests.
-      _marketPriceTimer = Timer.periodic(const Duration(minutes: 5), (_) {
+      _marketPriceTimer = Timer.periodic(const Duration(minutes: 1), (_) {
         unawaited(refreshMarketPrices(store, marketApi));
       });
       WidgetsBinding.instance.addPostFrameCallback((_) {
