@@ -628,7 +628,7 @@ class _MarketPriceTrackingState extends State<MarketPriceTracking> {
     final down = item['change'] == 'down';
     final up = item['change'] == 'up';
     final changed = hasMarketPriceChange(item);
-    final delta = changed ? (price! - old!) * 100 / old! : 0.0;
+    final delta = changed ? (price! - old!) * 100 / old : 0.0;
     final trend = down ? const Color(0xff25784B)
       : up ? const Color(0xffB64637) : NohutBrand.muted;
     return LayoutBuilder(builder: (context, constraints) {
