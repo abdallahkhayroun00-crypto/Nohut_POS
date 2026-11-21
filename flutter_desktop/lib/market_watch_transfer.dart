@@ -263,12 +263,136 @@ MarketWatchBackup parseMarketWatch(String text) {
   return MarketWatchBackup(products, matches, settings);
 }
 
-void applyMarketWatchBackup(Json posState, MarketWatchBackup backup) {
-  final next = <String, dynamic>{
-    'tracked': backup.tracked.map((v) => Map<String, dynamic>.from(v)).toList(),
-    'storeMatches': Map<String, dynamic>.from(backup.storeMatches),
-    ...backup.settings,
-  };
-  // Only marketPrices changes. Never overwrite orders, staff, payments, menu.
-  posState['marketPrices'] = next;
+/// A non-destructive preview. Existing products and branch mappings win.
+/// Mismatched physical-branch identities are reported but never applied.
+class MarketWatchMergePlan {
+  const MarketWatchMergePlan({
+    required this.added,
+    required this.duplicates,
+    required this.conflicts,
+    required this.mappingsAdded,
+    required this.mappingsKept,
+    required this.products,
+    required this.matches,
+  });
+
+  final int added;
+  final int duplicates;
+  final int conflicts;
+  final int mappingsAdded;
+  final int mappingsKept;
+  final List<Json> products;
+  final Json matches;
+  int get total => products.length;
+}
+
+/// Product identity is the verified productId + source depotId (key).
+/// Preserve local prices, alert state, manual category and custom photo for
+/// duplicates. Only new products and compatible missing mappings are added.
+MarketWatchMergePlan planMarketWatchMerge(
+    Json posState, MarketWatchBackup backup) {
+  final currentConfig = marketPriceState(posState);
+  final products = trackedMarketProducts(posState);
+  final existingKeys = products.map((p) => (p['key'] ?? '').toString()).toSet();
+  final oldMatches = currentConfig['storeMatches'];
+  final matches = oldMatches is Map
+      ? Map<String, dynamic>.from(oldMatches)
+      : <String, dynamic>{};
+  var mappingsAdded = 0;
+  var mappingsKept = 0;
+  var conflicts = 0;
+  var duplicates = 0;
+  var added = 0;
+  final conflictingStores = <String>{};
+
+  for (final store in nohutStorePlaces) {
+    final incoming = backup.storeMatches[store.id];
+    if (incoming is! Map) continue;
+    final current = matches[store.id];
+    if (current is Map) {
+      final sameDepot = current['depotId'] == incoming['depotId'];
+      final sameBrand = marketBrandKey(
+          (current['market'] ?? '').toString()) ==
+          marketBrandKey((incoming['market'] ?? '').toString());
+      final sameGooglePlace = current['googleMapsFeatureId'] ==
+          store.googleMapsFeatureId;
+      if (current['confirmed'] != true || !sameDepot ||
+          !sameBrand || !sameGooglePlace) {
+        conflictingStores.add(store.id);
+        conflicts++;
+      } else {
+        mappingsKept++;
+      }
+      continue;
+    }
+    matches[store.id] = Map<String, dynamic>.from(incoming);
+    mappingsAdded++;
+  }
+
+  for (final incoming in backup.tracked) {
+    final key = (incoming['key'] ?? '').toString();
+    if (existingKeys.contains(key)) {
+      // Deliberately keep the original watch record; do not override its
+      // price or customizations with a backup that may be older.
+      duplicates++;
+      continue;
+    }
+    final storeId = incoming['storeId'];
+    if (storeId is String) {
+      if (conflictingStores.contains(storeId)) {
+        conflicts++;
+        continue;
+      }
+      final linked = matches[storeId];
+      if (linked is! Map || linked['confirmed'] != true ||
+          linked['depotId'] != incoming['depotId'] ||
+          marketBrandKey((linked['market'] ?? '').toString()) !=
+              marketBrandKey((incoming['market'] ?? '').toString())) {
+        conflicts++;
+        continue;
+      }
+    }
+    if (products.length >= 500) {
+      conflicts++;
+      continue;
+    }
+    products.add(Map<String, dynamic>.from(incoming));
+    existingKeys.add(key);
+    added++;
+  }
+
+  return MarketWatchMergePlan(
+    added: added, duplicates: duplicates, conflicts: conflicts,
+    mappingsAdded: mappingsAdded, mappingsKept: mappingsKept,
+    products: products, matches: matches,
+  );
+}
+
+/// Uses the current POS snapshot, so a file never replaces orders, payment
+/// state, menu, staff or existing market-watch entries.
+/// Source-enabled preference stays specific to the receiving computer.
+MarketWatchMergePlan mergeMarketWatchBackup(
+    Json posState, MarketWatchBackup backup) {
+  final result = planMarketWatchMerge(posState, backup);
+  final current = marketPriceState(posState);
+  current['tracked'] = result.products;
+  current['storeMatches'] = result.matches;
+
+  // A new receiving PC needs the locality to refresh imported watches.
+  // Do not replace existing local settings or turn a data source on.
+  final hasLocation = validMarketCoordinates(
+      current['latitude'] is num ? current['latitude'] as num : null,
+      current['longitude'] is num ? current['longitude'] as num : null,
+      current['distance'] is num ? current['distance'] as num : null);
+  if (!hasLocation) {
+    for (final key in ['latitude', 'longitude', 'distance']) {
+      if (backup.settings.containsKey(key)) {
+        current[key] = backup.settings[key];
+      }
+    }
+  }
+  // Never transfer opt-in implicitly: local enablement controls live queries.
+  current['enabled'] = current['enabled'] == true;
+  posState['marketPrices'] = current;
+  return result;
 }
