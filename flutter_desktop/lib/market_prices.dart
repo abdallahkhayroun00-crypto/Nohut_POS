@@ -111,16 +111,31 @@ List<MarketDepot> matchMarketDepots(MarketStorePlace place,
   return candidates;
 }
 
+/// Only direct HTTPS image URLs supplied by the product source or manager.
+String? marketImageUrl(Object? value) {
+  if (value is! String) return null;
+  final text = value.trim();
+  if (text.isEmpty || text.length > 2048) return null;
+  final uri = Uri.tryParse(text);
+  if (uri == null || uri.scheme.toLowerCase() != 'https' ||
+      !uri.hasAuthority || uri.host.isEmpty || uri.userInfo.isNotEmpty) {
+    return null;
+  }
+  return uri.toString();
+}
+
 class MarketQuote {
   const MarketQuote({
     required this.productId, required this.title, required this.market,
     required this.depotId, required this.depotName, required this.priceCents,
     required this.unit, required this.observedAt, this.discount, this.sourceTime,
+    this.imageUrl,
   });
   final String productId, title, market, depotId, depotName, unit, observedAt;
   final int priceCents;
   final bool? discount;
   final String? sourceTime;
+  final String? imageUrl;
 
   String get key => '$productId|$depotId';
 
@@ -144,6 +159,7 @@ class MarketQuote {
       observedAt: now,
       discount: offer['discount'] is bool ? offer['discount'] as bool : null,
       sourceTime: offer['indexTime']?.toString(),
+      imageUrl: marketImageUrl(product['imageUrl']),
     );
   }
 }
@@ -184,6 +200,7 @@ void addTrackedMarketQuote(Json state, MarketQuote quote, {String? storeId}) {
     'depotName': quote.depotName, 'unit': quote.unit,
     'priceCents': quote.priceCents, 'lastCheckedAt': quote.observedAt,
     'sourceTime': quote.sourceTime, 'discount': quote.discount,
+    if (quote.imageUrl != null) 'imageUrl': quote.imageUrl,
   });
   editMarketPriceState(state, (s) => s['tracked'] = products);
 }
@@ -209,6 +226,7 @@ bool applyMarketQuote(Json state, MarketQuote quote) {
     item['lastCheckedAt'] = quote.observedAt;
     item['sourceTime'] = quote.sourceTime;
     item['discount'] = quote.discount;
+    if (quote.imageUrl != null) item['imageUrl'] = quote.imageUrl;
     editMarketPriceState(state, (s) => s['tracked'] = products);
     break;
   }
