@@ -11,6 +11,7 @@ import 'trendyol_go_readonly.dart';
 import 'trendyol_go_ui.dart';
 import 'sales_reports.dart';
 import 'dashboard_sales.dart';
+import 'finance_ui.dart';
 import 'order_alerts.dart';
 import 'staff_order_popup.dart';
 import 'online_order_alarm.dart';
@@ -184,6 +185,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     ('open-accounts', Icons.account_balance_wallet_outlined, 'Açık Hesaplar'),
     ('payments', Icons.point_of_sale_outlined, 'Kasa & Ödemeler'),
     ('reports', Icons.bar_chart_outlined, 'Raporlar'),
+    ('finance', Icons.account_balance_wallet_outlined, 'Finans'),
     ('market-prices', Icons.trending_up_outlined, 'Market Fiyat Takibi'),
     ('settings', Icons.settings_outlined, 'Ayarlar'),
   ];
@@ -1724,6 +1726,9 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
         return _payments(db);
       case 'reports':
         return _reports(db);
+      case 'finance':
+        return FinancePanel(
+          state: db, edit: _edit, onlineWarning: _onlineDataWarning);
       case 'market-prices':
         return MarketPriceTracking(state: db, edit: _edit, store: store, api: marketApi);
       case 'settings':
