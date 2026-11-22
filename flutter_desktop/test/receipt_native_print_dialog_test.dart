@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nohut_falafel_desktop/receipt_preview.dart';
 import 'package:nohut_falafel_desktop/receipt_printer.dart';
+import 'package:nohut_falafel_desktop/receipt_layout.dart';
+import 'package:nohut_falafel_desktop/operations.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -44,6 +46,13 @@ void main() {
       ],
       'payments': [],
     };
+    // The receipt raster loads an asset and renders asynchronously. Resolve
+    // the actual artwork first rather than assuming pumpAndSettle waits for IO.
+    final settings = <String, dynamic>{'paperWidthMm': 56,
+      'printableWidthMm': 48};
+    final ready = await tester.runAsync(() =>
+      renderReceipt(billText(order), settings: settings));
+    expect(ready, isNotNull);
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
         body: Center(
@@ -51,8 +60,7 @@ void main() {
             width: 195,
             child: SingleChildScrollView(
               child: ReceiptPreview(order: order,
-                settings: const {'paperWidthMm': 56,
-                  'printableWidthMm': 48}),
+                settings: settings),
             ),
           ),
         ),
@@ -61,7 +69,7 @@ void main() {
     await tester.pumpAndSettle();
     final paper = find.byKey(const ValueKey('receipt-paper'));
     expect(paper, findsOneWidget);
-    expect(tester.getSize(paper).width, lessThanOrEqualTo(195));
+    expect(tester.getRect(paper).width, lessThanOrEqualTo(195));
     expect(find.byKey(const ValueKey('receipt-artwork')), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
