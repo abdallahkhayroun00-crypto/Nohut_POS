@@ -2,6 +2,37 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:nohut_falafel_desktop/finance_logic.dart';
 
 void main() {
+  test('manual discount is per purchase and never changes source price', () {
+    expect(materialDiscountCents(20100, 'Yüzde', 1000), 2010);
+    expect(materialAfterDiscountCents(3000, 6700, 'Yüzde', 1000), 18090);
+    expect(materialAfterDiscountCents(3000, 6700, 'Tutar', 1500), 18600);
+    expect(materialDiscountCents(20100, 'Yok', 0), 0);
+    expect(() => materialDiscountCents(20100, 'Yüzde', 10001),
+      throwsFormatException);
+    expect(() => materialDiscountCents(20100, 'Tutar', 20101),
+      throwsFormatException);
+    final state = <String, dynamic>{
+      'marketPrices': {'tracked': [
+        {'key': 'a-1', 'title': 'Nohut', 'market': 'A101',
+          'priceCents': 6450},
+      ]},
+      'orders': <dynamic>[],
+    };
+    saveMaterialPurchase(state,
+      date: '2026-11-22', title: 'Nohut', unit: 'kg',
+      storeBrand: 'A101', marketKey: 'a-1',
+      referencePriceCents: 6450, quantityMilli: 3000,
+      pricePerUnitCents: 6700, discountType: 'Yüzde',
+      discountValue: 1000);
+    final purchase = financeRows(state, 'materials').single;
+    expect(purchase['subtotalCents'], 20100);
+    expect(purchase['discountCents'], 2010);
+    expect(purchase['totalCents'], 18090);
+    expect(financeMonthSummary(state, '2026-11').materialsCents, 18090);
+    expect((state['marketPrices']['tracked'] as List).first['priceCents'],
+      6450);
+  });
+
   test('market filter is store-specific with Turkish accents and search', () {
     final state = <String, dynamic>{
       'marketPrices': {'tracked': [
