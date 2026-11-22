@@ -6,6 +6,7 @@ import 'operations_ui.dart';
 import 'pos_logic.dart';
 import 'order_reporting.dart';
 import 'report_activity.dart';
+import 'platform_net.dart';
 
 class SalesReports extends StatefulWidget {
   const SalesReports({
@@ -39,6 +40,33 @@ class _SalesReportsState extends State<SalesReports> {
     final day = istanbulDay(d);
     return (from.isEmpty || day.compareTo(from) >= 0) &&
         (to.isEmpty || day.compareTo(to) <= 0);
+  }
+
+  void _savePlatformRate(String platform, double percent) {
+    widget.edit((state) {
+      final settings = state.putIfAbsent(
+        'settings', () => <String, dynamic>{}) as Map;
+      final rates = settings.putIfAbsent(
+        'platformDeductionRates', () => <String, dynamic>{}) as Map;
+      rates[platform] = percent;
+    });
+  }
+
+  Future<void> _editPlatformRate(String platform) async {
+    final current = deliveryDeductionPercent(widget.state, platform);
+    final answer = await askFields(context, '$platform · Kesinti Ayarı', [
+      ('Toplam kesinti (%) · KDV dahil',
+        current == null ? '' : current.toStringAsFixed(2)),
+    ], validate: (values) {
+      if (values.isEmpty) return 'Kesinti yüzdesi gerekli';
+      final p = double.tryParse(values.first.trim().replaceAll(',', '.'));
+      if (p == null || !p.isFinite || p < 0 || p > 100)
+        return '0 ile 100 arasında yüzde girin';
+      return null;
+    });
+    if (answer == null || !mounted) return;
+    final percent = double.parse(answer.first.trim().replaceAll(',', '.'));
+    _savePlatformRate(platform, percent);
   }
 
   Future<void> export(String name, String text) async {
@@ -173,6 +201,8 @@ class _SalesReportsState extends State<SalesReports> {
         )
         .toList();
     final activity = ReportActivity(widget.state, includes, source);
+    final platformNet = deliveryNetEstimates(widget.state, includes,
+      source: source);
     final net = entries.fold<int>(0, (n, e) => n + e.amount),
         refund = entries
             .where((e) => e.amount < 0)
@@ -336,6 +366,81 @@ class _SalesReportsState extends State<SalesReports> {
         ),
         const SizedBox(height: 16),
         if (tab == 'Genel Bakış') ...[
+          if (platformNet.isNotEmpty) ...[
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(17),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text('Online Platformlar · Tahmini Net',
+                      style: Theme.of(context).textTheme.titleLarge),
+                    const SizedBox(height: 5),
+                    const Text(
+                      'Brüt - toplam platform kesintisi (KDV dahil) = '
+                      'tahmini kalan tutar. Banka ödemesi veya işletme kârı '
+                      'değildir; stopaj, iadeler ve kampanya farkları ayrıca '
+                      'mutabık kalınmalıdır.',
+                      style: TextStyle(
+                        color: NohutBrand.muted, fontSize: 12)),
+                    const SizedBox(height: 10),
+                    for (final p in platformNet) ...[
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(p.source,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800)),
+                        subtitle: Text(
+                          '${p.orderCount} kayıtlı teslim edilmiş sipariş · '
+                          'Kesinti: ${p.deductionPercent == null
+                            ? 'Bilinmiyor'
+                            : '%${p.deductionPercent!.toStringAsFixed(2)}'}'),
+                        trailing: TextButton(
+                          key: ValueKey('platform-fee-edit-${p.source}'),
+                          onPressed: () => _editPlatformRate(p.source),
+                          child: const Text('Oranı Düzenle'),
+                        ),
+                      ),
+                      Wrap(
+                        spacing: 10, runSpacing: 10,
+                        children: [
+                          _summaryInsight(Icons.payments_outlined,
+                            'Brüt', formatTry(p.grossCents)),
+                          _summaryInsight(Icons.remove_circle_outline,
+                            'Kesinti', p.deductionCents == null
+                              ? '—' : formatTry(p.deductionCents!)),
+                          _summaryInsight(Icons.account_balance_wallet_outlined,
+                            'Tahmini Net', p.estimatedNetCents == null
+                              ? '—' : formatTry(p.estimatedNetCents!)),
+                        ],
+                      ),
+                      if (p.source == 'Trendyol Go' &&
+                          p.deductionPercent == null)
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: TextButton.icon(
+                            key: const ValueKey('trendyol-october-reference'),
+                            onPressed: () => _savePlatformRate(
+                              'Trendyol Go', 38.4),
+                            icon: const Icon(Icons.history_outlined, size: 17),
+                            label: const Text(
+                              'Ekim 2026 ekstre oranını (%38,4) uygula'),
+                          ),
+                        ),
+                      const Divider(height: 23),
+                    ],
+                    const Text(
+                      'Oranlar restoran sözleşmesine ve döneme göre değişebilir. '
+                      'Yemeksepeti / Migros Yemek bağlantısı yoksa '
+                      '0 sipariş, gerçekten hiç satış olmadığı anlamına gelmez.',
+                      style: TextStyle(
+                        color: NohutBrand.muted, fontSize: 11)),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
           Card(
             child: Padding(
               padding: const EdgeInsets.all(19),
