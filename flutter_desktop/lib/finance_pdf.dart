@@ -5,7 +5,6 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 import 'finance_logic.dart';
-import 'market_prices.dart';
 import 'operations.dart';
 import 'order_reporting.dart';
 import 'platform_net.dart';
@@ -55,10 +54,8 @@ class FinancePdfRequest {
 }
 
 final _forest = PdfColor.fromInt(0xff173f33);
-final _deep = PdfColor.fromInt(0xff14392e);
 final _green = PdfColor.fromInt(0xff27714e);
 final _pale = PdfColor.fromInt(0xffeff4ef);
-final _paper = PdfColor.fromInt(0xfffaf9f5);
 final _ink = PdfColor.fromInt(0xff253d33);
 final _muted = PdfColor.fromInt(0xff637a70);
 final _line = PdfColor.fromInt(0xffdce6dc);
