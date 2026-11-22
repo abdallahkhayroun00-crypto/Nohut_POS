@@ -59,7 +59,7 @@ String _marketSearchText(String text) => text.trim()
 /// Diğer includes other retailer products; manual input always remains
 /// available, even when this list is empty or price refresh is offline.
 List<Json> marketTrackedForMaterial(
-  Json state, String store, {String query = ''},
+  Json state, String store, {String query = ''}
 ) {
   if (!materialStores.contains(store)) return <Json>[];
   final q = _marketSearchText(query);
