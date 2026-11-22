@@ -1,0 +1,179 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:nohut_falafel_desktop/finance_logic.dart';
+
+void main() {
+  test('market tracked package prices normalize to kg, lt, adet', () {
+    final citric = marketUnitQuote({
+      'unit': '100 GR', 'priceCents': 5450,
+    })!;
+    expect(citric.unit, 'kg');
+    expect(citric.priceCents, 54500);
+    expect(materialTotalCents(500, citric.priceCents), 27250);
+
+    final chickpeas = marketUnitQuote({
+      'unit': '1 KG', 'priceCents': 6450,
+    })!;
+    expect(chickpeas.priceCents, 6450);
+    expect(materialTotalCents(3000, 6700), 20100);
+
+    final detergent = marketUnitQuote({
+      'unit': '750 ML', 'priceCents': 6250,
+    })!;
+    expect(detergent.unit, 'lt');
+    expect(detergent.priceCents, 8333);
+    expect(materialTotalCents(750, detergent.priceCents), 6250);
+
+    final ayran = marketUnitQuote({
+      'unit': '2 Adet', 'priceCents': 2950,
+    })!;
+    expect(ayran.unit, 'adet');
+    expect(ayran.priceCents, 1475);
+  });
+
+  test('daily material price correction does not modify market watch', () {
+    final state = <String, dynamic>{
+      'marketPrices': {
+        'tracked': [
+          {'key': '0BAA|hakmar-5522',
+           'title': 'Rençber Nohut 1 Kg', 'priceCents': 6450,
+           'unit': '1 KG'},
+        ],
+      },
+    };
+    saveMaterialPurchase(state,
+      date: '2026-11-22',
+      title: 'Rençber Nohut 1 Kg', unit: 'kg',
+      quantityMilli: 3000, pricePerUnitCents: 6700,
+      marketKey: '0BAA|hakmar-5522', market: 'Hakmar · Mavi Durak',
+      marketUnit: '1 KG', referencePriceCents: 6450);
+    var rows = financeRows(state, 'materials');
+    expect(rows.length, 1);
+    expect(rows.first['totalCents'], 20100);
+    expect(rows.first['referencePriceCents'], 6450);
+    expect((state['marketPrices']['tracked'] as List).first['priceCents'], 6450);
+    final id = rows.first['id'] as int;
+
+    saveMaterialPurchase(state,
+      id: id,
+      date: '2026-11-22', title: 'Rençber Nohut 1 Kg',
+      unit: 'kg', quantityMilli: 3000, pricePerUnitCents: 6800);
+    rows = financeRows(state, 'materials');
+    expect(rows.length, 1);
+    expect(rows.first['totalCents'], 20400);
+    expect((rows.first['history'] as List).length, 1);
+    voidMaterialPurchase(state, id, 'Yanlış fiş');
+    expect(financeMonthSummary(state, '2026-11').materialsCents, 0);
+  });
+
+  test('payroll links immutable employee id, snapshots rate and applies advance once', () {
+    final state = <String, dynamic>{
+      'employees': [
+        {'id': 2, 'name': 'Mehmet', 'active': true},
+      ],
+      'orders': <dynamic>[],
+    };
+    saveEmployeePay(state, 2, 'Saatlik', 9000);
+    saveWeeklyPayroll(state,
+      employeeId: 2, weekStart: '2026-11-16',
+      workedMinutes: 45 * 60, bonusCents: 10000,
+      advanceCents: 20000);
+    var payroll = financeRows(state, 'weeklyPayroll');
+    expect(payroll.length, 1);
+    expect(payroll.first['employeeId'], 2);
+    expect(payroll.first['baseCents'], 405000);
+    expect(payroll.first['grossCents'], 415000);
+    expect(payroll.first['payableCents'], 395000);
+    expect(financeMonthSummary(state, '2026-11').payrollCents, 415000);
+
+    saveEmployeePay(state, 2, 'Saatlik', 10000);
+    // The closed historical week is not silently recalculated by changing
+    // the current employee pay rate.
+    expect(financeRows(state, 'weeklyPayroll').first['grossCents'], 415000);
+    markWeeklyPayrollPaid(state, 2, '2026-11-16');
+    expect(financeRows(state, 'weeklyPayroll').first['paid'], true);
+    expect(() => saveWeeklyPayroll(state,
+      employeeId: 2, weekStart: '2026-11-16',
+      workedMinutes: 47 * 60, paid: true), throwsFormatException);
+    expect(financeRows(state, 'weeklyPayroll').length, 1);
+  });
+
+  test('payroll is in end-of-week month, not counted twice', () {
+    final state = <String, dynamic>{
+      'employees': [
+        {'id': 9, 'name': 'Test', 'active': true},
+      ],
+      'orders': <dynamic>[],
+    };
+    saveEmployeePay(state, 9, 'Haftalık Sabit', 500000);
+    // Monday 30 Nov -> Sunday 6 Dec, December accrued week.
+    saveWeeklyPayroll(state,
+      employeeId: 9, weekStart: '2026-11-30',
+      workedMinutes: 0);
+    expect(financeMonthSummary(state, '2026-11').payrollCents, 0);
+    expect(financeMonthSummary(state, '2026-12').payrollCents, 500000);
+    expect(() => saveWeeklyPayroll(state, employeeId: 9,
+      weekStart: '2026-12-01', workedMinutes: 0),
+      throwsFormatException);
+  });
+
+  test('monthly fixed obligations differ from paid flags and ad hoc costs', () {
+    final state = <String, dynamic>{
+      'employees': <dynamic>[], 'orders': <dynamic>[],
+    };
+    saveMonthlyFixed(state,
+      category: 'Kira', name: 'Dükkan kirası',
+      amountCents: 2500000, startMonth: '2026-11', dueDay: 5);
+    final id = financeRows(state, 'monthlyFixed').first['id'] as int;
+    markMonthlyFixedPaid(state, id, '2026-11', true);
+    markMonthlyFixedPaid(state, id, '2026-11', true);
+    expect(financeRows(state, 'fixedPayments').length, 1);
+    expect(financeMonthSummary(state, '2026-11').fixedCents, 2500000);
+    expect(financeMonthSummary(state, '2026-12').fixedCents, 2500000);
+    expect(financeMonthSummary(state, '2026-10').fixedCents, 0);
+    saveOtherExpense(state,
+      day: '2026-11-22', category: 'Yol / Nakliye',
+      name: 'Servis', amountCents: 5000, paymentMethod: 'Nakit');
+    expect(financeMonthSummary(state, '2026-11').otherCents, 5000);
+    expect(() => saveMonthlyFixed(state,
+      category: 'Kira', name: 'Test',
+      amountCents: 3000, startMonth: '2026-15'),
+      throwsFormatException);
+  });
+
+  test('month summary uses actual local receipts, not open orders or duplicate payouts', () {
+    final state = <String, dynamic>{
+      'employees': <dynamic>[],
+      'orders': [
+        {
+          'id': 1, 'source': 'Masa', 'closed': true,
+          'payments': [
+            {'amount': 300, 'method': 'Nakit',
+             'createdAt': '2026-11-22T12:00:00Z'},
+          ],
+        },
+        {
+          'id': 2, 'source': 'Gel-Al', 'closed': false,
+          'payments': <dynamic>[],
+        },
+      ],
+      'trendyolGoOrders': [
+        {
+          'status': 'Delivered', 'createdAt': '2026-11-20T08:00:00Z',
+          'totalCents': 100000, 'testPackage': false,
+        },
+      ],
+      'settings': {
+        'platformDeductionRates': {'Trendyol Go': 38.4},
+      },
+    };
+    var summary = financeMonthSummary(state, '2026-11');
+    expect(summary.localReceiptsCents, 30000);
+    expect(summary.onlineKnownNetCents, 61600);
+    expect(summary.knownIncomeCents, 91600);
+    expect(summary.estimateCents, 91600);
+    (state['settings']['platformDeductionRates'] as Map).clear();
+    summary = financeMonthSummary(state, '2026-11');
+    expect(summary.onlineUnpricedGrossCents, 100000);
+    expect(summary.estimateCents, isNull);
+  });
+}
