@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
@@ -61,60 +60,59 @@ class _ReceiptPreviewState extends State<ReceiptPreview> {
     return Semantics(
       label: 'HESAP ÖZETİ\n${billText(widget.order)}\nAfiyet olsun!',
       image: true,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final available = constraints.maxWidth.isFinite
-              ? math.max(1.0, constraints.maxWidth - 2)
-              : cfg.paper * 5;
-          final scale = math.min(5.0, available / cfg.paper);
-          return Center(
-            child: Container(
-              key: const ValueKey('receipt-paper'),
-              width: cfg.paper * scale,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                border: Border.all(
-                  color: const Color(0xffD6D6D6), width: 0.5),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x1A000000),
-                    blurRadius: 10,
-                    offset: Offset(0, 3),
-                  ),
-                ],
-              ),
-              padding: EdgeInsets.only(
-                left: left * scale,
-                right: (cfg.paper - cfg.width - left) * scale,
-              ),
-              child: FutureBuilder<ReceiptArtwork>(
-                future: artwork,
-                builder: (context, snapshot) {
-                  if (snapshot.hasError) {
-                    return Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Text('Fiş hazırlanamadı: ${snapshot.error}'),
-                    );
-                  }
-                  if (!snapshot.hasData) {
-                    return const Padding(
-                      padding: EdgeInsets.all(24),
-                      child: Text(
-                        'Fiş hazırlanıyor…', textAlign: TextAlign.center),
-                    );
-                  }
-                  return Image.memory(
-                    snapshot.data!.png,
-                    key: const ValueKey('receipt-artwork'),
-                    width: cfg.width * scale,
-                    fit: BoxFit.fitWidth,
-                    excludeFromSemantics: true,
-                  );
-                },
-              ),
+      // FittedBox supports intrinsic sizing when embedded in AlertDialog,
+      // unlike LayoutBuilder. Scale the entire physical paper, never crop
+      // or scale only the receipt contents.
+      child: Center(
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.topCenter,
+          child: Container(
+            key: const ValueKey('receipt-paper'),
+            width: cfg.paper * 5,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border.all(
+                color: const Color(0xffD6D6D6), width: 0.5),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x1A000000),
+                  blurRadius: 10,
+                  offset: Offset(0, 3),
+                ),
+              ],
             ),
-          );
-        },
+            padding: EdgeInsets.only(
+              left: left * 5,
+              right: (cfg.paper - cfg.width - left) * 5,
+            ),
+            child: FutureBuilder<ReceiptArtwork>(
+              future: artwork,
+              builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Text('Fiş hazırlanamadı: ${snapshot.error}'),
+                  );
+                }
+                if (!snapshot.hasData) {
+                  return const Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Text(
+                      'Fiş hazırlanıyor…', textAlign: TextAlign.center),
+                  );
+                }
+                return Image.memory(
+                  snapshot.data!.png,
+                  key: const ValueKey('receipt-artwork'),
+                  width: cfg.width * 5,
+                  fit: BoxFit.fitWidth,
+                  excludeFromSemantics: true,
+                );
+              },
+            ),
+          ),
+        ),
       ),
     );
   }
