@@ -66,11 +66,29 @@ void main() {
         ),
       ),
     ));
+    // FutureBuilder can complete after the first test frame even when the
+    // raster Future was pre-cached. Let real image/asset microtasks finish,
+    // then pump the matching frame instead of assuming pumpAndSettle is IO.
+    final raster = find.byKey(const ValueKey('receipt-artwork'),
+      skipOffstage: false);
+    for (var attempt = 0; attempt < 20 && raster.evaluate().isEmpty; attempt++) {
+      await tester.runAsync(() async {
+        await Future<void>.delayed(const Duration(milliseconds: 40));
+      });
+      await tester.pump(const Duration(milliseconds: 40));
+    }
     await tester.pumpAndSettle();
     final paper = find.byKey(const ValueKey('receipt-paper'));
     expect(paper, findsOneWidget);
     expect(tester.getRect(paper).width, lessThanOrEqualTo(195));
-    expect(find.byKey(const ValueKey('receipt-artwork')), findsOneWidget);
+    final errorText = find.textContaining('Fiş hazırlanamadı',
+      skipOffstage: false);
+    expect(errorText, findsNothing,
+      reason: 'ReceiptPreview must not fail to render the raster.');
+    expect(raster, findsOneWidget,
+      reason: 'Raster still absent after async frames. '
+        'Loading: ${find.textContaining('Fiş hazırlanıyor', skipOffstage: false).evaluate().length}; '
+        'Errors: ${errorText.evaluate().length}');
     expect(tester.takeException(), isNull);
   });
 }
