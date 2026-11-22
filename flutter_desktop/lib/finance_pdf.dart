@@ -323,10 +323,9 @@ List<pw.Widget> _monthly(Json state, String month) {
       locals[entry.source] = locals[entry.source]! + entry.amount;
     }
   }
-  final online = deliveryNetEstimates(state, (stamp) =>
-    _isInMonth(stamp, month));
+  final online = financePlatformFigures(state, month);
   final onlineGross = online.fold<int>(
-    0, (sum, entry) => sum + entry.grossCents);
+    0, (sum, entry) => sum + (entry.grossCents ?? 0));
   final fees = online.fold<int>(
     0, (sum, entry) => sum + (entry.deductionCents ?? 0));
   final channelRows = <List<String>>[
@@ -334,11 +333,17 @@ List<pw.Widget> _monthly(Json state, String month) {
       [source, _amount(locals[source]!),
         '—', _amount(locals[source]!)],
     for (final entry in online)
-      [entry.source, _amount(entry.grossCents),
-        entry.deductionCents == null && entry.grossCents > 0
-          ? 'Bilinmiyor' : _amount(entry.deductionCents ?? 0),
-        entry.grossCents > 0 && entry.estimatedNetCents == null
-          ? '—' : _amount(entry.estimatedNetCents ?? 0)],
+      [
+        entry.source + (entry.isManual
+          ? ' (Manuel ' + (entry.inputKind ?? '') + ')' : ''),
+        entry.grossCents == null ? '—' : _amount(entry.grossCents!),
+        entry.isManual && entry.inputKind == 'Net'
+          ? 'Net girildi'
+          : entry.deductionCents == null && entry.unknownGrossCents > 0
+            ? 'Bilinmiyor'
+            : _amount(entry.deductionCents ?? 0),
+        entry.netCents == null ? '—' : _amount(entry.netCents!),
+      ],
   ];
   final fixedByCategory = <String, int>{};
   for (final row in financeRows(state, 'monthlyFixed')) {
@@ -358,9 +363,9 @@ List<pw.Widget> _monthly(Json state, String month) {
     0, (max, value) => value > max ? value : max);
   return [
     pw.Row(children: [
-      _metric('YEREL TAHSİLAT + ONLINE BRÜT',
+      _metric('YEREL + BİLİNEN ONLINE BRÜT',
         _amount(summary.localReceiptsCents + onlineGross),
-        'İade sonrası yerel tahsilat + kayıtlı online sipariş'),
+        'Manuel Net girişlerinin brütü bilinmez'),
       pw.SizedBox(width: 10),
       _metric('NET GELİR (TAHMİNİ)',
         summary.missingOnlineRate
@@ -393,10 +398,13 @@ List<pw.Widget> _monthly(Json state, String month) {
       for (final item in breakdown.entries)
         _bar(item.key, item.value, breakdownMax)
     ],
-    _notice('Online platform kesintileri: ' + _amount(fees) +
+    _notice('Hesaba katılan online kesintiler: ' + _amount(fees) +
       '. Kesintisi bilinmeyen kayıtlı online brüt: ' +
       _amount(summary.onlineUnpricedGrossCents) + '. ' +
       'Oran eksikse tahmini net ve faaliyet farkı gösterilmez.'),
+    _notice('Manuel Net kayıtlarda tutar zaten komisyon sonrası kabul '
+      'edilir ve ikinci kez kesinti uygulanmaz. Otomatik teslim edilmiş '
+      'siparişler aynı ayın manuel özetinin yerine geçer.'),
     _notice('Yönetim amaçlı yaklaşık hesap. Satın alınan malzeme tüketim '
       'maliyeti (COGS) değildir. Banka mutabakatı, stopaj, '
       'vergiler, stok değişimleri ve entegrasyon eksikleri '
