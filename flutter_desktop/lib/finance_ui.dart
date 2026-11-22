@@ -1527,6 +1527,142 @@ class _FinancePanelState extends State<FinancePanel> {
     );
   }
 
+
+  Future<void> _manualPlatformForm(String source) async {
+    if (platformHasAutomaticSales(widget.state, source, month)) {
+      _error('Otomatik satışlar bulundu. Manuel toplam eklenemez.');
+      return;
+    }
+    final current = manualPlatformIncome(widget.state, source, month);
+    final values = await askFields(
+      context, source + ' · Manuel Gelir (' + month + ')', [
+        ('Tutar Türü', (current?['kind'] ?? 'Brüt').toString()),
+        ('Tutar (₺)', current == null ? '' :
+          _tl(current['amountCents'] as int)),
+        ('Not / Ekstre Kaynağı', (current?['note'] ?? '').toString()),
+      ],
+      choices: {0: manualIncomeTypes},
+      validate: (v) {
+        if (v.length < 3 || !manualIncomeTypes.contains(v[0])) {
+          return 'Brüt veya Net seçin.';
+        }
+        try {
+          _price(v[1]);
+        } on FormatException catch (e) {
+          return e.message;
+        }
+        return null;
+      },
+    );
+    if (values == null || !mounted) return;
+    try {
+      widget.edit((db) => saveManualPlatformIncome(db,
+        source: source, month: month, kind: values[0],
+        amountCents: _price(values[1]), note: values[2]));
+    } on FormatException catch (e) {
+      _error(e.message);
+    }
+  }
+
+  Future<void> _deleteManualPlatform(String source) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Manuel gelir kaydını iptal et'),
+        content: Text(source + ' · ' + month +
+          '\nBu manuel toplam finans hesabından çıkarılacak.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Vazgeç')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Kaydı İptal Et')),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      widget.edit((db) => voidManualPlatformIncome(db, source, month));
+    } on FormatException catch (e) {
+      _error(e.message);
+    }
+  }
+
+  Widget _manualPlatformSection() {
+    final figures = financePlatformFigures(widget.state, month)
+      .where((p) => manualIncomePlatforms.contains(p.source)).toList();
+    return Card(child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('Yemeksepeti & Migros Yemek',
+            style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 5),
+          const Text(
+            'Otomatik veri gelmiyorsa aylık toplamı manuel girin. '
+            'Brüt mü Net mi seçin. Net tutardan ikinci kez komisyon '
+            'düşülmez; Brüt tutar için kayıtlı kesinti oranı kullanılır.',
+            style: TextStyle(color: NohutBrand.muted, fontSize: 12)),
+          const SizedBox(height: 12),
+          for (final p in figures) ...[
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(p.isAutomatic
+                ? Icons.cloud_done_outlined : Icons.edit_note_outlined,
+                color: NohutBrand.green),
+              title: Text(p.source,
+                style: const TextStyle(fontWeight: FontWeight.w700)),
+              subtitle: Text(p.isAutomatic
+                ? 'Otomatik · ' + p.automaticOrders.toString() +
+                    ' teslim edilmiş sipariş'
+                : p.isManual
+                  ? 'Manuel ' + (p.inputKind ?? '') + ' · ' + month +
+                    (p.netCents == null ? ' · Komisyon oranı eksik' : '')
+                  : 'Otomatik kayıt yok · Manuel giriş yapılabilir'),
+              trailing: p.isAutomatic
+                ? const Text('Otomatik',
+                    style: TextStyle(color: NohutBrand.muted))
+                : OutlinedButton(
+                    key: ValueKey('finance-manual-platform-' + p.source),
+                    onPressed: () => _manualPlatformForm(p.source),
+                    child: Text(p.isManual ? 'Düzenle' : 'Manuel Gelir Gir')),
+            ),
+            if (p.isManual) ...[
+              Row(children: [
+                Expanded(child: Text(
+                  'Brüt: ' + (p.grossCents == null
+                    ? '—' : formatTry(p.grossCents!)) +
+                  ' · Kesinti: ' + (p.deductionCents == null
+                    ? '—' : formatTry(p.deductionCents!)) +
+                  ' · Net: ' + (p.netCents == null
+                    ? '—' : formatTry(p.netCents!)),
+                  style: const TextStyle(
+                    fontSize: 12, color: NohutBrand.green))),
+                TextButton(
+                  onPressed: () => _deleteManualPlatform(p.source),
+                  child: const Text('İptal Et')),
+              ]),
+            ],
+            if (p.isAutomatic &&
+                manualPlatformIncome(widget.state, p.source, month) != null)
+              const Text(
+                'Manuel toplam saklanır ama otomatik satış varken '
+                'hesaba katılmaz (çifte sayım önleme).',
+                style: TextStyle(
+                  color: Color(0xffa25b39), fontSize: 11)),
+            const Divider(height: 20),
+          ],
+          const Text(
+            'Manuel giriş yalnızca Finans raporuna eklenir; '
+            'sipariş oluşturmaz ve kasa/banka bakiyesini değiştirmez.',
+            style: TextStyle(color: NohutBrand.muted, fontSize: 11)),
+        ],
+      ),
+    ));
+  }
+
   Widget _overview() {
     final report = financeMonthSummary(widget.state, month);
     final breakdown = <(String, int)>[
@@ -1560,6 +1696,8 @@ class _FinancePanelState extends State<FinancePanel> {
               important: true),
           ],
         ),
+        const SizedBox(height: 12),
+        _manualPlatformSection(),
         const SizedBox(height: 12),
         if (report.missingOnlineRate)
           _notice('Bazı online siparişlerin komisyon oranı bilinmiyor: ' +
