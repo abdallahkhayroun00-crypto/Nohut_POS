@@ -94,6 +94,22 @@ void main() {
     }
   });
 
+  test('monthly PDF generation includes manually entered source records', () async {
+    final state = <String, dynamic>{
+      'orders': <dynamic>[],
+      'settings': {'platformDeductionRates': {'Migros Yemek': 25.0}},
+      'finance': {'manualPlatformSales': [
+        {'id': 1, 'source': 'Yemeksepeti', 'month': '2026-11',
+         'kind': 'Net', 'amountCents': 90000, 'voided': false},
+        {'id': 2, 'source': 'Migros Yemek', 'month': '2026-11',
+         'kind': 'Brüt', 'amountCents': 100000, 'voided': false},
+      ]},
+    };
+    final bytes = await generateFinancePdf(state, request);
+    expect(bytes.length, greaterThan(3000));
+    expect(String.fromCharCodes(bytes.take(5)), '%PDF-');
+  });
+
   test('reports handle zero records and unknown platform fee', () async {
     final state = <String, dynamic>{
       'orders': <dynamic>[],
