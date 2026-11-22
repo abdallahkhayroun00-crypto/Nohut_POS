@@ -74,6 +74,19 @@ void main() {
       findsNothing);
     expect(find.byKey(const ValueKey('finance-market-product-a101-nohut')),
       findsOneWidget);
+    await tester.enterText(
+      find.byKey(const ValueKey('finance-material-search')), 'noh');
+    await tester.ensureVisible(find.byKey(
+      const ValueKey('finance-market-live-search')));
+    await tester.tap(find.byKey(
+      const ValueKey('finance-market-live-search')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Market fiyat kaynağı etkin değil'),
+      findsOneWidget);
+    expect(find.byKey(const ValueKey('finance-manual-material')),
+      findsOneWidget);
+    expect(find.byKey(const ValueKey('finance-discount-type-Yok')),
+      findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }
