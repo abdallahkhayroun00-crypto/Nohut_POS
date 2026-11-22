@@ -239,6 +239,11 @@ class _FinancePanelState extends State<FinancePanel> {
       '1' : _quantity(existing['quantityMilli'] as int));
     final price = TextEditingController(text: existing == null ?
       '' : _tl(existing['pricePerUnitCents'] as int));
+    String discountType = (existing?['discountType'] ?? 'Yok').toString();
+    if (!materialDiscountTypes.contains(discountType)) discountType = 'Yok';
+    final discount = TextEditingController(text:
+      existing?['discountValue'] is int && discountType != 'Yok'
+        ? _tl(existing!['discountValue'] as int) : '0');
     final notes = TextEditingController(text: (existing?['note'] ?? '').toString());
     final search = TextEditingController();
     final otherStore = TextEditingController(text: selectedStore == 'Diğer' &&
@@ -265,10 +270,16 @@ class _FinancePanelState extends State<FinancePanel> {
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, changeDialog) {
-          int? total;
+          int? total, subtotal, discountAmount;
           try {
-            total = materialTotalCents(_qty(quantity.text),
-              _price(price.text));
+            final count = _qty(quantity.text);
+            final rate = _price(price.text);
+            subtotal = materialTotalCents(count, rate);
+            final value = discountType == 'Yok' ? 0 :
+              _price(discount.text, allowZero: true);
+            discountAmount = materialDiscountCents(
+              subtotal, discountType, value);
+            total = subtotal - discountAmount;
           } on FormatException { /* show blank total while typing */ }
           final market = byKey[chosen];
           final products = marketTrackedForMaterial(widget.state,
@@ -508,11 +519,64 @@ class _FinancePanelState extends State<FinancePanel> {
                       }),
                     ),
                     const SizedBox(height: 10),
+                    const SizedBox(height: 12),
+                    const Text('İNDİRİM',
+                      style: TextStyle(
+                        color: NohutBrand.muted, fontSize: 12,
+                        fontWeight: FontWeight.w800, letterSpacing: 0.5)),
+                    const SizedBox(height: 7),
+                    DropdownButtonFormField<String>(
+                      key: ValueKey('finance-discount-type-$discountType'),
+                      initialValue: discountType,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'İndirim Türü'),
+                      items: const [
+                        DropdownMenuItem(value: 'Yok',
+                          child: Text('İndirim yok')),
+                        DropdownMenuItem(value: 'Tutar',
+                          child: Text('Tutar · ₺')),
+                        DropdownMenuItem(value: 'Yüzde',
+                          child: Text('Yüzde · %')),
+                      ],
+                      onChanged: (v) => changeDialog(() {
+                        discountType = v ?? 'Yok';
+                        discount.text = '0';
+                      }),
+                    ),
+                    if (discountType != 'Yok') ...[
+                      const SizedBox(height: 9),
+                      TextField(
+                        key: const ValueKey('finance-discount-value'),
+                        controller: discount,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true),
+                        onChanged: (_) => changeDialog(() {}),
+                        decoration: InputDecoration(
+                          labelText: discountType == 'Tutar'
+                            ? 'İndirim Tutarı (₺)' : 'İndirim Yüzdesi (%)',
+                          helperText: 'Fişte gördüğünüz ek indirimi yazın.'),
+                      ),
+                    ],
+                    const SizedBox(height: 5),
+                    const Text(
+                      'Kaynak fiyat zaten indirimliyse aynı indirimi '
+                      'bir daha uygulamayın. Bu alan sadece alış kaydını '
+                      'etkiler, Market Fiyat Takibi fiyatını değiştirmez.',
+                      style: TextStyle(
+                        fontSize: 11, color: NohutBrand.muted)),
                     TextField(controller: notes, maxLines: 2,
                       decoration: const InputDecoration(
                         labelText: 'Not (isteğe bağlı)')),
                     const SizedBox(height: 10),
-                    Text('Toplam: ' + (total == null ? '—' : formatTry(total)),
+                    if (subtotal != null && discountAmount != null)
+                      Text('Ara toplam: ' + formatTry(subtotal) +
+                        '   ·   İndirim: −' + formatTry(discountAmount),
+                        style: const TextStyle(
+                          color: NohutBrand.muted, fontSize: 12)),
+                    Text('Ödenecek toplam: ' +
+                        (total == null ? '—' : formatTry(total)),
+                      key: const ValueKey('finance-material-net'),
                       style: const TextStyle(fontWeight: FontWeight.w800,
                         color: NohutBrand.green, fontSize: 19)),
                     if (error != null)
@@ -541,6 +605,9 @@ class _FinancePanelState extends State<FinancePanel> {
                       unit: unit,
                       quantityMilli: _qty(quantity.text),
                       pricePerUnitCents: _price(price.text),
+                      discountType: discountType,
+                      discountValue: discountType == 'Yok' ? 0 :
+                        _price(discount.text, allowZero: true),
                       marketKey: marketQuote == null ? '' : chosen,
                       storeBrand: selectedStore,
                       market: marketQuote == null
@@ -569,7 +636,7 @@ class _FinancePanelState extends State<FinancePanel> {
     );
     // Match the repo's existing dialog controller disposal timing.
     await Future<void>.delayed(const Duration(milliseconds: 250));
-    for (final c in [date, name, quantity, price, notes, search, otherStore]) {
+    for (final c in [date, name, quantity, price, notes, search, otherStore, discount]) {
       c.dispose();
     }
   }
@@ -629,6 +696,10 @@ class _FinancePanelState extends State<FinancePanel> {
               _quantity(p['quantityMilli'] as int) + ' ' +
               p['unit'].toString() + ' × ' +
               formatTry(p['pricePerUnitCents'] as int) +
+              ((p['discountCents'] ?? 0) is int &&
+                (p['discountCents'] ?? 0) > 0
+                ? ' · İndirim: −' +
+                    formatTry(p['discountCents'] as int) : '') +
               (p['market'] == '' ? '' : '\n' + p['market'].toString()) +
               '\n' + (p['paymentMethod'] ?? '').toString()),
             isThreeLine: true,
