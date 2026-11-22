@@ -1,5 +1,7 @@
 import 'dart:math' as math;
 
+import 'market_prices.dart';
+
 import 'operations.dart';
 import 'order_reporting.dart';
 import 'platform_net.dart';
@@ -24,6 +26,66 @@ List<Json> financeRows(Json state, String key) {
   final book = state['finance'];
   if (book is! Map) return <Json>[];
   return asMaps(book[key]);
+}
+
+const materialStores = <String>['BİM', 'A101', 'Hakmar', 'Diğer'];
+
+String materialStoreFromBrand(String brand) {
+  switch (marketBrandKey(brand)) {
+    case 'bim':
+      return 'BİM';
+    case 'a101':
+      return 'A101';
+    case 'hakmar':
+      return 'Hakmar';
+    default:
+      return 'Diğer';
+  }
+}
+
+/// Historic entries without storeBrand are inferred from their recorded
+/// market label; new manual entries preserve the chosen brand explicitly.
+String materialPurchaseStore(Json purchase) {
+  final brand = (purchase['storeBrand'] ?? '').toString();
+  if (materialStores.contains(brand)) return brand;
+  return materialStoreFromBrand((purchase['market'] ?? '').toString());
+}
+
+String _marketSearchText(String text) => text.trim()
+  .replaceAll('İ', 'i').replaceAll('I', 'i')
+  .toLowerCase().replaceAll('ı', 'i');
+
+/// Only Market Fiyat Takibi products for the selected supermarket.
+/// Diğer includes other retailer products; manual input always remains
+/// available, even when this list is empty or price refresh is offline.
+List<Json> marketTrackedForMaterial(
+  Json state, String store, {String query = ''},
+) {
+  if (!materialStores.contains(store)) return <Json>[];
+  final q = _marketSearchText(query);
+  final entries = trackedMarketProducts(state).where((p) {
+    final raw = (p['market'] ?? '').toString();
+    var brand = materialStoreFromBrand(raw);
+    if (raw.trim().isEmpty && p['storeId'] is String) {
+      final place = nohutStorePlaces.where(
+        (s) => s.id == p['storeId']).firstOrNull;
+      if (place != null) brand = materialStoreFromBrand(place.market);
+    }
+    if (brand != store) return false;
+    if (q.isEmpty) return true;
+    return _marketSearchText([
+      p['title'], p['market'], p['depotName'], p['unit'],
+    ].join(' ')).contains(q);
+  }).toList();
+  entries.sort((a, b) => _marketSearchText((a['title'] ?? '').toString())
+    .compareTo(_marketSearchText((b['title'] ?? '').toString())));
+  final seen = <String>{};
+  return [
+    for (final p in entries)
+      if (seen.add((p['key'] ?? '').toString()) &&
+          (p['key'] ?? '').toString().isNotEmpty)
+        p,
+  ];
 }
 
 const financeUnits = <String>['kg', 'lt', 'adet', 'paket'];
@@ -112,6 +174,7 @@ void saveMaterialPurchase(
   required int quantityMilli,
   required int pricePerUnitCents,
   String marketKey = '',
+  String storeBrand = 'Diğer',
   String market = '',
   String marketUnit = '',
   int? referencePriceCents,
@@ -119,6 +182,9 @@ void saveMaterialPurchase(
   String note = '',
 }) {
   _checkDay(date);
+  if (!materialStores.contains(storeBrand)) {
+    throw const FormatException('Market seçimi geçersiz.');
+  }
   if (title.trim().isEmpty || title.length > 160 ||
       !financeUnits.contains(unit) ||
       quantityMilli <= 0 || quantityMilli > 100000000 ||
@@ -145,6 +211,7 @@ void saveMaterialPurchase(
     'pricePerUnitCents': pricePerUnitCents,
     'totalCents': total,
     'marketKey': marketKey,
+    'storeBrand': storeBrand,
     'market': market,
     'marketUnit': marketUnit,
     if (referencePriceCents != null)
