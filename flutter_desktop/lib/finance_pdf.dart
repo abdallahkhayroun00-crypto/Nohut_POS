@@ -7,7 +7,6 @@ import 'package:pdf/widgets.dart' as pw;
 import 'finance_logic.dart';
 import 'operations.dart';
 import 'order_reporting.dart';
-import 'platform_net.dart';
 import 'pos_logic.dart';
 
 /// The report has the same three types as the print-ready Nohut designs.
