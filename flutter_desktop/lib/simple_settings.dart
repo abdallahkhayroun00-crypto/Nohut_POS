@@ -6,6 +6,7 @@ import 'brand.dart';
 import 'pos_logic.dart';
 import 'pos_store.dart';
 import 'operations_ui.dart';
+import 'operations.dart';
 import 'online_orders.dart';
 import 'qr_menu_sync.dart';
 import 'qr_menu_preview.dart';
@@ -103,6 +104,26 @@ class _SimpleSettingsState extends State<SimpleSettings> {
     },
   );
 
+  Json _previewSampleOrder() => <String, dynamic>{
+    'id': 1,
+    'dailyNumber': 1,
+    'source': 'Masa',
+    'table': 3,
+    'createdAt': '2026-11-18T09:00:00Z',
+    'batches': [
+      {
+        'id': 1,
+        'lines': [
+          {'name': 'Falafel Dürüm', 'qty': 1, 'price': 140},
+          {'name': 'Ek Lavaş', 'qty': 1, 'price': 10},
+        ],
+      },
+    ],
+    'payments': [
+      {'method': 'Nakit', 'amount': 150},
+    ],
+  };
+
   Widget printerLayout(Map settings, Widget controls) {
     final preview = section(
       'Fiş Önizleme',
@@ -110,25 +131,7 @@ class _SimpleSettingsState extends State<SimpleSettings> {
       [
         ReceiptPreview(
           settings: settings,
-          order: {
-            'id': 1,
-            'dailyNumber': 1,
-            'source': 'Masa',
-            'table': 3,
-            'createdAt': '2026-11-18T09:00:00Z',
-            'batches': [
-              {
-                'id': 1,
-                'lines': [
-                  {'name': 'Falafel Dürüm', 'qty': 1, 'price': 140},
-                  {'name': 'Ek Lavaş', 'qty': 1, 'price': 10},
-                ],
-              },
-            ],
-            'payments': [
-              {'method': 'Nakit', 'amount': 150},
-            ],
-          },
+          order: _previewSampleOrder(),
         ),
       ],
     );
@@ -600,6 +603,45 @@ class _SimpleSettingsState extends State<SimpleSettings> {
                         if (v == 'escpos') cfg['receiptOffsetMm'] = 0;
                       });
                   },
+                ),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  key: const ValueKey('windows-print-dialog'),
+                  icon: const Icon(Icons.preview_outlined),
+                  label: const Text('Windows Yazdırma Penceresi (Ctrl+P)'),
+                  onPressed: Platform.isWindows &&
+                      (settings['receiptTransport'] ?? 'windows') == 'windows'
+                      ? () async {
+                          try {
+                            final printed = await windowsPrintWithDialog(
+                              billText(_previewSampleOrder()),
+                              (settings['printerName'] ?? '').toString(),
+                              settings: settings,
+                            );
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text(printed
+                                ? 'Windows yazdırma işlemi tamamlandı. '
+                                  'Kağıt çıktısını kontrol edin.'
+                                : 'Yazdırma iptal edildi; fiş gönderilmedi.')),
+                            );
+                          } catch (e) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text(
+                                  'Windows yazdırma penceresi açılamadı: $e')),
+                              );
+                            }
+                          }
+                        }
+                      : null,
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'Windows penceresinde yazıcıyı seçin; gerçek fiş görselini '
+                  'önizleyip Yazdır ile onaylayın. ESC/POS ham fiş modunda '
+                  'Windows penceresi kullanılamaz. Bu yalnızca örnek fiştir.',
+                  style: TextStyle(color: NohutBrand.muted, fontSize: 12),
                 ),
                 const SizedBox(height: 12),
                 const Text(
