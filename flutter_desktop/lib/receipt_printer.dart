@@ -217,7 +217,11 @@ Future<bool> _windowsPrintInternal(String text, String printer,
     ]);
     final process = await Process.start(
       executable,
-      ['-NoProfile', '-NonInteractive', '-EncodedCommand', encoded],
+      [
+        '-NoProfile', '-NonInteractive',
+        if (showWindowsPrintDialog) '-Sta',
+        '-EncodedCommand', encoded,
+      ],
       environment: {
         'NOHUT_RECEIPT_JOB': base64Encode(utf8.encode('${dir.path}/job.json')),
       },
