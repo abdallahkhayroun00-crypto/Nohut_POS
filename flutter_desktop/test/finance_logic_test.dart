@@ -2,6 +2,56 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:nohut_falafel_desktop/finance_logic.dart';
 
 void main() {
+  test('market filter is store-specific with Turkish accents and search', () {
+    final state = <String, dynamic>{
+      'marketPrices': {'tracked': [
+        {'key': 'b-1', 'title': 'Nohut 1 Kg', 'market': 'BİM',
+          'depotName': 'İstiklal', 'unit': '1 KG', 'priceCents': 5000},
+        {'key': 'a-1', 'title': 'Nohut 1 Kg', 'market': 'A101',
+          'depotName': 'Bağlar', 'unit': '1 KG', 'priceCents': 6000},
+        {'key': 'h-1', 'title': 'Tahin 400 Gr', 'market': 'Hakmar',
+          'depotName': 'Mavi Durak', 'unit': '400 GR', 'priceCents': 7000},
+        {'key': 'h-2', 'title': 'Tahin 400 Gr', 'market': 'Hakmar',
+          'depotName': 'Karadere', 'unit': '400 GR', 'priceCents': 7500},
+        {'key': 'o-1', 'title': 'Nar Ekşisi', 'market': 'ŞOK',
+          'depotName': 'Merkez', 'unit': '1 LT', 'priceCents': 5000},
+        {'key': 'b-2', 'title': 'Yogurt', 'storeId': 'bim',
+          'unit': '1 KG', 'priceCents': 3500},
+      ]},
+    };
+    expect(marketTrackedForMaterial(state, 'BİM').length, 2);
+    expect(marketTrackedForMaterial(state, 'BİM', query: 'NOHUT')
+      .single['key'], 'b-1');
+    expect(marketTrackedForMaterial(state, 'A101')
+      .single['key'], 'a-1');
+    expect(marketTrackedForMaterial(state, 'Hakmar', query: 'mavi')
+      .single['key'], 'h-1');
+    expect(marketTrackedForMaterial(state, 'Diğer')
+      .single['key'], 'o-1');
+    expect(marketTrackedForMaterial(state, 'BİM', query: 'unlisted'),
+      isEmpty);
+  });
+
+  test('manual material still stores BİM/A101/Hakmar/Diğer identity', () {
+    final state = <String, dynamic>{};
+    saveMaterialPurchase(state,
+      date: '2026-11-22', title: 'Domates', unit: 'kg',
+      storeBrand: 'Diğer', market: 'Manav',
+      quantityMilli: 2500, pricePerUnitCents: 4000);
+    final entry = financeRows(state, 'materials').single;
+    expect(entry['storeBrand'], 'Diğer');
+    expect(entry['market'], 'Manav');
+    expect(materialPurchaseStore(entry), 'Diğer');
+    expect(entry['totalCents'], 10000);
+    expect(materialPurchaseStore({'market': 'BİM İstiklal'}), 'BİM');
+    expect(materialPurchaseStore({'market': 'Hakmar Karadere'}), 'Hakmar');
+    expect(() => saveMaterialPurchase(state,
+      date: '2026-11-22', title: 'Domates', unit: 'kg',
+      storeBrand: 'NotAStore',
+      quantityMilli: 1000, pricePerUnitCents: 4000),
+      throwsFormatException);
+  });
+
   test('market tracked package prices normalize to kg, lt, adet', () {
     final citric = marketUnitQuote({
       'unit': '100 GR', 'priceCents': 5450,
