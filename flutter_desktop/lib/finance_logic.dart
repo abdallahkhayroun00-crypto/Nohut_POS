@@ -15,7 +15,8 @@ Json financeBook(Json state) {
   }
   final book = state['finance'] as Json;
   for (final key in const [
-    'materials', 'weeklyPayroll', 'monthlyFixed', 'fixedPayments', 'other'
+    'materials', 'weeklyPayroll', 'monthlyFixed', 'fixedPayments', 'other',
+    'manualPlatformSales'
   ]) {
     if (book[key] is! List) book[key] = <dynamic>[];
   }
@@ -490,6 +491,151 @@ void voidOtherExpense(Json state, int id, String reason) {
   item['voidedAt'] = _stamp();
 }
 
+/// A month-long summary entered by a manager when the platform has no
+/// confirmed automatic sales. Keeping one active record per platform/month
+/// avoids accidentally adding repeated monthly totals together.
+const manualIncomePlatforms = <String>['Yemeksepeti', 'Migros Yemek'];
+const manualIncomeTypes = <String>['Brüt', 'Net'];
+
+Json? manualPlatformIncome(Json state, String source, String month) =>
+  financeRows(state, 'manualPlatformSales').where((item) =>
+    item['source'] == source &&
+    item['month'] == month && item['voided'] != true).firstOrNull;
+
+/// The presence of any real delivered records means the manual *monthly*
+/// fallback is superseded, never summed with those records.
+bool platformHasAutomaticSales(Json state, String source, String month) {
+  if (!manualIncomePlatforms.contains(source) ||
+      !validFinanceMonth(month)) return false;
+  bool inMonth(String stamp) {
+    final date = DateTime.tryParse(stamp);
+    return date != null && istanbulDay(date).startsWith(month);
+  }
+  return deliveryNetEstimates(state, inMonth, source: source)
+    .any((value) => value.orderCount > 0);
+}
+
+void saveManualPlatformIncome(Json state, {
+  required String source,
+  required String month,
+  required String kind,
+  required int amountCents,
+  String note = '',
+}) {
+  if (!manualIncomePlatforms.contains(source) ||
+      !manualIncomeTypes.contains(kind) ||
+      !validFinanceMonth(month) || note.length > 500) {
+    throw const FormatException('Platform, dönem veya tutar türü geçersiz.');
+  }
+  _validateCents(amountCents);
+  if (platformHasAutomaticSales(state, source, month)) {
+    throw const FormatException(
+      'Bu platformda otomatik sipariş var. Çift saymamak için '
+      'manuel aylık toplam kaydedilemez.');
+  }
+  final rows = financeBook(state)['manualPlatformSales'] as List;
+  final existing = rows.cast<Map>().where((r) =>
+    r['source'] == source && r['month'] == month &&
+    r['voided'] != true).firstOrNull;
+  final entry = <String, dynamic>{
+    'id': existing?['id'] ?? _nextId(asMaps(rows)),
+    'source': source,
+    'month': month,
+    'kind': kind,
+    'amountCents': amountCents,
+    'note': note.trim(),
+    'createdAt': existing?['createdAt'] ?? _stamp(),
+    'updatedAt': _stamp(),
+    'voided': false,
+    'history': [
+      ...asMaps(existing?['history']),
+      if (existing != null) {
+        'changedAt': _stamp(),
+        'kind': existing['kind'],
+        'amountCents': existing['amountCents'],
+      },
+    ],
+  };
+  if (existing == null) {
+    rows.add(entry);
+  } else {
+    rows[rows.indexOf(existing)] = entry;
+  }
+}
+
+void voidManualPlatformIncome(Json state, String source, String month) {
+  final item = manualPlatformIncome(state, source, month);
+  if (item == null) throw const FormatException('Manuel kayıt bulunamadı.');
+  final rows = financeBook(state)['manualPlatformSales'] as List;
+  final entry = rows.cast<Map>().where((r) => r['id'] == item['id'])
+    .firstOrNull;
+  if (entry == null) throw const FormatException('Kayıt bulunamadı.');
+  entry['voided'] = true;
+  entry['voidedAt'] = _stamp();
+}
+
+class FinancePlatformFigure {
+  const FinancePlatformFigure({
+    required this.source, required this.origin, required this.grossCents,
+    required this.deductionCents, required this.netCents,
+    required this.unknownGrossCents, required this.automaticOrders,
+    required this.inputKind,
+  });
+  final String source, origin;
+  final int? grossCents, deductionCents, netCents;
+  final int unknownGrossCents, automaticOrders;
+  final String? inputKind;
+  bool get isManual => origin == 'Manuel';
+  bool get isAutomatic => origin == 'Otomatik';
+}
+
+/// Single reporting truth for all platform sources in a month. A manually
+/// entered Net is ALREADY net and must never be discounted again.
+List<FinancePlatformFigure> financePlatformFigures(Json state, String month) {
+  if (!validFinanceMonth(month)) throw const FormatException('Ay geçersiz.');
+  bool included(String stamp) {
+    final date = DateTime.tryParse(stamp);
+    return date != null && istanbulDay(date).startsWith(month);
+  }
+  final auto = deliveryNetEstimates(state, included);
+  return [
+    for (final p in auto)
+      if (p.orderCount > 0 || !manualIncomePlatforms.contains(p.source))
+        FinancePlatformFigure(
+          source: p.source,
+          origin: p.orderCount > 0 ? 'Otomatik' : 'Yok',
+          grossCents: p.grossCents,
+          deductionCents: p.deductionCents,
+          netCents: p.grossCents == 0 ? 0 : p.estimatedNetCents,
+          unknownGrossCents:
+            p.estimatedNetCents == null ? p.grossCents : 0,
+          automaticOrders: p.orderCount,
+          inputKind: null,
+        )
+      else
+        (() {
+          final manual = manualPlatformIncome(state, p.source, month);
+          final amount = manual?['amountCents'] as int?;
+          final isGross = manual?['kind'] == 'Brüt';
+          final percent = deliveryDeductionPercent(state, p.source);
+          final deduction = amount != null && isGross && percent != null
+            ? (amount * percent / 100).round() : null;
+          return FinancePlatformFigure(
+            source: p.source, origin: manual == null ? 'Yok' : 'Manuel',
+            grossCents: isGross ? amount : null,
+            deductionCents: isGross ? deduction : null,
+            netCents: amount == null ? 0 :
+              (isGross ? (deduction == null ? null : amount - deduction)
+                : amount),
+            unknownGrossCents: amount != null && isGross &&
+                deduction == null ? amount : 0,
+            automaticOrders: 0,
+            inputKind: manual?['kind'] as String?,
+          );
+        })(),
+  ];
+}
+
 class FinanceMonthSummary {
   const FinanceMonthSummary({
     required this.month,
@@ -522,11 +668,11 @@ FinanceMonthSummary financeMonthSummary(Json state, String month) {
   final local = ledger(state).where((p) =>
     (p.source == 'Masa' || p.source == 'Gel-Al') &&
     inMonth(p.stamp)).fold<int>(0, (sum, p) => sum + p.amount);
-  final online = deliveryNetEstimates(state, inMonth);
+  final online = financePlatformFigures(state, month);
   final knownOnline = online.fold<int>(0, (sum, p) =>
-    sum + (p.estimatedNetCents ?? 0));
+    sum + (p.netCents ?? 0));
   final unknown = online.fold<int>(0, (sum, p) =>
-    sum + (p.estimatedNetCents == null ? p.grossCents : 0));
+    sum + p.unknownGrossCents);
   final materials = financeRows(state, 'materials')
     .where((p) => p['voided'] != true &&
       (p['date'] as String? ?? '').startsWith(month))
