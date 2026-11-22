@@ -247,8 +247,14 @@ void saveWeeklyPayroll(
   final rows = financeBook(state)['weeklyPayroll'] as List;
   final existing = rows.cast<Map>().where((r) =>
       r['employeeId'] == employeeId && r['weekStart'] == weekStart).firstOrNull;
-  if (existing?['paid'] == true && existing?['paidAt'] != null && !paid) {
-    throw const FormatException('Ödenen maaş bu ekrandan geri alınamaz.');
+  if (existing?['paid'] == true) {
+    if (!paid || existing?['workedMinutes'] != workedMinutes ||
+        existing?['bonusCents'] != bonusCents ||
+        existing?['advanceCents'] != advanceCents ||
+        existing?['grossCents'] != gross) {
+      throw const FormatException(
+        'Ödenmiş maaş değiştirilemez. Yönetici muhasebe düzeltmesi gerekli.');
+    }
   }
   final entry = <String, dynamic>{
     'id': existing?['id'] ?? _nextId(asMaps(rows)),
@@ -274,6 +280,17 @@ void saveWeeklyPayroll(
   } else {
     rows[rows.indexOf(existing)] = entry;
   }
+}
+
+void markWeeklyPayrollPaid(Json state, int employeeId, String weekStart) {
+  final rows = financeBook(state)['weeklyPayroll'] as List;
+  final existing = rows.cast<Map>().where((r) =>
+    r['employeeId'] == employeeId && r['weekStart'] == weekStart).firstOrNull;
+  if (existing == null) throw const FormatException('Haftalık maaş bulunamadı.');
+  if (existing['paid'] == true) return;
+  existing['paid'] = true;
+  existing['paidAt'] = _stamp();
+  existing['updatedAt'] = _stamp();
 }
 
 void saveMonthlyFixed(
