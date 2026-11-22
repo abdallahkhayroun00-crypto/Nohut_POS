@@ -1,7 +1,11 @@
+import 'dart:io';
+
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
 import 'brand.dart';
 import 'finance_logic.dart';
+import 'finance_pdf.dart';
 import 'market_prices.dart';
 import 'operations_ui.dart' show askFields, EditState;
 import 'order_reporting.dart';
@@ -28,6 +32,7 @@ class _FinancePanelState extends State<FinancePanel> {
   String month = _today().substring(0, 7);
   String day = _today();
   String week = weekStartOf(_today());
+  bool _pdfBusy = false;
 
   static String _today() => istanbulDay(DateTime.now().toUtc());
   static String _try(double value) => value.toStringAsFixed(2);
@@ -79,6 +84,186 @@ class _FinancePanelState extends State<FinancePanel> {
   void _shiftWeek(int delta) {
     final d = DateTime.parse(week).add(Duration(days: delta * 7));
     setState(() => week = d.toIso8601String().substring(0, 10));
+  }
+
+  Future<void> _exportPdfReport() async {
+    if (_pdfBusy) return;
+    var kind = FinancePdfKind.monthly;
+    var selectedPeriod = month;
+    String? error;
+    final request = await showDialog<FinancePdfRequest>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialog) => AlertDialog(
+          title: const Text('PDF Raporu İndir'),
+          content: SizedBox(
+            width: 435,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Nohut Falafel · A4 yönetim raporları',
+                  style: TextStyle(color: NohutBrand.muted)),
+                const SizedBox(height: 15),
+                DropdownButtonFormField<FinancePdfKind>(
+                  key: ValueKey('finance-pdf-kind-' + kind.name),
+                  initialValue: kind,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Rapor Türü'),
+                  items: const [
+                    DropdownMenuItem(
+                      value: FinancePdfKind.monthly,
+                      child: Text('Aylık Finans Özeti')),
+                    DropdownMenuItem(
+                      value: FinancePdfKind.materials,
+                      child: Text('Günlük Malzeme Alım Raporu')),
+                    DropdownMenuItem(
+                      value: FinancePdfKind.payroll,
+                      child: Text('Haftalık Maaş & Sabit Giderler')),
+                  ],
+                  onChanged: (chosen) => setDialog(() {
+                    kind = chosen ?? FinancePdfKind.monthly;
+                    selectedPeriod = switch (kind) {
+                      FinancePdfKind.monthly => month,
+                      FinancePdfKind.materials => day,
+                      FinancePdfKind.payroll => week,
+                    };
+                    error = null;
+                  }),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  key: ValueKey('finance-pdf-period-' + kind.name),
+                  initialValue: selectedPeriod,
+                  onChanged: (next) {
+                    selectedPeriod = next.trim();
+                    setDialog(() => error = null);
+                  },
+                  decoration: InputDecoration(
+                    labelText: switch (kind) {
+                      FinancePdfKind.monthly => 'Ay (YYYY-MM)',
+                      FinancePdfKind.materials => 'Gün (YYYY-MM-DD)',
+                      FinancePdfKind.payroll => 'Hafta başlangıcı · Pazartesi',
+                    },
+                    helperText: kind == FinancePdfKind.payroll
+                      ? 'YYYY-MM-DD · pazartesi tarihi' : null,
+                  ),
+                ),
+                const SizedBox(height: 9),
+                if (kind == FinancePdfKind.payroll)
+                  const Text(
+                    'Bu rapor personel ücretlerini içerir. '
+                    'PDF dosyasını yalnızca yetkili yöneticiyle paylaşın.',
+                    style: TextStyle(
+                      color: Color(0xffa25b39), fontSize: 12)),
+                if (error != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 9),
+                    child: Text(error!,
+                      style: const TextStyle(color: Colors.red)),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Vazgeç')),
+            FilledButton.icon(
+              key: const ValueKey('finance-pdf-create'),
+              icon: const Icon(Icons.picture_as_pdf_outlined),
+              label: const Text('PDF Oluştur'),
+              onPressed: () {
+                try {
+                  final next = FinancePdfRequest(
+                    kind: kind,
+                    month: kind == FinancePdfKind.monthly
+                      ? selectedPeriod : month,
+                    day: kind == FinancePdfKind.materials
+                      ? selectedPeriod : day,
+                    weekStart: kind == FinancePdfKind.payroll
+                      ? selectedPeriod : week,
+                  );
+                  next.validate();
+                  Navigator.pop(dialogContext, next);
+                } on FormatException catch (e) {
+                  setDialog(() => error = e.message);
+                }
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+    if (request == null || !mounted) return;
+    if (request.kind == FinancePdfKind.payroll) {
+      final approved = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Özel maaş raporu'),
+          content: const Text(
+            'Bu PDF çalışan isimleri, hak edişleri ve avanslarını '
+            'içerir. Dosyayı güvenli bir konuma kaydedin.'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Vazgeç')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Devam Et')),
+          ],
+        ),
+      );
+      if (approved != true || !mounted) return;
+    }
+    try {
+      final location = await getSaveLocation(
+        suggestedName: request.suggestedName,
+        acceptedTypeGroups: const [
+          XTypeGroup(label: 'PDF', extensions: ['pdf']),
+        ],
+      );
+      if (location == null || !mounted) return;
+      var outputPath = location.path;
+      if (!outputPath.toLowerCase().endsWith('.pdf')) {
+        outputPath += '.pdf';
+      }
+      final output = File(outputPath);
+      if (await output.exists()) {
+        if (!mounted) return;
+        final overwrite = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Dosya zaten var'),
+            content: const Text(
+              'Seçtiğiniz PDF dosyası mevcut. '
+              'Üzerine yazmak istediğinize emin misiniz?'),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Vazgeç')),
+              FilledButton(onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Üzerine Yaz')),
+            ],
+          ),
+        );
+        if (overwrite != true || !mounted) return;
+      }
+      setState(() => _pdfBusy = true);
+      final pdfBytes = await generateFinancePdf(widget.state, request);
+      await output.writeAsBytes(pdfBytes, flush: true);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('PDF kaydedildi: ' + output.path),
+        duration: const Duration(seconds: 6),
+      ));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('PDF oluşturulamadı: $e'),
+        duration: const Duration(seconds: 6),
+      ));
+    } finally {
+      if (mounted) setState(() => _pdfBusy = false);
+    }
   }
 
   Widget _heading(String text, {Widget? action}) => Padding(
@@ -1424,9 +1609,30 @@ class _FinancePanelState extends State<FinancePanel> {
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
-      Text('Finans', style: Theme.of(context).textTheme.headlineSmall),
-      const Text('Günlük alımlar · Haftalık maaşlar · Aylık giderler',
-        style: TextStyle(color: NohutBrand.muted)),
+      Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Finans', style: Theme.of(context).textTheme.headlineSmall),
+              const Text('Günlük alımlar · Haftalık maaşlar · Aylık giderler',
+                style: TextStyle(color: NohutBrand.muted)),
+            ],
+          )),
+          const SizedBox(width: 8),
+          FilledButton.icon(
+            key: const ValueKey('finance-pdf-export'),
+            onPressed: _pdfBusy ? null : _exportPdfReport,
+            icon: _pdfBusy
+              ? const SizedBox(width: 16, height: 16,
+                  child: CircularProgressIndicator(
+                    color: Colors.white, strokeWidth: 2))
+              : const Icon(Icons.picture_as_pdf_outlined),
+            label: const Text('PDF Raporu İndir'),
+          ),
+        ],
+      ),
       const SizedBox(height: 14),
       Card(child: Padding(
         padding: const EdgeInsets.all(12),
