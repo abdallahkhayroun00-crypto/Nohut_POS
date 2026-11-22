@@ -2,6 +2,91 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:nohut_falafel_desktop/finance_logic.dart';
 
 void main() {
+  test('manual NET never has another commission deducted', () {
+    final state = <String, dynamic>{
+      'orders': <dynamic>[],
+      'settings': {'platformDeductionRates': {
+        'Yemeksepeti': 33.0, 'Migros Yemek': 20.0,
+      }},
+    };
+    saveManualPlatformIncome(state, source: 'Yemeksepeti',
+      month: '2026-11', kind: 'Net', amountCents: 110000,
+      note: 'Partner ekstre');
+    final entries = financePlatformFigures(state, '2026-11');
+    final ys = entries.firstWhere((e) => e.source == 'Yemeksepeti');
+    expect(ys.isManual, true);
+    expect(ys.grossCents, isNull);
+    expect(ys.deductionCents, isNull);
+    expect(ys.netCents, 110000);
+    final month = financeMonthSummary(state, '2026-11');
+    expect(month.onlineKnownNetCents, 110000);
+    expect(month.estimateCents, 110000);
+  });
+
+  test('manual BRUT uses configured rate once; missing rate hides result', () {
+    final state = <String, dynamic>{
+      'orders': <dynamic>[],
+      'settings': {'platformDeductionRates': {'Yemeksepeti': 30.0}},
+    };
+    saveManualPlatformIncome(state, source: 'Yemeksepeti',
+      month: '2026-11', kind: 'Brüt', amountCents: 100000);
+    saveManualPlatformIncome(state, source: 'Migros Yemek',
+      month: '2026-11', kind: 'Brüt', amountCents: 200000);
+    var entries = financePlatformFigures(state, '2026-11');
+    final ys = entries.firstWhere((e) => e.source == 'Yemeksepeti');
+    final mig = entries.firstWhere((e) => e.source == 'Migros Yemek');
+    expect(ys.grossCents, 100000);
+    expect(ys.deductionCents, 30000);
+    expect(ys.netCents, 70000);
+    expect(mig.netCents, isNull);
+    expect(mig.unknownGrossCents, 200000);
+    expect(financeMonthSummary(state, '2026-11').estimateCents, isNull);
+
+    (state['settings']['platformDeductionRates'] as Map)
+      ['Migros Yemek'] = 25.0;
+    entries = financePlatformFigures(state, '2026-11');
+    expect(entries.firstWhere((e) =>
+      e.source == 'Migros Yemek').netCents, 150000);
+    expect(financeMonthSummary(state, '2026-11').estimateCents, 220000);
+  });
+
+  test('manual month total is an upsert and automatic sales supersede it', () {
+    final state = <String, dynamic>{
+      'orders': <dynamic>[],
+      'settings': {'platformDeductionRates': {'Migros Yemek': 20.0}},
+    };
+    saveManualPlatformIncome(state, source: 'Migros Yemek',
+      month: '2026-11', kind: 'Net', amountCents: 120000);
+    saveManualPlatformIncome(state, source: 'Migros Yemek',
+      month: '2026-11', kind: 'Net', amountCents: 130000);
+    expect(financeRows(state, 'manualPlatformSales').length, 1);
+    expect(financeMonthSummary(state, '2026-11').onlineKnownNetCents,
+      130000);
+    final entry = financeRows(state, 'manualPlatformSales').single;
+    expect((entry['history'] as List).length, 1);
+
+    (state['orders'] as List).add({
+      'id': 12, 'source': 'Migros Yemek',
+      'status': 'Delivered', 'createdAt': '2026-11-20T08:00:00Z',
+      'platformSnapshot': {'orderTotal': 200},
+    });
+    final figures = financePlatformFigures(state, '2026-11');
+    final mig = figures.firstWhere((e) => e.source == 'Migros Yemek');
+    expect(mig.isAutomatic, true);
+    expect(mig.grossCents, 20000);
+    expect(mig.netCents, 16000);
+    expect(financeMonthSummary(state, '2026-11').onlineKnownNetCents, 16000);
+    expect(() => saveManualPlatformIncome(state,
+      source: 'Migros Yemek', month: '2026-11',
+      kind: 'Net', amountCents: 140000),
+      throwsFormatException);
+    expect(financeRows(state, 'manualPlatformSales').length, 1);
+
+    (state['orders'] as List).clear();
+    voidManualPlatformIncome(state, 'Migros Yemek', '2026-11');
+    expect(financeMonthSummary(state, '2026-11').onlineKnownNetCents, 0);
+  });
+
   test('manual discount is per purchase and never changes source price', () {
     expect(materialDiscountCents(20100, 'Yüzde', 1000), 2010);
     expect(materialAfterDiscountCents(3000, 6700, 'Yüzde', 1000), 18090);
