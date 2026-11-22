@@ -251,6 +251,12 @@ class _FinancePanelState extends State<FinancePanel> {
     final otherStore = TextEditingController(text: selectedStore == 'Diğer' &&
       existing != null ? (existing['market'] ?? '').toString() : '');
     String? error;
+    var onlineBusy = false;
+    var onlineStatus = '';
+    var sourceNeedsSetup = false;
+    var dialogOpen = true;
+    List<MarketQuote> onlineResults = <MarketQuote>[];
+    Map<String, String> onlineStoreIds = <String, String>{};
     void selectQuote(String key) {
       chosen = key;
       final item = byKey[key];
@@ -266,6 +272,115 @@ class _FinancePanelState extends State<FinancePanel> {
         unit = quote.unit;
         price.text = _tl(quote.priceCents);
       }
+    }
+
+    Future<void> searchUntracked(StateSetter updateDialog) async {
+      if (onlineBusy || !dialogOpen || !mounted) return;
+      final query = search.text.trim();
+      final store = selectedStore;
+      void notify(String message, {bool setup = false}) {
+        if (!dialogOpen || !mounted) return;
+        updateDialog(() {
+          onlineStatus = message;
+          sourceNeedsSetup = setup;
+          onlineResults = <MarketQuote>[];
+          onlineStoreIds = <String, String>{};
+        });
+      }
+      if (query.length < 2) {
+        notify('Kaynakta aramak için en az 2 harf yazın.');
+        return;
+      }
+      if (store == 'Diğer') {
+        notify('Diğer marketler için bağlı bir fiyat kaynağı yok. '
+          'Manuel Ürün Ekle ile alış kaydedebilirsiniz.');
+        return;
+      }
+      final settings = marketPriceState(widget.state);
+      if (settings['enabled'] != true) {
+        notify('Market fiyat kaynağı etkin değil. Market Fiyat Takibi '
+          '→ Kaynak Ayarları bölümünden etkinleştirin.', setup: true);
+        return;
+      }
+      final matches = settings['storeMatches'];
+      final sources = <(MarketStorePlace, String, String)>[];
+      if (matches is Map) {
+        for (final place in nohutStorePlaces.where(
+            (p) => materialStoreFromBrand(p.market) == store)) {
+          final raw = matches[place.id];
+          if (raw is! Map ||
+              raw['confirmed'] != true ||
+              (raw['googleMapsFeatureId'] ?? '').toString() !=
+                place.googleMapsFeatureId) continue;
+          final depotId = (raw['depotId'] ?? '').toString();
+          final market = (raw['market'] ?? '').toString();
+          if (depotId.isEmpty ||
+              marketBrandKey(market) != marketBrandKey(place.market)) {
+            continue;
+          }
+          sources.add((place, depotId, market));
+        }
+      }
+      if (sources.isEmpty) {
+        notify('Bu marketin doğrulanmış fiyat kaynağı şubesi yok. '
+          'Önce Market Fiyat Takibi → Şubeyi Eşleştir.', setup: true);
+        return;
+      }
+      updateDialog(() {
+        onlineBusy = true;
+        sourceNeedsSetup = false;
+        onlineStatus = 'Kaynakta ürün aranıyor…';
+        onlineResults = <MarketQuote>[];
+        onlineStoreIds = <String, String>{};
+      });
+      final client = MarketPriceClient();
+      final found = <MarketQuote>[];
+      final sourceIds = <String, String>{};
+      String? firstError;
+      try {
+        for (final source in sources) {
+          // Only operator-confirmed depot IDs, never Google Maps location IDs.
+          try {
+            final quotes = await client.search(
+              keywords: query,
+              depotId: source.$2,
+              market: source.$3,
+              latitude: source.$1.latitude,
+              longitude: source.$1.longitude,
+              distance: 4,
+            );
+            for (final quote in quotes) {
+              if (sourceIds.containsKey(quote.key)) continue;
+              found.add(quote);
+              sourceIds[quote.key] = source.$1.id;
+            }
+          } catch (e) {
+            firstError ??= e.toString();
+          }
+        }
+      } finally {
+        client.close();
+      }
+      if (!dialogOpen || !mounted) return;
+      updateDialog(() {
+        onlineBusy = false;
+        if (store != selectedStore || query != search.text.trim()) {
+          onlineResults = <MarketQuote>[];
+          onlineStoreIds = <String, String>{};
+          onlineStatus = '';
+          return;
+        }
+        onlineResults = found;
+        onlineStoreIds = sourceIds;
+        onlineStatus = found.isNotEmpty
+          ? 'Ürün ambalajını ve şubesini kontrol edin; '
+            'Takip Et ile Market Fiyat Takibi listesine ekleyin.'
+          : firstError != null
+            ? 'Fiyat sorgusu başarısız: $firstError. '
+              'Ürün yine de manuel eklenebilir.'
+            : 'Kaynakta eşleşen ürün bulunamadı. '
+              'Bu, ürün stokta yok demek değildir.';
+      });
     }
 
     await showDialog<void>(
@@ -286,6 +401,8 @@ class _FinancePanelState extends State<FinancePanel> {
           final market = byKey[chosen];
           final products = marketTrackedForMaterial(widget.state,
             selectedStore, query: search.text);
+          final activeOnline = onlineResults.where((q) =>
+            materialStoreFromBrand(q.market) == selectedStore).toList();
           return AlertDialog(
             title: Text(existing == null ?
               'Günlük Malzeme Alımı' : 'Malzeme Kaydını Düzenle'),
@@ -329,6 +446,10 @@ class _FinancePanelState extends State<FinancePanel> {
                               price.clear();
                               otherStore.clear();
                               unit = 'kg';
+                              onlineResults = <MarketQuote>[];
+                              onlineStoreIds = <String, String>{};
+                              onlineStatus = '';
+                              sourceNeedsSetup = false;
                               error = null;
                             }),
                           ),
@@ -338,7 +459,12 @@ class _FinancePanelState extends State<FinancePanel> {
                     TextField(
                       key: const ValueKey('finance-material-search'),
                       controller: search,
-                      onChanged: (_) => changeDialog(() {}),
+                      onChanged: (_) => changeDialog(() {
+                        onlineResults = <MarketQuote>[];
+                        onlineStoreIds = <String, String>{};
+                        onlineStatus = '';
+                        sourceNeedsSetup = false;
+                      }),
                       decoration: InputDecoration(
                         labelText: '$selectedStore · Ürün Ara',
                         hintText: 'Malzeme adı yazın…',
@@ -441,6 +567,115 @@ class _FinancePanelState extends State<FinancePanel> {
                         ],
                       ),
                     ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text('Takip listesinde bulamadınız mı?',
+                            style: TextStyle(
+                              color: _marketAccent(selectedStore),
+                              fontSize: 12, fontWeight: FontWeight.w700)),
+                        ),
+                        OutlinedButton.icon(
+                          key: const ValueKey('finance-market-live-search'),
+                          onPressed: onlineBusy ? null :
+                            () => searchUntracked(changeDialog),
+                          icon: onlineBusy
+                            ? const SizedBox(
+                                width: 15, height: 15,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2))
+                            : const Icon(Icons.travel_explore, size: 18),
+                          label: const Text('Kaynakta Ara'),
+                        ),
+                      ],
+                    ),
+                    if (onlineStatus.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        child: Text(onlineStatus,
+                          style: const TextStyle(
+                            fontSize: 12, color: NohutBrand.muted)),
+                      ),
+                    if (sourceNeedsSetup && widget.onOpenMarketTracking != null)
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          key: const ValueKey('finance-open-market-tracking'),
+                          icon: const Icon(Icons.open_in_new),
+                          onPressed: () {
+                            Navigator.pop(dialogContext);
+                            widget.onOpenMarketTracking!();
+                          },
+                          label: const Text('Market Fiyat Takibi’ne Git'),
+                        ),
+                      ),
+                    for (final quote in activeOnline.take(20))
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(9),
+                          child: Row(
+                            children: [
+                              _marketBadge(selectedStore),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(quote.title,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w700)),
+                                    Text(quote.depotName + ' · ' + quote.unit +
+                                      ' · ' + formatTry(quote.priceCents) +
+                                      (quote.discount == true
+                                        ? ' · İndirim etiketi' : ''),
+                                      style: const TextStyle(
+                                        fontSize: 11, color: NohutBrand.muted)),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 7),
+                              OutlinedButton(
+                                key: ValueKey('finance-track-' + quote.key),
+                                onPressed: () {
+                                  final storeId = onlineStoreIds[quote.key];
+                                  if (storeId == null) return;
+                                  if (!byKey.containsKey(quote.key)) {
+                                    final ok = widget.edit((db) =>
+                                      addTrackedMarketQuote(db, quote,
+                                        storeId: storeId));
+                                    if (!ok) return;
+                                  }
+                                  byKey[quote.key] = {
+                                    'key': quote.key,
+                                    'title': quote.title,
+                                    'market': quote.market,
+                                    'depotName': quote.depotName,
+                                    'unit': quote.unit,
+                                    'priceCents': quote.priceCents,
+                                  };
+                                  changeDialog(() {
+                                    selectQuote(quote.key);
+                                    search.clear();
+                                    onlineResults = <MarketQuote>[];
+                                    onlineStoreIds = <String, String>{};
+                                    onlineStatus = 'Ürün takibe eklendi '
+                                      've alış formuna seçildi.';
+                                  });
+                                },
+                                child: Text(byKey.containsKey(quote.key)
+                                  ? 'Kullan' : 'Takip Et'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    if (activeOnline.length > 20)
+                      Text('İlk 20 sonuç gösteriliyor. Aramayı daraltın.',
+                        style: const TextStyle(
+                          fontSize: 11, color: NohutBrand.muted)),
                     if (selectedStore == 'Diğer') ...[
                       const SizedBox(height: 10),
                       TextField(
@@ -636,6 +871,7 @@ class _FinancePanelState extends State<FinancePanel> {
         },
       ),
     );
+    dialogOpen = false;
     // Match the repo's existing dialog controller disposal timing.
     await Future<void>.delayed(const Duration(milliseconds: 250));
     for (final c in [date, name, quantity, price, notes, search, otherStore, discount]) {
