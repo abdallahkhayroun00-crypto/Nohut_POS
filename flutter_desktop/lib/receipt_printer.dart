@@ -146,7 +146,21 @@ class ReceiptPrinter {
   }
 }
 
+/// Silent spool path for automatic receipts and existing payment workflows.
 Future<void> windowsPrint(String text, String printer, {Map? settings}) async {
+  await _windowsPrintInternal(text, printer, settings: settings);
+}
+
+/// Native Windows printer selection + raster preview, like Ctrl+P.
+/// Canceling returns false and never sends a job. This is *manual only*;
+/// payment workflows and background print queues keep their old behavior.
+Future<bool> windowsPrintWithDialog(
+  String text, String printer, {Map? settings}) =>
+    _windowsPrintInternal(text, printer,
+      settings: settings, showWindowsPrintDialog: true);
+
+Future<bool> _windowsPrintInternal(String text, String printer,
+    {Map? settings, bool showWindowsPrintDialog = false}) async {
   if (!Platform.isWindows) {
     throw const FormatException('Windows yazıcısı gerekir');
   }
@@ -156,6 +170,10 @@ Future<void> windowsPrint(String text, String printer, {Map? settings}) async {
     final transport = settings?['receiptTransport'] ?? 'windows';
     if (!['windows', 'escpos'].contains(transport))
       throw const FormatException('Yazdırma yöntemi geçersiz');
+    if (showWindowsPrintDialog && transport != 'windows')
+      throw const FormatException(
+        'Ctrl+P penceresi Windows yazdırma yöntemiyle çalışır. '
+        'Ayarlar → Yazıcı → Yazdırma yöntemi: Windows seçin.');
     if (transport == 'escpos' && cfg.offset != 0)
       throw const FormatException(
         'ESC/POS için yatay kaydırma 0 olmalı; kağıdı ortalayın',
@@ -169,6 +187,7 @@ Future<void> windowsPrint(String text, String printer, {Map? settings}) async {
       jsonEncode({
         'printer': printer,
         'transport': transport,
+        'showWindowsPrintDialog': showWindowsPrintDialog,
         'imagePath': '${dir.path}/receipt.png',
         'rawPath': '${dir.path}/receipt.bin',
         'paperWidthMm': cfg.paper,
@@ -204,13 +223,15 @@ Future<void> windowsPrint(String text, String printer, {Map? settings}) async {
       },
     );
     await process.stdin.close();
-    final output = process.stdout.drain<void>();
+    final output = process.stdout.transform(
+      const Utf8Decoder(allowMalformed: true)).join();
     final errors = process.stderr
         .transform(const Utf8Decoder(allowMalformed: true))
         .join();
     int code;
     try {
-      code = await process.exitCode.timeout(const Duration(seconds: 45));
+      code = await process.exitCode.timeout(showWindowsPrintDialog
+          ? const Duration(minutes: 15) : const Duration(seconds: 45));
     } on TimeoutException {
       process.kill();
       await process.exitCode;
@@ -218,9 +239,15 @@ Future<void> windowsPrint(String text, String printer, {Map? settings}) async {
         'Yazıcı yanıtı belirsiz. Tekrar basmadan önce çıktıyı kontrol edin.',
       );
     }
-    await output;
+    final outputText = await output;
     final error = await errors;
     if (code != 0) throw FormatException('Yazıcı hatası: $error');
+    if (showWindowsPrintDialog) {
+      if (outputText.contains('NOHUT_DIALOG_PRINTED')) return true;
+      if (outputText.contains('NOHUT_DIALOG_CANCELLED')) return false;
+      throw const FormatException('Windows yazdırma penceresinin sonucu doğrulanamadı.');
+    }
+    return true;
   } finally {
     await dir.delete(recursive: true);
   }
