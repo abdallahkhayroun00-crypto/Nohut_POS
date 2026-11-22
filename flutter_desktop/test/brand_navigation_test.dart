@@ -105,8 +105,8 @@ void main() {
       });
       await t.tap(find.byKey(const ValueKey('navigation-finance')));
       await t.pumpAndSettle();
-      expect(find.text('Haftalık Maaşlar'), findsOneWidget);
-      expect(find.text('Günlük Malzeme'), findsOneWidget);
+      expect(find.widgetWithText(ChoiceChip, 'Haftalık Maaşlar'), findsOneWidget);
+      expect(find.widgetWithText(ChoiceChip, 'Günlük Malzeme'), findsOneWidget);
       expect(t.takeException(), isNull);
       await t.tap(find.byKey(const ValueKey('navigation-online')));
       await t.pumpAndSettle();
