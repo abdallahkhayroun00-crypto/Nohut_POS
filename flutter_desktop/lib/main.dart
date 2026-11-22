@@ -29,6 +29,7 @@ import 'receipt_preview.dart';
 import 'qr_menu_sync.dart';
 
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math' show min;
 
 import 'package:flutter/material.dart';
