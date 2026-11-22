@@ -7,7 +7,7 @@ $name=[string]$job.printer
 $dialogMode=($job.showWindowsPrintDialog -eq $true)
 if($dialogMode -and $job.transport -ne 'windows'){throw 'Windows yazdırma penceresi için Yazdırma yöntemi: Windows seçin. ESC/POS doğrudan fiş yazdırma ayrı bir yöntemdir.'}
 $installed=@([System.Drawing.Printing.PrinterSettings]::InstalledPrinters)
-if($installed -notcontains $name -and $name -eq 'XP-237B'){
+if(-not $dialogMode -and $installed -notcontains $name -and $name -eq 'XP-237B'){
   $found=@($installed|Where-Object {$_ -match '(?i)XP[ -]?237B(?:$|[^A-Z0-9])'})
   if($found.Count -eq 1){$name=[string]$found[0]}else{throw 'Select the exact installed XP-237B printer name.'}
 }
