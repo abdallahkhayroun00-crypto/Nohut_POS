@@ -1728,7 +1728,8 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
         return _reports(db);
       case 'finance':
         return FinancePanel(
-          state: db, edit: _edit, onlineWarning: _onlineDataWarning);
+          state: db, edit: _edit, onlineWarning: _onlineDataWarning,
+          onOpenMarketTracking: () => setState(() => page = 'market-prices'));
       case 'market-prices':
         return MarketPriceTracking(state: db, edit: _edit, store: store, api: marketApi);
       case 'settings':
