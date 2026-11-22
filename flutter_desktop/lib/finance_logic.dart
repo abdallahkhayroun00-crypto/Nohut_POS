@@ -1,0 +1,426 @@
+import 'dart:math' as math;
+
+import 'market_prices.dart';
+import 'operations.dart';
+import 'order_reporting.dart';
+import 'platform_net.dart';
+import 'pos_logic.dart';
+
+/// Local operational finance records are separate from sales and cash register.
+/// Every amount is stored in kuruş; no financial operations send bank transfers.
+Json financeBook(Json state) {
+  if (state['finance'] is! Map) {
+    state['finance'] = <String, dynamic>{};
+  }
+  final book = state['finance'] as Json;
+  for (final key in const [
+    'materials', 'weeklyPayroll', 'monthlyFixed', 'fixedPayments', 'other'
+  ]) {
+    if (book[key] is! List) book[key] = <dynamic>[];
+  }
+  return book;
+}
+
+List<Json> financeRows(Json state, String key) {
+  final book = state['finance'];
+  if (book is! Map) return <Json>[];
+  return asMaps(book[key]);
+}
+
+const financeUnits = <String>['kg', 'lt', 'adet', 'paket'];
+const financeMethods = <String>['Nakit', 'Kart', 'Banka', 'Ödenmedi'];
+const financeFixedCategories = <String>[
+  'Kira', 'Muhasebe', 'SGK', 'Elektrik / Su / Doğalgaz',
+  'İnternet', 'Diğer',
+];
+const financeOtherCategories = <String>[
+  'Yol / Nakliye', 'Temizlik', 'Bakım / Onarım',
+  'Elektrik / Su / Doğalgaz', 'Diğer',
+];
+
+int _nextId(Iterable<Json> items) =>
+    items.fold<int>(0, (n, entry) =>
+      entry['id'] is int ? math.max(n, entry['id'] as int) : n) + 1;
+
+void _validateCents(int value, {bool allowZero = false}) {
+  if (value < (allowZero ? 0 : 1) || value > 100000000000) {
+    throw const FormatException('Tutar geçersiz.');
+  }
+}
+
+void _checkDay(String day) {
+  if (!validBusinessDate(day)) {
+    throw const FormatException('Tarih YYYY-MM-DD olmalı.');
+  }
+}
+
+bool validFinanceMonth(String value) =>
+  RegExp(r'^\d{4}-(0[1-9]|1[0-2])$').hasMatch(value);
+
+String _stamp() => DateTime.now().toUtc().toIso8601String();
+
+class MarketUnitQuote {
+  const MarketUnitQuote(this.unit, this.priceCents, this.label);
+  final String unit;
+  /// Market price converted from package to kg, liter, piece or package.
+  final int priceCents;
+  final String label;
+}
+
+/// 100 GR for 54.50 TL -> 545.00 TL/kg.
+/// Reference does not modify the Market Fiyat Takibi price.
+MarketUnitQuote? marketUnitQuote(Json tracked) {
+  final price = tracked['priceCents'];
+  if (price is! int || price <= 0) return null;
+  final original = (tracked['unit'] ?? '').toString().trim();
+  final match = RegExp(r'(\d+(?:[.,]\d+)?)\s*(KG|GR|G|LT|L|ML|ADET|AD|PAKET)',
+      caseSensitive: false).firstMatch(original);
+  if (match == null) {
+    return MarketUnitQuote('paket', price, original.isEmpty ? 'Paket' : original);
+  }
+  final quantity = double.tryParse(match.group(1)!.replaceAll(',', '.'));
+  if (quantity == null || !quantity.isFinite || quantity <= 0) return null;
+  final code = match.group(2)!.toUpperCase();
+  final String unit;
+  final double packageInUnits;
+  if (code == 'KG') {
+    unit = 'kg'; packageInUnits = quantity;
+  } else if (code == 'GR' || code == 'G') {
+    unit = 'kg'; packageInUnits = quantity / 1000;
+  } else if (code == 'LT' || code == 'L') {
+    unit = 'lt'; packageInUnits = quantity;
+  } else if (code == 'ML') {
+    unit = 'lt'; packageInUnits = quantity / 1000;
+  } else if (code == 'ADET' || code == 'AD') {
+    unit = 'adet'; packageInUnits = quantity;
+  } else {
+    unit = 'paket'; packageInUnits = quantity;
+  }
+  final normalized = (price / packageInUnits).round();
+  if (normalized < 1 || normalized > 100000000000) return null;
+  return MarketUnitQuote(unit, normalized, original);
+}
+
+int materialTotalCents(int quantityMilli, int pricePerUnitCents) =>
+  ((quantityMilli * pricePerUnitCents) / 1000).round();
+
+void saveMaterialPurchase(
+  Json state, {
+  int? id,
+  required String date,
+  required String title,
+  required String unit,
+  required int quantityMilli,
+  required int pricePerUnitCents,
+  String marketKey = '',
+  String market = '',
+  String marketUnit = '',
+  int? referencePriceCents,
+  String paymentMethod = 'Nakit',
+  String note = '',
+}) {
+  _checkDay(date);
+  if (title.trim().isEmpty || title.length > 160 ||
+      !financeUnits.contains(unit) ||
+      quantityMilli <= 0 || quantityMilli > 100000000 ||
+      !financeMethods.contains(paymentMethod) || note.length > 500) {
+    throw const FormatException('Malzeme adı, miktarı veya ödeme bilgisi geçersiz.');
+  }
+  _validateCents(pricePerUnitCents);
+  final total = materialTotalCents(quantityMilli, pricePerUnitCents);
+  _validateCents(total);
+  final rows = financeBook(state)['materials'] as List;
+  final before = id == null ? null : rows.cast<Map>().where((r) => r['id'] == id).firstOrNull;
+  if (id != null && before == null) {
+    throw const FormatException('Malzeme kaydı bulunamadı.');
+  }
+  if (before?['voided'] == true) {
+    throw const FormatException('İptal edilen malzeme düzenlenemez.');
+  }
+  final recorded = <String, dynamic>{
+    'id': id ?? _nextId(asMaps(rows)),
+    'date': date,
+    'title': title.trim(),
+    'unit': unit,
+    'quantityMilli': quantityMilli,
+    'pricePerUnitCents': pricePerUnitCents,
+    'totalCents': total,
+    'marketKey': marketKey,
+    'market': market,
+    'marketUnit': marketUnit,
+    if (referencePriceCents != null)
+      'referencePriceCents': referencePriceCents,
+    'paymentMethod': paymentMethod,
+    'note': note.trim(),
+    'createdAt': before?['createdAt'] ?? _stamp(),
+    'updatedAt': _stamp(),
+    'voided': false,
+    'history': [
+      ...asMaps(before?['history']),
+      if (before != null) {
+        'changedAt': _stamp(),
+        'previousTotalCents': before['totalCents'],
+        'previousUnitPriceCents': before['pricePerUnitCents'],
+        'previousQuantityMilli': before['quantityMilli'],
+      }
+    ],
+  };
+  if (before != null) {
+    rows[rows.indexOf(before)] = recorded;
+  } else {
+    rows.add(recorded);
+  }
+}
+
+void voidMaterialPurchase(Json state, int id, String reason) {
+  if (reason.trim().isEmpty) throw const FormatException('İptal nedeni gerekli.');
+  final rows = financeBook(state)['materials'] as List;
+  final item = rows.cast<Map>().where((r) => r['id'] == id).firstOrNull;
+  if (item == null || item['voided'] == true) {
+    throw const FormatException('Aktif malzeme kaydı bulunamadı.');
+  }
+  item['voided'] = true;
+  item['voidReason'] = reason.trim();
+  item['voidedAt'] = _stamp();
+}
+
+void saveEmployeePay(Json state, int employeeId, String type, int rateCents) {
+  if (type != 'Saatlik' && type != 'Haftalık Sabit') {
+    throw const FormatException('Ücret türü geçersiz.');
+  }
+  _validateCents(rateCents);
+  final employees = state['employees'];
+  if (employees is! List) throw const FormatException('Personel kaydı yok.');
+  final person = employees.cast<Map>()
+      .where((p) => p['id'] == employeeId).firstOrNull;
+  if (person == null) throw const FormatException('Personel bulunamadı.');
+  person['payType'] = type;
+  person['payRateCents'] = rateCents;
+}
+
+String weekStartOf(String day) {
+  _checkDay(day);
+  final d = DateTime.parse(day);
+  final start = d.subtract(Duration(days: d.weekday - DateTime.monday));
+  return start.toIso8601String().substring(0, 10);
+}
+
+String weekEndOf(String weekStart) {
+  if (weekStartOf(weekStart) != weekStart) {
+    throw const FormatException('Hafta başlangıcı pazartesi olmalı.');
+  }
+  return DateTime.parse(weekStart).add(const Duration(days: 6))
+    .toIso8601String().substring(0, 10);
+}
+
+void saveWeeklyPayroll(
+  Json state, {
+  required int employeeId,
+  required String weekStart,
+  required int workedMinutes,
+  int bonusCents = 0,
+  int advanceCents = 0,
+  bool paid = false,
+}) {
+  final end = weekEndOf(weekStart);
+  if (workedMinutes < 0 || workedMinutes > 10080) {
+    throw const FormatException('Haftalık çalışma saati geçersiz.');
+  }
+  _validateCents(bonusCents, allowZero: true);
+  _validateCents(advanceCents, allowZero: true);
+  final person = asMaps(state['employees'])
+      .where((p) => p['id'] == employeeId).firstOrNull;
+  if (person == null) throw const FormatException('Personel bulunamadı.');
+  final rate = person['payRateCents'];
+  final type = person['payType'];
+  if (rate is! int || rate < 1 ||
+      (type != 'Saatlik' && type != 'Haftalık Sabit')) {
+    throw const FormatException('Ayarlar → Personel bölümünden ücret belirleyin.');
+  }
+  final base = type == 'Saatlik'
+      ? (rate * workedMinutes / 60).round() : rate;
+  final gross = base + bonusCents;
+  _validateCents(gross);
+  if (advanceCents > gross) {
+    throw const FormatException('Avans, hak edilen ücretten büyük olamaz.');
+  }
+  final rows = financeBook(state)['weeklyPayroll'] as List;
+  final existing = rows.cast<Map>().where((r) =>
+      r['employeeId'] == employeeId && r['weekStart'] == weekStart).firstOrNull;
+  if (existing?['paid'] == true && existing?['paidAt'] != null && !paid) {
+    throw const FormatException('Ödenen maaş bu ekrandan geri alınamaz.');
+  }
+  final entry = <String, dynamic>{
+    'id': existing?['id'] ?? _nextId(asMaps(rows)),
+    'employeeId': employeeId,
+    'employeeName': person['name'],
+    'weekStart': weekStart,
+    'weekEnd': end,
+    'payType': type,
+    'rateCents': rate,
+    'workedMinutes': workedMinutes,
+    'baseCents': base,
+    'bonusCents': bonusCents,
+    'advanceCents': advanceCents,
+    'grossCents': gross, // Expense incl. advance, once.
+    'payableCents': gross - advanceCents, // Remainder to hand over.
+    'paid': paid,
+    'paidAt': paid ? (existing?['paidAt'] ?? _stamp()) : null,
+    'createdAt': existing?['createdAt'] ?? _stamp(),
+    'updatedAt': _stamp(),
+  };
+  if (existing == null) {
+    rows.add(entry);
+  } else {
+    rows[rows.indexOf(existing)] = entry;
+  }
+}
+
+void saveMonthlyFixed(
+  Json state, {
+  int? id,
+  required String category,
+  required String name,
+  required int amountCents,
+  required String startMonth,
+  int dueDay = 1,
+  bool active = true,
+}) {
+  if (!financeFixedCategories.contains(category) ||
+      name.trim().isEmpty || name.length > 120 ||
+      !validFinanceMonth(startMonth) || dueDay < 1 || dueDay > 28) {
+    throw const FormatException('Aylık gider adı, kategorisi veya tarihi geçersiz.');
+  }
+  _validateCents(amountCents);
+  final rows = financeBook(state)['monthlyFixed'] as List;
+  final previous = id == null ? null :
+      rows.cast<Map>().where((r) => r['id'] == id).firstOrNull;
+  if (id != null && previous == null) {
+    throw const FormatException('Sabit gider bulunamadı.');
+  }
+  final record = <String, dynamic>{
+    'id': id ?? _nextId(asMaps(rows)), 'category': category,
+    'name': name.trim(), 'amountCents': amountCents,
+    'startMonth': startMonth, 'dueDay': dueDay, 'active': active,
+    'createdAt': previous?['createdAt'] ?? _stamp(), 'updatedAt': _stamp(),
+  };
+  if (previous == null) {
+    rows.add(record);
+  } else {
+    rows[rows.indexOf(previous)] = record;
+  }
+}
+
+void markMonthlyFixedPaid(Json state, int id, String month, bool paid) {
+  if (!validFinanceMonth(month)) throw const FormatException('Ay geçersiz.');
+  final book = financeBook(state);
+  final template = asMaps(book['monthlyFixed']).where((r) =>
+    r['id'] == id && r['active'] == true &&
+    (r['startMonth'] as String).compareTo(month) <= 0).firstOrNull;
+  if (template == null) {
+    throw const FormatException('Bu ay için aktif sabit gider yok.');
+  }
+  final rows = book['fixedPayments'] as List;
+  rows.removeWhere((r) => r is Map &&
+    r['templateId'] == id && r['month'] == month);
+  if (paid) {
+    rows.add({'templateId': id, 'month': month,
+      'amountCents': template['amountCents'], 'paidAt': _stamp()});
+  }
+}
+
+void saveOtherExpense(
+  Json state, {
+  required String day,
+  required String category,
+  required String name,
+  required int amountCents,
+  required String paymentMethod,
+}) {
+  _checkDay(day);
+  if (!financeOtherCategories.contains(category) ||
+      name.trim().isEmpty || name.length > 120 ||
+      !financeMethods.contains(paymentMethod)) {
+    throw const FormatException('Gider bilgileri geçersiz.');
+  }
+  _validateCents(amountCents);
+  final rows = financeBook(state)['other'] as List;
+  rows.add({
+    'id': _nextId(asMaps(rows)), 'date': day,
+    'category': category, 'name': name.trim(),
+    'amountCents': amountCents, 'paymentMethod': paymentMethod,
+    'createdAt': _stamp(), 'voided': false,
+  });
+}
+
+void voidOtherExpense(Json state, int id, String reason) {
+  if (reason.trim().isEmpty) throw const FormatException('İptal nedeni gerekli.');
+  final item = (financeBook(state)['other'] as List).cast<Map>()
+    .where((r) => r['id'] == id && r['voided'] != true).firstOrNull;
+  if (item == null) throw const FormatException('Gider bulunamadı.');
+  item['voided'] = true;
+  item['voidReason'] = reason.trim();
+  item['voidedAt'] = _stamp();
+}
+
+class FinanceMonthSummary {
+  const FinanceMonthSummary({
+    required this.month,
+    required this.localReceiptsCents,
+    required this.onlineKnownNetCents,
+    required this.onlineUnpricedGrossCents,
+    required this.materialsCents,
+    required this.payrollCents,
+    required this.fixedCents,
+    required this.otherCents,
+  });
+  final String month;
+  final int localReceiptsCents, onlineKnownNetCents,
+      onlineUnpricedGrossCents, materialsCents, payrollCents,
+      fixedCents, otherCents;
+  int get knownIncomeCents => localReceiptsCents + onlineKnownNetCents;
+  int get totalExpensesCents =>
+      materialsCents + payrollCents + fixedCents + otherCents;
+  bool get missingOnlineRate => onlineUnpricedGrossCents > 0;
+  int? get estimateCents => missingOnlineRate ? null :
+      knownIncomeCents - totalExpensesCents;
+}
+
+FinanceMonthSummary financeMonthSummary(Json state, String month) {
+  if (!validFinanceMonth(month)) throw const FormatException('Ay geçersiz.');
+  bool inMonth(String stamp) {
+    final instant = DateTime.tryParse(stamp);
+    return instant != null && istanbulDay(instant).startsWith(month);
+  }
+  final local = ledger(state).where((p) =>
+    (p.source == 'Masa' || p.source == 'Gel-Al') &&
+    inMonth(p.stamp)).fold<int>(0, (sum, p) => sum + p.amount);
+  final online = deliveryNetEstimates(state, inMonth);
+  final knownOnline = online.fold<int>(0, (sum, p) =>
+    sum + (p.estimatedNetCents ?? 0));
+  final unknown = online.fold<int>(0, (sum, p) =>
+    sum + (p.estimatedNetCents == null ? p.grossCents : 0));
+  final materials = financeRows(state, 'materials')
+    .where((p) => p['voided'] != true &&
+      (p['date'] as String? ?? '').startsWith(month))
+    .fold<int>(0, (sum, p) => sum + (p['totalCents'] as int));
+  // A full weekly payroll is accrued on its week's Sunday. This keeps
+  // the expense from being counted in two months.
+  final payroll = financeRows(state, 'weeklyPayroll')
+    .where((p) => (p['weekEnd'] as String? ?? '').startsWith(month))
+    .fold<int>(0, (sum, p) => sum + (p['grossCents'] as int));
+  final fixed = financeRows(state, 'monthlyFixed')
+    .where((p) => p['active'] == true &&
+      (p['startMonth'] as String).compareTo(month) <= 0)
+    .fold<int>(0, (sum, p) => sum + (p['amountCents'] as int));
+  final other = financeRows(state, 'other')
+    .where((p) => p['voided'] != true &&
+      (p['date'] as String? ?? '').startsWith(month))
+    .fold<int>(0, (sum, p) => sum + (p['amountCents'] as int));
+  return FinanceMonthSummary(
+    month: month, localReceiptsCents: local,
+    onlineKnownNetCents: knownOnline, onlineUnpricedGrossCents: unknown,
+    materialsCents: materials, payrollCents: payroll,
+    fixedCents: fixed, otherCents: other,
+  );
+}
