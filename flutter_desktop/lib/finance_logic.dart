@@ -165,6 +165,39 @@ MarketUnitQuote? marketUnitQuote(Json tracked) {
 int materialTotalCents(int quantityMilli, int pricePerUnitCents) =>
   ((quantityMilli * pricePerUnitCents) / 1000).round();
 
+/// Manual, purchase-specific discount. Never change market watch prices.
+/// Tutar values are kuruş; Yüzde values are basis points (100 = 1%).
+const materialDiscountTypes = <String>['Yok', 'Tutar', 'Yüzde'];
+
+int materialDiscountCents(int grossCents, String type, int value) {
+  if (grossCents < 0 || !materialDiscountTypes.contains(type) || value < 0) {
+    throw const FormatException('İndirim bilgileri geçersiz.');
+  }
+  if (type == 'Yok') {
+    if (value != 0) throw const FormatException('İndirim tipi seçin.');
+    return 0;
+  }
+  if (type == 'Yüzde') {
+    if (value > 10000) {
+      throw const FormatException('İndirim yüzdesi %100 üzerinde olamaz.');
+    }
+    return ((grossCents * value) / 10000).round();
+  }
+  if (value > grossCents) {
+    throw const FormatException('İndirim ara toplamı aşamaz.');
+  }
+  return value;
+}
+
+int materialAfterDiscountCents(
+  int quantityMilli, int pricePerUnitCents, String discountType,
+  int discountValue,
+) {
+  final gross = materialTotalCents(quantityMilli, pricePerUnitCents);
+  return gross - materialDiscountCents(gross, discountType, discountValue);
+}
+
+
 void saveMaterialPurchase(
   Json state, {
   int? id,
@@ -179,6 +212,8 @@ void saveMaterialPurchase(
   String marketUnit = '',
   int? referencePriceCents,
   String paymentMethod = 'Nakit',
+  String discountType = 'Yok',
+  int discountValue = 0,
   String note = '',
 }) {
   _checkDay(date);
@@ -192,8 +227,12 @@ void saveMaterialPurchase(
     throw const FormatException('Malzeme adı, miktarı veya ödeme bilgisi geçersiz.');
   }
   _validateCents(pricePerUnitCents);
-  final total = materialTotalCents(quantityMilli, pricePerUnitCents);
-  _validateCents(total);
+  final gross = materialTotalCents(quantityMilli, pricePerUnitCents);
+  _validateCents(gross);
+  final discountCents = materialDiscountCents(gross,
+    discountType, discountValue);
+  final total = gross - discountCents;
+  _validateCents(total, allowZero: true);
   final rows = financeBook(state)['materials'] as List;
   final before = id == null ? null : rows.cast<Map>().where((r) => r['id'] == id).firstOrNull;
   if (id != null && before == null) {
@@ -209,6 +248,10 @@ void saveMaterialPurchase(
     'unit': unit,
     'quantityMilli': quantityMilli,
     'pricePerUnitCents': pricePerUnitCents,
+    'subtotalCents': gross,
+    'discountType': discountType,
+    'discountValue': discountValue,
+    'discountCents': discountCents,
     'totalCents': total,
     'marketKey': marketKey,
     'storeBrand': storeBrand,
@@ -226,6 +269,7 @@ void saveMaterialPurchase(
       if (before != null) {
         'changedAt': _stamp(),
         'previousTotalCents': before['totalCents'],
+        'previousDiscountCents': before['discountCents'] ?? 0,
         'previousUnitPriceCents': before['pricePerUnitCents'],
         'previousQuantityMilli': before['quantityMilli'],
       }
