@@ -271,6 +271,8 @@ class _FinancePanelState extends State<FinancePanel> {
               _price(price.text));
           } on FormatException { /* show blank total while typing */ }
           final market = byKey[chosen];
+          final products = marketTrackedForMaterial(widget.state,
+            selectedStore, query: search.text);
           return AlertDialog(
             title: Text(existing == null ?
               'Günlük Malzeme Alımı' : 'Malzeme Kaydını Düzenle'),
@@ -281,28 +283,159 @@ class _FinancePanelState extends State<FinancePanel> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    DropdownButtonFormField<String>(
-                      key: ValueKey('market-choice-' + chosen),
-                      initialValue: chosen,
-                      isExpanded: true,
-                      decoration: const InputDecoration(
-                        labelText: 'Market Fiyat Takibinden Seç'),
-                      items: [
-                        const DropdownMenuItem(
-                          value: '__manual__', child: Text('Manuel Ürün Ekle')),
-                        for (final entry in tracked)
-                          if (byKey.containsKey((entry['key'] ?? '').toString()))
-                            DropdownMenuItem(
-                              value: entry['key'].toString(),
-                              child: Text((entry['title'] ?? '').toString(),
+                    const Text('Market · Önce seçildi',
+                      style: TextStyle(color: NohutBrand.muted, fontSize: 12)),
+                    const SizedBox(height: 7),
+                    Wrap(
+                      spacing: 7,
+                      runSpacing: 7,
+                      children: [
+                        for (final store in materialStores)
+                          ChoiceChip(
+                            key: ValueKey('finance-store-chip-$store'),
+                            label: Text(store),
+                            avatar: store == selectedStore
+                              ? Icon(Icons.check, size: 16,
+                                  color: _marketAccent(store))
+                              : null,
+                            selected: selectedStore == store,
+                            selectedColor: _marketAccent(store)
+                              .withValues(alpha: 0.15),
+                            side: BorderSide(
+                              color: _marketAccent(store).withValues(
+                                alpha: selectedStore == store ? 0.85 : 0.32)),
+                            labelStyle: TextStyle(
+                              color: _marketAccent(store),
+                              fontWeight: FontWeight.w800),
+                            onSelected: (_) => changeDialog(() {
+                              if (store == selectedStore) return;
+                              selectedStore = store;
+                              chosen = '__manual__';
+                              search.clear();
+                              name.clear();
+                              price.clear();
+                              otherStore.clear();
+                              unit = 'kg';
+                              error = null;
+                            }),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      key: const ValueKey('finance-material-search'),
+                      controller: search,
+                      onChanged: (_) => changeDialog(() {}),
+                      decoration: InputDecoration(
+                        labelText: '$selectedStore · Ürün Ara',
+                        hintText: 'Malzeme adı yazın…',
+                        prefixIcon: Icon(Icons.search,
+                          color: _marketAccent(selectedStore)),
+                        suffixIcon: search.text.isEmpty ? null :
+                          IconButton(
+                            tooltip: 'Aramayı temizle',
+                            onPressed: () => changeDialog(search.clear),
+                            icon: const Icon(Icons.close)),
+                        filled: true,
+                        fillColor: _marketAccent(selectedStore)
+                          .withValues(alpha: 0.045),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(
+                            color: _marketAccent(selectedStore)
+                              .withValues(alpha: 0.55),
+                            width: 1.3)),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(
+                            color: _marketAccent(selectedStore),
+                            width: 2)),
+                      ),
+                    ),
+                    const SizedBox(height: 7),
+                    Container(
+                      width: double.infinity,
+                      constraints: const BoxConstraints(maxHeight: 195),
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: _marketAccent(selectedStore)
+                            .withValues(alpha: 0.22)),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: ListView(
+                        shrinkWrap: true,
+                        children: [
+                          ListTile(
+                            key: const ValueKey('finance-manual-material'),
+                            dense: true,
+                            leading: Icon(Icons.edit_note,
+                              color: _marketAccent(selectedStore)),
+                            title: const Text('Manuel Ürün Ekle'),
+                            subtitle: const Text(
+                              'Listede yoksa adı, miktarı ve fiyatı yazın'),
+                            selected: chosen == '__manual__',
+                            onTap: () => changeDialog(() {
+                              chosen = '__manual__';
+                              name.clear();
+                              price.clear();
+                              unit = 'kg';
+                            }),
+                          ),
+                          if (products.isEmpty)
+                            const Padding(
+                              padding: EdgeInsets.all(12),
+                              child: Text(
+                                'Bu markette eşleşen takip ürünü yok. '
+                                'Manuel Ürün Ekle kullanabilirsiniz.',
+                                style: TextStyle(
+                                  color: NohutBrand.muted, fontSize: 12)),
+                            ),
+                          for (final item in products.take(30))
+                            ListTile(
+                              key: ValueKey('finance-market-product-' +
+                                (item['key'] ?? '').toString()),
+                              dense: true,
+                              selected: chosen == item['key'],
+                              selectedTileColor: _marketAccent(selectedStore)
+                                .withValues(alpha: 0.08),
+                              leading: _marketBadge(selectedStore),
+                              title: Text((item['title'] ?? '').toString(),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis),
+                              subtitle: Text(
+                                (item['depotName'] ?? '').toString() + ' · ' +
+                                (item['unit'] ?? '').toString(),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis),
+                              trailing: Text(item['priceCents'] is int
+                                ? formatTry(item['priceCents'] as int)
+                                : 'Fiyat yok',
+                                style: TextStyle(
+                                  color: _marketAccent(selectedStore),
+                                  fontWeight: FontWeight.w700)),
+                              onTap: () => changeDialog(() {
+                                selectQuote(item['key'].toString());
+                              }),
                             ),
-                      ],
-                      onChanged: (v) => changeDialog(() {
-                        selectQuote(v ?? '__manual__');
-                      }),
+                          if (products.length > 30)
+                            Padding(
+                              padding: const EdgeInsets.all(10),
+                              child: Text(products.length.toString() +
+                                ' sonuçtan ilk 30 gösteriliyor. Aramayı daraltın.',
+                                style: const TextStyle(
+                                  fontSize: 11, color: NohutBrand.muted)),
+                            ),
+                        ],
+                      ),
                     ),
+                    if (selectedStore == 'Diğer') ...[
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: otherStore,
+                        decoration: const InputDecoration(
+                          labelText: 'Diğer marketin adı (isteğe bağlı)',
+                          hintText: 'Örn. ŞOK, manav, toptancı')),
+                    ],
                     if (market != null) ...[
                       const SizedBox(height: 7),
                       Text(
@@ -409,9 +542,14 @@ class _FinancePanelState extends State<FinancePanel> {
                       quantityMilli: _qty(quantity.text),
                       pricePerUnitCents: _price(price.text),
                       marketKey: marketQuote == null ? '' : chosen,
-                      market: marketQuote == null ? '' :
-                        (marketQuote['market'] ?? '').toString() + ' · ' +
-                        (marketQuote['depotName'] ?? '').toString(),
+                      storeBrand: selectedStore,
+                      market: marketQuote == null
+                        ? (selectedStore == 'Diğer'
+                            ? (otherStore.text.trim().isEmpty
+                                ? 'Diğer' : otherStore.text.trim())
+                            : selectedStore)
+                        : (marketQuote['market'] ?? '').toString() + ' · ' +
+                          (marketQuote['depotName'] ?? '').toString(),
                       marketUnit: (marketQuote?['unit'] ?? '').toString(),
                       referencePriceCents: marketQuote?['priceCents'] as int?,
                       paymentMethod: method,
@@ -431,7 +569,7 @@ class _FinancePanelState extends State<FinancePanel> {
     );
     // Match the repo's existing dialog controller disposal timing.
     await Future<void>.delayed(const Duration(milliseconds: 250));
-    for (final c in [date, name, quantity, price, notes]) {
+    for (final c in [date, name, quantity, price, notes, search, otherStore]) {
       c.dispose();
     }
   }
@@ -484,6 +622,7 @@ class _FinancePanelState extends State<FinancePanel> {
             child: Text('Bu gün malzeme alımı kaydedilmedi.'))),
         for (final p in list)
           Card(child: ListTile(
+            leading: _marketBadge(materialPurchaseStore(p)),
             title: Text((p['title'] ?? '').toString() +
               (p['voided'] == true ? ' · İPTAL' : '')),
             subtitle: Text(
