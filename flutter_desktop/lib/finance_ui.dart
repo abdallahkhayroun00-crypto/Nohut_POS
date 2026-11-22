@@ -136,7 +136,92 @@ class _FinancePanelState extends State<FinancePanel> {
     );
   }
 
+  static Color _marketAccent(String brand) => switch (brand) {
+    'BİM' => const Color(0xffCA283C),
+    'A101' => const Color(0xff1686B5),
+    'Hakmar' => const Color(0xff268052),
+    _ => const Color(0xff6F7180),
+  };
+
+  Widget _marketBadge(String brand) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+    decoration: BoxDecoration(
+      color: _marketAccent(brand).withValues(alpha: 0.10),
+      borderRadius: BorderRadius.circular(9),
+      border: Border.all(color: _marketAccent(brand).withValues(alpha: 0.35)),
+    ),
+    child: Text(brand, style: TextStyle(
+      color: _marketAccent(brand), fontSize: 12,
+      fontWeight: FontWeight.w800)),
+  );
+
+  Future<String?> _chooseMaterialMarket() => showDialog<String>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('Önce Marketi Seçin'),
+      content: SizedBox(
+        width: 460,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Bugünkü malzemeleri nereden aldınız?',
+              style: TextStyle(color: NohutBrand.muted)),
+            const SizedBox(height: 16),
+            Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                for (final store in materialStores)
+                  SizedBox(
+                    width: 190,
+                    height: 66,
+                    child: OutlinedButton(
+                      key: ValueKey('finance-store-$store'),
+                      style: OutlinedButton.styleFrom(
+                        backgroundColor: _marketAccent(store)
+                          .withValues(alpha: 0.09),
+                        side: BorderSide(
+                          color: _marketAccent(store).withValues(alpha: 0.6),
+                          width: 1.5),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(13)),
+                      ),
+                      onPressed: () => Navigator.pop(ctx, store),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(store == 'Diğer'
+                            ? Icons.add_business_outlined
+                            : Icons.storefront_outlined,
+                            color: _marketAccent(store)),
+                          const SizedBox(width: 8),
+                          Text(store, style: TextStyle(
+                            color: _marketAccent(store),
+                            fontSize: 17, fontWeight: FontWeight.w900)),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx),
+          child: const Text('Vazgeç')),
+      ],
+    ),
+  );
+
   Future<void> _materialForm([Json? existing]) async {
+    final selected = existing == null
+        ? await _chooseMaterialMarket()
+        : materialPurchaseStore(existing);
+    if (selected == null || !mounted) return;
+    String selectedStore = selected;
     final tracked = trackedMarketProducts(widget.state);
     final byKey = <String, Json>{
       for (final p in tracked)
@@ -155,16 +240,22 @@ class _FinancePanelState extends State<FinancePanel> {
     final price = TextEditingController(text: existing == null ?
       '' : _tl(existing['pricePerUnitCents'] as int));
     final notes = TextEditingController(text: (existing?['note'] ?? '').toString());
+    final search = TextEditingController();
+    final otherStore = TextEditingController(text: selectedStore == 'Diğer' &&
+      existing != null ? (existing['market'] ?? '').toString() : '');
     String? error;
-    // The market quote is per package, but the input price is per selected
-    // base unit (e.g. 100 GR -> kg), preventing 100x purchase errors.
     void selectQuote(String key) {
       chosen = key;
-      final trackedItem = byKey[key];
-      if (trackedItem == null) return;
-      final quote = marketUnitQuote(trackedItem);
-      name.text = (trackedItem['title'] ?? '').toString();
-      if (quote != null) {
+      final item = byKey[key];
+      if (item == null) return;
+      final quote = marketUnitQuote(item);
+      name.text = (item['title'] ?? '').toString();
+      if (selectedStore == 'Diğer') {
+        otherStore.text = (item['market'] ?? '').toString();
+      }
+      if (quote == null) {
+        price.clear();
+      } else {
         unit = quote.unit;
         price.text = _tl(quote.priceCents);
       }
