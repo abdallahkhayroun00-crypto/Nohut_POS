@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
@@ -103,6 +104,43 @@ class _SimpleSettingsState extends State<SimpleSettings> {
       ]);
     },
   );
+
+  // Real printer hard margins can clip the first characters even when the
+  // raster preview is centered. Keep 4 mm free on the right as we shift the
+  // printable artwork inward; never silently change Windows driver settings.
+  void _applyLeftClipFix(Map settings) {
+    final cfg = ReceiptDimensions(settings);
+    final currentLeft = (cfg.paper - cfg.width) / 2 + cfg.offset;
+    final targetLeft = math.max(8.0, currentLeft + 2.0);
+    final nextWidth = math.min(cfg.width, cfg.paper - targetLeft - 4.0);
+    if (nextWidth < 30) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Kağıtta yeterli alan yok. Gelişmiş hizalamayı kullanın.'),
+      ));
+      return;
+    }
+    final nextOffset = targetLeft - (cfg.paper - nextWidth) / 2;
+    try {
+      ReceiptDimensions({
+        ...settings,
+        'printableWidthMm': nextWidth,
+        'receiptOffsetMm': nextOffset,
+      });
+    } on FormatException catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
+      return;
+    }
+    widget.edit((state) {
+      final cfg = state['settings'] as Map;
+      cfg['printableWidthMm'] = nextWidth;
+      cfg['receiptOffsetMm'] = nextOffset;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      content: Text('Fiş sağa kaydırıldı. Hizalama Testi ile gerçek kağıdı kontrol edin.'),
+    ));
+  }
 
   Json _previewSampleOrder() => <String, dynamic>{
     'id': 1,
@@ -577,6 +615,34 @@ class _SimpleSettingsState extends State<SimpleSettings> {
                     '${settings['paperWidthMm'] ?? 56} mm kağıt · ${settings['printableWidthMm'] ?? 48} mm baskı · Aynı fiş tasarımı',
                   ),
                 ),
+                if ((settings['receiptTransport'] ?? 'windows') == 'windows')
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Sol tarafta 2–3 harf kesiliyor mu? Fişi güvenli '
+                          'şekilde sağa kaydırın; sağ kenarda da boşluk bırakılır.',
+                          style: const TextStyle(
+                            color: NohutBrand.muted, fontSize: 12),
+                        ),
+                        const SizedBox(height: 7),
+                        OutlinedButton.icon(
+                          key: const ValueKey('receipt-left-clipping-fix'),
+                          onPressed: () => _applyLeftClipFix(settings),
+                          icon: const Icon(Icons.align_horizontal_left),
+                          label: const Text('Sol Kesilmeyi Düzelt · Sağa Kaydır'),
+                        ),
+                        const Text(
+                          'Bu ayar fiş genişliğini gerektiğinde azaltır. '
+                          'Önizleme güncellenir; gerçek yazıcıda Hizalama Testi yapın.',
+                          style: TextStyle(
+                            color: NohutBrand.muted, fontSize: 11),
+                        ),
+                      ],
+                    ),
+                  ),
                 DropdownButtonFormField<String>(
                   key: ValueKey(
                     'receipt-transport-${settings['receiptTransport'] ?? 'windows'}',
