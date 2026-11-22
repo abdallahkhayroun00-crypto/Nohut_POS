@@ -12,10 +12,12 @@ import 'pos_logic.dart';
 class FinancePanel extends StatefulWidget {
   const FinancePanel({
     super.key, required this.state, required this.edit, this.onlineWarning,
+    this.onOpenMarketTracking,
   });
   final Json state;
   final EditState edit;
   final String? onlineWarning;
+  final VoidCallback? onOpenMarketTracking;
 
   @override
   State<FinancePanel> createState() => _FinancePanelState();
