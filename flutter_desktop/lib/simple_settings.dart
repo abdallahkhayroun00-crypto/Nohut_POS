@@ -111,7 +111,7 @@ class _SimpleSettingsState extends State<SimpleSettings> {
   void _applyLeftClipFix(Map settings) {
     final cfg = ReceiptDimensions(settings);
     final currentLeft = (cfg.paper - cfg.width) / 2 + cfg.offset;
-    final targetLeft = math.max(8.0, currentLeft + 2.0);
+    final targetLeft = math.max(8.0, currentLeft);
     final nextWidth = math.min(cfg.width, cfg.paper - targetLeft - 4.0);
     if (nextWidth < 30) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
