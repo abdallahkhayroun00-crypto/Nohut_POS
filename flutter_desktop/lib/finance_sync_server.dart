@@ -138,7 +138,8 @@ class FinanceSyncServer {
       'materials': pick('materials', (r) => matches(r, 'date'), [
         'id', 'recordType', 'date', 'title', 'market', 'storeBrand',
         'quantityMilli', 'unit', 'pricePerUnitCents', 'discountCents',
-        'totalCents', 'paymentMethod', 'voided',
+        'totalCents', 'paymentMethod', 'voided', 'updatedAt', 'note',
+        'discountType', 'discountValue',
       ]),
       'weeklyPayroll': pick('weeklyPayroll', (r) => matches(r, 'weekEnd'), [
         'id', 'employeeId', 'employeeName', 'weekStart', 'weekEnd',
@@ -157,12 +158,211 @@ class FinanceSyncServer {
         'id', 'date', 'category', 'name', 'amountCents', 'paymentMethod',
         'voided', 'createdAt',
       ]),
+      'manualPlatformSales': pick('manualPlatformSales', (r) => r['month'] == month &&
+        r['voided'] != true, ['source', 'month', 'kind', 'amountCents', 'note', 'updatedAt']),
       'employees': [
         for (final e in asMaps(state['employees']))
           if (e['active'] == true)
             {for (final key in ['id', 'name', 'payType', 'payRateCents']) key: e[key]},
       ],
     };
+  }
+
+  /// Manager operations reuse the desktop domain rules. A stale edit is
+  /// rejected at the transaction boundary; append-only expenses can be
+  /// safely retried using the same persisted request ID.
+  static Json managerWrite(PosStore store, Json payload) {
+    final id = payload['requestId'];
+    final action = payload['action'];
+    if (id is! String || !RegExp(r'^[A-Za-z0-9_-]{16,80}
+    final kind = payload['kind'];
+    final combined = kind == 'all';
+    final selected = combined ? FinancePdfKind.monthly :
+      FinancePdfKind.values.where((k) => k.name == kind).firstOrNull;
+    if (selected == null || payload['month'] is! String ||
+        payload['day'] is! String || payload['weekStart'] is! String) {
+      throw const FormatException('Rapor türü veya tarihi geçersiz.');
+    }
+    final request = FinancePdfRequest(kind: selected,
+      month: payload['month'] as String, day: payload['day'] as String,
+      weekStart: payload['weekStart'] as String);
+    final bytes = await generateFinancePdf(state, request, combined: combined);
+    if (bytes.length > 1200000) {
+      throw const FormatException('Rapor çok büyük. Daha kısa dönem seçin.');
+    }
+    return {'ok': true, 'name': combined
+      ? 'Nohut_Tum_Finans_' + request.month + '.pdf' : request.suggestedName,
+      'pdf': base64Encode(bytes)};
+  }
+
+  Future<Json> handle(Json envelope, String serverId) async {
+    if (_changing) throw const FormatException('Finans erişimi değişiyor.');
+    final generation = _generation;
+    final access = await vault.load();
+    final key = access?['key'];
+    if (key is! String) throw const FormatException('Finans erişimi kapalı.');
+    final payload = await FinanceWire.open(key, serverId, 'request', envelope);
+    if (_changing || generation != _generation) throw const FormatException('Finans erişimi değişti.');
+    Json result;
+    try {
+      if (['monthView', 'report', 'managerWrite'].contains(payload['operation']) &&
+          access?['managerReports'] != true) {
+        throw const FormatException('Yeni yönetici finans anahtarı gerekli.');
+      }
+      if (payload['operation'] == 'managerWrite') {
+        result = managerWrite(store, payload);
+      } else if (payload['operation'] == 'monthView') {
+        if (payload['month'] is! String) throw const FormatException('Ay geçersiz.');
+        final snap = store.read();
+        result = {'ok': true, 'revision': snap.revision, 'updatedAt': snap.updatedAt,
+          'view': monthView(snap.data, payload['month'] as String)};
+      } else if (payload['operation'] == 'report') {
+        result = await report(store.read().data, payload);
+      } else if (payload['operation'] == 'pull') {
+        final cursor = payload['afterId'];
+        if (cursor is! int || cursor < 0) {
+          throw const FormatException('Sayfa kimliği geçersiz.');
+        }
+        final rows = financeRows(store.read().data, 'materials')
+          .where((p) => isQuickMaterial(p) && p['id'] is int &&
+            (p['id'] as int) > cursor).toList()
+          ..sort((a, b) => (a['id'] as int).compareTo(b['id'] as int));
+        result = {
+          'ok': true, 'records': rows.take(100).map(project).toList(),
+          'hasMore': rows.length > 100,
+        };
+      } else {
+        result = apply(store, payload);
+      }
+    } on FinanceVersionConflict {
+      result = {'ok': false, 'error': 'conflict',
+        'message': 'Kayıt Windows üzerinde değişti. Yenileyin ve karşılaştırın.'};
+    } on FormatException catch (e) {
+      result = {'ok': false, 'error': 'invalid', 'message': e.message};
+    }
+    if (_changing || generation != _generation) throw const FormatException('Finans erişimi değişti.');
+    return FinanceWire.seal(key, serverId,
+      'response:' + envelope['nonce'].toString(), result);
+  }
+}
+
+class FinanceVersionConflict implements Exception {
+  const FinanceVersionConflict();
+}
+).hasMatch(id) ||
+        action is! String || payload['data'] is! Map) {
+      throw const FormatException('Finans işlemi geçersiz.');
+    }
+    final d = Map<String, dynamic>.from(payload['data'] as Map);
+    String str(String key) {
+      if (d[key] is! String) throw const FormatException('Metin alanı geçersiz.');
+      return d[key] as String;
+    }
+    int num(String key) {
+      if (d[key] is! int) throw const FormatException('Sayı alanı geçersiz.');
+      return d[key] as int;
+    }
+    bool flag(String key) {
+      if (d[key] is! bool) throw const FormatException('Seçim geçersiz.');
+      return d[key] as bool;
+    }
+    return store.command('fin_mgr_' + id, payload, (state) {
+      Json? row(String collection, bool Function(Json) match) =>
+        financeRows(state, collection).where(match).firstOrNull;
+      void check(Json? current, {String field = 'updatedAt'}) {
+        if ((current?[field] ?? null) != d['expectedVersion']) {
+          throw const FinanceVersionConflict();
+        }
+      }
+      switch (action) {
+        case 'other_create':
+          saveOtherExpense(state, day: str('date'), category: str('category'),
+            name: str('name'), amountCents: num('amountCents'),
+            paymentMethod: str('paymentMethod'));
+        case 'other_void':
+          final current = row('other', (r) => r['id'] == num('id') && r['voided'] != true);
+          if (current == null) throw const FinanceVersionConflict();
+          check(current, field: 'createdAt');
+          voidOtherExpense(state, num('id'), str('reason'));
+        case 'payroll_save':
+          final employee = asMaps(state['employees']).where((r) =>
+            r['id'] == num('employeeId') && r['active'] == true).firstOrNull;
+          if (employee == null || employee['payRateCents'] != d['expectedRate'] ||
+              employee['payType'] != d['expectedPayType']) {
+            throw const FinanceVersionConflict();
+          }
+          check(row('weeklyPayroll', (r) => r['employeeId'] == num('employeeId') &&
+            r['weekStart'] == str('weekStart')));
+          saveWeeklyPayroll(state, employeeId: num('employeeId'),
+            weekStart: str('weekStart'), workedMinutes: num('workedMinutes'),
+            bonusCents: num('bonusCents'), advanceCents: num('advanceCents'),
+            paid: flag('paid'));
+        case 'payroll_paid':
+          final current = row('weeklyPayroll', (r) =>
+            r['employeeId'] == num('employeeId') && r['weekStart'] == str('weekStart'));
+          if (current == null) throw const FinanceVersionConflict();
+          check(current);
+          markWeeklyPayrollPaid(state, num('employeeId'), str('weekStart'));
+        case 'fixed_save':
+          if (d['id'] != null) {
+            final current = row('monthlyFixed', (r) => r['id'] == num('id'));
+            if (current == null) throw const FinanceVersionConflict();
+            check(current);
+          }
+          saveMonthlyFixed(state, id: d['id'] == null ? null : num('id'),
+            category: str('category'), name: str('name'),
+            amountCents: num('amountCents'), startMonth: str('startMonth'),
+            dueDay: num('dueDay'), active: flag('active'));
+        case 'fixed_paid':
+          final current = row('monthlyFixed', (r) => r['id'] == num('id'));
+          if (current == null) throw const FinanceVersionConflict();
+          check(current);
+          final payment = row('fixedPayments', (r) =>
+            r['templateId'] == num('id') && r['month'] == str('month'));
+          if (payment?['paidAt'] != d['expectedPaidAt']) {
+            throw const FinanceVersionConflict();
+          }
+          markMonthlyFixedPaid(state, num('id'), str('month'), flag('paid'));
+        case 'manual_save':
+          check(manualPlatformIncome(state, str('source'), str('month')));
+          saveManualPlatformIncome(state, source: str('source'),
+            month: str('month'), kind: str('kind'),
+            amountCents: num('amountCents'), note: str('note'));
+        case 'manual_void':
+          final current = manualPlatformIncome(state, str('source'), str('month'));
+          if (current == null) throw const FinanceVersionConflict();
+          check(current);
+          voidManualPlatformIncome(state, str('source'), str('month'));
+        case 'material_save':
+          Json? current;
+          if (d['id'] != null) {
+            current = row('materials', (r) => r['id'] == num('id'));
+            if (current == null || current['voided'] == true || isQuickMaterial(current)) {
+              throw const FinanceVersionConflict();
+            }
+            check(current);
+          }
+          saveMaterialPurchase(state, id: d['id'] == null ? null : num('id'),
+            date: str('date'), title: str('title'), unit: str('unit'),
+            quantityMilli: num('quantityMilli'), pricePerUnitCents: num('pricePerUnitCents'),
+            storeBrand: str('storeBrand'), market: str('market'),
+            marketKey: (current?['marketKey'] ?? '').toString(),
+            marketUnit: (current?['marketUnit'] ?? '').toString(),
+            referencePriceCents: current?['referencePriceCents'] as int?,
+            paymentMethod: str('paymentMethod'), discountType: str('discountType'),
+            discountValue: num('discountValue'), note: str('note'));
+        case 'material_void':
+          final current = row('materials', (r) => r['id'] == num('id'));
+          if (current == null || current['voided'] == true || isQuickMaterial(current)) {
+            throw const FinanceVersionConflict();
+          }
+          check(current);
+          voidMaterialPurchase(state, num('id'), str('reason'));
+        default:
+          throw const FormatException('Desteklenmeyen finans işlemi.');
+      }
+      return {'ok': true, 'requestId': id};
+    });
   }
 
   static Future<Json> report(Json state, Json payload) async {
