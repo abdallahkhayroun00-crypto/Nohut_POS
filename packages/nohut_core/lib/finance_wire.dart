@@ -49,7 +49,7 @@ class FinanceWire {
       return base64Url.decode(value);
     }
     final nonce = decode('nonce'), cipher = decode('cipher'), mac = decode('mac');
-    if (nonce.length != 12 || mac.length != 16 || cipher.length > 2 * 1024 * 1024) {
+    if (nonce.length != 12 || mac.length != 16 || cipher.length > (context.startsWith('response:') ? 20 : 2) * 1024 * 1024) {
       throw const FormatException('Geçersiz şifreli mesaj.');
     }
     final bytes = await _cipher.decrypt(
