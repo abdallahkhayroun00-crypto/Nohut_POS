@@ -610,7 +610,7 @@ List<pw.Widget> _payroll(Json state, String week) {
 /// Creates a real, print-ready A4 PDF from the supplied POS data. No made-up
 /// amounts are inserted. Turkish-supporting Barlow fonts are bundled assets.
 Future<Uint8List> generateFinancePdf(
-    Json state, FinancePdfRequest request) async {
+    Json state, FinancePdfRequest request, {bool combined = false}) async {
   request.validate();
   final normalData = await rootBundle.load(
     'assets/brand/fonts/Barlow-Regular.ttf');
@@ -622,6 +622,25 @@ Future<Uint8List> generateFinancePdf(
     boldData.offsetInBytes, boldData.lengthInBytes));
   final theme = pw.ThemeData.withFont(base: normal, bold: bold);
   final pdf = pw.Document();
+  if (combined) {
+    _addPages(pdf, theme, title: 'Aylık Finans Özeti',
+      descriptor: 'Gelir, komisyon ve giderlerin özeti',
+      period: _monthName(request.month),
+      footer: 'Birleşik rapor · Finans',
+      body: _monthly(state, request.month));
+    _addPages(pdf, theme, title: 'Malzeme Alım Raporu',
+      descriptor: 'Market bazlı · Miktar · İndirim',
+      period: _dayName(request.day),
+      footer: 'Birleşik rapor · Seçilen gün',
+      body: _materials(state, request.day));
+    _addPages(pdf, theme, title: 'Maaş & Sabit Giderler',
+      descriptor: 'Personel hak edişi · Aylık sabit giderler',
+      period: _dayName(request.weekStart) + ' – ' +
+        _dayName(weekEndOf(request.weekStart)),
+      footer: 'Birleşik rapor · Seçilen hafta · Özel',
+      body: _payroll(state, request.weekStart));
+    return pdf.save();
+  }
   switch (request.kind) {
     case FinancePdfKind.monthly:
       _addPages(pdf, theme, title: request.title,
