@@ -90,6 +90,9 @@ class _FinancePanelState extends State<FinancePanel> {
     if (_pdfBusy) return;
     var kind = FinancePdfKind.monthly;
     var selectedPeriod = month;
+    var combined = false;
+    var combinedDay = day;
+    var combinedWeek = week;
     String? error;
     final request = await showDialog<FinancePdfRequest>(
       context: context,
@@ -98,14 +101,25 @@ class _FinancePanelState extends State<FinancePanel> {
           title: const Text('PDF Raporu İndir'),
           content: SizedBox(
             width: 435,
-            child: Column(
+            child: SingleChildScrollView(child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text('Nohut Falafel · A4 yönetim raporları',
                   style: TextStyle(color: NohutBrand.muted)),
                 const SizedBox(height: 15),
-                DropdownButtonFormField<FinancePdfKind>(
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Tüm Raporlar · Tek PDF'),
+                  value: combined,
+                  onChanged: (v) => setDialog(() {
+                    combined = v ?? false;
+                    kind = FinancePdfKind.monthly;
+                    selectedPeriod = month;
+                    error = null;
+                  }),
+                ),
+                if (!combined) DropdownButtonFormField<FinancePdfKind>(
                   key: ValueKey('finance-pdf-kind-' + kind.name),
                   initialValue: kind,
                   isExpanded: true,
@@ -151,7 +165,16 @@ class _FinancePanelState extends State<FinancePanel> {
                   ),
                 ),
                 const SizedBox(height: 9),
-                if (kind == FinancePdfKind.payroll)
+                if (combined) ...[
+                  TextFormField(initialValue: combinedDay,
+                    decoration: const InputDecoration(labelText: 'Alış günü (YYYY-MM-DD)'),
+                    onChanged: (v) => combinedDay = v.trim()),
+                  const SizedBox(height: 8),
+                  TextFormField(initialValue: combinedWeek,
+                    decoration: const InputDecoration(labelText: 'Hafta başlangıcı · Pazartesi'),
+                    onChanged: (v) => combinedWeek = v.trim()),
+                ],
+                if (combined || kind == FinancePdfKind.payroll)
                   const Text(
                     'Bu rapor personel ücretlerini içerir. '
                     'PDF dosyasını yalnızca yetkili yöneticiyle paylaşın.',
@@ -164,7 +187,7 @@ class _FinancePanelState extends State<FinancePanel> {
                       style: const TextStyle(color: Colors.red)),
                   ),
               ],
-            ),
+            )),
           ),
           actions: [
             TextButton(
@@ -180,9 +203,9 @@ class _FinancePanelState extends State<FinancePanel> {
                     kind: kind,
                     month: kind == FinancePdfKind.monthly
                       ? selectedPeriod : month,
-                    day: kind == FinancePdfKind.materials
+                    day: combined ? combinedDay : kind == FinancePdfKind.materials
                       ? selectedPeriod : day,
-                    weekStart: kind == FinancePdfKind.payroll
+                    weekStart: combined ? combinedWeek : kind == FinancePdfKind.payroll
                       ? selectedPeriod : week,
                   );
                   next.validate();
@@ -197,7 +220,7 @@ class _FinancePanelState extends State<FinancePanel> {
       ),
     );
     if (request == null || !mounted) return;
-    if (request.kind == FinancePdfKind.payroll) {
+    if (combined || request.kind == FinancePdfKind.payroll) {
       final approved = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
@@ -217,7 +240,7 @@ class _FinancePanelState extends State<FinancePanel> {
     }
     try {
       final location = await getSaveLocation(
-        suggestedName: request.suggestedName,
+        suggestedName: combined ? 'Nohut_Tum_Finans_' + request.month + '.pdf' : request.suggestedName,
         acceptedTypeGroups: const [
           XTypeGroup(label: 'PDF', extensions: ['pdf']),
         ],
@@ -248,7 +271,7 @@ class _FinancePanelState extends State<FinancePanel> {
         if (overwrite != true || !mounted) return;
       }
       setState(() => _pdfBusy = true);
-      final pdfBytes = await generateFinancePdf(widget.state, request);
+      final pdfBytes = await generateFinancePdf(widget.state, request, combined: combined);
       await output.writeAsBytes(pdfBytes, flush: true);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
