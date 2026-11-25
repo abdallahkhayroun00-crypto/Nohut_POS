@@ -305,7 +305,8 @@ class ExpenseDraftStore extends ChangeNotifier {
 }
 
 class ExpenseDraftPage extends StatefulWidget {
-  const ExpenseDraftPage({super.key, required this.store});
+  const ExpenseDraftPage({super.key, required this.store, this.ownerMode = false});
+  final bool ownerMode;
   final ExpenseDraftStore store;
 
   @override
@@ -472,7 +473,7 @@ class _ExpenseDraftPageState extends State<ExpenseDraftPage> {
           const Text('Çevrimdışı giriş · Windows onayı gelene kadar giderler '
             'bekler. Finans anahtarı ile restoran ağına bağlanın.'),
           Wrap(spacing: 8, runSpacing: 8, children: [
-            OutlinedButton.icon(onPressed: widget.store.syncing ? null : _configure,
+            if (!widget.ownerMode) OutlinedButton.icon(onPressed: widget.store.syncing ? null : _configure,
               icon: const Icon(Icons.vpn_key_outlined), label: const Text('Finans Anahtarı')),
             OutlinedButton.icon(onPressed: widget.store.syncing ? null :
               () => widget.store.sync(force: true), icon: const Icon(Icons.sync),
