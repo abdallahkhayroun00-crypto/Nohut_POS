@@ -1,7 +1,6 @@
 import 'dart:math' as math;
 
 import 'package:nohut_core/nohut_core.dart';
-export 'package:nohut_core/nohut_core.dart' show materialStores, financeMethods, quickMaterialTotalCents;
 
 import 'market_prices.dart';
 
@@ -9,6 +8,9 @@ import 'operations.dart';
 import 'order_reporting.dart';
 import 'platform_net.dart';
 import 'pos_logic.dart';
+
+export 'package:nohut_core/nohut_core.dart'
+    show materialStores, financeMethods, quickMaterialTotalCents, parseExpenseCents;
 
 /// Local operational finance records are separate from sales and cash register.
 /// Every amount is stored in kuruş; no financial operations send bank transfers.
