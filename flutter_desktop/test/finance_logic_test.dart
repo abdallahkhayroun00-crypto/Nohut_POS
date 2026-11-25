@@ -2,6 +2,35 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:nohut_falafel_desktop/finance_logic.dart';
 
 void main() {
+  test('quick daily expenses aggregate several amounts without fake items', () {
+    final state = <String, dynamic>{'orders': <dynamic>[]};
+    saveQuickMaterialPurchase(state, date: '2026-10-15',
+      storeBrand: 'BİM', amountsCents: [5000, 6000, 30000]);
+    final entry = financeRows(state, 'materials').single;
+    expect(isQuickMaterial(entry), true);
+    expect(entry['totalCents'], 41000);
+    expect(entry['quantityMilli'], isNull);
+    expect(entry['pricePerUnitCents'], isNull);
+    expect(financeMonthSummary(state, '2026-10').materialsCents, 41000);
+    final id = entry['id'] as int;
+    saveQuickMaterialPurchase(state, id: id, date: '2026-11-03',
+      storeBrand: 'Diğer', market: 'Manav', amountsCents: [5000, 7000]);
+    final edited = financeRows(state, 'materials').single;
+    expect(edited['id'], id);
+    expect(edited['market'], 'Manav');
+    expect(edited['totalCents'], 12000);
+    expect((edited['history'] as List).single['previousTotalCents'], 41000);
+    expect(financeMonthSummary(state, '2026-10').materialsCents, 0);
+    expect(financeMonthSummary(state, '2026-11').materialsCents, 12000);
+    voidMaterialPurchase(state, id, 'Mükerrer fiş');
+    expect(financeMonthSummary(state, '2026-11').materialsCents, 0);
+    expect(() => saveQuickMaterialPurchase(state, id: id,
+      date: '2026-11-03', storeBrand: 'BİM', amountsCents: [5000]),
+      throwsFormatException);
+    expect(() => quickMaterialTotalCents([5000, -100]), throwsFormatException);
+    expect(() => quickMaterialTotalCents([]), throwsFormatException);
+  });
+
   test('manual NET never has another commission deducted', () {
     final state = <String, dynamic>{
       'orders': <dynamic>[],
