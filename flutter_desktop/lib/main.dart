@@ -1,4 +1,5 @@
 import 'order_reporting.dart';
+import 'package:nohut_core/management_sections.dart';
 import 'order_actions.dart';
 import 'product_customization.dart';
 import 'service_metrics.dart';
@@ -175,19 +176,17 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       orderFrom = istanbulDay(DateTime.now()),
       orderTo = istanbulDay(DateTime.now());
 
-  static const sections = [
-    ('dashboard', Icons.dashboard_outlined, 'Genel Bakış'),
-    ('tables', Icons.table_restaurant_outlined, 'Masalar & Siparişler'),
-    ('online', Icons.delivery_dining_outlined, 'Online Siparişler'),
-    ('reviews', Icons.star_outline, 'Geri Bildirimler'),
-    ('google', Icons.storefront_outlined, 'Google İşletme Profili'),
-    ('qr-menu', Icons.menu_book_outlined, 'QR Menü Yönetimi'),
-    ('open-accounts', Icons.account_balance_wallet_outlined, 'Açık Hesaplar'),
-    ('payments', Icons.point_of_sale_outlined, 'Kasa & Ödemeler'),
-    ('reports', Icons.bar_chart_outlined, 'Raporlar'),
-    ('finance', Icons.account_balance_wallet_outlined, 'Finans'),
-    ('market-prices', Icons.trending_up_outlined, 'Market Fiyat Takibi'),
-    ('settings', Icons.settings_outlined, 'Ayarlar'),
+  static const _sectionIcons = <IconData>[
+    Icons.dashboard_outlined, Icons.table_restaurant_outlined,
+    Icons.delivery_dining_outlined, Icons.star_outline, Icons.storefront_outlined,
+    Icons.menu_book_outlined, Icons.account_balance_wallet_outlined,
+    Icons.point_of_sale_outlined, Icons.bar_chart_outlined,
+    Icons.account_balance_wallet_outlined, Icons.trending_up_outlined,
+    Icons.settings_outlined,
+  ];
+  static final sections = [
+    for (var i=0;i<managementSections.length;i++)
+      (managementSections[i].$1,_sectionIcons[i],managementSections[i].$2),
   ];
 
   @override
@@ -2936,6 +2935,45 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                         icon: const Icon(Icons.refresh, size: 18),
                         label: const Text('Yeni PIN Oluştur'),
                       ),
+                      const Divider(height: 22),
+                      const Text('Android Yönetim · Ömer Yılmaz',
+                        style: TextStyle(fontWeight: FontWeight.w800)),
+                      TextButton.icon(
+                        icon: const Icon(Icons.admin_panel_settings_outlined),
+                        label: const Text('Yönetim APK Eşleştir'),
+                        onPressed: !lan.available ? null : () async {
+                          final approve = await showDialog<bool>(context: context,
+                            builder: (ctx) => AlertDialog(
+                              title: const Text('Ömer Yılmaz yönetici erişimi'),
+                              content: const Text('Yalnızca Ömer Yılmaz cihazına verin. Eski finans anahtarı iptal edilir.'),
+                              actions: [
+                                TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('Vazgeç')),
+                                FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('Oluştur')),
+                              ]));
+                          if (approve != true || !context.mounted) return;
+                          try {
+                            final secret = await lan.financeSync.rotateOwnerKey();
+                            if (!context.mounted) return;
+                            final pairingCode = jsonEncode({
+                              'host': 'http://' + lan.selectedIp! + ':' + lan.port.toString(),
+                              'serverId': lan.pairing.serverId, 'key': secret,
+                            });
+                            await showDialog<void>(context: context,builder:(ctx)=>AlertDialog(
+                              title:const Text('Nohut Yönetim · Güvenli eşleştirme'),
+                              content:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
+                                QrImageView(data:pairingCode,size:220),
+                                const Text('Yalnızca yetkili yönetici cihazında okutun.'),
+                                SelectableText(pairingCode),
+                              ])),
+                              actions:[
+                                TextButton(onPressed:()async {await Clipboard.setData(ClipboardData(text:pairingCode));},child:const Text('Kopyala')),
+                                TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('Kapat')),
+                              ]));
+                          } catch(e) {
+                            if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content:Text('Yönetim eşleştirme: ' + e.toString())));
+                          }
+                        }),
                       const Divider(height: 22),
                       const Text('Android Finans Erişimi',
                         style: TextStyle(fontWeight: FontWeight.w800)),
