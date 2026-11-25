@@ -13,14 +13,16 @@ import 'campaign_menu.dart';
 import 'pos_store.dart';
 import 'mobile_pairing.dart';
 import 'finance_sync_server.dart';
+import 'google_business.dart';
 
 /// Native Flutter Windows HTTP server for employee phones. No Python process.
 class PosLanServer extends ChangeNotifier {
-  PosLanServer(this.store, {this.port = 8787, String? staffHtml})
+  PosLanServer(this.store, {this.port = 8787, String? staffHtml, this.googleProvider})
     : _staffHtml = staffHtml;
   final PosStore store;
+  final GoogleBusiness Function()? googleProvider;
   late final MobilePairing pairing = MobilePairing(store);
-  late final FinanceSyncServer financeSync = FinanceSyncServer(store, staffProjection: _staffState);
+  late final FinanceSyncServer financeSync = FinanceSyncServer(store, staffProjection: _staffState, googleProvider: googleProvider);
   HttpServer? _server;
   RawDatagramSocket? _discovery;
   String? error;
