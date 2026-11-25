@@ -449,7 +449,7 @@ class FinanceSyncServer {
           throw const FormatException('Yönetici işlemi desteklenmiyor.');
         }
         if (_changing || generation != _generation) throw const FormatException('Finans erişimi değişti.');
-        return FinanceWire.seal(key,serverId,'response:' + envelope['nonce'].toString(),result);
+        return await FinanceWire.seal(key,serverId,'response:' + envelope['nonce'].toString(),result);
       }
       if (['monthView', 'report', 'managerWrite'].contains(payload['operation']) &&
           access?['managerReports'] != true) {
