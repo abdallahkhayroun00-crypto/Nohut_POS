@@ -180,6 +180,7 @@ class NohutApi {
   }
 
   Future<void> forget() async {
+    if (serverId != null) await ExpenseDraftStore.forServer(serverId!).disconnect();
     for (final key in ['lanUrl', 'deviceToken', 'serverId', 'employeeId']) {
       await _storage.delete(key: key);
     }
