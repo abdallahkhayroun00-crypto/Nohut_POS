@@ -56,6 +56,10 @@ class ExpenseDraftStore extends ChangeNotifier {
     host = null;
     await exclusive(() async {
       await storage.delete(key: accessKey);
+      final saved = await storage.readAll();
+      for (final k in saved.keys.where((k) => k.startsWith(reportCacheKey + '_'))) {
+        await storage.delete(key: k);
+      }
       // Preserve unacknowledged operations, but remove downloaded PC data.
       final entries = await read();
       await write(entries.where((e) => e['status'] != 'synced').toList());
@@ -66,6 +70,10 @@ class ExpenseDraftStore extends ChangeNotifier {
   Future<void> configure(String secret) async {
     FinanceWire.keyBytes(secret);
     await exclusive(() async {
+      final saved = await storage.readAll();
+      for (final k in saved.keys.where((k) => k.startsWith(reportCacheKey + '_'))) {
+        await storage.delete(key: k);
+      }
       await storage.write(key: accessKey, value: secret.trim());
       syncError = null;
       lastSync = null;
@@ -115,6 +123,39 @@ class ExpenseDraftStore extends ChangeNotifier {
     return FinanceWire.open(secret, serverId,
       'response:' + envelope['nonce'].toString(),
       Map<String, dynamic>.from(decoded));
+  }
+
+  String get reportCacheKey => 'finance_view_v2_$serverId';
+
+  Future<Map<String, dynamic>?> cachedMonth(String month) async {
+    if (!await configured()) return null;
+    final raw = await storage.read(key: reportCacheKey + '_' + month);
+    if (raw == null) return null;
+    return Map<String, dynamic>.from(jsonDecode(raw) as Map);
+  }
+
+  Future<Map<String, dynamic>> managerRequest(Map<String, dynamic> payload) =>
+    exclusive(() async {
+      final secret = await storage.read(key: accessKey);
+      final uri = Uri.tryParse(host ?? '');
+      if (secret == null || uri == null || !_local(uri)) {
+        throw const FormatException('Windows bağlantısı ve yönetici finans anahtarı gerekli.');
+      }
+      final response = await _send(secret,
+        uri.replace(path: '/api/finance/v1', query: ''), payload);
+      if (response['ok'] != true) {
+        throw FormatException((response['message'] ?? 'Finans isteği başarısız.').toString());
+      }
+      return response;
+    });
+
+  Future<Map<String, dynamic>> fetchMonth(String month) async {
+    final response = await managerRequest({'operation': 'monthView', 'month': month});
+    final view = Map<String, dynamic>.from(response['view'] as Map);
+    view['snapshotAt'] = response['updatedAt'];
+    view['revision'] = response['revision'];
+    await storage.write(key: reportCacheKey + '_' + month, value: jsonEncode(view));
+    return view;
   }
 
   bool _local(Uri uri) {
