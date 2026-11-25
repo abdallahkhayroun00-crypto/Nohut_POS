@@ -115,10 +115,14 @@ class _ManagerFinancePageState extends State<ManagerFinancePage> {
         ...children,
       ])));
 
-  Widget _line(String title, Object? value, {String? subtitle, VoidCallback? onTap}) =>
+  Widget _line(String title, Object? value, {String? subtitle, VoidCallback? onTap, VoidCallback? onAction, String actionLabel = 'İptal Et'}) =>
     ListTile(contentPadding: EdgeInsets.zero, title: Text(title), onTap: onTap,
       subtitle: subtitle == null ? null : Text(subtitle),
-      trailing: Text(_money(value), style: const TextStyle(fontWeight: FontWeight.w700)));
+      trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+        Text(_money(value), style: const TextStyle(fontWeight: FontWeight.w700)),
+        if (onAction != null) IconButton(tooltip: actionLabel,
+          onPressed: onAction, icon: const Icon(Icons.more_vert)),
+      ]));
 
   @override
   Widget build(BuildContext context) {
@@ -184,6 +188,7 @@ class _ManagerFinancePageState extends State<ManagerFinancePage> {
               _line((p['title'] ?? 'Malzeme').toString() +
                 (p['voided'] == true ? ' · İPTAL' : ''), p['totalCents'],
                 onTap: busy || p['voided'] == true || p['recordType'] == 'quick' ? null : () => _edit('material', p),
+                onAction: busy || p['voided'] == true || p['recordType'] == 'quick' ? null : () => _confirm('Malzeme iptal edilsin mi?', 'material_void', {'id': p['id'], 'expectedVersion': p['updatedAt'], 'reason': 'Android yönetici iptali'}),
                 subtitle: (p['date'] ?? '').toString() + ' · ' +
                   (p['market'] ?? '').toString() +
                   (p['recordType'] == 'quick' ? ' · Hızlı gider' : '')),
@@ -193,6 +198,8 @@ class _ManagerFinancePageState extends State<ManagerFinancePage> {
             for (final p in _rows(data['weeklyPayroll']))
               _line((p['employeeName'] ?? 'Personel').toString(), p['grossCents'],
                 onTap: busy || p['paid'] == true ? null : () => _edit('payroll', p),
+                actionLabel: 'Ödendi olarak işaretle',
+                onAction: busy || p['paid'] == true ? null : () => _confirm('Maaş ödendi olarak işaretlensin mi?', 'payroll_paid', {'employeeId': p['employeeId'], 'weekStart': p['weekStart'], 'expectedVersion': p['updatedAt']}),
                 subtitle: (p['weekStart'] ?? '').toString() + ' – ' +
                   (p['weekEnd'] ?? '').toString() + '\nAvans: ' +
                   _money(p['advanceCents']) + ' · Avans sonrası: ' +
@@ -204,6 +211,12 @@ class _ManagerFinancePageState extends State<ManagerFinancePage> {
             for (final p in _rows(data['monthlyFixed']))
               _line((p['name'] ?? '').toString(), p['amountCents'],
                 onTap: busy ? null : () => _edit('fixed', p),
+                actionLabel: 'Ödeme durumunu değiştir',
+                onAction: busy ? null : () => _confirm('Ödeme durumu değiştirilsin mi?', 'fixed_paid', {
+                  'id': p['id'], 'month': month, 'expectedVersion': p['updatedAt'],
+                  'expectedPaidAt': fixedPayments.where((r) => r['templateId'] == p['id']).firstOrNull?['paidAt'],
+                  'paid': !fixedPayments.any((r) => r['templateId'] == p['id']),
+                }),
                 subtitle: (p['category'] ?? '').toString() + ' · ' +
                   (fixedPayments.any((r) => r['templateId'] == p['id'])
                     ? 'Ödendi' : 'Bekliyor')),
@@ -213,6 +226,7 @@ class _ManagerFinancePageState extends State<ManagerFinancePage> {
             for (final p in _rows(data['other']))
               _line((p['name'] ?? '').toString() +
                 (p['voided'] == true ? ' · İPTAL' : ''), p['amountCents'],
+                onAction: busy || p['voided'] == true ? null : () => _confirm('Gider iptal edilsin mi?', 'other_void', {'id': p['id'], 'expectedVersion': p['createdAt'], 'reason': 'Android yönetici iptali'}),
                 subtitle: (p['date'] ?? '').toString() + ' · ' +
                   (p['category'] ?? '').toString()),
           ]),
@@ -345,6 +359,9 @@ class _ReportDialogState extends State<_ReportDialog> {
         final labels = {for (final e in employees)
           '${e["id"]} · ${e["name"]}': e};
         final chosen = employees.where((e) => e['id'] == row?['employeeId']).firstOrNull;
+        if (row != null && chosen == null) {
+          throw const FormatException('Personel artık aktif değil. Windows üzerinden kontrol edin.');
+        }
         final label = chosen == null ? labels.keys.first :
           '${chosen["id"]} · ${chosen["name"]}';
         final values = await _form('Haftalık Maaş', {
@@ -426,7 +443,7 @@ class _ReportDialogState extends State<_ReportDialog> {
         }
         await _queue('material_save', {'id': row?['id'], 'expectedVersion': version,
           'date': v['Tarih (YYYY-MM-DD)'], 'title': v['Ürün'],
-          'storeBrand': v['Market'], 'market': v['Market adı'], 'unit': v['Birim'],
+          'storeBrand': v['Market'], 'market': v['Market'] == 'Diğer' ? v['Market adı'] : v['Market'], 'unit': v['Birim'],
           'quantityMilli': (quantity * 1000).round(), 'pricePerUnitCents': parseExpenseCents(v['Birim Fiyat (₺)']!),
           'discountType': v['İndirim türü'], 'discountValue': v['İndirim türü'] == 'Yok' ? 0 :
             _zeroMoney(v['İndirim (₺ veya %)']!), 'paymentMethod': v['Ödeme'], 'note': v['Not']});
