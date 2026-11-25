@@ -339,7 +339,7 @@ class FinanceSyncServer {
     final card = payments.where((p)=>p.method=='Kart').fold<int>(0,(n,p)=>n+p.amount);
     return {
       'day':day, 'cashCents':cash, 'cardCents':card,
-      'orderCount':today.where((o)=>o['cancelled']!=true).length,
+      'orderCount':today.where((o)=>o['cancelled']!=true && ['Masa','Gel-Al'].contains(o['source'])).length,
       'orders':today.reversed.take(100).map(projectOrder).toList(),
       'openAccounts':orders.where((o)=>['Masa','Gel-Al'].contains(o['source']) &&
         o['closed']!=true && o['cancelled']!=true && orderDueCents(o)>0)
@@ -399,6 +399,9 @@ class FinanceSyncServer {
     if (_changing || generation != _generation) throw const FormatException('Finans erişimi değişti.');
     Json result;
     try {
+      if (access?['ownerId'] != null && owner(store.read().data)['id'] != access?['ownerId']) {
+        throw const FormatException('Yönetici yetkisi kaldırıldı.');
+      }
       final op = payload['operation'];
       if (op is String && op.startsWith('owner')) {
         final employee = owner(store.read().data);
