@@ -4,6 +4,51 @@ import 'package:nohut_falafel_desktop/finance_ui.dart';
 import 'package:nohut_falafel_desktop/pos_logic.dart';
 
 void main() {
+  testWidgets('quick purchase sums three market receipt amounts and saves once', (tester) async {
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    final state = <String, dynamic>{'orders': <dynamic>[]};
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: SingleChildScrollView(child: FinancePanel(
+        state: state, edit: (void Function(Json) change) {
+          change(state); return true;
+        },
+      ))),
+    ));
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Günlük Malzeme'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('finance-new-quick-material')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('finance-store-BİM')));
+    await tester.pumpAndSettle();
+    for (var i = 0; i < 3; i++) {
+      if (i > 0) {
+        final add = find.byKey(const ValueKey('finance-quick-add-amount'));
+        await tester.ensureVisible(add);
+        await tester.tap(add);
+        await tester.pumpAndSettle();
+      }
+      final field = find.byKey(ValueKey('finance-quick-amount-$i'));
+      await tester.ensureVisible(field);
+      await tester.enterText(field, ['50', '60', '300'][i]);
+      await tester.pumpAndSettle();
+    }
+    final save = find.byKey(const ValueKey('finance-quick-save'));
+    await tester.tap(save);
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 300));
+    final rows = state['finance']['materials'] as List;
+    expect(rows.length, 1);
+    expect(rows.single['totalCents'], 41000);
+    expect(rows.single['storeBrand'], 'BİM');
+    expect(rows.single['quantityMilli'], isNull);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('daily materials ask for store first and color-filter search', (tester) async {
     tester.view.physicalSize = const Size(1200, 900);
     tester.view.devicePixelRatio = 1;
