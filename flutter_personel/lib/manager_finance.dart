@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:nohut_core/nohut_core.dart';
+import 'package:nohut_core/report_period.dart';
 
 import 'expense_drafts.dart';
 
@@ -94,7 +95,7 @@ class _ManagerFinancePageState extends State<ManagerFinancePage> {
       ));
     } catch (_) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('PDF alınamadı. Windows bağlantısını kontrol edin.')));
+        const SnackBar(content: Text('PDF alınamadı. Windows bağlantısını kontrol edin. Büyük raporları Windows üzerinden alın.')));
     } finally {
       if (mounted) setState(() => busy = false);
     }
@@ -382,52 +383,64 @@ class _ReportDialog extends StatefulWidget {
 }
 
 class _ReportDialogState extends State<_ReportDialog> {
-  String kind = 'all';
-  late DateTime day = widget.initial;
-  late DateTime week = day.subtract(Duration(days: day.weekday - DateTime.monday));
-  static String date(DateTime d) => d.toIso8601String().substring(0, 10);
+  String preset = 'Bu Ay';
+  late ReportPeriod range = ReportPeriod.preset('Bu Ay');
+  String? error;
 
-  Future<void> _pick(bool weekly) async {
+  Future<void> _pick(bool start) async {
     final selected = await showDatePicker(context: context,
-      initialDate: weekly ? week : day, firstDate: DateTime(1999),
-      lastDate: _ManagerFinancePageState._today());
+      initialDate: ReportPeriod.parse(start ? range.from : range.to),
+      firstDate: DateTime(2000), lastDate: ReportPeriod.today());
     if (selected == null || !mounted) return;
     setState(() {
-      if (weekly) {
-        week = selected.subtract(Duration(days: selected.weekday - DateTime.monday));
-      } else {
-        day = selected;
-      }
+      preset = 'Özel Tarih';
+      range = ReportPeriod(start ? ReportPeriod.day(selected) : range.from,
+        start ? range.to : ReportPeriod.day(selected));
+      error = null;
     });
   }
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-    title: const Text('PDF Raporu'),
+    title: const Text('Tam Yönetim Raporu · Tek PDF'),
     content: SingleChildScrollView(child: SizedBox(width: 420,
       child: Column(mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          DropdownButtonFormField<String>(initialValue: kind, isExpanded: true,
-            items: const [
-              DropdownMenuItem(value: 'all', child: Text('Tüm Raporlar · Tek PDF')),
-              DropdownMenuItem(value: 'monthly', child: Text('Aylık Finans Özeti')),
-              DropdownMenuItem(value: 'materials', child: Text('Günlük Malzeme')),
-              DropdownMenuItem(value: 'payroll', child: Text('Haftalık Maaşlar')),
-            ],
-            onChanged: (v) => setState(() => kind = v ?? 'all')),
-          if (kind == 'all' || kind == 'monthly') Text('Finans ayı: ' + widget.month),
-          if (kind == 'all' || kind == 'materials')
-            TextButton(onPressed: () => _pick(false), child: Text('Alış günü: ' + date(day))),
-          if (kind == 'all' || kind == 'payroll')
-            TextButton(onPressed: () => _pick(true), child: Text('Hafta: ' + date(week))),
-          if (kind == 'all' || kind == 'payroll')
-            const Text('Özel maaş bilgileri içerir. Yalnızca yetkili kişilerle paylaşın.'),
+          const Text('Finans, personel, masalar, siparişler, ürünler, '
+            'online satışlar ve giderler tek PDF dosyasında.'),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(
+            key: ValueKey('report-preset-' + preset),
+            initialValue: preset, isExpanded: true,
+            decoration: const InputDecoration(labelText: 'Rapor dönemi'),
+            items: [for (final p in ReportPeriod.presets)
+              DropdownMenuItem(value: p, child: Text(p))],
+            onChanged: (v) => setState(() {
+              preset = v ?? 'Bu Ay';
+              if (preset != 'Özel Tarih') range = ReportPeriod.preset(preset);
+              error = null;
+            })),
+          OutlinedButton.icon(onPressed: () => _pick(true),
+            icon: const Icon(Icons.calendar_today_outlined),
+            label: Text('Başlangıç: ' + range.from)),
+          OutlinedButton.icon(onPressed: () => _pick(false),
+            icon: const Icon(Icons.calendar_today_outlined),
+            label: Text('Bitiş: ' + range.to)),
+          const Text('Yöneticiye özel. Windows bağlantısı gereklidir. '
+            'Kısmi aylardaki aylık giderler ayrı gösterilir.'),
+          if (error != null) Text(error!, style: const TextStyle(color: Colors.red)),
         ]))),
     actions: [
       TextButton(onPressed: () => Navigator.pop(context), child: const Text('Vazgeç')),
-      FilledButton(onPressed: () => Navigator.pop(context, {
-        'operation': 'report', 'kind': kind, 'month': widget.month,
-        'day': date(day), 'weekStart': date(week),
-      }), child: const Text('Oluştur ve Paylaş')),
+      FilledButton(onPressed: () {
+        try {
+          range.validate();
+          Navigator.pop(context, {
+            'operation': 'report', 'from': range.from, 'to': range.to,
+          });
+        } on FormatException catch (e) {
+          setState(() => error = e.message);
+        }
+      }, child: const Text('Tek PDF Oluştur')),
     ]);
 }
