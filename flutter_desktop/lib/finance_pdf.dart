@@ -481,10 +481,15 @@ List<pw.Widget> _materials(Json state, String day) {
           (p['title'] ?? '').toString() + '\n' +
             materialPurchaseStore(p) +
             (materialPurchaseStore(p) == 'Diğer'
-              ? ' · ' + (p['market'] ?? 'Diğer').toString() : ''),
-          _quantity(p['quantityMilli']) + ' ' +
-            (p['unit'] ?? '').toString(),
-          _amount(_cents(p, 'pricePerUnitCents')),
+              ? ' · ' + (p['market'] ?? 'Diğer').toString() : '') +
+            (isQuickMaterial(p) ? '\n' +
+              (p['amountsCents'] as List).whereType<int>().length.toString() +
+                ' tutar · ürün detayı yok' : ''),
+          isQuickMaterial(p) ? '—' :
+            _quantity(p['quantityMilli']) + ' ' +
+              (p['unit'] ?? '').toString(),
+          isQuickMaterial(p) ? '—' :
+            _amount(_cents(p, 'pricePerUnitCents')),
           _cents(p, 'discountCents') == 0 ? '—'
             : _amount(_cents(p, 'discountCents')),
           _amount(_cents(p, 'totalCents')),
@@ -498,7 +503,9 @@ List<pw.Widget> _materials(Json state, String day) {
     }),
     _notice('Market Fiyat Takibi fiyatı yalnızca referanstır. '
       'Bu tabloda fişte girilen birim fiyat, miktar ve varsa '
-      'manuel indirim kullanılır. Fiyat takibi kaydı değiştirilmez.'),
+      'manuel indirim kullanılır. Hızlı giderlerde yalnızca girilen net '
+      'tutarların toplamı vardır; ürün, miktar veya stok bilgisi yoktur. '
+      'Fiyat takibi kaydı değiştirilmez.'),
   ];
 }
 
