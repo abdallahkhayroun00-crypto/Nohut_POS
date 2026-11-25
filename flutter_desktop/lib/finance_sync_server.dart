@@ -5,6 +5,13 @@ import 'package:nohut_core/finance_wire.dart';
 import 'package:nohut_core/report_period.dart';
 
 import 'finance_logic.dart';
+import 'staff_commands.dart';
+import 'campaign_menu.dart';
+import 'operations.dart';
+import 'order_reporting.dart';
+import 'market_prices.dart';
+import 'trendyol_go_readonly.dart';
+import 'package:nohut_core/management_sections.dart';
 import 'finance_pdf.dart';
 import 'pos_logic.dart';
 import 'pos_store.dart';
@@ -13,10 +20,30 @@ import 'windows_vault.dart';
 /// Independent, physically enrolled financial capability. Never grant it to
 /// an ordinary staff bearer token. The key is held in the Windows DPAPI vault.
 class FinanceSyncServer {
-  FinanceSyncServer(this.store) :
+  FinanceSyncServer(this.store, {this.staffProjection}) :
     vault = WindowsVault(File(store.filePath + '.finance-sync.dpapi'));
 
   final PosStore store;
+  final Json Function(Json)? staffProjection;
+
+  static Json owner(Json state) {
+    final matches = asMaps(state['employees']).where((e) => e['active'] == true &&
+      e['name'] == managementOwnerName && e['id'] is int).toList();
+    if (matches.length != 1) throw const FormatException('Aktif Ömer Yılmaz kaydı gerekli.');
+    return matches.single;
+  }
+
+  Future<String> rotateOwnerKey() async {
+    final employee = owner(store.read().data);
+    if (_changing) throw StateError('Yönetici anahtarı değişiyor.');
+    _changing = true;
+    _generation++;
+    try {
+      final key = FinanceWire.createKey();
+      await vault.save({'key': key, 'managerReports': true, 'ownerId': employee['id']});
+      return key;
+    } finally { _changing = false; }
+  }
   final WindowsVault vault;
   int _generation = 0;
   bool _changing = false;
@@ -291,6 +318,58 @@ class FinanceSyncServer {
     });
   }
 
+  /// Read-only, explicit operational projections; never ship the POS state,
+  /// credentials, customer contacts or unrestricted database write access.
+  static Json ownerOverview(Json state, String day) {
+    if (!validBusinessDate(day)) throw const FormatException('Tarih geçersiz.');
+    final period = ReportPeriod(day, day);
+    final facts = managementReportFacts(state, period);
+    final orders = asMaps(state['orders']);
+    final today = orders.where((o) => period.includesStamp(o['createdAt'])).toList();
+    Json projectOrder(Json o) => {
+      for (final k in ['id','dailyNumber','source','table','createdAt','closed','cancelled','status','serviceStatus']) k:o[k],
+      'totalCents': orderTotalCents(o), 'paidCents': orderPaidCents(o), 'dueCents': orderDueCents(o),
+      'owner': orderOwnerName(o),
+    };
+    final payments = ledger(state).where((p)=>period.includesStamp(p.stamp) &&
+      ['Masa','Gel-Al'].contains(p.source)).toList();
+    final cash = payments.where((p)=>p.method=='Nakit').fold<int>(0,(n,p)=>n+p.amount);
+    final card = payments.where((p)=>p.method=='Kart').fold<int>(0,(n,p)=>n+p.amount);
+    return {
+      'day':day, 'cashCents':cash, 'cardCents':card,
+      'orderCount':today.where((o)=>o['cancelled']!=true).length,
+      'orders':today.reversed.take(100).map(projectOrder).toList(),
+      'openAccounts':orders.where((o)=>['Masa','Gel-Al'].contains(o['source']) &&
+        o['closed']!=true && o['cancelled']!=true && orderDueCents(o)>0)
+        .map(projectOrder).toList(),
+      'online':[
+        for(final o in today.where((o)=>!['Masa','Gel-Al','Trendyol Go'].contains(o['source']) &&
+          o['testPackage']!=true && o['demoRemoteStatus']==null)) projectOrder(o),
+        for(final o in tgoOrders(state).where((o)=>period.includesStamp(o['createdAt']) && o['testPackage']!=true))
+          {for(final k in ['orderNumber','status','createdAt','totalCents']) k:o[k], 'source':'Trendyol Go'},
+      ],
+      'staff':[
+        for(final p in facts['staff'] as List<Json>) {
+          for(final k in ['name','tableOrders','pickupOrders','ownedCents','batches','extraBatches','items']) k:p[k],
+          'distinctTables':(p['tables'] as Set<String>).length,
+        },
+      ],
+      'hourly':hourlyOrderCounts(today.where((o)=>['Masa','Gel-Al'].contains(o['source'])),from:day,to:day),
+      'menu':[
+        for(final p in orderingProducts(state))
+          {for(final k in ['id','name','category','price','active']) k:p[k]},
+      ],
+      'market':[
+        for(final p in trackedMarketProducts(state))
+          {for(final k in ['title','market','unit','priceCents','lastCheckedAt']) k:p[k]},
+      ],
+      'employees':[
+        for(final p in asMaps(state['employees']))
+          {for(final k in ['id','name','role','active']) k:p[k]},
+      ],
+    };
+  }
+
   static Future<Json> report(Json state, Json payload) async {
     if (payload['from'] is! String || payload['to'] is! String) {
       throw const FormatException('Rapor tarih aralığı gerekli. Uygulamayı güncelleyin.');
@@ -313,6 +392,32 @@ class FinanceSyncServer {
     if (_changing || generation != _generation) throw const FormatException('Finans erişimi değişti.');
     Json result;
     try {
+      final op = payload['operation'];
+      if (op is String && op.startsWith('owner')) {
+        final employee = owner(store.read().data);
+        if (access?['ownerId'] != employee['id']) throw const FormatException('Ömer Yılmaz yönetici eşleştirmesi gerekli.');
+        if (op == 'ownerHello') {
+          result = {'ok':true,'ownerId':employee['id'],'ownerName':managementOwnerName};
+        } else if (op == 'ownerOverview') {
+          result = {'ok':true,'view':ownerOverview(store.read().data, (payload['day'] ?? '').toString())};
+        } else if (op == 'ownerBootstrap') {
+          final snap = store.read();
+          final project = staffProjection;
+          if (project == null) throw const FormatException('Sipariş bağlantısı hazır değil.');
+          final state = project(snap.data);
+          state['employees'] = [{'id':employee['id'],'name':managementOwnerName,'active':true}];
+          result = {'ok':true,'revision':snap.revision,'state':state,'serverId':serverId};
+        } else if (op == 'ownerOrder' || op == 'ownerAction') {
+          if (payload['data'] is! Map) throw const FormatException('İstek geçersiz.');
+          final data = Map<String,dynamic>.from(payload['data'] as Map);
+          data['staffId'] = employee['id'];
+          result = op == 'ownerOrder' ? submitStaffOrder(store,data) : submitStaffAction(store,data);
+        } else {
+          throw const FormatException('Yönetici işlemi desteklenmiyor.');
+        }
+        if (_changing || generation != _generation) throw const FormatException('Finans erişimi değişti.');
+        return FinanceWire.seal(key,serverId,'response:' + envelope['nonce'].toString(),result);
+      }
       if (['monthView', 'report', 'managerWrite'].contains(payload['operation']) &&
           access?['managerReports'] != true) {
         throw const FormatException('Yeni yönetici finans anahtarı gerekli.');
@@ -342,6 +447,8 @@ class FinanceSyncServer {
       } else {
         result = apply(store, payload);
       }
+    } on StaffConflict {
+      result = {'ok':false,'error':'conflict','message':'Windows kaydı değişti. Yenileyin.'};
     } on FinanceVersionConflict {
       result = {'ok': false, 'error': 'conflict',
         'message': 'Kayıt Windows üzerinde değişti. Yenileyin ve karşılaştırın.'};
