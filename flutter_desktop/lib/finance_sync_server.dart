@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:convert';
 
 import 'package:nohut_core/finance_wire.dart';
+import 'package:nohut_core/report_period.dart';
 
 import 'finance_logic.dart';
 import 'finance_pdf.dart';
@@ -291,24 +292,15 @@ class FinanceSyncServer {
   }
 
   static Future<Json> report(Json state, Json payload) async {
-    final kind = payload['kind'];
-    final combined = kind == 'all';
-    final selected = combined ? FinancePdfKind.monthly :
-      FinancePdfKind.values.where((k) => k.name == kind).firstOrNull;
-    if (selected == null || payload['month'] is! String ||
-        payload['day'] is! String || payload['weekStart'] is! String) {
-      throw const FormatException('Rapor türü veya tarihi geçersiz.');
+    if (payload['from'] is! String || payload['to'] is! String) {
+      throw const FormatException('Rapor tarih aralığı gerekli. Uygulamayı güncelleyin.');
     }
-    final request = FinancePdfRequest(kind: selected,
-      month: payload['month'] as String, day: payload['day'] as String,
-      weekStart: payload['weekStart'] as String);
-    final bytes = await generateFinancePdf(state, request, combined: combined);
-    if (bytes.length > 1200000) {
-      throw const FormatException('Rapor çok büyük. Daha kısa dönem seçin.');
+    final period = ReportPeriod(payload['from'] as String, payload['to'] as String);
+    final bytes = await generateManagementPdf(state, period);
+    if (bytes.length > 12000000) {
+      throw const FormatException('Rapor mobil aktarım sınırını aşıyor. Windows üzerinden tek PDF alın.');
     }
-    return {'ok': true, 'name': combined
-      ? 'Nohut_Tum_Finans_' + request.month + '.pdf' : request.suggestedName,
-      'pdf': base64Encode(bytes)};
+    return {'ok': true, 'name': period.fileName, 'pdf': base64Encode(bytes)};
   }
 
   Future<Json> handle(Json envelope, String serverId) async {
@@ -321,11 +313,13 @@ class FinanceSyncServer {
     if (_changing || generation != _generation) throw const FormatException('Finans erişimi değişti.');
     Json result;
     try {
-      if (['monthView', 'report'].contains(payload['operation']) &&
+      if (['monthView', 'report', 'managerWrite'].contains(payload['operation']) &&
           access?['managerReports'] != true) {
         throw const FormatException('Yeni yönetici finans anahtarı gerekli.');
       }
-      if (payload['operation'] == 'monthView') {
+      if (payload['operation'] == 'managerWrite') {
+        result = managerWrite(store, payload);
+      } else if (payload['operation'] == 'monthView') {
         if (payload['month'] is! String) throw const FormatException('Ay geçersiz.');
         final snap = store.read();
         result = {'ok': true, 'revision': snap.revision, 'updatedAt': snap.updatedAt,
