@@ -8,7 +8,6 @@ import 'package:pdf/widgets.dart' as pw;
 import 'finance_logic.dart';
 import 'market_prices.dart';
 import 'platform_net.dart';
-import 'trendyol_go_readonly.dart';
 import 'operations.dart';
 import 'order_reporting.dart';
 import 'pos_logic.dart';
@@ -771,7 +770,8 @@ Future<Uint8List> generateManagementPdf(Json state, ReportPeriod period) async {
   final payrollTotal = sum(payroll, 'grossCents');
   final otherTotal = sum(other, 'amountCents');
   final fixedByCategory = <String,int>{};
-  var fixedTotal = 0, excludedFixed = 0, onlineNet = 0, excludedManual = 0;
+  var fixedTotal = 0, excludedFixed = 0, onlineNet = 0;
+  var excludedManualGross = 0, excludedManualNet = 0;
   final online = <String,Json>{for (final source in deliverySources)
     source: {'orders': 0, 'gross': 0, 'grossKnown': false,
       'net': 0, 'netKnown': false, 'fee': 0, 'feeKnown': false,
@@ -814,7 +814,11 @@ Future<Uint8List> generateManagementPdf(Json state, ReportPeriod period) async {
       for (final r in financeRows(state,'manualPlatformSales')) {
         if (r['month'] == month && r['voided'] != true &&
             !platformHasAutomaticSales(state,field(r,'source'),month)) {
-          excludedManual += _cents(r,'amountCents');
+          if (r['kind'] == 'Brüt') {
+            excludedManualGross += _cents(r,'amountCents');
+          } else if (r['kind'] == 'Net') {
+            excludedManualNet += _cents(r,'amountCents');
+          }
         }
       }
     }
@@ -871,6 +875,12 @@ Future<Uint8List> generateManagementPdf(Json state, ReportPeriod period) async {
         _amount(rows.skip(limit).fold<int>(0,(n,e)=>n+e.value))],
     ];
   }
+  final cash = state['cashBook'] is Map ? state['cashBook'] as Map : {};
+  final movements = asMaps(cash['movements']).where((r)=>period.includesStamp(r['at'])).toList();
+  final cashIn = movements.where((r)=>_cents(r,'cents')>0).fold<int>(0,(n,r)=>n+_cents(r,'cents'));
+  final cashOut = movements.where((r)=>_cents(r,'cents')<0).fold<int>(0,(n,r)=>n-_cents(r,'cents'));
+  final closedSessions = asMaps(cash['sessions']).where((r)=>period.includesStamp(r['closedAt'])).toList();
+  final cashDiff = sum(closedSessions,'differenceCents');
   final normalData = await rootBundle.load('assets/brand/fonts/Barlow-Regular.ttf');
   final boldData = await rootBundle.load('assets/brand/fonts/Barlow-Bold.ttf');
   final theme = pw.ThemeData.withFont(base: pw.Font.ttf(normalData),bold:pw.Font.ttf(boldData));
@@ -947,10 +957,15 @@ Future<Uint8List> generateManagementPdf(Json state, ReportPeriod period) async {
     ]),
     note('* Bilinen tutarlar. Online net tahmini olup banka mutabakatı değildir. '
       'Eksik kaynaklar sıfır kabul edilmez.'),
+    heading('Kasa hareketleri'),
+    compact(['GİRİŞ','ÇIKIŞ','KAPANAN KASA','SAYIM FARKI'],[
+      [_amount(cashIn),_amount(cashOut),closedSessions.length.toString(),_amount(cashDiff)],
+    ]),
     heading('Aylık olup döneme dahil edilmeyen kayıtlar'),
     compact(['KALEM','TUTAR'],[
       ['Kısmi aya ait sabit gider',_amount(excludedFixed)],
-      ['Kısmi aya ait manuel online giriş (brüt/net karışık)',_amount(excludedManual)],
+      ['Kısmi aya ait manuel online brüt',_amount(excludedManualGross)],
+      ['Kısmi aya ait manuel online net',_amount(excludedManualNet)],
     ]),
     note((incomplete?'Eksik veya kısmi dönem verisi var. ':'')+
       'Aylık kayıtlar yalnızca tam ayda toplama girer. Maaş Pazar gününe göre hesaplanır. '
@@ -1044,6 +1059,8 @@ Future<Uint8List> generateManagementPdf(Json state, ReportPeriod period) async {
     heading('Gider kategorileri'),
     pair(compact(['SABİT GİDER','TUTAR'],aggregateRows(fixedByCategory,5)),
       compact(['DİĞER GİDER','TUTAR'],aggregateRows(categories,5))),
+    note('Market fiyat takibi: '+trackedMarketProducts(state).length.toString()+
+      ' takipli ürün (rapor anı); referans fiyat alış gideri değildir.'),
     note('Avans ikinci kez gider sayılmaz. Hızlı giderlerde ürün miktarı bilinmez. '
       'Sabit giderler mevcut şablonlara dayanır. Yalnızca Windows onaylı kayıtlar dahildir.'),
   ]);
