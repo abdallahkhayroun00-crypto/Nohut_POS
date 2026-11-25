@@ -8,6 +8,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:nohut_core/nohut_core.dart';
 
+import 'manager_finance.dart';
+
 /// Secure, restaurant-scoped outbox and cached quick expenses. An operation
 /// is frozen on disk BEFORE transport and removed only after authenticated
 /// acknowledgement. Retries reuse its exact request ID and payload.
@@ -421,6 +423,23 @@ class _ExpenseDraftPageState extends State<ExpenseDraftPage> {
               () => widget.store.sync(force: true), icon: const Icon(Icons.sync),
               label: const Text('Şimdi Senkronize Et')),
           ]),
+          OutlinedButton.icon(
+            onPressed: () async {
+              if (!await widget.store.configured()) {
+                if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Önce yönetici finans anahtarını girin.')));
+                return;
+              }
+              if (!mounted) return;
+              await Navigator.of(context).push(MaterialPageRoute<void>(
+                builder: (_) => Scaffold(
+                  appBar: AppBar(title: const Text('Nohut · Finans')),
+                  body: ManagerFinancePage(store: widget.store),
+                )));
+            },
+            icon: const Icon(Icons.bar_chart),
+            label: const Text('Finans · Maaşlar · PDF'),
+          ),
           if (widget.store.syncing) const LinearProgressIndicator(),
           if (widget.store.syncError != null) Text(widget.store.syncError!),
           if (widget.store.lastSync != null) const Text('Windows ile son bağlantı başarılı.'),
