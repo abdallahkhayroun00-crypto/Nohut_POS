@@ -26,7 +26,7 @@ class FinanceSyncServer {
     _generation++;
     try {
       final key = FinanceWire.createKey();
-      await vault.save({'key': key});
+      await vault.save({'key': key, 'managerReports': true});
       return key;
     } finally {
       _changing = false;
@@ -189,12 +189,17 @@ class FinanceSyncServer {
   Future<Json> handle(Json envelope, String serverId) async {
     if (_changing) throw const FormatException('Finans erişimi değişiyor.');
     final generation = _generation;
-    final key = (await vault.load())?['key'];
+    final access = await vault.load();
+    final key = access?['key'];
     if (key is! String) throw const FormatException('Finans erişimi kapalı.');
     final payload = await FinanceWire.open(key, serverId, 'request', envelope);
     if (_changing || generation != _generation) throw const FormatException('Finans erişimi değişti.');
     Json result;
     try {
+      if (['monthView', 'report'].contains(payload['operation']) &&
+          access?['managerReports'] != true) {
+        throw const FormatException('Yeni yönetici finans anahtarı gerekli.');
+      }
       if (payload['operation'] == 'monthView') {
         if (payload['month'] is! String) throw const FormatException('Ay geçersiz.');
         final snap = store.read();
