@@ -207,7 +207,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     );
     onlineAlarm.setAudioEnabled(settings['onlineOrderSound'] != false);
     inpos = InposPayments(store, widget.inposGateway ?? UnavailableInpos());
-    lan = PosLanServer(store);
+    lan = PosLanServer(store, googleProvider: () => google);
     receiptPrinter = ReceiptPrinter(store);
     qrSync = QrMenuAutoSync(store);
     tgo = TrendyolGoReadonly(
