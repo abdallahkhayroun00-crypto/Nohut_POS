@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:nohut_core/nohut_core.dart';
 
 import 'expense_drafts.dart';
 
@@ -41,6 +42,8 @@ class _ManagerFinancePageState extends State<ManagerFinancePage> {
     final selected = month;
     setState(() { busy = true; error = null; });
     try {
+      final pending = await widget.store.managerQueue();
+      if (mounted && generation == _generation) setState(() => queue = pending);
       final cached = await widget.store.cachedMonth(selected);
       if (!mounted || generation != _generation) return;
       setState(() { view = cached; offline = true; });
@@ -96,6 +99,361 @@ class _ManagerFinancePageState extends State<ManagerFinancePage> {
       if (mounted) setState(() => busy = false);
     }
   }
+
+  List<Map<String, dynamic>> queue = [];
+  static String _tl(Object? cents) => cents is int
+    ? (cents / 100).toStringAsFixed(2) : '';
+  static int _integer(String text) => int.tryParse(text.trim()) ??
+    (throw const FormatException('Geçerli tam sayı girin.'));
+  static int _zeroMoney(String text) => text.trim().isEmpty ||
+    RegExp(r'^0([,.]0{1,2})?
+    child: Padding(padding: const EdgeInsets.all(14),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Text(title, style: Theme.of(context).textTheme.titleLarge),
+        const SizedBox(height: 8),
+        if (children.isEmpty) const Text('Kayıt yok.'),
+        ...children,
+      ])));
+
+  Widget _line(String title, Object? value, {String? subtitle, VoidCallback? onTap}) =>
+    ListTile(contentPadding: EdgeInsets.zero, title: Text(title), onTap: onTap,
+      subtitle: subtitle == null ? null : Text(subtitle),
+      trailing: Text(_money(value), style: const TextStyle(fontWeight: FontWeight.w700)));
+
+  @override
+  Widget build(BuildContext context) {
+    final data = view;
+    final summary = data?['summary'] as Map? ?? {};
+    final fixedPayments = _rows(data?['fixedPayments']);
+    return Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 1100),
+      child: ListView(padding: const EdgeInsets.all(12), children: [
+        Text('Finans · Yönetici', style: Theme.of(context).textTheme.headlineSmall),
+        const Text('Özel finans bilgileri · Yalnızca yetkili cihaz'),
+        Wrap(spacing: 8, runSpacing: 8, children: [
+          OutlinedButton.icon(onPressed: busy ? null : _selectMonth,
+            icon: const Icon(Icons.calendar_month), label: Text(month)),
+          OutlinedButton.icon(onPressed: busy ? null : _load,
+            icon: const Icon(Icons.refresh), label: const Text('Yenile')),
+          FilledButton.icon(onPressed: busy ? null : _pdf,
+            icon: const Icon(Icons.picture_as_pdf_outlined),
+            label: const Text('PDF Raporu')),
+        ]),
+        if (busy) const LinearProgressIndicator(),
+        if (error != null) Text(error!),
+        if (queue.isNotEmpty) _section('Bekleyen Yönetici İşlemleri', [
+          for (final item in queue)
+            ListTile(title: Text((item['payload'] as Map)['action'].toString()),
+              subtitle: Text((item['message'] ?? 'Windows onayı bekliyor').toString()),
+              trailing: item['status'] == 'conflict'
+                ? TextButton(onPressed: busy ? null : () async {
+                    await widget.store.discardManagerConflict((item['payload'] as Map)['requestId'] as String);
+                    if (mounted) await _load();
+                  }, child: const Text('Vazgeç')) : const Icon(Icons.schedule)),
+          OutlinedButton(onPressed: busy ? null : () async {
+            await widget.store.sync(force: true);
+            if (mounted) await _load();
+          }, child: const Text('Senkronize Et')),
+        ]),
+        if (data != null) ...[
+          Text((offline ? 'Çevrimdışı kopya · ' : 'Windows kaydı · ') +
+            (data['snapshotAt'] ?? '').toString()),
+          _section('Genel Bakış', [
+            _line('Yerel tahsilat', summary['localReceiptsCents']),
+            _line('Online bilinen net', summary['onlineKnownNetCents']),
+            _line('Kesintisi bilinmeyen brüt', summary['onlineUnpricedGrossCents']),
+            _line('Toplam gider', summary['totalExpensesCents']),
+            _line('Tahmini faaliyet farkı', summary['estimateCents'],
+              subtitle: 'Vergi ve stok tüketimi dahil değildir.'),
+          ]),
+          _section('Online platformlar', [
+            _add('Manuel Brüt / Net Ekle', 'manual'),
+            for (final p in _rows(data['manualPlatformSales']))
+              ListTile(title: Text(p['source'].toString() + ' · Manuel ' + p['kind'].toString()),
+                subtitle: Text(_money(p['amountCents'])),
+                onTap: busy ? null : () => _edit('manual', p),
+                trailing: IconButton(icon: const Icon(Icons.delete_outline), onPressed: busy ? null : () => _confirm('Manuel gelir iptal edilsin mi?', 'manual_void', {'source': p['source'], 'month': month, 'expectedVersion': p['updatedAt']}))),
+            for (final p in _rows(data['platforms']))
+              _line(p['source'].toString(), p['netCents'],
+                subtitle: (p['origin'] ?? '').toString() +
+                  ' · Brüt ' + _money(p['grossCents']) +
+                  ' · Kesinti ' + _money(p['deductionCents'])),
+          ]),
+          _section('Günlük Malzeme · ' + _money(summary['materialsCents']), [
+            _add('Detaylı Malzeme Ekle', 'material'),
+            for (final p in _rows(data['materials']))
+              _line((p['title'] ?? 'Malzeme').toString() +
+                (p['voided'] == true ? ' · İPTAL' : ''), p['totalCents'],
+                onTap: busy || p['voided'] == true || p['recordType'] == 'quick' ? null : () => _edit('material', p),
+                subtitle: (p['date'] ?? '').toString() + ' · ' +
+                  (p['market'] ?? '').toString() +
+                  (p['recordType'] == 'quick' ? ' · Hızlı gider' : '')),
+          ]),
+          _section('Haftalık Maaşlar · ' + _money(summary['payrollCents']), [
+            _add('Haftalık Maaş Ekle', 'payroll'),
+            for (final p in _rows(data['weeklyPayroll']))
+              _line((p['employeeName'] ?? 'Personel').toString(), p['grossCents'],
+                onTap: busy || p['paid'] == true ? null : () => _edit('payroll', p),
+                subtitle: (p['weekStart'] ?? '').toString() + ' – ' +
+                  (p['weekEnd'] ?? '').toString() + '\nAvans: ' +
+                  _money(p['advanceCents']) + ' · Avans sonrası: ' +
+                  _money(p['payableCents']) + ' · ' +
+                  (p['paid'] == true ? 'Ödendi' : 'Ödenmedi')),
+          ]),
+          _section('Sabit Giderler · ' + _money(summary['fixedCents']), [
+            _add('Sabit Gider Ekle', 'fixed'),
+            for (final p in _rows(data['monthlyFixed']))
+              _line((p['name'] ?? '').toString(), p['amountCents'],
+                onTap: busy ? null : () => _edit('fixed', p),
+                subtitle: (p['category'] ?? '').toString() + ' · ' +
+                  (fixedPayments.any((r) => r['templateId'] == p['id'])
+                    ? 'Ödendi' : 'Bekliyor')),
+          ]),
+          _section('Diğer Giderler · ' + _money(summary['otherCents']), [
+            _add('Diğer Gider Ekle', 'other'),
+            for (final p in _rows(data['other']))
+              _line((p['name'] ?? '').toString() +
+                (p['voided'] == true ? ' · İPTAL' : ''), p['amountCents'],
+                subtitle: (p['date'] ?? '').toString() + ' · ' +
+                  (p['category'] ?? '').toString()),
+          ]),
+          const Text('Bu ekrandaki tutarlar Windows tarafından onaylanan '
+            'kayıtlardır. Bekleyen mobil giderler henüz dahil değildir. '
+            'PDF üretimi için restoran bağlantısı gerekir.'),
+        ],
+      ])));
+  }
+}
+
+class _ReportDialog extends StatefulWidget {
+  const _ReportDialog({required this.month, required this.initial});
+  final String month;
+  final DateTime initial;
+  @override
+  State<_ReportDialog> createState() => _ReportDialogState();
+}
+
+class _ReportDialogState extends State<_ReportDialog> {
+  String kind = 'all';
+  late DateTime day = widget.initial;
+  late DateTime week = day.subtract(Duration(days: day.weekday - DateTime.monday));
+  static String date(DateTime d) => d.toIso8601String().substring(0, 10);
+
+  Future<void> _pick(bool weekly) async {
+    final selected = await showDatePicker(context: context,
+      initialDate: weekly ? week : day, firstDate: DateTime(1999),
+      lastDate: _ManagerFinancePageState._today());
+    if (selected == null || !mounted) return;
+    setState(() {
+      if (weekly) {
+        week = selected.subtract(Duration(days: selected.weekday - DateTime.monday));
+      } else {
+        day = selected;
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('PDF Raporu'),
+    content: SingleChildScrollView(child: SizedBox(width: 420,
+      child: Column(mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          DropdownButtonFormField<String>(initialValue: kind, isExpanded: true,
+            items: const [
+              DropdownMenuItem(value: 'all', child: Text('Tüm Raporlar · Tek PDF')),
+              DropdownMenuItem(value: 'monthly', child: Text('Aylık Finans Özeti')),
+              DropdownMenuItem(value: 'materials', child: Text('Günlük Malzeme')),
+              DropdownMenuItem(value: 'payroll', child: Text('Haftalık Maaşlar')),
+            ],
+            onChanged: (v) => setState(() => kind = v ?? 'all')),
+          if (kind == 'all' || kind == 'monthly') Text('Finans ayı: ' + widget.month),
+          if (kind == 'all' || kind == 'materials')
+            TextButton(onPressed: () => _pick(false), child: Text('Alış günü: ' + date(day))),
+          if (kind == 'all' || kind == 'payroll')
+            TextButton(onPressed: () => _pick(true), child: Text('Hafta: ' + date(week))),
+          if (kind == 'all' || kind == 'payroll')
+            const Text('Özel maaş bilgileri içerir. Yalnızca yetkili kişilerle paylaşın.'),
+        ]))),
+    actions: [
+      TextButton(onPressed: () => Navigator.pop(context), child: const Text('Vazgeç')),
+      FilledButton(onPressed: () => Navigator.pop(context, {
+        'operation': 'report', 'kind': kind, 'month': widget.month,
+        'day': date(day), 'weekStart': date(week),
+      }), child: const Text('Oluştur ve Paylaş')),
+    ]);
+}
+).hasMatch(text.trim()) ? 0 : parseExpenseCents(text);
+
+  Future<Map<String, String>?> _form(String title,
+      Map<String, String> fields, {Map<String, List<String>> choices = const {}}) async {
+    final controllers = {for (final e in fields.entries)
+      e.key: TextEditingController(text: e.value)};
+    final picked = {for (final e in choices.entries)
+      e.key: e.value.contains(fields[e.key]) ? fields[e.key]! : e.value.first};
+    try {
+      return await showDialog<Map<String, String>>(context: context,
+        builder: (ctx) => StatefulBuilder(builder: (ctx, update) => AlertDialog(
+          title: Text(title),
+          content: SingleChildScrollView(child: SizedBox(width: 420,
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              for (final key in fields.keys)
+                Padding(padding: const EdgeInsets.only(bottom: 10),
+                  child: choices.containsKey(key)
+                    ? DropdownButtonFormField<String>(
+                      initialValue: picked[key], isExpanded: true,
+                      decoration: InputDecoration(labelText: key),
+                      items: [for (final v in choices[key]!)
+                        DropdownMenuItem(value: v, child: Text(v))],
+                      onChanged: (v) => update(() => picked[key] = v ?? picked[key]!))
+                    : TextField(controller: controllers[key],
+                      decoration: InputDecoration(labelText: key))),
+            ]))),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Vazgeç')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, {
+              for (final key in fields.keys)
+                key: (picked[key] ?? controllers[key]!.text).trim(),
+            }), child: const Text('Kaydet')),
+          ],
+        )));
+    } finally {
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+      for (final c in controllers.values) { c.dispose(); }
+    }
+  }
+
+  Future<void> _queue(String action, Map<String, dynamic> data) async {
+    await widget.store.enqueueManager(action, data);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      content: Text('İşlem telefona kaydedildi. Windows onayı bekleniyor.')));
+    final pending = await widget.store.managerQueue();
+    if (mounted) setState(() => queue = pending);
+    await widget.store.sync(force: true);
+    if (mounted) await _load();
+  }
+
+  Future<void> _edit(String type, [Map<String, dynamic>? row]) async {
+    try {
+      final selected = _day(_today()).startsWith(month) ? _today() : DateTime.parse(month + '-01');
+      final monday = selected.subtract(Duration(days: selected.weekday - DateTime.monday));
+      final version = row?['updatedAt'];
+      if (type == 'payroll') {
+        final employees = _rows(view?['employees']).where((e) =>
+          e['payRateCents'] is int && e['payType'] is String).toList();
+        if (employees.isEmpty) throw const FormatException('Windows üzerinde personel ücreti tanımlayın.');
+        final labels = {for (final e in employees)
+          '${e["id"]} · ${e["name"]}': e};
+        final chosen = employees.where((e) => e['id'] == row?['employeeId']).firstOrNull;
+        final label = chosen == null ? labels.keys.first :
+          '${chosen["id"]} · ${chosen["name"]}';
+        final values = await _form('Haftalık Maaş', {
+          'Personel': label,
+          'Hafta başlangıcı (YYYY-MM-DD)': (row?['weekStart'] ?? _day(monday)).toString(),
+          'Çalışma süresi (dakika)': (row?['workedMinutes'] ?? 0).toString(),
+          'Prim (₺)': _tl(row?['bonusCents'] ?? 0),
+          'Avans (₺)': _tl(row?['advanceCents'] ?? 0),
+          'Durum': row?['paid'] == true ? 'Ödendi' : 'Ödenmedi',
+        }, choices: {'Personel': row == null ? labels.keys.toList() : [label],
+          'Durum': ['Ödenmedi', 'Ödendi']});
+        if (values == null || !mounted) return;
+        final employee = labels[values['Personel']]!;
+        final week = values['Hafta başlangıcı (YYYY-MM-DD)']!;
+        if (row != null && week != row['weekStart']) {
+          throw const FormatException('Mevcut maaşın haftası değiştirilemez.');
+        }
+        await _queue('payroll_save', {
+          'employeeId': employee['id'], 'weekStart': week,
+          'expectedVersion': version, 'expectedRate': employee['payRateCents'],
+          'expectedPayType': employee['payType'],
+          'workedMinutes': _integer(values['Çalışma süresi (dakika)']!),
+          'bonusCents': _zeroMoney(values['Prim (₺)']!),
+          'advanceCents': _zeroMoney(values['Avans (₺)']!),
+          'paid': values['Durum'] == 'Ödendi',
+        });
+      } else if (type == 'fixed') {
+        const categories = ['Kira', 'Muhasebe', 'SGK', 'Elektrik / Su / Doğalgaz', 'İnternet', 'Diğer'];
+        final v = await _form('Sabit Gider', {
+          'Kategori': (row?['category'] ?? 'Kira').toString(),
+          'Ad': (row?['name'] ?? '').toString(),
+          'Aylık Tutar (₺)': _tl(row?['amountCents']),
+          'Başlangıç (YYYY-MM)': (row?['startMonth'] ?? month).toString(),
+          'Vade günü (1–28)': (row?['dueDay'] ?? 1).toString(),
+          'Durum': 'Aktif',
+        }, choices: {'Kategori': categories, 'Durum': ['Aktif', 'Pasif']});
+        if (v == null || !mounted) return;
+        await _queue('fixed_save', {'id': row?['id'], 'expectedVersion': version,
+          'category': v['Kategori'], 'name': v['Ad'], 'amountCents': parseExpenseCents(v['Aylık Tutar (₺)']!),
+          'startMonth': v['Başlangıç (YYYY-MM)'], 'dueDay': _integer(v['Vade günü (1–28)']!),
+          'active': v['Durum'] == 'Aktif'});
+      } else if (type == 'other') {
+        final v = await _form('Diğer Gider Ekle', {
+          'Tarih (YYYY-MM-DD)': _day(selected), 'Kategori': 'Diğer',
+          'Ad': '', 'Tutar (₺)': '', 'Ödeme': 'Nakit',
+        }, choices: {'Kategori': ['Yol / Nakliye', 'Temizlik', 'Bakım / Onarım',
+          'Elektrik / Su / Doğalgaz', 'Diğer'], 'Ödeme': financeMethods});
+        if (v == null || !mounted) return;
+        await _queue('other_create', {'date': v['Tarih (YYYY-MM-DD)'], 'category': v['Kategori'],
+          'name': v['Ad'], 'amountCents': parseExpenseCents(v['Tutar (₺)']!),
+          'paymentMethod': v['Ödeme']});
+      } else if (type == 'manual') {
+        final v = await _form('Manuel Platform Geliri', {
+          'Platform': (row?['source'] ?? 'Yemeksepeti').toString(),
+          'Tür': (row?['kind'] ?? 'Net').toString(),
+          'Tutar (₺)': _tl(row?['amountCents']), 'Not': (row?['note'] ?? '').toString(),
+        }, choices: {'Platform': row == null ? ['Yemeksepeti', 'Migros Yemek'] :
+          [row['source'].toString()], 'Tür': ['Brüt', 'Net']});
+        if (v == null || !mounted) return;
+        await _queue('manual_save', {'source': v['Platform'], 'month': month,
+          'expectedVersion': version, 'kind': v['Tür'],
+          'amountCents': parseExpenseCents(v['Tutar (₺)']!), 'note': v['Not']});
+      } else if (type == 'material') {
+        final v = await _form('Detaylı Malzeme', {
+          'Tarih (YYYY-MM-DD)': (row?['date'] ?? _day(selected)).toString(),
+          'Ürün': (row?['title'] ?? '').toString(), 'Market': (row?['storeBrand'] ?? 'Diğer').toString(),
+          'Market adı': (row?['market'] ?? '').toString(), 'Birim': (row?['unit'] ?? 'kg').toString(),
+          'Miktar': row?['quantityMilli'] is int ? ((row!['quantityMilli'] as int) / 1000).toString() : '',
+          'Birim Fiyat (₺)': _tl(row?['pricePerUnitCents']),
+          'İndirim türü': (row?['discountType'] ?? 'Yok').toString(),
+          'İndirim (₺ veya %)': _tl(row?['discountValue'] ?? 0),
+          'Ödeme': (row?['paymentMethod'] ?? 'Nakit').toString(), 'Not': (row?['note'] ?? '').toString(),
+        }, choices: {'Market': materialStores, 'Birim': ['kg', 'lt', 'adet', 'paket'],
+          'İndirim türü': ['Yok', 'Tutar', 'Yüzde'], 'Ödeme': financeMethods});
+        if (v == null || !mounted) return;
+        final quantity = double.tryParse(v['Miktar']!.replaceAll(',', '.'));
+        if (quantity == null || !quantity.isFinite || quantity <= 0 || quantity > 100000) {
+          throw const FormatException('Miktar geçersiz.');
+        }
+        await _queue('material_save', {'id': row?['id'], 'expectedVersion': version,
+          'date': v['Tarih (YYYY-MM-DD)'], 'title': v['Ürün'],
+          'storeBrand': v['Market'], 'market': v['Market adı'], 'unit': v['Birim'],
+          'quantityMilli': (quantity * 1000).round(), 'pricePerUnitCents': parseExpenseCents(v['Birim Fiyat (₺)']!),
+          'discountType': v['İndirim türü'], 'discountValue': v['İndirim türü'] == 'Yok' ? 0 :
+            _zeroMoney(v['İndirim (₺ veya %)']!), 'paymentMethod': v['Ödeme'], 'note': v['Not']});
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e is FormatException ? e.message : 'İşlem kaydedilemedi.')));
+    }
+  }
+
+  Future<void> _confirm(String title, String action, Map<String, dynamic> data) async {
+    final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+      title: Text(title), content: const Text('İşlem Windows onayı alındığında uygulanır.'),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Vazgeç')),
+        FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Onayla')),
+      ]));
+    if (ok != true || !mounted) return;
+    try { await _queue(action, data); } catch (_) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('İşlem kaydedilemedi.')));
+    }
+  }
+
+  Widget _add(String title, String type) => Align(alignment: Alignment.centerLeft,
+    child: OutlinedButton.icon(onPressed: busy ? null : () => _edit(type),
+      icon: const Icon(Icons.add), label: Text(title)));
 
   Widget _section(String title, List<Widget> children) => Card(
     child: Padding(padding: const EdgeInsets.all(14),
