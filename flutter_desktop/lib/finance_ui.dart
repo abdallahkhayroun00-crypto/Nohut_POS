@@ -1102,7 +1102,7 @@ class _FinancePanelState extends State<FinancePanel> {
         int? total;
         try {
           total = quickMaterialTotalCents(
-            amounts.map((c) => _price(c.text)).toList());
+            amounts.map((c) => parseExpenseCents(c.text)).toList());
         } on FormatException {
           // Incomplete input is not a zero-value expense.
         }
@@ -1205,7 +1205,7 @@ class _FinancePanelState extends State<FinancePanel> {
               key: const ValueKey('finance-quick-save'),
               onPressed: () {
                 try {
-                  final values = amounts.map((c) => _price(c.text)).toList();
+                  final values = amounts.map((c) => parseExpenseCents(c.text)).toList();
                   quickMaterialTotalCents(values);
                   final ok = widget.edit((db) => saveQuickMaterialPurchase(
                     db, id: existing?['id'] as int?, date: selectedDay,
