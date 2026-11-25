@@ -12,14 +12,15 @@ import 'package:nohut_core/nohut_core.dart';
 /// is frozen on disk BEFORE transport and removed only after authenticated
 /// acknowledgement. Retries reuse its exact request ID and payload.
 class ExpenseDraftStore extends ChangeNotifier {
-  ExpenseDraftStore(this.serverId, {FlutterSecureStorage? storage})
-      : storage = storage ?? const FlutterSecureStorage();
+  ExpenseDraftStore(this.serverId, {FlutterSecureStorage? storage, http.Client? client})
+      : storage = storage ?? const FlutterSecureStorage(), _client = client;
   static final _stores = <String, ExpenseDraftStore>{};
   static ExpenseDraftStore forServer(String serverId) =>
     _stores.putIfAbsent(serverId, () => ExpenseDraftStore(serverId));
 
   final String serverId;
   final FlutterSecureStorage storage;
+  final http.Client? _client;
   String get key => 'finance_drafts_v1_$serverId';
   String get accessKey => 'finance_key_v1_$serverId';
   String? host;
@@ -50,6 +51,17 @@ class ExpenseDraftStore extends ChangeNotifier {
   }
 
   Future<bool> configured() async => await storage.read(key: accessKey) != null;
+
+  Future<void> disconnect() async {
+    host = null;
+    await exclusive(() async {
+      await storage.delete(key: accessKey);
+      // Preserve unacknowledged operations, but remove downloaded PC data.
+      final entries = await read();
+      await write(entries.where((e) => e['status'] != 'synced').toList());
+      lastSync = null;
+    });
+  }
 
   Future<void> configure(String secret) async {
     FinanceWire.keyBytes(secret);
@@ -86,9 +98,15 @@ class ExpenseDraftStore extends ChangeNotifier {
   Future<Map<String, dynamic>> _send(String secret, Uri uri,
       Map<String, dynamic> payload) async {
     final envelope = await FinanceWire.seal(secret, serverId, 'request', payload);
-    final response = await http.post(uri,
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode(envelope)).timeout(const Duration(seconds: 10));
+    final client = _client ?? http.Client();
+    final http.Response response;
+    try {
+      response = await client.post(uri,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(envelope)).timeout(const Duration(seconds: 10));
+    } finally {
+      if (_client == null) client.close();
+    }
     if (response.statusCode != 200) {
       throw const FormatException('Finans erişimi veya bağlantı doğrulanamadı.');
     }
