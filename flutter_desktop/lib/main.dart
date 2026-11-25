@@ -2949,8 +2949,8 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                             context: context,
                             builder: (ctx) => AlertDialog(
                               title: const Text('Finans erişimi oluşturulsun mu?'),
-                              content: const Text('Bu anahtar gider kayıtlarını '
-                                'okuma ve değiştirme yetkisi verir. Eski '
+                              content: const Text('Bu anahtar giderleri değiştirme, maaşları ve '
+                                'finans raporlarını okuma yetkisi verir. Eski '
                                 'anahtarlar geçersiz olur. Yalnızca yöneticiye verin.'),
                               actions: [
                                 TextButton(onPressed: () => Navigator.pop(ctx, false),
