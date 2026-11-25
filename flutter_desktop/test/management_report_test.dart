@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nohut_core/report_period.dart';
 import 'package:nohut_falafel_desktop/finance_pdf.dart';
@@ -87,6 +88,19 @@ void main() {
       expect(bytes, isA<Uint8List>());
       expect(String.fromCharCodes(bytes.take(5)), '%PDF-');
       expect(bytes.length, greaterThan(5000));
+      expect(RegExp(r'/Type\s*/Page\b').allMatches(latin1.decode(bytes)).length, 4);
     }
+  });
+
+  test('large datasets and annual period remain exactly four dashboard pages', () async {
+    final state = fixture();
+    state['orders'] = [
+      for (var i = 1; i <= 1600; i++)
+        order(i, i % 5 + 1, [batch(1, 'Personel ' + (i % 16).toString(),
+          '2026-10-04T10:00:00Z', 'Ürün ' + (i % 70).toString())]),
+    ];
+    final bytes = await generateManagementPdf(state,
+      const ReportPeriod('2025-11-01', '2026-10-31'));
+    expect(RegExp(r'/Type\s*/Page\b').allMatches(latin1.decode(bytes)).length, 4);
   });
 }
