@@ -1064,6 +1064,175 @@ class _FinancePanelState extends State<FinancePanel> {
     }
   }
 
+  Future<String?> _pickMaterialDay(String current, BuildContext ctx) async {
+    final today = DateTime.parse(_today());
+    final first = DateTime(2000);
+    final parsed = DateTime.tryParse(current) ?? today;
+    final initial = parsed.isAfter(today) ? today :
+      (parsed.isBefore(first) ? first : parsed);
+    final picked = await showDatePicker(
+      context: ctx, initialDate: initial, firstDate: first, lastDate: today,
+      helpText: 'Alış Tarihi Seçin',
+    );
+    return picked?.toIso8601String().substring(0, 10);
+  }
+
+  Future<void> _quickMaterialForm([Json? existing]) async {
+    final pickedStore = existing == null
+      ? await _chooseMaterialMarket() : materialPurchaseStore(existing);
+    if (pickedStore == null || !mounted) return;
+    var store = pickedStore;
+    var selectedDay = (existing?['date'] ?? day).toString();
+    if (selectedDay.compareTo(_today()) > 0) selectedDay = _today();
+    var method = (existing?['paymentMethod'] ?? 'Nakit').toString();
+    final market = TextEditingController(
+      text: store == 'Diğer' ? (existing?['market'] ?? '').toString() : '');
+    final note = TextEditingController(text: (existing?['note'] ?? '').toString());
+    final amounts = <TextEditingController>[
+      if (existing?['amountsCents'] is List)
+        for (final value in existing!['amountsCents'] as List)
+          if (value is int) TextEditingController(text: _tl(value)),
+    ];
+    if (amounts.isEmpty) amounts.add(TextEditingController());
+    final removed = <TextEditingController>[];
+    String? error;
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(builder: (context, redraw) {
+        int? total;
+        try {
+          total = quickMaterialTotalCents(
+            amounts.map((c) => _price(c.text)).toList());
+        } on FormatException {
+          // Incomplete input is not a zero-value expense.
+        }
+        return AlertDialog(
+          title: Text(existing == null ?
+            'Hızlı Günlük Gider Ekle' : 'Hızlı Gider Düzenle'),
+          content: SizedBox(width: 490, child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('Ürün ve miktar girmeden, aynı marketteki '
+                  'alış tutarlarını kaydedin. Fişteki net tutarları girin.',
+                  style: TextStyle(color: NohutBrand.muted)),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  key: const ValueKey('finance-quick-date'),
+                  onPressed: () async {
+                    final value = await _pickMaterialDay(selectedDay, context);
+                    if (value != null && context.mounted) {
+                      redraw(() => selectedDay = value);
+                    }
+                  },
+                  icon: const Icon(Icons.calendar_today_outlined),
+                  label: Text('Alış tarihi: $selectedDay'),
+                ),
+                const SizedBox(height: 10),
+                Wrap(spacing: 6, runSpacing: 6, children: [
+                  for (final name in materialStores)
+                    ChoiceChip(
+                      label: Text(name), selected: name == store,
+                      selectedColor: _marketAccent(name).withValues(alpha: 0.15),
+                      labelStyle: TextStyle(color: _marketAccent(name),
+                        fontWeight: FontWeight.w700),
+                      onSelected: (_) => redraw(() => store = name),
+                    ),
+                ]),
+                if (store == 'Diğer') ...[
+                  const SizedBox(height: 10),
+                  TextField(controller: market,
+                    decoration: const InputDecoration(
+                      labelText: 'Market / tedarikçi adı (isteğe bağlı)')),
+                ],
+                const SizedBox(height: 12),
+                for (var i = 0; i < amounts.length; i++)
+                  Padding(
+                    key: ObjectKey(amounts[i]),
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Row(children: [
+                      Expanded(child: TextField(
+                        key: ValueKey('finance-quick-amount-$i'),
+                        controller: amounts[i],
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true),
+                        decoration: InputDecoration(
+                          labelText: 'Tutar ' + (i + 1).toString() + ' (₺)'),
+                        onChanged: (_) => redraw(() => error = null),
+                      )),
+                      IconButton(
+                        tooltip: 'Tutarı kaldır',
+                        onPressed: amounts.length == 1 ? null : () =>
+                          redraw(() => removed.add(amounts.removeAt(i))),
+                        icon: const Icon(Icons.remove_circle_outline)),
+                    ]),
+                  ),
+                OutlinedButton.icon(
+                  key: const ValueKey('finance-quick-add-amount'),
+                  onPressed: amounts.length >= 100 ? null : () =>
+                    redraw(() => amounts.add(TextEditingController())),
+                  icon: const Icon(Icons.add),
+                  label: const Text('Tutar Ekle'),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  initialValue: method, isExpanded: true,
+                  decoration: const InputDecoration(labelText: 'Ödeme'),
+                  items: [
+                    for (final item in financeMethods)
+                      DropdownMenuItem(value: item, child: Text(item)),
+                  ],
+                  onChanged: (value) => redraw(() => method = value ?? method),
+                ),
+                const SizedBox(height: 10),
+                TextField(controller: note,
+                  decoration: const InputDecoration(labelText: 'Not (isteğe bağlı)')),
+                const SizedBox(height: 12),
+                Text('Toplam: ' + (total == null ? '—' : formatTry(total)),
+                  key: const ValueKey('finance-quick-total'),
+                  style: const TextStyle(fontSize: 20,
+                    fontWeight: FontWeight.w800, color: NohutBrand.green)),
+                if (error != null)
+                  Text(error!, style: const TextStyle(color: Colors.red)),
+              ],
+            ),
+          )),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Vazgeç')),
+            FilledButton(
+              key: const ValueKey('finance-quick-save'),
+              onPressed: () {
+                try {
+                  final values = amounts.map((c) => _price(c.text)).toList();
+                  quickMaterialTotalCents(values);
+                  final ok = widget.edit((db) => saveQuickMaterialPurchase(
+                    db, id: existing?['id'] as int?, date: selectedDay,
+                    storeBrand: store, amountsCents: values,
+                    market: market.text, paymentMethod: method, note: note.text));
+                  if (ok) Navigator.pop(ctx, true);
+                } on FormatException catch (e) {
+                  redraw(() => error = e.message);
+                }
+              },
+              child: const Text('Kaydet')),
+          ],
+        );
+      }),
+    );
+    if (saved == true && mounted) {
+      setState(() {
+        day = selectedDay;
+        month = selectedDay.substring(0, 7);
+      });
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+    for (final c in [...amounts, ...removed, market, note]) {
+      c.dispose();
+    }
+  }
+
   Future<void> _voidMaterial(Json item) async {
     final answer = await askFields(context, 'Malzeme İptal',
       [('İptal nedeni', '')], validate: (v) =>
@@ -1082,12 +1251,20 @@ class _FinancePanelState extends State<FinancePanel> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _heading('Günlük Malzeme Alımı',
-          action: FilledButton.icon(
+        _heading('Günlük Malzeme Alımı'),
+        Wrap(spacing: 8, runSpacing: 8, children: [
+          FilledButton.icon(
             key: const ValueKey('finance-new-material'),
             onPressed: () => _materialForm(),
             icon: const Icon(Icons.add),
-            label: const Text('Malzeme Ekle'))),
+            label: const Text('Malzeme Ekle')),
+          OutlinedButton.icon(
+            key: const ValueKey('finance-new-quick-material'),
+            onPressed: () => _quickMaterialForm(),
+            icon: const Icon(Icons.bolt_outlined),
+            label: const Text('Hızlı Günlük Gider')),
+        ]),
+        const SizedBox(height: 8),
         _notice('Market Fiyat Takibi fiyatları referanstır. '
           'Gerçek satın alma tutarı ve miktarı kaydedilir; '
           'takip edilen fiyatlar değişmez.'),
@@ -1097,7 +1274,18 @@ class _FinancePanelState extends State<FinancePanel> {
             IconButton(
               tooltip: 'Önceki gün', onPressed: () => _shiftDay(-1),
               icon: const Icon(Icons.chevron_left)),
-            Text(day, style: const TextStyle(fontWeight: FontWeight.w700)),
+            TextButton.icon(
+              key: const ValueKey('finance-material-day-picker'),
+              icon: const Icon(Icons.calendar_today_outlined, size: 16),
+              label: Text(day),
+              onPressed: () async {
+                final picked = await _pickMaterialDay(day, context);
+                if (picked != null && mounted) setState(() {
+                  day = picked;
+                  month = picked.substring(0, 7);
+                });
+              },
+            ),
             IconButton(
               tooltip: 'Sonraki gün', onPressed: () => _shiftDay(1),
               icon: const Icon(Icons.chevron_right)),
@@ -1116,13 +1304,16 @@ class _FinancePanelState extends State<FinancePanel> {
             title: Text((p['title'] ?? '').toString() +
               (p['voided'] == true ? ' · İPTAL' : '')),
             subtitle: Text(
-              _quantity(p['quantityMilli'] as int) + ' ' +
+              (isQuickMaterial(p)
+                ? (p['amountsCents'] as List).whereType<int>()
+                    .map(formatTry).join(' + ') + ' · Hızlı kayıt'
+                : _quantity(p['quantityMilli'] as int) + ' ' +
               p['unit'].toString() + ' × ' +
               formatTry(p['pricePerUnitCents'] as int) +
               ((p['discountCents'] ?? 0) is int &&
                 (p['discountCents'] ?? 0) > 0
                 ? ' · İndirim: −' +
-                    formatTry(p['discountCents'] as int) : '') +
+                    formatTry(p['discountCents'] as int) : '')) +
               (p['market'] == '' ? '' : '\n' + p['market'].toString()) +
               '\n' + (p['paymentMethod'] ?? '').toString()),
             isThreeLine: true,
@@ -1136,7 +1327,9 @@ class _FinancePanelState extends State<FinancePanel> {
                   PopupMenuButton<String>(
                     tooltip: 'Malzeme işlemleri',
                     onSelected: (action) =>
-                      action == 'edit' ? _materialForm(p) : _voidMaterial(p),
+                      action == 'edit'
+                        ? (isQuickMaterial(p) ? _quickMaterialForm(p) : _materialForm(p))
+                        : _voidMaterial(p),
                     itemBuilder: (context) => const [
                       PopupMenuItem(value: 'edit', child: Text('Düzenle')),
                       PopupMenuItem(value: 'void', child: Text('İptal Et')),
