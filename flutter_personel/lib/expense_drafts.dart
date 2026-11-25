@@ -136,29 +136,83 @@ class ExpenseDraftStore extends ChangeNotifier {
     return Map<String, dynamic>.from(jsonDecode(raw) as Map);
   }
 
-  Future<Map<String, dynamic>> managerRequest(Map<String, dynamic> payload) =>
+  String get managerQueueKey => 'finance_manager_queue_v1_$serverId';
+
+  Future<List<Map<String, dynamic>>> managerQueue() async {
+    final raw = await storage.read(key: managerQueueKey);
+    if (raw == null) return [];
+    return (jsonDecode(raw) as List).map((r) =>
+      Map<String, dynamic>.from(r as Map)).toList();
+  }
+
+  Future<void> _saveManagerQueue(List<Map<String, dynamic>> queue) async {
+    await storage.write(key: managerQueueKey, value: jsonEncode(queue));
+    notifyListeners();
+  }
+
+  Future<void> enqueueManager(String action, Map<String, dynamic> data) =>
     exclusive(() async {
-      final secret = await storage.read(key: accessKey);
-      final uri = Uri.tryParse(host ?? '');
-      if (secret == null || uri == null || !_local(uri)) {
-        throw const FormatException('Windows bağlantısı ve yönetici finans anahtarı gerekli.');
-      }
-      final response = await _send(secret,
-        uri.replace(path: '/api/finance/v1', query: ''), payload);
-      if (response['ok'] != true) {
-        throw FormatException((response['message'] ?? 'Finans isteği başarısız.').toString());
-      }
-      return response;
+      if (!await configured()) throw const FormatException('Finans anahtarı gerekli.');
+      final queue = await managerQueue();
+      queue.add({
+        'status': 'pending',
+        'payload': {'operation': 'managerWrite', 'requestId': FinanceWire.randomId(),
+          'action': action, 'data': data},
+      });
+      await _saveManagerQueue(queue);
     });
 
-  Future<Map<String, dynamic>> fetchMonth(String month) async {
-    final response = await managerRequest({'operation': 'monthView', 'month': month});
+  Future<void> discardManagerConflict(String id) => exclusive(() async {
+    final queue = await managerQueue();
+    await _saveManagerQueue(queue.where((e) =>
+      !(e['status'] == 'conflict' && (e['payload'] as Map)['requestId'] == id)).toList());
+  });
+
+  Future<void> _flushManager(String secret, Uri endpoint) async {
+    final queue = await managerQueue();
+    // Stop on a transport failure; the original durable payload stays intact.
+    for (var i = 0; i < queue.length;) {
+      final item = queue[i];
+      if (item['status'] != 'pending') { i++; continue; }
+      final response = await _send(secret, endpoint,
+        Map<String, dynamic>.from(item['payload'] as Map));
+      if (response['ok'] == true) {
+        queue.removeAt(i);
+      } else if (['conflict', 'invalid'].contains(response['error'])) {
+        queue[i] = {...item, 'status': 'conflict', 'message': response['message']};
+        i++;
+      } else {
+        throw const FormatException('Yönetici işlemi onaylanmadı.');
+      }
+      await _saveManagerQueue(queue);
+    }
+  }
+
+  Future<Map<String, dynamic>> _managerRequest(Map<String, dynamic> payload) async {
+    final secret = await storage.read(key: accessKey);
+    final uri = Uri.tryParse(host ?? '');
+    if (secret == null || uri == null || !_local(uri)) {
+      throw const FormatException('Windows bağlantısı ve yönetici finans anahtarı gerekli.');
+    }
+    final response = await _send(secret,
+      uri.replace(path: '/api/finance/v1', query: ''), payload);
+    if (response['ok'] != true) {
+      throw FormatException((response['message'] ?? 'Finans isteği başarısız.').toString());
+    }
+    return response;
+  }
+
+  Future<Map<String, dynamic>> managerRequest(Map<String, dynamic> payload) =>
+    exclusive(() => _managerRequest(payload));
+
+  Future<Map<String, dynamic>> fetchMonth(String month) => exclusive(() async {
+    final response = await _managerRequest({'operation': 'monthView', 'month': month});
     final view = Map<String, dynamic>.from(response['view'] as Map);
     view['snapshotAt'] = response['updatedAt'];
     view['revision'] = response['revision'];
     await storage.write(key: reportCacheKey + '_' + month, value: jsonEncode(view));
     return view;
-  }
+  });
 
   bool _local(Uri uri) {
     final b = InternetAddress.tryParse(uri.host)?.rawAddress;
@@ -203,6 +257,7 @@ class ExpenseDraftStore extends ChangeNotifier {
           }
           await write(entries);
         }
+        await _flushManager(secret, endpoint);
         // Full paginated quick-expense view. Keep unsent edits intact.
         final remote = <Map<String, dynamic>>[];
         var cursor = 0;
