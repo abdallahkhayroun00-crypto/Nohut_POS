@@ -20,7 +20,7 @@ class PosLanServer extends ChangeNotifier {
     : _staffHtml = staffHtml;
   final PosStore store;
   late final MobilePairing pairing = MobilePairing(store);
-  late final FinanceSyncServer financeSync = FinanceSyncServer(store);
+  late final FinanceSyncServer financeSync = FinanceSyncServer(store, staffProjection: _staffState);
   HttpServer? _server;
   RawDatagramSocket? _discovery;
   String? error;
