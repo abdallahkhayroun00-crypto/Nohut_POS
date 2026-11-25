@@ -10,9 +10,11 @@ class StaffHome extends StatefulWidget {
     super.key,
     required this.controller,
     required this.onUnpair,
+    this.ownerMode = false,
   });
   final PersonelController controller;
   final VoidCallback onUnpair;
+  final bool ownerMode;
 
   @override
   State<StaffHome> createState() => _StaffHomeState();
@@ -624,7 +626,7 @@ class _StaffHomeState extends State<StaffHome> {
         final height = MediaQuery.sizeOf(context).height;
         final wide = width >= 720 && height >= 600;
         final contentWidth = wide ? width - 96 : width;
-        final hasDrafts = c.api.serverId != null;
+        final hasDrafts = !widget.ownerMode && c.api.serverId != null;
         final selected = c.employees.any((e) => e['id'] == selectedStaff)
             ? selectedStaff : null;
         final destinations = <NavigationDestination>[
@@ -638,8 +640,9 @@ class _StaffHomeState extends State<StaffHome> {
             label: 'Sepet'),
           const NavigationDestination(icon: Icon(Icons.receipt_long_outlined),
             label: 'Siparişler'),
-          const NavigationDestination(icon: Icon(Icons.settings_outlined),
-            label: 'Bağlantı'),
+          if (!widget.ownerMode)
+            const NavigationDestination(icon: Icon(Icons.settings_outlined),
+              label: 'Bağlantı'),
           if (hasDrafts)
             const NavigationDestination(icon: Icon(Icons.account_balance_wallet_outlined),
               label: 'Gider'),
@@ -660,7 +663,10 @@ class _StaffHomeState extends State<StaffHome> {
             title: NohutBrandHeader(
               subtitle: c.online ? '● Laptop bağlı' : '● Bağlantı bekleniyor'),
             actions: [
-              if (selected != null || c.employees.isNotEmpty)
+              if (widget.ownerMode)
+                const Padding(padding: EdgeInsets.symmetric(horizontal: 6),
+                  child: Center(child: Text('Ömer Yılmaz', overflow: TextOverflow.ellipsis)))
+              else if (selected != null || c.employees.isNotEmpty)
                 SizedBox(width: wide ? 170 : width < 360 ? 88 : 110,
                   child: DropdownButton<int>(
                     isExpanded: true,
