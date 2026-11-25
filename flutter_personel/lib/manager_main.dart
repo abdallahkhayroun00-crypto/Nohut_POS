@@ -35,6 +35,7 @@ class _NohutOwnerAppState extends State<NohutOwnerApp> with WidgetsBindingObserv
   }
   Future<void> _start() async {
     try { await controller.start(); }
+    catch (_) { /* Pairing screen remains available. */ }
     finally { if(mounted) setState(()=>ready=true); }
   }
   @override
@@ -266,7 +267,7 @@ class _OwnerHomeState extends State<OwnerHome> {
     switch(section){
       case 'dashboard':return [
         title('Günlük'),
-        line('Toplam yerel tahsilat','Nakit + kart',amount((data?['cashCents'] as int? ??0)+(data?['cardCents'] as int? ??0))),
+        line('Toplam yerel tahsilat','Nakit + kart',data==null?'—':amount((data?['cashCents'] as int? ??0)+(data?['cardCents'] as int? ??0))),
         line('Nakit','Net tahsilat',amount(data?['cashCents'])),
         line('Kart','Net tahsilat',amount(data?['cardCents'])),
         line('Sipariş','Kayıtlı sipariş',data?['orderCount']?.toString()),
@@ -314,7 +315,7 @@ class _OwnerHomeState extends State<OwnerHome> {
           builder:(_)=>Scaffold(appBar:AppBar(title:const Text('Finans')),body:ManagerFinancePage(store:finance)))),
           icon:const Icon(Icons.account_balance_wallet),label:const Text('Finans · Maaşlar · Giderler')),
         OutlinedButton.icon(onPressed:()=>Navigator.of(context).push(MaterialPageRoute<void>(
-          builder:(_)=>Scaffold(appBar:AppBar(title:const Text('Hızlı Günlük Gider')),body:ExpenseDraftPage(store:finance)))),
+          builder:(_)=>Scaffold(appBar:AppBar(title:const Text('Hızlı Günlük Gider')),body:ExpenseDraftPage(store:finance,ownerMode:true)))),
           icon:const Icon(Icons.add),label:const Text('Hızlı Günlük Gider')),
       ];
       case 'market-prices':return [
