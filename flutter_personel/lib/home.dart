@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'expense_drafts.dart';
 import 'models.dart';
 import 'pos_api.dart';
 import 'style.dart';
@@ -244,7 +245,8 @@ class _StaffHomeState extends State<StaffHome> {
   }
 
   Widget _tablePage(double width) {
-    final cols = width >= 1100 ? 5 : width >= 680 ? 3 : 2;
+    final cols = width >= 1100 ? 5 : width >= 800 ? 4 :
+        width >= 560 ? 3 : width >= 290 ? 2 : 1;
     return ListView(padding: const EdgeInsets.all(16), children: [
       _heading('Masa Planı', 'Masayı seçerek sipariş oluşturun'),
       const SizedBox(height: 16),
@@ -254,7 +256,7 @@ class _StaffHomeState extends State<StaffHome> {
         physics: const NeverScrollableScrollPhysics(),
         mainAxisSpacing: 11,
         crossAxisSpacing: 11,
-        childAspectRatio: width < 420 ? 1.12 : 1.45,
+        mainAxisExtent: 136,
         children: [
           for (var n = 1; n <= 5; n++)
             Builder(builder: (context) {
@@ -310,9 +312,9 @@ class _StaffHomeState extends State<StaffHome> {
       for (final p in c.products)
         '${p['category'] ?? p['group'] ?? 'Diğer'}',
     }.toList();
-    final columns = width >= 1100 ? 4 : width >= 700 ? 3 :
-        width >= 470 ? 2 : 1;
-    return Column(children: [
+    final columns = width >= 1100 ? 4 : width >= 750 ? 3 :
+        width >= 480 ? 2 : 1;
+    return ListView(children: [
       Padding(
         padding: const EdgeInsets.fromLTRB(14, 12, 14, 3),
         child: Column(children: [
@@ -340,9 +342,12 @@ class _StaffHomeState extends State<StaffHome> {
           )),
         ]),
       ),
-      Expanded(child: items.isEmpty
-          ? const Center(child: Text('Ürün bulunamadı.'))
-          : GridView.builder(
+      if (items.isEmpty)
+        const Padding(padding: EdgeInsets.all(16),
+          child: Center(child: Text('Ürün bulunamadı.')))
+      else GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
               padding: const EdgeInsets.all(13),
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: columns,
@@ -381,7 +386,7 @@ class _StaffHomeState extends State<StaffHome> {
                   ),
                 );
               },
-            )),
+            ),
     ]);
   }
 
@@ -615,7 +620,10 @@ class _StaffHomeState extends State<StaffHome> {
       animation: c,
       builder: (context, _) {
         final width = MediaQuery.sizeOf(context).width;
-        final wide = width >= 760;
+        final height = MediaQuery.sizeOf(context).height;
+        final wide = width >= 720 && height >= 500;
+        final contentWidth = wide ? width - 96 : width;
+        final hasDrafts = c.api.serverId != null;
         final selected = c.employees.any((e) => e['id'] == selectedStaff)
             ? selectedStaff : null;
         final destinations = <NavigationDestination>[
@@ -631,22 +639,28 @@ class _StaffHomeState extends State<StaffHome> {
             label: 'Siparişler'),
           const NavigationDestination(icon: Icon(Icons.settings_outlined),
             label: 'Bağlantı'),
+          if (hasDrafts)
+            const NavigationDestination(icon: Icon(Icons.account_balance_wallet_outlined),
+              label: 'Gider'),
         ];
         final screen = switch (tab) {
-          0 => _tablePage(width),
-          1 => _menuPage(width),
-          2 => _cartPage(width),
-          3 => _ordersPage(width),
+          0 => _tablePage(contentWidth),
+          1 => _menuPage(contentWidth),
+          2 => _cartPage(contentWidth),
+          3 => _ordersPage(contentWidth),
+          5 when hasDrafts => ExpenseDraftPage(
+            key: ValueKey(c.api.serverId),
+            store: ExpenseDraftStore(c.api.serverId!)),
           _ => _settingsPage(),
         };
         return Scaffold(
           appBar: AppBar(
-            toolbarHeight: 75,
+            toolbarHeight: height < 500 ? 56 : 75,
             title: NohutBrandHeader(
               subtitle: c.online ? '● Laptop bağlı' : '● Bağlantı bekleniyor'),
             actions: [
               if (selected != null || c.employees.isNotEmpty)
-                SizedBox(width: wide ? 190 : 120,
+                SizedBox(width: wide ? 170 : width < 360 ? 88 : 110,
                   child: DropdownButton<int>(
                     isExpanded: true,
                     value: selected,
@@ -691,7 +705,7 @@ class _StaffHomeState extends State<StaffHome> {
                 ],
               ),
             Expanded(child: Column(children: [
-              if (!c.online)
+              if (!c.online && tab != 5)
                 MaterialBanner(
                   backgroundColor: const Color(0xffffe9c8),
                   content: const Text('Laptop çevrimdışı · Sepet korunuyor'),
@@ -702,8 +716,10 @@ class _StaffHomeState extends State<StaffHome> {
             ])),
           ]),
           bottomNavigationBar: wide ? null : NavigationBar(
-            height: width < 380 ? 65 : 72,
-            labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+            height: height < 500 ? 56 : width < 380 ? 65 : 72,
+            labelBehavior: width < 420 || hasDrafts
+              ? NavigationDestinationLabelBehavior.onlyShowSelected
+              : NavigationDestinationLabelBehavior.alwaysShow,
             selectedIndex: tab,
             onDestinationSelected: (n) => setState(() => tab = n),
             destinations: destinations,
