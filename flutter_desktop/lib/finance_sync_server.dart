@@ -16,17 +16,30 @@ class FinanceSyncServer {
   final PosStore store;
   final WindowsVault vault;
   int _generation = 0;
+  bool _changing = false;
 
   Future<String> rotateKey() async {
+    if (_changing) throw StateError('Finans anahtarı değişiyor.');
+    _changing = true;
     _generation++;
-    final key = FinanceWire.createKey();
-    await vault.save({'key': key});
-    return key;
+    try {
+      final key = FinanceWire.createKey();
+      await vault.save({'key': key});
+      return key;
+    } finally {
+      _changing = false;
+    }
   }
 
   Future<void> revoke() async {
+    if (_changing) throw StateError('Finans anahtarı değişiyor.');
+    _changing = true;
     _generation++;
-    await vault.clear();
+    try {
+      await vault.clear();
+    } finally {
+      _changing = false;
+    }
   }
 
   static Json project(Json p) => {
@@ -90,11 +103,12 @@ class FinanceSyncServer {
   }
 
   Future<Json> handle(Json envelope, String serverId) async {
+    if (_changing) throw const FormatException('Finans erişimi değişiyor.');
     final generation = _generation;
     final key = (await vault.load())?['key'];
     if (key is! String) throw const FormatException('Finans erişimi kapalı.');
     final payload = await FinanceWire.open(key, serverId, 'request', envelope);
-    if (generation != _generation) throw const FormatException('Finans erişimi değişti.');
+    if (_changing || generation != _generation) throw const FormatException('Finans erişimi değişti.');
     Json result;
     try {
       if (payload['operation'] == 'pull') {
