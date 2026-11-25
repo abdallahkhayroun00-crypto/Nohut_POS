@@ -621,7 +621,7 @@ class _StaffHomeState extends State<StaffHome> {
       builder: (context, _) {
         final width = MediaQuery.sizeOf(context).width;
         final height = MediaQuery.sizeOf(context).height;
-        final wide = width >= 720 && height >= 500;
+        final wide = width >= 720 && height >= 600;
         final contentWidth = wide ? width - 96 : width;
         final hasDrafts = c.api.serverId != null;
         final selected = c.employees.any((e) => e['id'] == selectedStaff)
@@ -695,7 +695,7 @@ class _StaffHomeState extends State<StaffHome> {
                 backgroundColor: NohutStyle.card,
                 selectedIndex: tab,
                 onDestinationSelected: (n) => setState(() => tab = n),
-                labelType: NavigationRailLabelType.all,
+                labelType: height < 760 ? NavigationRailLabelType.selected : NavigationRailLabelType.all,
                 destinations: [
                   for (final d in destinations)
                     NavigationRailDestination(
@@ -717,7 +717,7 @@ class _StaffHomeState extends State<StaffHome> {
           ]),
           bottomNavigationBar: wide ? null : NavigationBar(
             height: height < 500 ? 56 : width < 380 ? 65 : 72,
-            labelBehavior: width < 420 || hasDrafts
+            labelBehavior: (width < 360 || (hasDrafts && width < 600))
               ? NavigationDestinationLabelBehavior.onlyShowSelected
               : NavigationDestinationLabelBehavior.alwaysShow,
             selectedIndex: tab,
