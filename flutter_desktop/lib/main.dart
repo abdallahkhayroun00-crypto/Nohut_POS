@@ -2936,6 +2936,69 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                         icon: const Icon(Icons.refresh, size: 18),
                         label: const Text('Yeni PIN Oluştur'),
                       ),
+                      const Divider(height: 22),
+                      const Text('Android Finans Erişimi',
+                        style: TextStyle(fontWeight: FontWeight.w800)),
+                      const Text('Yalnızca güvenilen yönetici cihazına verin. '
+                        'Yeni anahtar eski finans anahtarını iptal eder.'),
+                      TextButton.icon(
+                        icon: const Icon(Icons.vpn_key_outlined),
+                        label: const Text('Finans Anahtarı Oluştur'),
+                        onPressed: () async {
+                          final confirmed = await showDialog<bool>(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              title: const Text('Finans erişimi oluşturulsun mu?'),
+                              content: const Text('Bu anahtar gider kayıtlarını '
+                                'okuma ve değiştirme yetkisi verir. Eski '
+                                'anahtarlar geçersiz olur. Yalnızca yöneticiye verin.'),
+                              actions: [
+                                TextButton(onPressed: () => Navigator.pop(ctx, false),
+                                  child: const Text('Vazgeç')),
+                                FilledButton(onPressed: () => Navigator.pop(ctx, true),
+                                  child: const Text('Oluştur')),
+                              ],
+                            ),
+                          );
+                          if (confirmed != true || !context.mounted) return;
+                          try {
+                            final key = await lan.financeSync.rotateKey();
+                            if (!context.mounted) return;
+                            await showDialog<void>(context: context,
+                              builder: (ctx) => AlertDialog(
+                                title: const Text('Android Finans Anahtarı'),
+                                content: SelectableText(key),
+                                actions: [
+                                  TextButton(onPressed: () => Navigator.pop(ctx),
+                                    child: const Text('Kapat')),
+                                ],
+                              ));
+                          } catch (_) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Finans anahtarı kaydedilemedi.')));
+                            }
+                          }
+                        },
+                      ),
+                      TextButton.icon(
+                        icon: const Icon(Icons.lock_outline),
+                        label: const Text('Finans Erişimini Kapat'),
+                        onPressed: () async {
+                          try {
+                            await lan.financeSync.revoke();
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Finans erişimi kapatıldı.')));
+                            }
+                          } catch (_) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Finans erişimi kapatılamadı.')));
+                            }
+                          }
+                        },
+                      ),
                       if (lan.pairing.devices.isNotEmpty) ...[
                         const Divider(height: 22),
                         const Text('Eşleştirilmiş Android cihazlar',
