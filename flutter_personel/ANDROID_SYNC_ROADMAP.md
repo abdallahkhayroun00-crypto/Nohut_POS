@@ -1,14 +1,16 @@
-# Android / Windows unification — phase 1
+# Android / Windows unification — development status
 
-This is a stacked development branch on the Finans PR, not a production release.
+Stacked development PR on Finans PR #21. Not yet a verified production release.
 
-## Implemented
-- Common pure Dart package nohut_core used by both Flutter apps for market identity, payment choices, exact kuruş parsing and quick-expense arithmetic.
-- Existing native Android client retains live restaurant LAN ordering and existing pairing. Responsive content widths, compact headers, scrollable product layouts, portrait/landscape navigation and tests at eight logical viewport sizes.
-- Previously paired Android devices can create, edit and delete quick-expense **local drafts**, with historical dates and multiple amounts; stored in Android secure storage keyed by paired server identity. These are not Windows financial records. The UI explicitly says not sent.
-- Android and Windows workflows both watch the common package.
+## Implemented in source
+- Common Dart package for exact kuruş parsing, market choices and expense totals.
+- Android phone/tablet/landscape responsive layouts and eight viewport tests. Previous compact grid overflow was addressed.
+- Quick expense create, edit, historical date selection and cancellation. Durable restaurant-scoped local outbox using Android secure storage. A queued operation is persisted before sending, and its immutable request ID is reused after a lost acknowledgement. Acknowledged records are cached locally; full quick-expense pages are pulled from Windows, including cancellation markers.
+- Sync is attempted on successful staff LAN refresh (app open/resumed) and via manual button. Windows SQLite is authoritative. Server uses existing transactional command receipts, validates the same desktop finance rules, and rejects stale edits instead of overwriting them. Conflicts are retained until explicit discard/reload.
+- The finance key is separate from ordinary staff PIN/bearer access. From Windows local Android pairing panel, generate a 256-bit key, transfer it physically to the trusted Android device, and enter it under Gider → Finans Anahtarı. Finance messages use AES-256-GCM with restaurant-bound request/response authentication. Windows stores the key in DPAPI vault; Android in secure storage. Rotation/revocation affects all devices sharing this key. No plaintext finance snapshot is exposed by the existing staff endpoints.
+- Unit tests for cryptographic authentication, authoritative idempotency, stale edits, cancellation and lost-acknowledgement retry after restart.
 
-## Security and synchronization gates — not implemented here
-The existing staff bearer token is transported via HTTP and is not manager authorization. Do not expose finance, wage, customer history, full state snapshots, or new finance writes on staff endpoints. Implement manager-approved role enrollment with authenticated encrypted transport (certificate pinning / trusted enrollment), revocation and least privilege before transmitting private financial records. Keep restaurant identity binding across DHCP changes.
-
-Next: durable transactional outbox and local finance cache, server-validated mutation commands with stable IDs and stored idempotency receipts, entity-level version checks, explicit conflict resolution, pull updates by cursor, delete tombstones, and acknowledgement only after the authoritative transaction commits. Preserve unsent drafts across app restarts and never silently erase or auto-duplicate them. Use Windows as authoritative store. Live orders, payments and receipt printing remain online/Windows-authoritative. Add manager finance UI and shared PDF/report functionality incrementally, then test offline/reconnect, duplicate retries, concurrent edits, restored backups, authorization and real devices. Do not merge as a completed offline-sync solution.
+## Still required before full release
+- CI and physical phone/tablet + Windows LAN testing, including cold start, reconnection, app termination, Windows DB restore, key rotation and persistence failure. Existing staff transport remains HTTP, and the Windows local admin panel lacks strong login. Treat as a trusted-device development feature; individual device manager grants/revocation and full access-control audit are still required.
+- This is quick expenses only, not full database replication. No wage, other finance categories, private customer history, platform credentials, or complete SQLite snapshots are transferred. Existing financial PDFs are Windows-only. Complete shared finance UI, other validated command types, manager report cache, combined/custom-period PDFs and secure storage lifecycle still need work.
+- No background guarantee when Android OS stops the app. No cloud. Do not expose the Windows LAN server to the public internet. Keep Windows as authoritative; never silently replace whole databases or count unacknowledged drafts as settled expenses.
