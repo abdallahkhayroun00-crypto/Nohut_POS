@@ -270,8 +270,9 @@ class _StaffHomeState extends State<StaffHome> {
                   onTap: () => _chooseTable(n),
                   child: Padding(
                     padding: const EdgeInsets.all(8),
-                    child: Column(mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
+                    child: FittedBox(fit: BoxFit.scaleDown,
+                      child: Column(mainAxisSize: MainAxisSize.min,
+                        children: [
                         const Icon(Icons.table_restaurant_outlined, size: 29),
                         Text('Masa $n', style: const TextStyle(
                           fontSize: 22, fontWeight: FontWeight.w800)),
@@ -279,7 +280,7 @@ class _StaffHomeState extends State<StaffHome> {
                             : 'Dolu · ${money(orderTotal(o))}',
                           textAlign: TextAlign.center,
                           style: const TextStyle(fontSize: 12)),
-                      ]),
+                      ])),
                   ),
                 ),
               );
