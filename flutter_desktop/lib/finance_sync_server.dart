@@ -5,6 +5,7 @@ import 'package:nohut_core/finance_wire.dart';
 import 'package:nohut_core/report_period.dart';
 
 import 'finance_logic.dart';
+import 'google_business.dart';
 import 'staff_commands.dart';
 import 'campaign_menu.dart';
 import 'operations.dart';
@@ -20,11 +21,12 @@ import 'windows_vault.dart';
 /// Independent, physically enrolled financial capability. Never grant it to
 /// an ordinary staff bearer token. The key is held in the Windows DPAPI vault.
 class FinanceSyncServer {
-  FinanceSyncServer(this.store, {this.staffProjection}) :
+  FinanceSyncServer(this.store, {this.staffProjection, this.googleProvider}) :
     vault = WindowsVault(File(store.filePath + '.finance-sync.dpapi'));
 
   final PosStore store;
   final Json Function(Json)? staffProjection;
+  final GoogleBusiness Function()? googleProvider;
 
   static Json owner(Json state) {
     final matches = asMaps(state['employees']).where((e) => e['active'] == true &&
@@ -363,6 +365,11 @@ class FinanceSyncServer {
         for(final p in trackedMarketProducts(state))
           {for(final k in ['title','market','unit','priceCents','lastCheckedAt']) k:p[k]},
       ],
+      'reviews': [
+        if (state['tgoReviewCache'] is Map)
+          for(final r in asMaps((state['tgoReviewCache'] as Map)['reviews']).take(100))
+            {for(final k in ['reviewId','rating','score','createdAt','comment']) k:r[k]},
+      ],
       'employees':[
         for(final p in asMaps(state['employees']))
           {for(final k in ['id','name','role','active']) k:p[k]},
@@ -400,6 +407,29 @@ class FinanceSyncServer {
           result = {'ok':true,'ownerId':employee['id'],'ownerName':managementOwnerName};
         } else if (op == 'ownerOverview') {
           result = {'ok':true,'view':ownerOverview(store.read().data, (payload['day'] ?? '').toString())};
+        } else if (op == 'ownerGoogle') {
+          final google = googleProvider?.call();
+          if (google == null || !google.connected) {
+            result = {'ok':true,'connected':false};
+          } else {
+            final profile = await google.profile();
+            final reviews = await google.reviews(pageToken: payload['pageToken'] as String?);
+            result = {'ok':true,'connected':true,
+              'profile':{for(final k in ['title','websiteUri','phoneNumbers','regularHours','openInfo']) k:profile[k]},
+              'averageRating':reviews['averageRating'],'totalReviewCount':reviews['totalReviewCount'],
+              'nextPageToken':reviews['nextPageToken'],
+              'reviews':[for(final r in asMaps(reviews['reviews']))
+                {for(final k in ['reviewId','starRating','comment','createTime','updateTime','reviewReply']) k:r[k]}],
+            };
+          }
+        } else if (op == 'ownerGoogleReply') {
+          final google = googleProvider?.call();
+          if (google == null || !google.connected || payload['confirmed']!=true ||
+              payload['reviewId'] is! String || payload['comment'] is! String) {
+            throw const FormatException('Google bağlantısı ve yanıt onayı gerekli.');
+          }
+          await google.reply(payload['reviewId'] as String,payload['comment'] as String);
+          result = {'ok':true};
         } else if (op == 'ownerBootstrap') {
           final snap = store.read();
           final project = staffProjection;
