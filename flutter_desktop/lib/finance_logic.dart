@@ -242,6 +242,9 @@ void saveMaterialPurchase(
   if (before?['voided'] == true) {
     throw const FormatException('İptal edilen malzeme düzenlenemez.');
   }
+  if (before?['recordType'] == 'quick') {
+    throw const FormatException('Hızlı gideri kendi formundan düzenleyin.');
+  }
   final recorded = <String, dynamic>{
     'id': id ?? _nextId(asMaps(rows)),
     'date': date,
@@ -280,6 +283,87 @@ void saveMaterialPurchase(
     rows[rows.indexOf(before)] = recorded;
   } else {
     rows.add(recorded);
+  }
+}
+
+/// A receipt/market total without item quantities. It shares the material
+/// expense ledger, so summaries count it once and never fabricate stock.
+bool isQuickMaterial(Json entry) => entry['recordType'] == 'quick';
+
+int quickMaterialTotalCents(List<int> amounts) {
+  if (amounts.isEmpty || amounts.length > 100) {
+    throw const FormatException('1 ile 100 arasında tutar girin.');
+  }
+  var total = 0;
+  for (final amount in amounts) {
+    _validateCents(amount);
+    total += amount;
+  }
+  _validateCents(total);
+  return total;
+}
+
+void saveQuickMaterialPurchase(Json state, {
+  int? id,
+  required String date,
+  required String storeBrand,
+  required List<int> amountsCents,
+  String market = '',
+  String paymentMethod = 'Nakit',
+  String note = '',
+}) {
+  _checkDay(date);
+  if (date.compareTo(istanbulDay(DateTime.now().toUtc())) > 0) {
+    throw const FormatException('Alış tarihi gelecekte olamaz.');
+  }
+  if (!materialStores.contains(storeBrand) ||
+      !financeMethods.contains(paymentMethod) ||
+      market.length > 160 || note.length > 500) {
+    throw const FormatException('Market veya gider bilgisi geçersiz.');
+  }
+  final total = quickMaterialTotalCents(amountsCents);
+  final rows = financeBook(state)['materials'] as List;
+  final before = id == null ? null : rows.cast<Map>()
+    .where((r) => r['id'] == id).firstOrNull;
+  if (id != null && (before == null ||
+      before['recordType'] != 'quick' || before['voided'] == true)) {
+    throw const FormatException('Aktif hızlı gider bulunamadı.');
+  }
+  final entry = <String, dynamic>{
+    'id': id ?? _nextId(asMaps(rows)),
+    'recordType': 'quick',
+    'date': date,
+    'title': 'Hızlı Malzeme Gideri',
+    'storeBrand': storeBrand,
+    'market': storeBrand == 'Diğer' && market.trim().isNotEmpty
+      ? market.trim() : storeBrand,
+    'amountsCents': List<int>.of(amountsCents),
+    'subtotalCents': total,
+    'discountCents': 0,
+    'totalCents': total,
+    'paymentMethod': paymentMethod,
+    'note': note.trim(),
+    'createdAt': before?['createdAt'] ?? _stamp(),
+    'updatedAt': _stamp(),
+    'voided': false,
+    'history': [
+      ...asMaps(before?['history']),
+      if (before != null) {
+        'changedAt': _stamp(),
+        'previousDate': before['date'],
+        'previousStoreBrand': before['storeBrand'],
+        'previousMarket': before['market'],
+        'previousAmountsCents': before['amountsCents'],
+        'previousTotalCents': before['totalCents'],
+        'previousPaymentMethod': before['paymentMethod'],
+        'previousNote': before['note'],
+      },
+    ],
+  };
+  if (before == null) {
+    rows.add(entry);
+  } else {
+    rows[rows.indexOf(before)] = entry;
   }
 }
 
