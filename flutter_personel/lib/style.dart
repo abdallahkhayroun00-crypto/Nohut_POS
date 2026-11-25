@@ -52,21 +52,27 @@ class NohutBrandHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(children: [
+    return LayoutBuilder(builder: (context, constraints) {
+      final compact = constraints.maxWidth < 220;
+      final logoSize = compact ? 30.0 : 44.0;
+      return Row(children: [
       ClipRRect(
         borderRadius: BorderRadius.circular(32),
-        child: Image.asset('assets/nohut-logo.webp', width: 51, height: 51),
+        child: Image.asset('assets/nohut-logo.webp', width: logoSize, height: logoSize),
       ),
-      const SizedBox(width: 12),
+      SizedBox(width: compact ? 5 : 10),
       Expanded(child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Nohut Falafel', style: TextStyle(
-              fontSize: 25, fontFamily: 'Bree', color: NohutStyle.green)),
-          if (subtitle != null) Text(subtitle!, style:
-              const TextStyle(fontSize: 13, color: NohutStyle.muted)),
+          Text(compact ? 'Nohut' : 'Nohut Falafel', maxLines: 1,
+            overflow: TextOverflow.ellipsis, style: TextStyle(
+              fontSize: compact ? 17 : 22, fontFamily: 'Bree', color: NohutStyle.green)),
+          if (subtitle != null) Text(subtitle!, maxLines: 1,
+              overflow: TextOverflow.ellipsis, style:
+              TextStyle(fontSize: compact ? 10 : 12, color: NohutStyle.muted)),
         ],
       )),
     ]);
+    });
   }
 }
