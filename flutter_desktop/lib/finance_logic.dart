@@ -1,5 +1,8 @@
 import 'dart:math' as math;
 
+import 'package:nohut_core/nohut_core.dart';
+export 'package:nohut_core/nohut_core.dart' show materialStores, financeMethods, quickMaterialTotalCents;
+
 import 'market_prices.dart';
 
 import 'operations.dart';
@@ -29,7 +32,6 @@ List<Json> financeRows(Json state, String key) {
   return asMaps(book[key]);
 }
 
-const materialStores = <String>['BİM', 'A101', 'Hakmar', 'Diğer'];
 
 String materialStoreFromBrand(String brand) {
   switch (marketBrandKey(brand)) {
@@ -90,7 +92,6 @@ List<Json> marketTrackedForMaterial(
 }
 
 const financeUnits = <String>['kg', 'lt', 'adet', 'paket'];
-const financeMethods = <String>['Nakit', 'Kart', 'Banka', 'Ödenmedi'];
 const financeFixedCategories = <String>[
   'Kira', 'Muhasebe', 'SGK', 'Elektrik / Su / Doğalgaz',
   'İnternet', 'Diğer',
@@ -289,19 +290,6 @@ void saveMaterialPurchase(
 /// A receipt/market total without item quantities. It shares the material
 /// expense ledger, so summaries count it once and never fabricate stock.
 bool isQuickMaterial(Json entry) => entry['recordType'] == 'quick';
-
-int quickMaterialTotalCents(List<int> amounts) {
-  if (amounts.isEmpty || amounts.length > 100) {
-    throw const FormatException('1 ile 100 arasında tutar girin.');
-  }
-  var total = 0;
-  for (final amount in amounts) {
-    _validateCents(amount);
-    total += amount;
-  }
-  _validateCents(total);
-  return total;
-}
 
 void saveQuickMaterialPurchase(Json state, {
   int? id,
