@@ -651,7 +651,7 @@ class _StaffHomeState extends State<StaffHome> {
           3 => _ordersPage(contentWidth),
           5 when hasDrafts => ExpenseDraftPage(
             key: ValueKey(c.api.serverId),
-            store: ExpenseDraftStore(c.api.serverId!)),
+            store: ExpenseDraftStore.forServer(c.api.serverId!)),
           _ => _settingsPage(),
         };
         return Scaffold(
