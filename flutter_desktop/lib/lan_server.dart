@@ -12,6 +12,7 @@ import 'pos_logic.dart';
 import 'campaign_menu.dart';
 import 'pos_store.dart';
 import 'mobile_pairing.dart';
+import 'finance_sync_server.dart';
 
 /// Native Flutter Windows HTTP server for employee phones. No Python process.
 class PosLanServer extends ChangeNotifier {
@@ -19,6 +20,7 @@ class PosLanServer extends ChangeNotifier {
     : _staffHtml = staffHtml;
   final PosStore store;
   late final MobilePairing pairing = MobilePairing(store);
+  late final FinanceSyncServer financeSync = FinanceSyncServer(store);
   HttpServer? _server;
   RawDatagramSocket? _discovery;
   String? error;
@@ -286,6 +288,31 @@ class PosLanServer extends ChangeNotifier {
   Future<void> _handle(HttpRequest request) async {
     final uri = request.uri;
     final resource = uri.path;
+    if (request.method == 'POST' && resource == '/api/finance/v1') {
+      final addr = request.connectionInfo?.remoteAddress.address ?? '';
+      if (!_privateIp(addr) && addr != '127.0.0.1') {
+        _json(request.response, 403, {'error': 'lan_only'});
+        return;
+      }
+      try {
+        final bytes = <int>[];
+        await for (final chunk in request.timeout(const Duration(seconds: 10))) {
+          bytes.addAll(chunk);
+          if (bytes.length > 256 * 1024) {
+            _json(request.response, 413, {'error': 'payload_size'});
+            return;
+          }
+        }
+        final incoming = jsonDecode(utf8.decode(bytes));
+        if (incoming is! Map) throw const FormatException('invalid');
+        final result = await financeSync.handle(
+          Map<String, dynamic>.from(incoming), pairing.serverId);
+        _json(request.response, 200, result);
+      } catch (_) {
+        _json(request.response, 403, {'error': 'finance_authorization_required'});
+      }
+      return;
+    }
     const brandFonts = [
       'Barlow-Regular.ttf',
       'Barlow-SemiBold.ttf',
