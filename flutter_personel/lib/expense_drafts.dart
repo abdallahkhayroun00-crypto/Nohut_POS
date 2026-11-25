@@ -1,18 +1,38 @@
 import 'dart:convert';
+import 'dart:io';
+
+import 'package:http/http.dart' as http;
+import 'package:nohut_core/finance_wire.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:nohut_core/nohut_core.dart';
 
-/// Local-only expense drafts. No server credentials or salary data are
-/// accessed. A later authenticated finance protocol must acknowledge each
-/// immutable request ID before a draft can be considered synchronized.
-class ExpenseDraftStore {
+/// Secure, restaurant-scoped outbox and cached quick expenses. An operation
+/// is frozen on disk BEFORE transport and removed only after authenticated
+/// acknowledgement. Retries reuse its exact request ID and payload.
+class ExpenseDraftStore extends ChangeNotifier {
   ExpenseDraftStore(this.serverId, {FlutterSecureStorage? storage})
       : storage = storage ?? const FlutterSecureStorage();
+  static final _stores = <String, ExpenseDraftStore>{};
+  static ExpenseDraftStore forServer(String serverId) =>
+    _stores.putIfAbsent(serverId, () => ExpenseDraftStore(serverId));
+
   final String serverId;
   final FlutterSecureStorage storage;
   String get key => 'finance_drafts_v1_$serverId';
+  String get accessKey => 'finance_key_v1_$serverId';
+  String? host;
+  bool syncing = false;
+  String? syncError;
+  DateTime? lastSync;
+  Future<void> _tail = Future.value();
+
+  Future<T> exclusive<T>(Future<T> Function() work) {
+    final result = _tail.then((_) => work());
+    _tail = result.then<void>((_) {}, onError: (Object _, StackTrace _) {});
+    return result;
+  }
 
   Future<List<Map<String, dynamic>>> read() async {
     final raw = await storage.read(key: key);
@@ -24,8 +44,148 @@ class ExpenseDraftStore {
     return decoded.map((e) => Map<String, dynamic>.from(e as Map)).toList();
   }
 
-  Future<void> write(List<Map<String, dynamic>> entries) =>
-      storage.write(key: key, value: jsonEncode(entries));
+  Future<void> write(List<Map<String, dynamic>> entries) async {
+    await storage.write(key: key, value: jsonEncode(entries));
+    notifyListeners();
+  }
+
+  Future<bool> configured() async => await storage.read(key: accessKey) != null;
+
+  Future<void> configure(String secret) async {
+    FinanceWire.keyBytes(secret);
+    await exclusive(() async {
+      await storage.write(key: accessKey, value: secret.trim());
+      syncError = null;
+      lastSync = null;
+      notifyListeners();
+    });
+  }
+
+  static bool editable(Map<String, dynamic> entry) =>
+    ['local_draft', 'synced'].contains(entry['status']) && entry['voided'] != true;
+
+  static Map<String, dynamic> cached(Map<String, dynamic> row) => {
+    ...row,
+    'id': 'pc_' + row['id'].toString(),
+    'recordId': row['id'],
+    'status': 'synced',
+  };
+
+  static Map<String, dynamic> operation(Map<String, dynamic> entry) => {
+    'requestId': FinanceWire.randomId(),
+    'operation': entry['operation'] == 'void' ? 'void' :
+      entry['recordId'] == null ? 'create' : 'edit',
+    if (entry['recordId'] != null) 'recordId': entry['recordId'],
+    if (entry['recordId'] != null) 'expectedUpdatedAt': entry['updatedAt'],
+    if (entry['operation'] != 'void') 'entry': {
+      for (final field in ['date', 'storeBrand', 'market', 'amountsCents',
+        'paymentMethod', 'note']) field: entry[field],
+    },
+  };
+
+  Future<Map<String, dynamic>> _send(String secret, Uri uri,
+      Map<String, dynamic> payload) async {
+    final envelope = await FinanceWire.seal(secret, serverId, 'request', payload);
+    final response = await http.post(uri,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(envelope)).timeout(const Duration(seconds: 10));
+    if (response.statusCode != 200) {
+      throw const FormatException('Finans erişimi veya bağlantı doğrulanamadı.');
+    }
+    final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+    if (decoded is! Map) throw const FormatException('Geçersiz sunucu yanıtı.');
+    return FinanceWire.open(secret, serverId,
+      'response:' + envelope['nonce'].toString(),
+      Map<String, dynamic>.from(decoded));
+  }
+
+  bool _local(Uri uri) {
+    final b = InternetAddress.tryParse(uri.host)?.rawAddress;
+    return uri.scheme == 'http' && uri.userInfo.isEmpty && b != null &&
+      b.length == 4 && (b[0] == 10 || (b[0] == 192 && b[1] == 168) ||
+        (b[0] == 172 && b[1] >= 16 && b[1] <= 31));
+  }
+
+  Future<void> sync({bool force = false}) async {
+    if (syncing || host == null) return;
+    if (!force && lastSync != null &&
+        DateTime.now().difference(lastSync!) < const Duration(seconds: 20)) return;
+    final uri = Uri.tryParse(host!);
+    if (uri == null || !_local(uri)) return;
+    syncing = true;
+    notifyListeners();
+    try {
+      await exclusive(() async {
+        final secret = await storage.read(key: accessKey);
+        if (secret == null) return;
+        final endpoint = uri.replace(path: '/api/finance/v1', query: '');
+        var entries = await read();
+        for (var i = 0; i < entries.length; i++) {
+          var entry = entries[i];
+          if (!['local_draft', 'pending'].contains(entry['status'])) continue;
+          final payload = entry['status'] == 'pending'
+            ? Map<String, dynamic>.from(entry['pendingPayload'] as Map)
+            : operation(entry);
+          if (entry['status'] != 'pending') {
+            entry = {...entry, 'status': 'pending', 'pendingPayload': payload};
+            entries[i] = entry;
+            await write(entries); // durable before sending
+          }
+          final response = await _send(secret, endpoint, payload);
+          if (response['ok'] == true && response['record'] is Map) {
+            entries[i] = cached(Map<String, dynamic>.from(response['record'] as Map));
+          } else if (['conflict', 'invalid'].contains(response['error'])) {
+            entries[i] = {...entry, 'status': 'conflict',
+              'syncMessage': response['message']};
+          } else {
+            throw const FormatException('İşlem onayı alınamadı.');
+          }
+          await write(entries);
+        }
+        // Full paginated quick-expense view. Keep unsent edits intact.
+        final remote = <Map<String, dynamic>>[];
+        var cursor = 0;
+        while (true) {
+          final response = await _send(secret, endpoint,
+            {'operation': 'pull', 'afterId': cursor});
+          if (response['ok'] != true || response['records'] is! List) {
+            throw const FormatException('Giderler okunamadı.');
+          }
+          final page = (response['records'] as List).map((r) =>
+            Map<String, dynamic>.from(r as Map)).toList();
+          remote.addAll(page.map(cached));
+          if (response['hasMore'] != true) break;
+          if (page.isEmpty || (page.last['id'] as int) <= cursor) {
+            throw const FormatException('Gider sayfalaması geçersiz.');
+          }
+          cursor = page.last['id'] as int;
+        }
+        final pending = entries.where((e) => e['status'] != 'synced').toList();
+        final pendingIds = pending.map((e) => e['recordId']).whereType<int>().toSet();
+        entries = [
+          ...pending,
+          ...remote.where((e) => !pendingIds.contains(e['recordId'])),
+        ];
+        await write(entries);
+        lastSync = DateTime.now();
+        syncError = null;
+      });
+    } catch (_) {
+      syncError = 'Senkronizasyon tamamlanmadı. Bekleyen kayıtlar korundu.';
+    } finally {
+      syncing = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> discardConflict(String id) async {
+    await exclusive(() async {
+      final entries = await read();
+      await write(entries.where((e) =>
+        !(e['id'] == id && e['status'] == 'conflict')).toList());
+    });
+    await sync(force: true);
+  }
 }
 
 class ExpenseDraftPage extends StatefulWidget {
@@ -50,7 +210,21 @@ class _ExpenseDraftPageState extends State<ExpenseDraftPage> {
   @override
   void initState() {
     super.initState();
+    widget.store.addListener(_storeChanged);
     _load();
+  }
+
+  void _storeChanged() {
+    if (mounted) {
+      setState(() {});
+      _load();
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.store.removeListener(_storeChanged);
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -65,55 +239,109 @@ class _ExpenseDraftPageState extends State<ExpenseDraftPage> {
     }
   }
 
-  Future<void> _save(List<Map<String, dynamic>> next) async {
-    setState(() => busy = true);
-    try {
-      await widget.store.write(next);
-      if (mounted) setState(() { entries = next; error = null; });
-    } catch (_) {
-      if (mounted) setState(() =>
-        error = 'Cihaza kaydedilemedi. Önceki taslaklar korundu.');
-    } finally {
-      if (mounted) setState(() => busy = false);
-    }
-  }
-
   Future<void> _edit([Map<String, dynamic>? previous]) async {
-    if (busy || error != null) return;
+    if (busy || error != null || widget.store.syncing) return;
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (_) => _ExpenseDraftDialog(previous: previous),
     );
     if (!mounted || result == null) return;
-    final next = [...entries];
-    final index = previous == null ? -1 :
-      next.indexWhere((e) => e['id'] == previous['id']);
-    if (index < 0) {
-      next.add(result);
-    } else {
-      next[index] = result;
+    try {
+      await widget.store.exclusive(() async {
+        final latest = await widget.store.read();
+        if (previous == null) {
+          latest.add(result);
+        } else {
+          final index = latest.indexWhere((e) => e['id'] == previous['id']);
+          if (index < 0 || !ExpenseDraftStore.editable(latest[index]) ||
+              latest[index]['updatedAt'] != previous['updatedAt'] ||
+              latest[index]['status'] != previous['status']) {
+            throw const FormatException('Kayıt değişti. Yenileyip tekrar deneyin.');
+          }
+          latest[index] = result;
+        }
+        await widget.store.write(latest);
+      });
+      await _load();
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e is FormatException ? e.message :
+          'Kayıt kaydedilemedi. Önceki bilgiler korundu.')));
     }
-    await _save(next);
   }
 
   Future<void> _remove(Map<String, dynamic> entry) async {
+    final remote = entry['recordId'] != null;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Yerel taslak silinsin mi?'),
-        content: const Text('Bu işlem yalnızca telefondaki taslağı siler.'),
+        title: Text(remote ? 'Gider iptal edilsin mi?' : 'Yerel taslak silinsin mi?'),
+        content: Text(remote ? 'Windows onayı alınana kadar iptal bekler.' :
+          'Bu işlem yalnızca telefondaki taslağı siler.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false),
             child: const Text('Vazgeç')),
           FilledButton(onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Sil')),
+            child: const Text('Onayla')),
         ],
       ),
     );
-    if (confirmed == true && mounted) {
-      await _save(entries.where((e) => e['id'] != entry['id']).toList());
+    if (confirmed != true || !mounted) return;
+    try {
+      await widget.store.exclusive(() async {
+        final latest = await widget.store.read();
+        final index = latest.indexWhere((e) => e['id'] == entry['id']);
+        if (index < 0 || !ExpenseDraftStore.editable(latest[index]) ||
+            latest[index]['updatedAt'] != entry['updatedAt'] ||
+            latest[index]['status'] != entry['status']) {
+          throw const FormatException('Kayıt değişti. Önce yenileyin.');
+        }
+        if (remote) {
+          latest[index] = {...latest[index], 'operation': 'void', 'status': 'local_draft'};
+        } else {
+          latest.removeAt(index);
+        }
+        await widget.store.write(latest);
+      });
+      await _load();
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('İşlem uygulanamadı. Kayıt korundu.')));
     }
   }
+
+  Future<void> _configure() async {
+    final controller = TextEditingController();
+    final secret = await showDialog<String>(context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Yönetici Finans Anahtarı'),
+        content: TextField(controller: controller, obscureText: true,
+          autocorrect: false, enableSuggestions: false,
+          decoration: const InputDecoration(labelText: 'Windows finans anahtarı')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Vazgeç')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, controller.text),
+            child: const Text('Bağla')),
+        ],
+      ));
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+    controller.dispose();
+    if (secret == null || !mounted) return;
+    try {
+      await widget.store.configure(secret);
+      await widget.store.sync(force: true);
+    } catch (_) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Geçersiz finans anahtarı.')));
+    }
+  }
+
+  String _status(Map<String, dynamic> e) => switch (e['status']) {
+    'synced' => e['voided'] == true ? 'İptal' : 'Senkronize edildi',
+    'pending' => 'Onay bekliyor · tekrar gönderilecek',
+    'conflict' => 'Çakışma / hata · ' + (e['syncMessage'] ?? '').toString(),
+    _ => 'Yerel taslak · Gönderilmedi',
+  };
 
   @override
   Widget build(BuildContext context) => Center(
@@ -122,15 +350,25 @@ class _ExpenseDraftPageState extends State<ExpenseDraftPage> {
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Text('Hızlı Gider Taslakları',
+          Text('Hızlı Günlük Giderler',
             style: Theme.of(context).textTheme.headlineSmall),
           const SizedBox(height: 8),
-          const Text('Çevrimdışı giriş · Bu sürümde yalnızca cihazda saklanır. '
-            'Windows finansına gönderilmez ve resmi gider sayılmaz.'),
+          const Text('Çevrimdışı giriş · Windows onayı gelene kadar giderler '
+            'bekler. Finans anahtarı ile restoran ağına bağlanın.'),
+          Wrap(spacing: 8, runSpacing: 8, children: [
+            OutlinedButton.icon(onPressed: widget.store.syncing ? null : _configure,
+              icon: const Icon(Icons.vpn_key_outlined), label: const Text('Finans Anahtarı')),
+            OutlinedButton.icon(onPressed: widget.store.syncing ? null :
+              () => widget.store.sync(force: true), icon: const Icon(Icons.sync),
+              label: const Text('Şimdi Senkronize Et')),
+          ]),
+          if (widget.store.syncing) const LinearProgressIndicator(),
+          if (widget.store.syncError != null) Text(widget.store.syncError!),
+          if (widget.store.lastSync != null) const Text('Windows ile son bağlantı başarılı.'),
           const SizedBox(height: 12),
           FilledButton.icon(
             key: const ValueKey('android-quick-draft-add'),
-            onPressed: busy || error != null ? null : () => _edit(),
+            onPressed: busy || error != null || widget.store.syncing ? null : () => _edit(),
             icon: const Icon(Icons.add),
             label: const Text('Gider Taslağı Ekle'),
           ),
@@ -144,13 +382,31 @@ class _ExpenseDraftPageState extends State<ExpenseDraftPage> {
             Card(child: ListTile(
               title: Text(entry['storeBrand'].toString() + ' · ' +
                 _money(entry['totalCents'] as int)),
-              subtitle: Text(entry['date'].toString() +
-                ' · Yerel taslak · Gönderilmedi'),
-              onTap: busy || error != null ? null : () => _edit(entry),
-              trailing: IconButton(
-                tooltip: 'Taslağı Sil',
-                onPressed: busy || error != null ? null : () => _remove(entry),
-                icon: const Icon(Icons.delete_outline)),
+              subtitle: Text(entry['date'].toString() + ' · ' + _status(entry)),
+              onTap: busy || error != null || widget.store.syncing ||
+                !ExpenseDraftStore.editable(entry) ? null : () => _edit(entry),
+              trailing: entry['status'] == 'conflict'
+                ? TextButton(
+                    onPressed: widget.store.syncing ? null : () async {
+                      final ok = await showDialog<bool>(context: context,
+                        builder: (ctx) => AlertDialog(
+                          title: const Text('Yerel değişiklikten vazgeç?'),
+                          content: const Text('Yerel değişiklik silinir; Windows kaydı yeniden alınır.'),
+                          actions: [
+                            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Vazgeç')),
+                            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Windows Kaydını Al')),
+                          ],
+                        ));
+                      if (ok == true && mounted) {
+                        await widget.store.discardConflict(entry['id'].toString());
+                      }
+                    },
+                    child: const Text('Vazgeç'))
+                : IconButton(
+                    tooltip: 'Gideri İptal Et',
+                    onPressed: busy || error != null || widget.store.syncing ||
+                      !ExpenseDraftStore.editable(entry) ? null : () => _remove(entry),
+                    icon: const Icon(Icons.delete_outline)),
             )),
           if (!busy && entries.isEmpty && error == null)
             const Padding(padding: EdgeInsets.all(16),
@@ -273,8 +529,11 @@ class _ExpenseDraftDialogState extends State<_ExpenseDraftDialog> {
             final values = _values();
             final sum = quickMaterialTotalCents(values);
             Navigator.pop(context, <String, dynamic>{
-              'id': widget.previous?['id'] ??
-                DateTime.now().microsecondsSinceEpoch.toString(),
+              'id': widget.previous?['id'] ?? FinanceWire.randomId(),
+              if (widget.previous?['recordId'] != null) ...{
+                'recordId': widget.previous!['recordId'],
+                'updatedAt': widget.previous!['updatedAt'],
+              },
               'date': date, 'storeBrand': store,
               'market': store == 'Diğer' ? market.text.trim() : store,
               'amountsCents': values, 'totalCents': sum,
