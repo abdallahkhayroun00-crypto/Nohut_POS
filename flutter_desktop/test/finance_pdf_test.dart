@@ -51,6 +51,12 @@ void main() {
       },
       'finance': {
         'materials': [
+          {'id': 3, 'date': '2026-11-22',
+           'recordType': 'quick', 'title': 'Hızlı Malzeme Gideri',
+           'storeBrand': 'Hakmar', 'market': 'Hakmar',
+           'amountsCents': [5000, 6000, 30000],
+           'subtotalCents': 41000, 'discountCents': 0,
+           'totalCents': 41000, 'voided': false},
           {'id': 1, 'date': '2026-11-22', 'title': 'Nohut 1 Kg',
            'storeBrand': 'BİM', 'market': 'BİM',
            'quantityMilli': 2500, 'unit': 'kg',
