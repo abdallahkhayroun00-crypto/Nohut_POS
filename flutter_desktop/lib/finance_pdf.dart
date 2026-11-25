@@ -752,310 +752,300 @@ Future<Uint8List> generateManagementPdf(Json state, ReportPeriod period) async {
   final orders = facts['orders'] as List<Json>;
   final valid = facts['valid'] as List<Json>;
   final staff = facts['staff'] as List<Json>;
-  final lines = facts['lines'] as List<Json>;
   final products = facts['products'] as Map<String, Json>;
-  final payments = facts['payments'] as List<LedgerEntry>;
+  final payments = (facts['payments'] as List<LedgerEntry>)
+    .where((p) => ['Masa', 'Gel-Al'].contains(p.source)).toList();
   final materials = financeRows(state, 'materials').where((r) =>
-    period.includes((r['date'] ?? '').toString())).toList();
+    period.includes((r['date'] ?? '').toString()) && r['voided'] != true).toList();
   final payroll = financeRows(state, 'weeklyPayroll').where((r) =>
     period.includes((r['weekEnd'] ?? '').toString())).toList();
   final other = financeRows(state, 'other').where((r) =>
-    period.includes((r['date'] ?? '').toString())).toList();
+    period.includes((r['date'] ?? '').toString()) && r['voided'] != true).toList();
   int sum(Iterable<Json> rows, String key) =>
     rows.fold<int>(0, (n, r) => n + _cents(r, key));
   String field(Json r, String k) => (r[k] ?? '—').toString();
-  String money(Json r, String k) => r[k] is int ? _amount(r[k] as int) : '—';
-  String place(Json o) => o['source'] == 'Masa' ? 'Masa ' + field(o, 'table') : field(o, 'source');
-  String status(Json o) => o['cancelled'] == true ? 'İptal' :
-    o['closed'] == true ? 'Kapalı' : 'Açık';
-  final localPay = payments.where((e) => ['Masa', 'Gel-Al'].contains(e.source)).toList();
-  final localTotal = localPay.fold<int>(0, (n, p) => n + p.amount);
-  final materialTotal = sum(materials.where((r) => r['voided'] != true), 'totalCents');
+  String short(String value, [int max = 29]) => value.length <= max
+    ? value : value.substring(0, max - 1) + '…';
+  final local = payments.fold<int>(0, (n, p) => n + p.amount);
+  final materialTotal = sum(materials, 'totalCents');
   final payrollTotal = sum(payroll, 'grossCents');
-  final otherTotal = sum(other.where((r) => r['voided'] != true), 'amountCents');
-  final fixedRows = <List<String>>[];
-  final fixedPayments = financeRows(state, 'fixedPayments');
-  var fixedTotal = 0, onlineNet = 0;
-  var incomplete = false;
-  final platformRows = <List<String>>[];
-  final manualRows = <List<String>>[];
+  final otherTotal = sum(other, 'amountCents');
+  final fixedByCategory = <String,int>{};
+  var fixedTotal = 0, excludedFixed = 0, onlineNet = 0, excludedManual = 0;
+  final online = <String,Json>{for (final source in deliverySources)
+    source: {'orders': 0, 'gross': 0, 'grossKnown': false,
+      'net': 0, 'netKnown': false, 'fee': 0, 'feeKnown': false,
+      'missing': false, 'manual': false}};
+  bool incomplete = false;
+  void add(Json row, String key, int value) => row[key] = (row[key] as int) + value;
   for (final month in period.months) {
     final full = period.fullMonth(month);
     if (!full) incomplete = true;
     for (final r in financeRows(state, 'monthlyFixed')) {
-      if (r['active'] != true || field(r, 'startMonth').compareTo(month) > 0) continue;
-      final payment = fixedPayments.where((p) =>
-        p['templateId'] == r['id'] && p['month'] == month).firstOrNull;
-      if (full) fixedTotal += _cents(r, 'amountCents');
-      fixedRows.add([month, field(r, 'name') + ' / ' + field(r, 'category'),
-        money(r, 'amountCents'), payment == null ? 'Bekliyor' :
-          'Ödendi: ' + money(payment, 'amountCents'),
-        full ? 'Dahil' : 'Kısmi ay · hariç']);
+      if (r['active'] != true || field(r,'startMonth').compareTo(month) > 0) continue;
+      final amount = _cents(r,'amountCents');
+      if (full) {
+        fixedTotal += amount;
+        final name = field(r,'category');
+        fixedByCategory[name] = (fixedByCategory[name] ?? 0) + amount;
+      } else {
+        excludedFixed += amount;
+      }
     }
-    final figures = financePlatformFigures(state, month);
     final estimates = deliveryNetEstimates(state, (stamp) {
       final d = DateTime.tryParse(stamp);
       return d != null && istanbulDay(d).startsWith(month) && period.includesStamp(stamp);
     });
-    for (final p in figures) {
+    for (final p in financePlatformFigures(state, month)) {
       final a = estimates.firstWhere((e) => e.source == p.source);
-      int? gross, net, fee;
-      String origin;
-      if (full) {
-        gross = p.grossCents; net = p.netCents; fee = p.deductionCents;
-        origin = p.origin;
-        if (p.origin == 'Yok' || p.unknownGrossCents > 0) incomplete = true;
-      } else {
-        gross = a.orderCount == 0 ? null : a.grossCents;
-        fee = a.orderCount == 0 ? null : a.deductionCents;
-        net = a.orderCount == 0 ? null : a.estimatedNetCents;
-        origin = a.orderCount > 0 ? 'Otomatik · dönem' : 'Veri yok';
-      }
-      if (net != null) onlineNet += net;
-      if (a.orderCount > 0 && net == null) incomplete = true;
-      platformRows.add([month, p.source, origin, a.orderCount.toString(),
-        gross == null ? '—' : _amount(gross), fee == null ? '—' : _amount(fee),
-        net == null ? '—' : _amount(net)]);
+      final row = online[p.source]!;
+      add(row, 'orders', a.orderCount);
+      final hasData = full ? p.origin != 'Yok' : a.orderCount > 0;
+      final gross = full ? p.grossCents : a.orderCount > 0 ? a.grossCents : null;
+      final fee = full ? p.deductionCents : a.orderCount > 0 ? a.deductionCents : null;
+      final net = full && hasData ? p.netCents : a.orderCount > 0 ? a.estimatedNetCents : null;
+      if (hasData && gross != null) { add(row,'gross',gross); row['grossKnown'] = true; }
+      if (hasData && fee != null) { add(row,'fee',fee); row['feeKnown'] = true; }
+      if (net != null) { add(row,'net',net); row['netKnown'] = true; onlineNet += net; }
+      if (!hasData || net == null) { row['missing'] = true; incomplete = true; }
+      if (full && p.isManual) row['manual'] = true;
     }
-    for (final r in financeRows(state, 'manualPlatformSales').where((r) => r['month'] == month)) {
-      final automatic = platformHasAutomaticSales(state, field(r, 'source'), month);
-      manualRows.add([month, field(r, 'source'), field(r, 'kind'), money(r, 'amountCents'),
-        r['voided'] == true ? 'İptal' : automatic ? 'Otomatik veri · hariç' :
-        full ? 'Aylık toplam · dahil' : 'Kısmi ay · hariç', field(r, 'note')]);
+    if (!full) {
+      for (final r in financeRows(state,'manualPlatformSales')) {
+        if (r['month'] == month && r['voided'] != true &&
+            !platformHasAutomaticSales(state,field(r,'source'),month)) {
+          excludedManual += _cents(r,'amountCents');
+        }
+      }
     }
   }
-  final knownExpenses = materialTotal + payrollTotal + otherTotal + fixedTotal;
+  final expense = materialTotal + payrollTotal + fixedTotal + otherTotal;
+  final netCash = payments.where((p) => p.method == 'Nakit').fold<int>(0,(n,p)=>n+p.amount);
+  final netCard = payments.where((p) => p.method == 'Kart').fold<int>(0,(n,p)=>n+p.amount);
+  final refunds = payments.where((p) => p.kind == 'İade').fold<int>(0,(n,p)=>n-p.amount);
+  final tableOrders = valid.where((o) => o['source'] == 'Masa').length;
+  final pickupOrders = valid.where((o) => o['source'] == 'Gel-Al').length;
+  final cancelled = orders.length - valid.length;
+  final open = valid.where((o)=>o['closed'] != true).length;
+  final outstanding = valid.fold<int>(0,(n,o)=>n+orderDueCents(o));
+  final hourly = hourlyOrderCounts(valid,from:period.from,to:period.to);
+  final maxHour = hourly.fold<int>(1,(a,b)=>a>b?a:b);
   final dates = <String>[];
   for (var d = ReportPeriod.parse(period.from); !d.isAfter(ReportPeriod.parse(period.to));
-      d = d.add(const Duration(days: 1))) { dates.add(ReportPeriod.day(d)); }
-  final hourly = hourlyOrderCounts(valid, from: period.from, to: period.to);
-  final maxHour = hourly.fold<int>(1, (a, b) => a > b ? a : b);
+      d = d.add(const Duration(days:1))) {
+    dates.add(ReportPeriod.day(d));
+  }
+  final step = (dates.length / 12).ceil();
+  final trend = <MapEntry<String,int>>[];
+  for (var i = 0; i < dates.length; i += step) {
+    final end = i+step < dates.length ? i+step-1 : dates.length-1;
+    final range = ReportPeriod(dates[i],dates[end]);
+    final amount = payments.where((p)=>range.includesStamp(p.stamp)).fold<int>(0,(n,p)=>n+p.amount);
+    trend.add(MapEntry(dates[i].substring(5) + (i==end?'':' / '+dates[end].substring(5)),amount));
+  }
   final productRows = products.entries.toList()
-    ..sort((a,b) => (b.value['qty'] as int).compareTo(a.value['qty'] as int));
-  final cash = state['cashBook'] is Map ? state['cashBook'] as Map : {};
-  final platformOrders = asMaps(state['orders']).where((o) =>
-    deliverySources.contains(o['source']) && o['source'] != 'Trendyol Go' &&
-    o['testPackage'] != true && o['demoRemoteStatus'] == null &&
-    period.includesStamp(o['createdAt'])).toList();
-  final tgo = tgoOrders(state).where((o) => o['testPackage'] != true &&
-    period.includesStamp(o['createdAt'])).toList();
+    ..sort((a,b)=>(b.value['qty'] as int).compareTo(a.value['qty'] as int));
+  final visibleStaff = [...staff]..sort((a,b)=>_cents(b,'tableOrders').compareTo(_cents(a,'tableOrders')));
+  final staffHead = visibleStaff.take(9).toList();
+  final staffTail = visibleStaff.skip(9).toList();
+  final payByStaff = <String,Json>{};
+  for (final p in payroll) {
+    final name = field(p,'employeeName');
+    final row = payByStaff.putIfAbsent(name,()=>{'minutes':0,'gross':0,'bonus':0,'advance':0,'due':0});
+    add(row,'minutes',_cents(p,'workedMinutes')); add(row,'gross',_cents(p,'grossCents'));
+    add(row,'bonus',_cents(p,'bonusCents')); add(row,'advance',_cents(p,'advanceCents'));
+    if (p['paid'] != true) add(row,'due',_cents(p,'payableCents'));
+  }
+  final payRows = payByStaff.entries.toList()
+    ..sort((a,b)=>_cents(b.value,'gross').compareTo(_cents(a.value,'gross')));
+  final categories = <String,int>{};
+  for (final r in other) {
+    final name = field(r,'category');
+    categories[name] = (categories[name] ?? 0) + _cents(r,'amountCents');
+  }
+  List<List<String>> aggregateRows(Map<String,int> values,int limit) {
+    final rows = values.entries.toList()..sort((a,b)=>b.value.compareTo(a.value));
+    return [
+      for (final e in rows.take(limit)) [short(e.key),_amount(e.value)],
+      if (rows.length>limit) ['Diğer ('+(rows.length-limit).toString()+')',
+        _amount(rows.skip(limit).fold<int>(0,(n,e)=>n+e.value))],
+    ];
+  }
   final normalData = await rootBundle.load('assets/brand/fonts/Barlow-Regular.ttf');
   final boldData = await rootBundle.load('assets/brand/fonts/Barlow-Bold.ttf');
-  final theme = pw.ThemeData.withFont(base: pw.Font.ttf(normalData), bold: pw.Font.ttf(boldData));
+  final theme = pw.ThemeData.withFont(base: pw.Font.ttf(normalData),bold:pw.Font.ttf(boldData));
   final pdf = pw.Document();
-  final label = period.from + ' / ' + period.to;
-  void section(String title, List<pw.Widget> body) => _addPages(pdf, theme,
-    title: title, descriptor: 'Tam yönetim raporu · Gizli',
-    period: label, footer: 'Yöneticiye özel', body: body);
-  section('01 · Yönetim Özeti', [
-    _notice('TEK PDF · Seçilen tarih aralığının tamamı. Oluşturulma: ' +
-      istanbulStamp(DateTime.now().toUtc().toIso8601String()) +
-      '. Windows kayıtlarının anlık görünümü; resmi mali belge değildir.'),
-    pw.Row(children: [
-      _metric('YEREL TAHSİLAT', _amount(localTotal), 'İadeler düşülmüş'),
-      pw.SizedBox(width: 8),
-      _metric('BİLİNEN ONLINE NET', _amount(onlineNet), 'Tahmini / manuel'),
-      pw.SizedBox(width: 8),
-      _metric('BİLİNEN GİDER', _amount(knownExpenses), 'Dahil edilen kalemler'),
+  final label = period.from+' / '+period.to;
+  pw.Widget heading(String title)=>pw.Padding(padding:const pw.EdgeInsets.only(top:9,bottom:4),
+    child:_text(title,size:12,bold:true,color:_forest));
+  pw.Widget note(String text)=>pw.Padding(padding:const pw.EdgeInsets.only(top:6),
+    child:_text(text,size:7.4,color:_muted));
+  pw.Widget compact(List<String> headers,List<List<String>> rows)=> rows.isEmpty
+    ? note('Kayıt yok.')
+    : pw.Table.fromTextArray(headers:headers,data:rows,headerCount:1,
+      headerStyle:pw.TextStyle(fontSize:7.5,color:PdfColors.white,fontWeight:pw.FontWeight.bold),
+      headerDecoration:pw.BoxDecoration(color:_forest),
+      cellStyle:pw.TextStyle(fontSize:8,color:_ink),
+      cellPadding:const pw.EdgeInsets.symmetric(horizontal:5,vertical:4),
+      oddRowDecoration:pw.BoxDecoration(color:_pale));
+  pw.Widget bars(List<MapEntry<String,int>> rows,{bool monetary=true}) {
+    final max = rows.fold<int>(1,(a,e)=>e.value.abs()>a?e.value.abs():a);
+    return pw.Column(children:[
+      for(final r in rows) pw.Padding(padding:const pw.EdgeInsets.symmetric(vertical:2),
+        child:pw.Row(children:[
+          pw.SizedBox(width:124,child:_text(short(r.key,25),size:8)),
+          pw.Container(width:210*r.value.abs()/max,height:7,color:r.value<0?_coral:_green),
+          pw.SizedBox(width:8),
+          _text(monetary?_amount(r.value):r.value.toString(),size:8),
+        ])),
+    ]);
+  }
+  pw.Widget pair(pw.Widget left,pw.Widget right)=>pw.Row(crossAxisAlignment:pw.CrossAxisAlignment.start,
+    children:[pw.Expanded(child:left),pw.SizedBox(width:12),pw.Expanded(child:right)]);
+  void page(String title,List<pw.Widget> body) {
+    pdf.addPage(pw.Page(pageFormat:PdfPageFormat.a4,theme:theme,
+      margin:const pw.EdgeInsets.all(28),build:(ctx)=>pw.Column(
+        crossAxisAlignment:pw.CrossAxisAlignment.stretch,children:[
+          pw.Container(color:_forest,padding:const pw.EdgeInsets.all(13),
+            child:pw.Column(crossAxisAlignment:pw.CrossAxisAlignment.start,children:[
+              _text('NOHUT FALAFEL · YÖNETİCİ RAPORU',size:9,bold:true,color:PdfColors.white),
+              pw.SizedBox(height:5),
+              _text(title,size:20,bold:true,color:PdfColors.white),
+              _text(label,size:9,color:PdfColors.white),
+            ])),
+          ...body,
+          pw.Spacer(),
+          _footer(ctx,'Özet · Yöneticiye özel'),
+        ])));
+  }
+  page('01 · Finans ve Platformlar',[
+    pw.SizedBox(height:10),
+    pw.Row(children:[
+      _metric('BİLİNEN GELİR',_amount(local+onlineNet),'Yerel + online net'),
+      pw.SizedBox(width:7),
+      _metric('BİLİNEN GİDER',_amount(expense),'Kayıtlı giderler',accent:_coral),
+      pw.SizedBox(width:7),
+      _metric('BİLİNEN FARK',_amount(local+onlineNet-expense),'Kesin kâr değildir'),
     ]),
-    _section('Finans özeti'),
-    _table(['KALEM', 'TUTAR'], [
-      ['Nakit net tahsilat', _amount(localPay.where((p) => p.method == 'Nakit').fold(0, (n,p) => n+p.amount))],
-      ['Kart net tahsilat', _amount(localPay.where((p) => p.method == 'Kart').fold(0, (n,p) => n+p.amount))],
-      ['Malzeme', _amount(materialTotal)], ['Maaş hak edişi', _amount(payrollTotal)],
-      ['Tam aylara ait sabit gider', _amount(fixedTotal)], ['Diğer gider', _amount(otherTotal)],
-      ['Bilinen gelir − bilinen gider', _amount(localTotal + onlineNet - knownExpenses)],
-      ['Kesin kâr', 'Hesaplanamaz'],
+    heading('Gelir ve gider dağılımı'),
+    bars([MapEntry('Yerel tahsilat',local),MapEntry('Online net',onlineNet),
+      MapEntry('Malzeme',materialTotal),MapEntry('Maaş',payrollTotal),
+      MapEntry('Sabit gider',fixedTotal),MapEntry('Diğer gider',otherTotal)]),
+    heading('Tahsilat ve iade'),
+    compact(['NAKİT NET','KART NET','İADE','AÇIK BAKİYE'],[
+      [_amount(netCash),_amount(netCard),_amount(refunds),_amount(outstanding)],
     ]),
-    _notice((incomplete ? 'Eksik / kısmi dönem verisi var. ' : '') +
-      'Bilinen fark banka mutabakatı, vergi veya stok tüketimi sonrası kâr değildir. '
-      'Maaş haftası Pazar gününe kaydedilir; aylık sabit gider ve manuel online toplam '
-      'yalnızca tam ay seçilmişse toplamda yer alır. Kısmi aylarda ayrı gösterilir. '
-      'Sabit giderler mevcut şablonlara dayanır; geçmiş değişiklikler tam olarak saklanmayabilir.'),
-    _section('Operasyon özeti'),
-    _table(['GÖSTERGE', 'ADET'], [
-      ['Geçerli yerel sipariş', valid.length.toString()],
-      ['Masa hesapları', valid.where((o) => o['source'] == 'Masa').length.toString()],
-      ['Gel-Al hesapları', valid.where((o) => o['source'] == 'Gel-Al').length.toString()],
-      ['İptal edilen yerel sipariş', orders.where((o) => o['cancelled'] == true).length.toString()],
-      ['Açık yerel hesap (rapor anı)', valid.where((o) => o['closed'] != true).length.toString()],
-      ['Online kayıt (test hariç)', (platformOrders.length + tgo.length).toString()],
-    ]),
-  ]);
-  section('02 · Satış ve Yoğunluk', [
-    _section('Gün gün sipariş ve tahsilat'),
-    _table(['TARİH','MASA','GEL-AL','İPTAL','NET TAHSİLAT'], [
-      for (final d in dates) [d,
-        valid.where((o) => onIstanbulDay(o['createdAt'], d) && o['source'] == 'Masa').length.toString(),
-        valid.where((o) => onIstanbulDay(o['createdAt'], d) && o['source'] == 'Gel-Al').length.toString(),
-        orders.where((o) => onIstanbulDay(o['createdAt'], d) && o['cancelled'] == true).length.toString(),
-        _amount(localPay.where((p) => onIstanbulDay(p.stamp, d)).fold(0, (n,p) => n+p.amount))],
-    ]),
-    _section('Saatlere göre yerel sipariş yoğunluğu'),
-    for (var h = 0; h < 24; h++) pw.Row(children: [
-      pw.SizedBox(width: 70, child: _text(h.toString().padLeft(2,'0') + ':00')),
-      pw.Container(width: 240 * hourly[h] / maxHour, height: 7, color: _green),
-      pw.SizedBox(width: 8), _text(hourly[h].toString()),
-    ]),
-    _section('Masa performansı'),
-    _table(['MASA', 'HESAP', 'KAPALI', 'AÇIK', 'SİPARİŞ TUTARI'], [
-      for (final n in [1,2,3,4,5]) [
-        'Masa ' + n.toString(),
-        valid.where((o) => o['source'] == 'Masa' && o['table'] == n).length.toString(),
-        valid.where((o) => o['source'] == 'Masa' && o['table'] == n && o['closed'] == true).length.toString(),
-        valid.where((o) => o['source'] == 'Masa' && o['table'] == n && o['closed'] != true).length.toString(),
-        _amount(valid.where((o) => o['source'] == 'Masa' && o['table'] == n).fold(0,(v,o)=>v+orderTotalCents(o))),
+    heading('Online platform özeti'),
+    compact(['PLATFORM','TESLİM','BRÜT*','KESİNTİ*','NET*','VERİ'],[
+      for(final p in online.entries) [
+        p.key,field(p.value,'orders'),
+        p.value['grossKnown']==true?_amount(_cents(p.value,'gross')):'—',
+        p.value['feeKnown']==true?_amount(_cents(p.value,'fee')):'—',
+        p.value['netKnown']==true?_amount(_cents(p.value,'net')):'—',
+        p.value['missing']==true?'Eksik':p.value['manual']==true?'Manuel / oto.':'Otomatik',
       ],
     ]),
-    _notice('Masa sayısı hesap açılış adedidir; aynı masanın farklı ziyaretleri ayrı sayılır. '
-      'Masa aktarımı varsa son kayıtlı masa kullanılır; oturma süresi / misafir sayısı ölçülmez.'),
-    _section('Ürün bazlı yerel satış'),
-    _table(['ÜRÜN','ADET','SATIR TUTARI'], [
-      for (final p in productRows) [p.key, field(p.value, 'qty'), money(p.value, 'amount')],
+    note('* Bilinen tutarlar. Online net tahmini olup banka mutabakatı değildir. '
+      'Eksik kaynaklar sıfır kabul edilmez.'),
+    heading('Aylık olup döneme dahil edilmeyen kayıtlar'),
+    compact(['KALEM','TUTAR'],[
+      ['Kısmi aya ait sabit gider',_amount(excludedFixed)],
+      ['Kısmi aya ait manuel online giriş (brüt/net karışık)',_amount(excludedManual)],
     ]),
+    note((incomplete?'Eksik veya kısmi dönem verisi var. ':'')+
+      'Aylık kayıtlar yalnızca tam ayda toplama girer. Maaş Pazar gününe göre hesaplanır. '
+      'Vergi ve stok tüketimi dahil değildir.'),
   ]);
-  section('03 · Personel Performansı', [
-    _table(['PERSONEL','MASA HESABI','FARKLI MASA','GEL-AL','HESAP TUTARI','İPTAL'], [
-      for (final p in staff) [field(p,'name'),field(p,'tableOrders'),
+  page('02 · Personel ve Masalar',[
+    heading('Sipariş özeti'),
+    compact(['MASA','GEL-AL','İPTAL','AÇIK'],[
+      [tableOrders.toString(),pickupOrders.toString(),cancelled.toString(),open.toString()],
+    ]),
+    heading('Personel performansı · hesap sahibi'),
+    compact(['PERSONEL','MASA','FARKLI','GEL-AL','HESAP ₺','İPTAL'],[
+      for(final p in staffHead) [short(field(p,'name'),21),field(p,'tableOrders'),
         (p['tables'] as Set<String>).length.toString(),field(p,'pickupOrders'),
-        money(p,'ownedCents'),field(p,'cancelled')],
+        _amount(_cents(p,'ownedCents')),field(p,'cancelled')],
+      if(staffTail.isNotEmpty) ['Diğer ('+staffTail.length.toString()+')',
+        sum(staffTail,'tableOrders').toString(),'—',sum(staffTail,'pickupOrders').toString(),
+        _amount(sum(staffTail,'ownedCents')),sum(staffTail,'cancelled').toString()],
     ]),
-    _section('Fiilen girilen sipariş ve ek siparişler'),
-    _table(['PERSONEL','PARTİ','EK SİPARİŞ','ÜRÜN ADET','SATIR TUTARI'], [
-      for (final p in staff) [field(p,'name'),field(p,'batches'),field(p,'extraBatches'),
-        field(p,'items'),money(p,'lineCents')],
+    heading('Personel · ek sipariş ve ürün girişleri'),
+    compact(['PERSONEL','PARTİ','EK SİPARİŞ','ÜRÜN','SATIR TUTARI'],[
+      for(final p in staffHead) [short(field(p,'name'),21),field(p,'batches'),
+        field(p,'extraBatches'),field(p,'items'),_amount(_cents(p,'lineCents'))],
+      if(staffTail.isNotEmpty) ['Diğer',sum(staffTail,'batches').toString(),
+        sum(staffTail,'extraBatches').toString(),sum(staffTail,'items').toString(),
+        _amount(sum(staffTail,'lineCents'))],
     ]),
-    _notice('Hesap sahibi ilk siparişin personelidir; ek sipariş gerçek kayıt yapan '
-      'personelin satırlarına yazılır. İki tablo farklı ölçümlerdir; toplanmaz. '
-      'PC/atanmamış kayıtlar bir çalışana tahminle yazılmaz. Ücret ve satış '
-      'tutarı birbirinden bağımsızdır.'),
-    _section('Personel ve ücret ayarları (rapor anı)'),
-    _table(['PERSONEL','ROL','DURUM','ÜCRET TÜRÜ','ÜCRET'], [
-      for (final e in asMaps(state['employees'])) [field(e,'name'),field(e,'role'),
-        e['active'] == true ? 'Aktif' : 'Pasif',field(e,'payType'),money(e,'payRateCents')],
-    ]),
-  ]);
-  section('04 · Sipariş ve Tahsilat Dökümü', [
-    _section('Tüm yerel hesaplar'),
-    _table(['TARİH / NO','KAYNAK','SAHİP','DURUM','TOPLAM','ÖDENEN','KALAN'], [
-      for (final o in orders) [istanbulStamp(o['createdAt']) + '\n#' + displayOrderNumber(o) + ' / ID ' + field(o,'id'),
-        place(o), orderOwnerName(o), status(o), _amount(orderTotalCents(o)),
-        _amount(orderPaidCents(o)), _amount(orderDueCents(o))],
-    ]),
-    _section('Ürün satırları ve ek siparişler'),
-    _table(['TARİH / ID','PERSONEL','ÜRÜN','ADET','BİRİM','TUTAR','DURUM'], [
-      for (final l in lines) [istanbulStamp(l['stamp']) + '\n' + field(l,'orderId') + '/' + field(l,'batch'),
-        field(l,'staff'),field(l,'product'),field(l,'qty'),money(l,'unitCents'),money(l,'amount'),field(l,'status')],
-    ]),
-    _section('Ödeme ve iade hareketleri'),
-    _table(['TARİH / ID','KAYNAK','YÖNTEM','İŞLEM','KAYDEDEN','TUTAR'], [
-      for (final p in payments) [istanbulStamp(p.stamp) + '\n' + p.orderId.toString(),
-        p.source,p.method,p.kind,p.staff,_amount(p.amount)],
-    ]),
-    _notice('Hesap toplamı ve kalan borç rapor anındaki durumdur. Tahsilat/iade '
-      'işlem tarihine, ürünler parti tarihine göre listelenir. Kalıcı silinen '
-      'hesaplar, kayıt dışı ödeme ve eksik zaman damgaları geri getirilemez.'),
-  ]);
-  section('05 · Online Siparişler', [
-    _section('Platform gelirleri · Brüt / kesinti / net'),
-    _table(['AY','PLATFORM','KAYNAK','ADET','BRÜT','KESİNTİ','NET'], platformRows),
-    _section('Manuel aylık girişler'),
-    _table(['AY','PLATFORM','TÜR','TUTAR','DURUM','NOT'], manualRows),
-    _section('Online sipariş kayıtları'),
-    _table(['TARİH / NO','PLATFORM','DURUM','KAYITLI TUTAR'], [
-      for (final o in platformOrders) [istanbulStamp(o['createdAt']) + '\n' + displayOrderNumber(o),
-        field(o,'source'),field(o,'status'),_amount(orderTotalCents(o))],
-      for (final o in tgo) [istanbulStamp(o['createdAt']) + '\n' + field(o,'orderNumber'),
-        'Trendyol Go',field(o,'status'),money(o,'totalCents')],
-    ]),
-    _section('Online ürün detayları'),
-    _table(['SİPARİŞ','PLATFORM','ÜRÜN','ADET','BİRİM','DURUM'], [
-      for (final o in platformOrders)
-        for (final b in asMaps(o['batches']))
-          for (final l in asMaps(b['lines'])) [field(o,'id'),field(o,'source'),
-            field(l,'name'),field(l,'qty'),_amount(cents(l['price'])),
-            l['voided'] == true ? 'İptal' : l['correction'] == true ? 'Düzeltme' : field(o,'status')],
-      for (final o in tgo)
-        for (final l in asMaps(o['lines'])) [field(o,'orderNumber'),'Trendyol Go',
-          field(l,'name'),field(l,'qty'),money(l,'unitPriceCents'),field(o,'status')],
-    ]),
-    _notice('Online satış tahmini yalnızca teslim edilen gerçek siparişlere dayanır. '
-      'Otomatik veri eksik olabilir; manuel toplam otomatik veriyle birleştirilmez. '
-      'Platform neti banka ödemesi değildir.'),
-  ]);
-  section('06 · Malzeme ve Marketler', [
-    _table(['MARKET','KAYIT','NET ALIŞ'], [
-      for (final brand in materialStores) [brand,
-        materials.where((r) => r['voided'] != true && materialPurchaseStore(r) == brand).length.toString(),
-        _amount(sum(materials.where((r) => r['voided'] != true && materialPurchaseStore(r) == brand),'totalCents'))],
-    ]),
-    _section('Tüm malzeme kayıtları'),
-    _table(['TARİH / ID','ÜRÜN / MARKET','MİKTAR','BİRİM','İNDİRİM','NET','ÖDEME'], [
-      for (final r in materials) [field(r,'date') + '\n' + field(r,'id'),
-        field(r,'title') + '\n' + field(r,'market') + (r['voided'] == true ? '\nİPTAL' : ''),
-        isQuickMaterial(r) ? '—' : _quantity(r['quantityMilli']) + ' ' + field(r,'unit'),
-        isQuickMaterial(r) ? '—' : money(r,'pricePerUnitCents'),
-        money(r,'discountCents'),money(r,'totalCents'),field(r,'paymentMethod')],
-    ]),
-    _section('Hızlı gider tutarları ve açıklamalar'),
-    _table(['ID','TARİH','MARKET','TUTARLAR / NOT'], [
-      for (final r in materials.where((r) => isQuickMaterial(r) || (r['note'] ?? '').toString().isNotEmpty))
-        [field(r,'id'),field(r,'date'),field(r,'market'),
-          (isQuickMaterial(r) && r['amountsCents'] is List ?
-            (r['amountsCents'] as List).whereType<int>().map(_amount).join(' + ') + '\n' : '') + field(r,'note')],
-    ]),
-    _section('Malzeme değişiklik ve iptal geçmişi'),
-    _table(['ID','TARİH','İŞLEM','ÖNCEKİ TUTAR / AÇIKLAMA'], [
-      for (final r in materials) ...[
-        for (final h in asMaps(r['history'])) [field(r,'id'),istanbulStamp(h['changedAt']),
-          'Düzenleme',money(h,'previousTotalCents')],
-        if (r['voided'] == true) [field(r,'id'),istanbulStamp(r['voidedAt']),'İptal',field(r,'voidReason')],
+    heading('Masa performansı'),
+    compact(['MASA','HESAP','KAPALI','AÇIK','TUTAR'],[
+      for(final n in [1,2,3,4,5]) [
+        'Masa '+n.toString(),
+        valid.where((o)=>o['source']=='Masa'&&o['table']==n).length.toString(),
+        valid.where((o)=>o['source']=='Masa'&&o['table']==n&&o['closed']==true).length.toString(),
+        valid.where((o)=>o['source']=='Masa'&&o['table']==n&&o['closed']!=true).length.toString(),
+        _amount(valid.where((o)=>o['source']=='Masa'&&o['table']==n).fold<int>(0,(v,o)=>v+orderTotalCents(o))),
       ],
     ]),
-    _section('Market fiyat takibi · son kayıtlı referans'),
-    _table(['ÜRÜN','MARKET','BİRİM','FİYAT','SON KONTROL'], [
-      for (final r in trackedMarketProducts(state)) [field(r,'title'),field(r,'market'),
-        field(r,'unit'),money(r,'priceCents'),istanbulStamp(r['lastCheckedAt'])],
-    ]),
-    _notice('Takip fiyatı satın alma maliyeti değildir. Hızlı giderde ürün miktarı '
-      've stok tüketimi bilinmez; uydurulmaz.'),
+    note('Masa = açılan hesap; farklı = farklı masa numarası. Ek sipariş, hesabı '
+      'yeniden saymaz. Hesap sahibi ve giriş yapan personel ayrı ölçümlerdir.'),
   ]);
-  section('07 · Maaş ve Diğer Giderler', [
-    _section('Haftalık maaş kayıtları · Pazar tarihine göre'),
-    _table(['PERSONEL / HAFTA','SAAT / ÜCRET','PRİM','HAK EDİŞ','AVANS','KALAN / DURUM'], [
-      for (final r in payroll) [field(r,'employeeName') + '\n' + field(r,'weekStart') + ' / ' + field(r,'weekEnd'),
-        _hours(r['workedMinutes']) + '\n' + field(r,'payType') + ' · ' + money(r,'rateCents'),
-        money(r,'bonusCents'),money(r,'grossCents'),money(r,'advanceCents'),
-        money(r,'payableCents') + '\n' + (r['paid'] == true ? 'Ödendi' : 'Ödenmedi')],
+  page('03 · Satış ve Yoğunluk',[
+    heading('Net yerel tahsilat · dönem grafiği'),
+    bars(trend),
+    heading('Saatlik sipariş yoğunluğu'),
+    pw.Container(height:108,padding:const pw.EdgeInsets.only(top:4),
+      child:pw.Row(crossAxisAlignment:pw.CrossAxisAlignment.end,children:[
+        for(var h=0;h<24;h++) pw.Expanded(child:pw.Column(
+          mainAxisAlignment:pw.MainAxisAlignment.end,children:[
+            _text(hourly[h].toString(),size:6),
+            pw.SizedBox(height:3),
+            pw.Container(width:12,height:65*hourly[h]/maxHour,color:_green),
+            pw.SizedBox(height:3),
+            _text(h.toString().padLeft(2,'0'),size:7),
+          ])),
+      ])),
+    heading('En çok satılan yerel ürünler'),
+    compact(['ÜRÜN','ADET','SATIR TUTARI'],[
+      for(final p in productRows.take(10)) [short(p.key,43),field(p.value,'qty'),_amount(_cents(p.value,'amount'))],
+      if(productRows.length>10) ['Diğer ('+(productRows.length-10).toString()+' ürün)',
+        productRows.skip(10).fold<int>(0,(n,p)=>n+_cents(p.value,'qty')).toString(),
+        _amount(productRows.skip(10).fold<int>(0,(n,p)=>n+_cents(p.value,'amount')))],
     ]),
-    _section('Sabit giderler ve ödeme durumu'),
-    _table(['AY','GİDER','AYLIK TUTAR','ÖDEME','RAPOR TOPLAMI'], fixedRows),
-    _section('Diğer giderler'),
-    _table(['TARİH','KATEGORİ','GİDER','TUTAR','ÖDEME / DURUM'], [
-      for (final r in other) [field(r,'date'),field(r,'category'),field(r,'name'),
-        money(r,'amountCents'),field(r,'paymentMethod') + (r['voided'] == true ? ' · İPTAL' : '')],
-    ]),
-    _notice('Avans hak edişin parçasıdır ve ikinci kez gider yazılmaz. '
-      'Ödendi işareti gerçek banka veya kasa hareketinin yerine geçmez.'),
+    note('Ürünler parti giriş tarihine göre; tahsilatlar ödeme/iade tarihine göre. '
+      'İptal edilen ürünler satışa dahil değildir.'),
   ]);
-  section('08 · Kasa ve Kontrol', [
-    _section('Kasa oturumları (açılış veya kapanış dönemde)'),
-    _table(['ID / AÇILIŞ','KAPANIŞ','AÇILIŞ TUTARI','BEKLENEN','SAYIM','FARK'], [
-      for (final r in asMaps(cash['sessions']))
-        if (period.includesStamp(r['openedAt']) || period.includesStamp(r['closedAt']))
-          [field(r,'id') + '\n' + istanbulStamp(r['openedAt']),istanbulStamp(r['closedAt']),
-            money(r,'openingCents'),money(r,'expectedCents'),money(r,'countedCents'),money(r,'differenceCents')],
+  page('04 · Malzeme, Maaş ve Giderler',[
+    heading('Market bazlı alımlar'),
+    compact(['MARKET','KAYIT','NET ALIŞ'],[
+      for(final brand in materialStores) [brand,
+        materials.where((r)=>materialPurchaseStore(r)==brand).length.toString(),
+        _amount(sum(materials.where((r)=>materialPurchaseStore(r)==brand),'totalCents'))],
+      ['TOPLAM',materials.length.toString(),_amount(materialTotal)],
     ]),
-    _section('Kasa giriş / çıkışları'),
-    _table(['TARİH','KASA ID','İŞLEM','KAYDEDEN','TUTAR'], [
-      for (final r in asMaps(cash['movements']))
-        if (period.includesStamp(r['at'])) [istanbulStamp(r['at']),field(r,'sessionId'),
-          field(r,'note'),field(r,'by'),money(r,'cents')],
+    heading('Alış türü ve indirim'),
+    compact(['DETAYLI ALIŞ','HIZLI GİDER','TOPLAM İNDİRİM'],[
+      [_amount(sum(materials.where((r)=>!isQuickMaterial(r)),'totalCents')),
+        _amount(sum(materials.where(isQuickMaterial),'totalCents')),
+        _amount(sum(materials,'discountCents'))],
     ]),
-    _notice('Yöneticiye özel: ücret ve işletme bilgileri içerir. Kişisel müşteri '
-      'telefonu/adresi, şifreler ve API anahtarları rapora dahil edilmez. '
-      'Rapor sadece mevcut, onaylı POS verilerini içerir; bekleyen Android '
-      'işlemleri senkronize olmadan dahil değildir.'),
+    heading('Personel maaş özeti'),
+    compact(['PERSONEL','SAAT','PRİM','HAK EDİŞ','AVANS','ÖDENMEMİŞ'],[
+      for(final p in payRows.take(8)) [short(p.key,20),_hours(p.value['minutes']),
+        _amount(_cents(p.value,'bonus')),_amount(_cents(p.value,'gross')),
+        _amount(_cents(p.value,'advance')),_amount(_cents(p.value,'due'))],
+      if(payRows.length>8) ['Diğer',_hours(payRows.skip(8).fold<int>(0,(n,p)=>n+_cents(p.value,'minutes'))),
+        for(final key in ['bonus','gross','advance','due']) _amount(payRows.skip(8).fold<int>(0,(n,p)=>n+_cents(p.value,key)))],
+      ['TOPLAM',_hours(sum(payroll,'workedMinutes')),_amount(sum(payroll,'bonusCents')),
+        _amount(payrollTotal),_amount(sum(payroll,'advanceCents')),
+        _amount(sum(payroll.where((p)=>p['paid']!=true),'payableCents'))],
+    ]),
+    heading('Gider kategorileri'),
+    pair(compact(['SABİT GİDER','TUTAR'],aggregateRows(fixedByCategory,5)),
+      compact(['DİĞER GİDER','TUTAR'],aggregateRows(categories,5))),
+    note('Avans ikinci kez gider sayılmaz. Hızlı giderlerde ürün miktarı bilinmez. '
+      'Sabit giderler mevcut şablonlara dayanır. Yalnızca Windows onaylı kayıtlar dahildir.'),
   ]);
   return pdf.save();
 }
