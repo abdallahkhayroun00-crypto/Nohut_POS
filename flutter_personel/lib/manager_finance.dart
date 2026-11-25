@@ -292,10 +292,10 @@ class _ManagerFinancePageState extends State<ManagerFinancePage> {
         ...children,
       ])));
 
-  Widget _line(String title, Object? value, {String? subtitle}) =>
-    ListTile(contentPadding: EdgeInsets.zero, title: Text(title),
+  Widget _line(String title, Object? value, {String? subtitle, VoidCallback? onTap, VoidCallback? onAction}) =>
+    ListTile(contentPadding: EdgeInsets.zero, title: Text(title), onTap: onTap,
       subtitle: subtitle == null ? null : Text(subtitle),
-      trailing: Text(_money(value), style: const TextStyle(fontWeight: FontWeight.w700)));
+      trailing: Row(mainAxisSize: MainAxisSize.min, children: [Text(_money(value), style: const TextStyle(fontWeight: FontWeight.w700)), if (onAction != null) IconButton(tooltip: 'İşlem', onPressed: onAction, icon: const Icon(Icons.more_vert))]));
 
   @override
   Widget build(BuildContext context) {
@@ -317,6 +317,20 @@ class _ManagerFinancePageState extends State<ManagerFinancePage> {
         ]),
         if (busy) const LinearProgressIndicator(),
         if (error != null) Text(error!),
+        if (queue.isNotEmpty) _section('Bekleyen Yönetici İşlemleri', [
+          for (final item in queue)
+            ListTile(title: Text((item['payload'] as Map)['action'].toString()),
+              subtitle: Text((item['message'] ?? 'Windows onayı bekliyor').toString()),
+              trailing: item['status'] == 'conflict'
+                ? TextButton(onPressed: busy ? null : () async {
+                    await widget.store.discardManagerConflict((item['payload'] as Map)['requestId'] as String);
+                    if (mounted) await _load();
+                  }, child: const Text('Vazgeç')) : const Icon(Icons.schedule)),
+          OutlinedButton(onPressed: busy ? null : () async {
+            await widget.store.sync(force: true);
+            if (mounted) await _load();
+          }, child: const Text('Senkronize Et')),
+        ]),
         if (data != null) ...[
           Text((offline ? 'Çevrimdışı kopya · ' : 'Windows kaydı · ') +
             (data['snapshotAt'] ?? '').toString()),
@@ -329,6 +343,11 @@ class _ManagerFinancePageState extends State<ManagerFinancePage> {
               subtitle: 'Vergi ve stok tüketimi dahil değildir.'),
           ]),
           _section('Online platformlar', [
+            _add('Manuel Brüt / Net Ekle', 'manual'),
+            for (final p in _rows(data['manualPlatformSales']))
+              _line(p['source'].toString() + ' · Manuel ' + p['kind'].toString(), p['amountCents'],
+                onTap: busy ? null : () => _edit('manual', p),
+                onAction: busy ? null : () => _confirm('Manuel gelir iptal edilsin mi?', 'manual_void', {'source': p['source'], 'month': month, 'expectedVersion': p['updatedAt']})),
             for (final p in _rows(data['platforms']))
               _line(p['source'].toString(), p['netCents'],
                 subtitle: (p['origin'] ?? '').toString() +
@@ -336,16 +355,22 @@ class _ManagerFinancePageState extends State<ManagerFinancePage> {
                   ' · Kesinti ' + _money(p['deductionCents'])),
           ]),
           _section('Günlük Malzeme · ' + _money(summary['materialsCents']), [
+            _add('Detaylı Malzeme Ekle', 'material'),
             for (final p in _rows(data['materials']))
               _line((p['title'] ?? 'Malzeme').toString() +
                 (p['voided'] == true ? ' · İPTAL' : ''), p['totalCents'],
+                onTap: busy || p['voided'] == true || p['recordType'] == 'quick' ? null : () => _edit('material', p),
+                onAction: busy || p['voided'] == true || p['recordType'] == 'quick' ? null : () => _confirm('Malzeme iptal edilsin mi?', 'material_void', {'id': p['id'], 'expectedVersion': p['updatedAt'], 'reason': 'Android yönetici iptali'}),
                 subtitle: (p['date'] ?? '').toString() + ' · ' +
                   (p['market'] ?? '').toString() +
                   (p['recordType'] == 'quick' ? ' · Hızlı gider' : '')),
           ]),
           _section('Haftalık Maaşlar · ' + _money(summary['payrollCents']), [
+            _add('Haftalık Maaş Ekle', 'payroll'),
             for (final p in _rows(data['weeklyPayroll']))
               _line((p['employeeName'] ?? 'Personel').toString(), p['grossCents'],
+                onTap: busy || p['paid'] == true ? null : () => _edit('payroll', p),
+                onAction: busy || p['paid'] == true ? null : () => _confirm('Maaş ödendi olarak işaretlensin mi?', 'payroll_paid', {'employeeId': p['employeeId'], 'weekStart': p['weekStart'], 'expectedVersion': p['updatedAt']}),
                 subtitle: (p['weekStart'] ?? '').toString() + ' – ' +
                   (p['weekEnd'] ?? '').toString() + '\nAvans: ' +
                   _money(p['advanceCents']) + ' · Avans sonrası: ' +
@@ -353,16 +378,21 @@ class _ManagerFinancePageState extends State<ManagerFinancePage> {
                   (p['paid'] == true ? 'Ödendi' : 'Ödenmedi')),
           ]),
           _section('Sabit Giderler · ' + _money(summary['fixedCents']), [
+            _add('Sabit Gider Ekle', 'fixed'),
             for (final p in _rows(data['monthlyFixed']))
               _line((p['name'] ?? '').toString(), p['amountCents'],
+                onTap: busy ? null : () => _edit('fixed', p),
+                onAction: busy ? null : () => _confirm('Ödeme durumu değiştirilsin mi?', 'fixed_paid', {'id': p['id'], 'month': month, 'expectedVersion': p['updatedAt'], 'expectedPaidAt': fixedPayments.where((r) => r['templateId'] == p['id']).firstOrNull?['paidAt'], 'paid': !fixedPayments.any((r) => r['templateId'] == p['id'])}),
                 subtitle: (p['category'] ?? '').toString() + ' · ' +
                   (fixedPayments.any((r) => r['templateId'] == p['id'])
                     ? 'Ödendi' : 'Bekliyor')),
           ]),
           _section('Diğer Giderler · ' + _money(summary['otherCents']), [
+            _add('Diğer Gider Ekle', 'other'),
             for (final p in _rows(data['other']))
               _line((p['name'] ?? '').toString() +
                 (p['voided'] == true ? ' · İPTAL' : ''), p['amountCents'],
+                onAction: busy || p['voided'] == true ? null : () => _confirm('Gider iptal edilsin mi?', 'other_void', {'id': p['id'], 'expectedVersion': p['createdAt'], 'reason': 'Android yönetici iptali'}),
                 subtitle: (p['date'] ?? '').toString() + ' · ' +
                   (p['category'] ?? '').toString()),
           ]),
