@@ -7,6 +7,45 @@ import 'package:nohut_falafel_desktop/finance_sync_server.dart';
 import 'package:nohut_falafel_desktop/pos_store.dart';
 
 void main() {
+  test('manager commands use existing payroll and finance rules and reject stale writes', () {
+    final dir = Directory.systemTemp.createTempSync('nohut-manager-finance-test');
+    final store = PosStore(databaseFile: dir.path + '/test.sqlite3');
+    addTearDown(() { store.dispose(); dir.deleteSync(recursive: true); });
+    final initial = store.read();
+    saveEmployeePay(initial.data, 1, 'Saatlik', 10000);
+    expect(store.replace(initial.data, initial.revision).ok, true);
+    final payroll = <String, dynamic>{
+      'requestId': 'manager_payroll_test_123456',
+      'operation': 'managerWrite', 'action': 'payroll_save',
+      'data': {'employeeId': 1, 'weekStart': '2026-11-16',
+        'expectedVersion': null, 'expectedRate': 10000,
+        'expectedPayType': 'Saatlik', 'workedMinutes': 2400,
+        'bonusCents': 10000, 'advanceCents': 5000, 'paid': false},
+    };
+    final first = FinanceSyncServer.managerWrite(store, payroll);
+    expect(FinanceSyncServer.managerWrite(store, payroll), first);
+    final pay = financeRows(store.read().data, 'weeklyPayroll').single;
+    expect(pay['grossCents'], 410000);
+    expect(pay['payableCents'], 405000);
+    expect(() => FinanceSyncServer.managerWrite(store,
+      {...payroll, 'requestId': 'manager_payroll_stale_123456'}),
+      throwsA(isA<FinanceVersionConflict>()));
+    final other = <String, dynamic>{
+      'requestId': 'manager_other_test_123456',
+      'operation': 'managerWrite', 'action': 'other_create',
+      'data': {'date': '2026-11-16', 'category': 'Diğer',
+        'name': 'Test', 'amountCents': 5000, 'paymentMethod': 'Nakit'},
+    };
+    final ack = FinanceSyncServer.managerWrite(store, other);
+    expect(FinanceSyncServer.managerWrite(store, other), ack);
+    final view = FinanceSyncServer.monthView(store.read().data, '2026-11');
+    expect((view['summary'] as Map)['payrollCents'], 410000);
+    expect((view['summary'] as Map)['otherCents'], 5000);
+    expect((view['weeklyPayroll'] as List).length, 1);
+    expect(view.containsKey('orders'), false);
+    expect(view.containsKey('settings'), false);
+  });
+
   test('encrypted finance envelopes reject wrong restaurant, key and response context', () async {
     final key = FinanceWire.createKey();
     final payload = <String, dynamic>{'operation': 'pull', 'afterId': 0};
