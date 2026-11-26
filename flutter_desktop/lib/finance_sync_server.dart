@@ -176,11 +176,16 @@ class FinanceSyncServer {
         'payType', 'rateCents', 'workedMinutes', 'bonusCents', 'advanceCents',
         'grossCents', 'payableCents', 'paid', 'updatedAt',
       ]),
-      'monthlyFixed': pick('monthlyFixed', (r) => r['active'] == true &&
-          (r['startMonth'] ?? '').toString().compareTo(month) <= 0, [
-        'id', 'category', 'name', 'amountCents', 'startMonth', 'dueDay',
-        'updatedAt',
-      ]),
+      // Amount in force for the requested month, not today's amount.
+      'monthlyFixed': [
+        for (final (r, amount) in fixedDueRows(state, month))
+          {
+            for (final key in ['id', 'category', 'name', 'startMonth',
+                'dueDay', 'updatedAt'])
+              key: r[key],
+            'amountCents': amount,
+          },
+      ],
       'fixedPayments': pick('fixedPayments', (r) => r['month'] == month, [
         'templateId', 'month', 'paidAt', 'amountCents',
       ]),

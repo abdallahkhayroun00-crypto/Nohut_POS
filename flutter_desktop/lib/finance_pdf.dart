@@ -348,12 +348,9 @@ List<pw.Widget> _monthly(Json state, String month) {
       ],
   ];
   final fixedByCategory = <String, int>{};
-  for (final row in financeRows(state, 'monthlyFixed')) {
-    final since = (row['startMonth'] ?? '').toString();
-    if (row['active'] != true || since.compareTo(month) > 0) continue;
+  for (final (row, amount) in fixedDueRows(state, month)) {
     final name = (row['category'] ?? 'Diğer').toString();
-    fixedByCategory.update(name, (v) => v + _cents(row, 'amountCents'),
-      ifAbsent: () => _cents(row, 'amountCents'));
+    fixedByCategory.update(name, (v) => v + amount, ifAbsent: () => amount);
   }
   final breakdown = <String, int>{
     'Gıda / Malzeme': summary.materialsCents,
@@ -526,13 +523,12 @@ List<pw.Widget> _payroll(Json state, String week) {
     n + _cents(p, 'advanceCents'));
   final payable = payroll.fold<int>(0, (n, p) =>
     n + _cents(p, 'payableCents'));
-  final fixed = financeRows(state, 'monthlyFixed')
-    .where((p) => p['active'] == true &&
-      (p['startMonth'] ?? '').toString().compareTo(month) <= 0)
-    .toList();
+  final fixedRows = fixedDueRows(state, month);
+  final fixed = [
+    for (final (row, amount) in fixedRows) {...row, 'amountCents': amount},
+  ];
   final payments = financeRows(state, 'fixedPayments');
-  final fixedTotal = fixed.fold<int>(0, (n, p) =>
-    n + _cents(p, 'amountCents'));
+  final fixedTotal = fixedRows.fold<int>(0, (n, r) => n + r.$2);
   return [
     pw.Container(
       width: double.infinity,
@@ -781,9 +777,7 @@ Future<Uint8List> generateManagementPdf(Json state, ReportPeriod period) async {
   for (final month in period.months) {
     final full = period.fullMonth(month);
     if (!full) incomplete = true;
-    for (final r in financeRows(state, 'monthlyFixed')) {
-      if (r['active'] != true || field(r,'startMonth').compareTo(month) > 0) continue;
-      final amount = _cents(r,'amountCents');
+    for (final (r, amount) in fixedDueRows(state, month)) {
       if (full) {
         fixedTotal += amount;
         final name = field(r,'category');
