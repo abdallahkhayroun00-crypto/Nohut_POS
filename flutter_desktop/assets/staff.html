@@ -42,6 +42,108 @@
   header select{font-size:13px;padding-inline:7px}
 }
 #cash-change{font-size:23px;font-weight:800;color:var(--green)}#cash-shortcuts[hidden]{display:none}#payment-products[hidden],#pay-print-label[hidden],#mixed-card[hidden]{display:none}.product-share{display:grid;grid-template-columns:1fr 105px;gap:10px;align-items:center;padding:8px 0}.product-share input[data-share-qty]{width:100%}#internal-item label:not(.check){display:grid;margin:8px 0}#internal-item input:not([type=checkbox]){width:100%}
+
+/* ===== 2026 redesign: same look as the Windows POS ===== */
+:root{--green:#123B2D;--green-2:#1E5A42;--gold:#B8893A;--cream:#F7F5EE;--card:#FFFFFF;--muted:#65736C;--line:#E1E7E3;--soft:#F1F4F2;--amber:#FFF1D6;--amber-line:#D9A24E;--teal:#E3F1F5;--teal-line:#5E9CB0;--free:#F1F7F2;--free-line:#7FB08F}
+body{background:var(--cream);color:#18372C}
+button{border-color:#D5DED8;background:var(--card);border-radius:12px}
+button:hover{background:var(--soft)}
+.primary,.primary:hover{background:var(--green);border-color:var(--green);color:#fff}
+.primary:hover{background:var(--green-2)}
+.danger{color:#B3261E;border-color:#EBC3BD}
+.ghost,.ghost:hover{background:transparent;border-color:transparent}
+input,select,textarea{background:#fff;border-color:#D6E1D9;border-radius:12px}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--green);box-shadow:0 0 0 3px #123B2D22}
+h1,h2,h3{color:var(--green)}
+/* header + navigation */
+header{background:var(--green);border-bottom:0;padding:10px 14px;color:#fff}
+header h1{color:#fff;font-size:19px}
+header .brand-logo{background:#fff;width:42px;height:42px}
+#connection{color:#BFD6C8}
+header label{color:#BFD6C8;font-size:12px}
+header select{background:#fff;color:var(--green);border:0;min-height:40px;font-weight:700}
+#reload{color:#fff;border-color:#ffffff40}
+#reload:hover{background:#ffffff1a}
+.top-nav{background:var(--card);border-bottom:1px solid var(--line);padding:8px 10px;gap:6px}
+.top-nav button{border-radius:22px;font-weight:700;color:var(--muted);min-height:42px}
+.top-nav button:hover{background:var(--soft)}
+.top-nav [aria-selected=true],.top-nav [aria-selected=true]:hover{background:var(--green);color:#fff}
+.top-nav [aria-selected=true] .count{background:#fff;color:var(--green)}
+.count{background:var(--soft);font-weight:800}
+/* floor plan */
+#staff-floor{background:#FEFEFB;border-color:var(--line);border-radius:16px;box-shadow:0 1px 0 #0000000a}
+#staff-floor .table-tile{background:var(--free);border:1.6px solid var(--free-line);border-radius:14px;box-shadow:0 4px 10px #0c42291a;font-weight:700}
+#staff-floor .table-tile:hover{filter:brightness(.98)}
+#staff-floor .table-tile.occupied{background:var(--amber);border-color:var(--amber-line);color:#6E4614}
+#staff-floor .table-tile.paid{background:var(--teal);border-color:var(--teal-line);color:#1F5566}
+#staff-floor .chair{border-color:#E2BE6B;background:#FFEFC2}
+[data-screen=tables] h2{font-size:22px}
+#pickup-shortcut{border-radius:22px;font-weight:700}
+/* products */
+.setup-fields label,.customer-fields label{font-size:12.5px}
+#search{border-radius:22px;background:#fff}
+#categories button{background:var(--card);border:1px solid #D5DED8;font-weight:700;color:var(--muted);min-height:38px}
+#categories [aria-pressed=true],#categories [aria-pressed=true]:hover{background:var(--green);border-color:var(--green);color:#fff}
+.product{background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 1px 0 #0000000a}
+.product .name{color:#18372C}
+.price{color:var(--green);font-weight:800}
+.custom-button{color:var(--muted);text-decoration:underline;text-underline-offset:3px}
+.custom-button:hover{background:transparent;color:var(--green)}
+.add-button,.add-button:hover{background:var(--green);border-color:var(--green);color:#fff;border-radius:12px}
+.add-button:hover{background:var(--green-2)}
+.add-button:active{transform:scale(.96)}
+.in-cart{background:var(--gold);border-color:#fff;font-weight:800}
+.target-bar{background:var(--amber);border-color:#EED9A6;color:#6E4614;border-radius:12px}
+#destination{background:var(--soft);border-radius:10px;padding:6px 10px}
+#add-custom-item{border-style:dashed;color:var(--green);font-weight:700}
+/* cart */
+.cart-line{background:var(--card);border-color:var(--line);border-radius:16px;padding:12px 14px;margin:8px 0}
+.cart-line-title{align-items:center}
+.cart-line-title strong{font-size:18px}
+.cart-line-title .danger{min-height:34px;padding:4px 8px;font-size:14px}
+.cart-line-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:6px}
+.quantity{background:var(--soft);border-radius:12px;padding:3px;gap:6px}
+.quantity button{background:#fff;border:0;width:40px;min-height:40px;border-radius:10px;font-weight:800}
+.quantity b{min-width:22px;text-align:center;font-size:18px}
+.cart-line [data-line-status]{margin:0;color:var(--green);font-size:18px;font-weight:800}
+.cart-line-fields{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+.cart-line-fields label{margin:0;font-size:12px}
+.cart-line-fields input{min-height:38px;margin-top:3px;font-size:15px}
+.cart-custom{margin-top:8px;min-height:36px;font-size:14px;color:var(--muted)}
+.summary{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px;margin-top:12px}
+#total{color:var(--green)}
+#submit{border-radius:14px;min-height:52px;font-size:18px}
+/* orders + detail */
+.order{background:var(--card);border-color:var(--line);border-radius:16px;margin:0}
+.order .order-number{font-size:20px}
+.badge{background:var(--amber);color:#6E4614;font-weight:700}
+.badge.ready{background:#E5EBDF;color:var(--green)}
+.select-order{background:var(--green);border-color:var(--green);color:#fff}
+.select-order:hover{background:var(--green-2)}
+#order-detail h2{margin:6px 0 4px}
+.detail-line{border-bottom-color:var(--line)}
+.detail-line .line-price{color:var(--green);font-weight:800}
+.detail-totals{background:var(--soft);border:0;border-radius:16px}
+.detail-totals p:last-child{border-top-color:#D5DED8;color:var(--green)}
+#pay-order{min-height:52px;font-size:18px}
+#delete-order{background:transparent;border-color:transparent}
+.empty{background:var(--card);border-color:#D5DED8}
+#notice{background:var(--amber);border-bottom-color:#EED9A6}
+#notice[data-tone=success]{background:#E8F4EC;border-bottom-color:#BFDCC8}
+/* bottom bar */
+.bottom-bar{background:var(--green);border-top:0;box-shadow:0 -6px 16px #0c422922}
+.bottom-bar button{background:#fff;border:0;font-weight:800}
+.bottom-bar button:hover{background:#F1F4F2}
+body[data-view=cart] .bottom-bar{display:none}
+/* dialogs */
+dialog{background:var(--card);border-color:var(--line);border-radius:22px;box-shadow:0 20px 60px #0c422933}
+#cash-change{background:#E8F4EC;color:#1E5A37;border-radius:12px;padding:10px 12px}
+#cash-shortcuts button{min-height:38px;border-radius:20px;font-size:14px}
+#ingredient-chips button{border-radius:20px;min-height:38px}
+@media(max-width:550px){
+  .cart-line-fields{grid-template-columns:1fr}
+  header{padding:8px 10px}
+}
 </style></head><body data-view="tables">
 <header><div class="row"><img class="brand-logo" src="/assets/nohut-logo.webp" width="44" height="44" alt="Nohut Falafel"><div class="grow"><h1>Nohut Falafel</h1><div id="connection" role="status">Laptopa bağlanılıyor…</div></div><label><span class="sr-only">Çalışan</span><select id="staff" aria-label="Çalışan"><option value="">Adınızı seçin</option></select></label><button id="reload" class="ghost" aria-label="Bağlantıyı Yenile">↻</button></div></header>
 <nav class="top-nav" aria-label="Personel bölümleri"><button data-view="tables" aria-selected="true">Masalar</button><button data-view="menu" aria-selected="false">Ürünler</button><button data-view="cart" aria-selected="false">Sepet <span id="cart-count" class="count">0</span></button><button data-view="orders" aria-selected="false">Siparişler <span id="order-count" class="count">0</span></button></nav>
@@ -204,7 +306,7 @@ function renderCategories(){const categories=[...new Set((state.localMenu||[]).f
 function renderMenu(){if(!state)return;const search=$('search').value.toLocaleLowerCase('tr-TR');$('menu').innerHTML=(state.localMenu||[]).filter(p=>p.active!==false&&(category==='all'||p.category===category)&&p.name.toLocaleLowerCase('tr-TR').includes(search)).map(p=>`<article class="product"><div class="grow"><strong class="name">${esc(p.name)}</strong><div class="row"><b class="price">${p.price==null?'Fiyat yok':money(Math.round(p.price*100))}</b><button class="custom-button" data-custom="${p.id}" data-unpriced="${p.price==null}">Not / Malzeme</button></div></div><button class="add-button" aria-label="${esc(p.name)} ekle" data-add="${p.id}" data-unpriced="${p.price==null}">+<span class="in-cart" data-product-count="${p.id}" hidden></span></button></article>`).join('')||'<p class="empty">Ürün bulunamadı.</p>';updateProductCounts();controls()}
 function updateProductCounts(){for(const el of document.querySelectorAll('[data-product-count]')){const n=[...cart.values()].filter(r=>r.productId===Number(el.dataset.productCount)).reduce((a,r)=>a+r.qty,0);el.textContent=n;el.hidden=n===0;}}
 function addLine(id,qty=1,note='',removed=[],adjustmentCents=0,components=null){if(cart.size>=200){notice('Bir sipariş en fazla 200 ayrı satır içerebilir.');return}const p=product(id);if(!p||p.price==null||busy||pending)return;components=structuredClone(components??p.components??[]);const same=[...cart.values()].find(r=>r.productId===id&&JSON.stringify(r.components||[])===JSON.stringify(components)&&r.note===note&&(r.adjustmentCents||0)===adjustmentCents&&r.removed.join(',')===removed.join(','));if(same){if(same.qty+qty>1000){notice('Adet en fazla 1000 olabilir');return}same.qty+=qty}else cart.set(++lineId,{productId:id,qty,note,removed,adjustmentCents,name:p.name,campaignId:p.campaignId,components,expectedPriceCents:Math.round(p.price*100)});renderCart();total()}
-function renderCart(){$('cart').innerHTML=[...cart].map(([key,r])=>`<article class="cart-line"><div class="cart-line-title"><strong>${esc(r.name)}</strong><button class="ghost danger" data-delete="${key}">Kaldır</button></div><div class="quantity"><button data-delta="-1" data-key="${key}" aria-label="Adedi azalt">−</button><b>${r.qty}</b><button data-delta="1" data-key="${key}" aria-label="Adedi artır">+</button></div><label>Not<input data-note="${key}" maxlength="500" value="${esc(r.note)}"></label><label>Çıkarılacak malzemeler<input data-removed="${key}" maxlength="500" value="${esc(r.removed.join(', '))}"></label>${componentSummary(r)}${r.customItem?'':`<button data-cart-custom="${key}">Not / Malzeme / Fark</button>`}<p data-line-status="${key}"></p></article>`).join('')||'<div class="empty"><strong>Sepet boş</strong><p>Menüden ürün ekle.</p></div>';controls()}
+function renderCart(){$('cart').innerHTML=[...cart].map(([key,r])=>`<article class="cart-line"><div class="cart-line-title"><strong>${esc(r.name)}</strong><button class="ghost danger" data-delete="${key}">Kaldır</button></div><div class="cart-line-row"><div class="quantity"><button data-delta="-1" data-key="${key}" aria-label="Adedi azalt">−</button><b>${r.qty}</b><button data-delta="1" data-key="${key}" aria-label="Adedi artır">+</button></div><p data-line-status="${key}"></p></div><div class="cart-line-fields"><label>Not<input data-note="${key}" maxlength="500" value="${esc(r.note)}" placeholder="Örn. sos ayrı"></label><label>Çıkarılacak malzemeler<input data-removed="${key}" maxlength="500" value="${esc(r.removed.join(', '))}" placeholder="Örn. domates"></label></div>${componentSummary(r)}${r.customItem?'':`<button class="cart-custom" data-cart-custom="${key}">Not / Malzeme / Fark</button>`}</article>`).join('')||'<div class="empty"><strong>Sepet boş</strong><p>Menüden ürün ekle.</p></div>';controls()}
 function priceChanged(row){
   const p=cartProduct(row);
   return !row.customItem&&p?.price!=null&&row.expectedPriceCents!=null&&row.expectedPriceCents!==Math.round(p.price*100);
