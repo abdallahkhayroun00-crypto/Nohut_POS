@@ -124,6 +124,14 @@ bool validFinanceMonth(String value) =>
 
 String _stamp() => DateTime.now().toUtc().toIso8601String();
 
+/// Expenses are recorded after they happen; a future date (often a typo in
+/// the year) would silently move the cost into another month.
+void _checkNotFuture(String day, String what) {
+  if (day.compareTo(istanbulDay(DateTime.now().toUtc())) > 0) {
+    throw FormatException('$what tarihi gelecekte olamaz.');
+  }
+}
+
 class MarketUnitQuote {
   const MarketUnitQuote(this.unit, this.priceCents, this.label);
   final String unit;
@@ -221,6 +229,7 @@ void saveMaterialPurchase(
   String note = '',
 }) {
   _checkDay(date);
+  _checkNotFuture(date, 'Alış');
   if (!materialStores.contains(storeBrand)) {
     throw const FormatException('Market seçimi geçersiz.');
   }
@@ -303,9 +312,7 @@ void saveQuickMaterialPurchase(Json state, {
   String note = '',
 }) {
   _checkDay(date);
-  if (date.compareTo(istanbulDay(DateTime.now().toUtc())) > 0) {
-    throw const FormatException('Alış tarihi gelecekte olamaz.');
-  }
+  _checkNotFuture(date, 'Alış');
   if (!materialStores.contains(storeBrand) ||
       !financeMethods.contains(paymentMethod) ||
       market.length > 160 || note.length > 500) {
@@ -478,6 +485,58 @@ void markWeeklyPayrollPaid(Json state, int employeeId, String weekStart) {
   existing['updatedAt'] = _stamp();
 }
 
+const _monthNames = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
+  'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
+
+/// "2026-11" → "Kasım 2026".
+String financeMonthLabel(String month) {
+  if (!validFinanceMonth(month)) return month;
+  return '${_monthNames[int.parse(month.substring(5)) - 1]} ${month.substring(0, 4)}';
+}
+
+String _currentMonth() => istanbulDay(DateTime.now().toUtc()).substring(0, 7);
+
+/// Active periods of a fixed expense. Older records without history are
+/// read as before: active from startMonth, or never when inactive.
+List<Json> fixedActiveRanges(Map template) {
+  final raw = template['activeRanges'];
+  if (raw is List) return asMaps(raw);
+  return [
+    if (template['active'] == true)
+      {'from': '${template['startMonth'] ?? ''}', 'to': null},
+  ];
+}
+
+/// Whether a fixed expense is accrued in [month]. Deactivating or editing
+/// an expense never changes months that already passed.
+bool fixedDueIn(Map template, String month) =>
+    fixedActiveRanges(template).any((r) =>
+        '${r['from']}'.compareTo(month) <= 0 &&
+        (r['to'] == null || month.compareTo('${r['to']}') <= 0));
+
+/// Amount accrued for [month]: what was marked paid that month, otherwise
+/// the amount in force then (amount changes apply from their month on).
+int fixedAmountFor(Json state, Map template, String month) {
+  final paid = asMaps(financeBook(state)['fixedPayments']).where((r) =>
+      r['templateId'] == template['id'] && r['month'] == month).firstOrNull;
+  if (paid?['amountCents'] is int) return paid!['amountCents'] as int;
+  var amount = template['amountCents'] as int? ?? 0;
+  final history = asMaps(template['amountHistory'])
+    ..sort((x, y) => '${x['fromMonth']}'.compareTo('${y['fromMonth']}'));
+  for (final h in history) {
+    if ('${h['fromMonth']}'.compareTo(month) <= 0 && h['amountCents'] is int) {
+      amount = h['amountCents'] as int;
+    }
+  }
+  return amount;
+}
+
+/// Fixed expenses accrued in [month] with their amount for that month.
+List<(Json, int)> fixedDueRows(Json state, String month) => [
+  for (final t in financeRows(state, 'monthlyFixed'))
+    if (fixedDueIn(t, month)) (t, fixedAmountFor(state, t, month)),
+];
+
 void saveMonthlyFixed(
   Json state, {
   int? id,
@@ -500,10 +559,50 @@ void saveMonthlyFixed(
   if (id != null && previous == null) {
     throw const FormatException('Sabit gider bulunamadı.');
   }
+  final now = _currentMonth();
+  String later(String a, String b) => a.compareTo(b) >= 0 ? a : b;
+
+  // Active periods: closing or reopening never rewrites earlier months.
+  final ranges = previous == null
+      ? <Json>[if (active) {'from': startMonth, 'to': null}]
+      : fixedActiveRanges(previous).map((r) => Json.from(r)).toList();
+  if (previous != null && ranges.isNotEmpty &&
+      ranges.first['from'] == previous['startMonth']) {
+    ranges.first['from'] = startMonth;
+  }
+  final open = ranges.where((r) => r['to'] == null).firstOrNull;
+  if (previous != null && !active && open != null) {
+    if ('${open['from']}'.compareTo(now) > 0) {
+      ranges.remove(open); // Never started: nothing accrued.
+    } else {
+      open['to'] = now;
+    }
+  } else if (previous != null && active && open == null) {
+    ranges.add({'from': later(startMonth, now), 'to': null});
+  }
+
+  // Amount history: a new amount applies from this month on.
+  final history = previous == null
+      ? <Json>[{'fromMonth': startMonth, 'amountCents': amountCents}]
+      : (previous['amountHistory'] is List
+          ? asMaps(previous['amountHistory']).map((h) => Json.from(h)).toList()
+          : <Json>[{'fromMonth': '${previous['startMonth']}',
+              'amountCents': previous['amountCents']}]);
+  if (previous != null && history.isNotEmpty &&
+      history.first['fromMonth'] == previous['startMonth']) {
+    history.first['fromMonth'] = startMonth;
+  }
+  if (previous != null && previous['amountCents'] != amountCents) {
+    final from = later(startMonth, now);
+    history.removeWhere((h) => '${h['fromMonth']}'.compareTo(from) >= 0);
+    history.add({'fromMonth': from, 'amountCents': amountCents});
+  }
+
   final record = <String, dynamic>{
     'id': id ?? _nextId(asMaps(rows)), 'category': category,
     'name': name.trim(), 'amountCents': amountCents,
     'startMonth': startMonth, 'dueDay': dueDay, 'active': active,
+    'activeRanges': ranges, 'amountHistory': history,
     'createdAt': previous?['createdAt'] ?? _stamp(), 'updatedAt': _stamp(),
   };
   if (previous == null) {
@@ -517,17 +616,17 @@ void markMonthlyFixedPaid(Json state, int id, String month, bool paid) {
   if (!validFinanceMonth(month)) throw const FormatException('Ay geçersiz.');
   final book = financeBook(state);
   final template = asMaps(book['monthlyFixed']).where((r) =>
-    r['id'] == id && r['active'] == true &&
-    (r['startMonth'] as String).compareTo(month) <= 0).firstOrNull;
+    r['id'] == id && fixedDueIn(r, month)).firstOrNull;
   if (template == null) {
     throw const FormatException('Bu ay için aktif sabit gider yok.');
   }
   final rows = book['fixedPayments'] as List;
+  final amount = fixedAmountFor(state, template, month);
   rows.removeWhere((r) => r is Map &&
     r['templateId'] == id && r['month'] == month);
   if (paid) {
     rows.add({'templateId': id, 'month': month,
-      'amountCents': template['amountCents'], 'paidAt': _stamp()});
+      'amountCents': amount, 'paidAt': _stamp()});
   }
 }
 
@@ -540,6 +639,7 @@ void saveOtherExpense(
   required String paymentMethod,
 }) {
   _checkDay(day);
+  _checkNotFuture(day, 'Gider');
   if (!financeOtherCategories.contains(category) ||
       name.trim().isEmpty || name.length > 120 ||
       !financeMethods.contains(paymentMethod)) {
@@ -756,10 +856,8 @@ FinanceMonthSummary financeMonthSummary(Json state, String month) {
   final payroll = financeRows(state, 'weeklyPayroll')
     .where((p) => (p['weekEnd'] as String? ?? '').startsWith(month))
     .fold<int>(0, (sum, p) => sum + (p['grossCents'] as int));
-  final fixed = financeRows(state, 'monthlyFixed')
-    .where((p) => p['active'] == true &&
-      (p['startMonth'] as String).compareTo(month) <= 0)
-    .fold<int>(0, (sum, p) => sum + (p['amountCents'] as int));
+  final fixed = fixedDueRows(state, month)
+    .fold<int>(0, (sum, row) => sum + row.$2);
   final other = financeRows(state, 'other')
     .where((p) => p['voided'] != true &&
       (p['date'] as String? ?? '').startsWith(month))
