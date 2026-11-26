@@ -133,14 +133,10 @@ class LiveOperations {
     required this.onlineNew,
     required this.onlinePreparing,
     required this.onlineReady,
-    required this.cashOpen,
-    required this.cashInDrawerCents,
     required this.cancelledToday,
   });
   final int openTables, openTableCents, openPickups, unpaidCents;
   final int onlineNew, onlinePreparing, onlineReady;
-  final bool cashOpen;
-  final int? cashInDrawerCents;
   final int cancelledToday;
 }
 
@@ -173,7 +169,6 @@ LiveOperations liveOperations(Json state, String day) {
       case 'Invoiced': ready++;
     }
   }
-  final cash = activeCash(state);
   return LiveOperations(
     openTables: tables,
     openTableCents: tableCents,
@@ -182,8 +177,6 @@ LiveOperations liveOperations(Json state, String day) {
     onlineNew: fresh,
     onlinePreparing: picking,
     onlineReady: ready,
-    cashOpen: cash != null,
-    cashInDrawerCents: cash == null ? null : expectedCash(state, cash),
     cancelledToday: cancelled,
   );
 }

@@ -202,8 +202,11 @@ void main() {
         NohutFalafelApp(databaseFile: file, startServer: false),
       );
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('Kasa & Ödemeler').first);
-      await tester.tap(find.text('Kasa & Ödemeler').first);
+      expect(find.text('Kasa & Ödemeler'), findsNothing);
+      await tester.ensureVisible(find.text('Masalar & Siparişler').first);
+      await tester.tap(find.text('Masalar & Siparişler').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Ödeme Bekleyen'));
       await tester.pumpAndSettle();
       expect(find.text('Kasayı Aç'), findsNothing);
       expect(find.text('Kasayı Kapat'), findsNothing);

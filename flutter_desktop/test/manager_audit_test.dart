@@ -131,7 +131,8 @@ void main() {
       closeLocalTable(closed);
       refundPayment(closed, 0, 14000, 'Geçmiş iade');
       await mountManager(t, s);
-      await click(t, 'Kasa & Ödemeler');
+      await click(t, 'Masalar & Siparişler');
+      await click(t, 'Ödeme Bekleyen');
       expect(find.text('Kalan 140,00 ₺'), findsOneWidget);
       await click(t, 'Kalan 140,00 ₺');
       expect(find.text('Nakit / Kart'), findsOneWidget);

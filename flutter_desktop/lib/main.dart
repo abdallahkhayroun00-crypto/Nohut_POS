@@ -186,9 +186,12 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     Icons.account_balance_wallet_outlined, Icons.trending_up_outlined,
     Icons.settings_outlined,
   ];
+  // Kasa & Ödemeler lives inside Masalar & Siparişler on Windows
+  // ("Ödeme Bekleyen" tab); the shared list keeps it for the Android app.
   static final sections = [
     for (var i=0;i<managementSections.length;i++)
-      (managementSections[i].$1,_sectionIcons[i],managementSections[i].$2),
+      if (managementSections[i].$1 != 'payments')
+        (managementSections[i].$1,_sectionIcons[i],managementSections[i].$2),
   ];
 
   @override
@@ -478,6 +481,10 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
 
   void _switch(String next) {
     setState(() {
+      if (next == 'payments') {
+        next = 'tables';
+        localView = 'unpaid';
+      }
       page = next;
       if (next == 'online') {
         onlinePlatform = 'Tümü';
@@ -1693,6 +1700,9 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                     ButtonSegment(value: 'pickup',
                       icon: Icon(Icons.shopping_bag_outlined, size: 18),
                       label: Text('Gel-Al')),
+                    ButtonSegment(value: 'unpaid',
+                      icon: Icon(Icons.payments_outlined, size: 18),
+                      label: Text('Ödeme Bekleyen')),
                   ],
                   selected: {localView},
                   onSelectionChanged: (value) => setState(() {
@@ -1730,7 +1740,12 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
               ],
             ),
             const SizedBox(height: 16),
-            if (localView == 'plan') _tables(db) else _orders(db),
+            if (localView == 'plan')
+              _tables(db)
+            else if (localView == 'unpaid')
+              _payments(db)
+            else
+              _orders(db),
           ],
         );
       case 'online':
@@ -1761,8 +1776,6 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
             ));
           },
         );
-      case 'payments':
-        return _payments(db);
       case 'reports':
         return _reports(db);
       case 'finance':
@@ -1811,42 +1824,6 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
           ],
         ),
       );
-
-  Widget _metric(
-    String label,
-    String amount,
-    IconData icon, {
-    Color color = dark,
-  }) => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(18),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, color: color),
-              const SizedBox(width: 9),
-              Expanded(
-                child: Text(
-                  label,
-                  style: const TextStyle(
-                    color: Color(0xff526251),
-                    fontSize: 12,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Text(
-            amount,
-            style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w900),
-          ),
-        ],
-      ),
-    ),
-  );
 
   String? get _onlineDataWarning {
     if (tgo.credentials?.valid != true) {
@@ -2722,62 +2699,165 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
               o['cancelled'] != true &&
               orderDueCents(o) > 0,
         )
-        .toList();
+        .toList()
+      ..sort((a, b) => '${a['createdAt']}'.compareTo('${b['createdAt']}'));
     final totalDue = locals.fold<int>(0, (s, o) => s + orderDueCents(o));
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _sectionTitle(
-          'Kasa & Ödemeler',
-          'Nakit, kart ve kişi hesaplarını tek yerden takip edin.',
-        ),
-        Row(
-          children: [
-            Expanded(
-              child: _metric(
-                'Açık Hesaplar',
-                '${locals.length}',
-                Icons.receipt_long,
-              ),
+    final paidPart = locals.fold<int>(0, (s, o) => s + orderPaidCents(o));
+    final today = dayCollections(db, businessDay);
+    final now = DateTime.now();
+    Widget stat(IconData icon, String label, String value, String note) =>
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xffE1E7E3)),
+          ),
+          child: Row(children: [
+            Container(
+              width: 38, height: 38,
+              decoration: BoxDecoration(
+                color: NohutBrand.green.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(10)),
+              child: Icon(icon, size: 20, color: NohutBrand.green),
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: _metric(
-                'Restoran Alacağı',
-                formatTry(totalDue),
-                Icons.payments,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label, style: const TextStyle(fontSize: 12,
+                    color: NohutBrand.muted, fontWeight: FontWeight.w600)),
+                  Text(value, maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 19,
+                      fontWeight: FontWeight.w800)),
+                  Text(note, maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 11.5,
+                      color: NohutBrand.muted)),
+                ],
               ),
             ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        _notice(
-          'Kart tahsilatı bu sürümde banka POS terminaline otomatik aktarılmaz. Fiziksel mali fiş / ÖKC entegrasyonu yoktur.',
-        ),
-        const SizedBox(height: 13),
-        Card(
+          ]),
+        );
+    final stats = [
+      stat(Icons.receipt_long_outlined, 'Açık Hesap', '${locals.length}',
+        'Ödemesi tamamlanmamış masa ve Gel-Al'),
+      stat(Icons.pending_actions_outlined, 'Restoran Alacağı',
+        formatTry(totalDue),
+        paidPart > 0 ? '${formatTry(paidPart)} kısmen alındı' : 'Tahsil edilecek toplam'),
+      stat(Icons.payments_outlined, 'Bugün Nakit', formatTry(today.cashCents),
+        'Nakit tahsilat (iade düşülmüş)'),
+      stat(Icons.credit_card_outlined, 'Bugün Kart', formatTry(today.cardCents),
+        'Kart tahsilat (iade düşülmüş)'),
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        LayoutBuilder(builder: (context, box) {
+          final columns = box.maxWidth >= 900 ? 4 : 2;
+          final width = (box.maxWidth - 12 * (columns - 1)) / columns;
+          return Wrap(spacing: 12, runSpacing: 12, children: [
+            for (final s in stats) SizedBox(width: width, child: s),
+          ]);
+        }),
+        const SizedBox(height: 14),
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xffE1E7E3)),
+          ),
+          clipBehavior: Clip.antiAlias,
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+                child: Text(
+                  locals.isEmpty
+                      ? 'Ödeme bekleyen hesap yok'
+                      : 'Ödeme Bekleyen Hesaplar · en eskisi üstte',
+                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+                ),
+              ),
               if (locals.isEmpty)
-                const ListTile(title: Text('Açık ödeme bulunmuyor')),
-              for (final o in locals)
-                ListTile(
-                  title: Text(
-                    '#${displayOrderNumber(o)} · ${o['source']}${o['table'] == null ? '' : ' · Masa ${o['table']}'}',
-                  ),
-                  subtitle: Text('Toplam ${formatTry(orderTotalCents(o))}'),
-                  trailing: FilledButton(
-                    onPressed: () => _focusOrder(o),
-                    child: Text('Kalan ${formatTry(orderDueCents(o))}'),
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 28),
+                  child: Column(children: [
+                    Icon(Icons.check_circle_outline, size: 32,
+                      color: Color(0xff7FB08F)),
+                    SizedBox(height: 4),
+                    Text('Tüm hesaplar ödendi',
+                      style: TextStyle(color: NohutBrand.muted)),
+                  ]),
+                ),
+              for (final o in locals) ...[
+                const Divider(height: 1),
+                InkWell(
+                  onTap: () => _focusOrder(o),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    child: Row(children: [
+                      Icon(o['source'] == 'Masa'
+                          ? Icons.table_restaurant_outlined
+                          : Icons.shopping_bag_outlined,
+                        color: NohutBrand.green),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '${o['table'] == null ? 'Gel-Al' : 'Masa ${o['table']}'} · #${displayOrderNumber(o)}',
+                              style: const TextStyle(fontWeight: FontWeight.w800),
+                            ),
+                            Text(itemsSummary(o, limit: 4), maxLines: 1,
+                              overflow: TextOverflow.ellipsis),
+                            Text(
+                              '${durationLabel(openMinutes(o, now))} önce · '
+                              '${orderOwnerName(o)} · Toplam ${formatTry(orderTotalCents(o))}'
+                              '${orderPaidCents(o) > 0 ? ' · Alınan ${formatTry(orderPaidCents(o))}' : ''}',
+                              style: const TextStyle(fontSize: 12,
+                                color: NohutBrand.muted),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      StatusPill(localStatusStyle(o)),
+                      const SizedBox(width: 10),
+                      IconButton(
+                        tooltip: 'Ön Fiş Yazdır',
+                        icon: const Icon(Icons.print_outlined, size: 19),
+                        onPressed: () => _printBillBeforePayment(o),
+                      ),
+                      const SizedBox(width: 4),
+                      FilledButton(
+                        onPressed: () => _focusOrder(o),
+                        child: Text('Kalan ${formatTry(orderDueCents(o))}'),
+                      ),
+                    ]),
                   ),
                 ),
+              ],
             ],
           ),
         ),
         const SizedBox(height: 12),
+        const Row(children: [
+          Icon(Icons.info_outline, size: 16, color: Color(0xff8A6516)),
+          SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              'Kart tahsilatı bu sürümde banka POS terminaline otomatik aktarılmaz. Fiziksel mali fiş / ÖKC entegrasyonu yoktur.',
+              style: TextStyle(color: Color(0xff8A6516), fontSize: 12),
+            ),
+          ),
+        ]),
       ],
     );
   }
+
 
   Widget _staff(Json db) => StaffPanel(state: db, edit: _edit);
 

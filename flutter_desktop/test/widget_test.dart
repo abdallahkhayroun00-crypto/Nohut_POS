@@ -67,7 +67,6 @@ void main() {
         for (final label in [
           'Masalar & Siparişler',
           'Online Siparişler',
-          'Kasa & Ödemeler',
           'Raporlar',
           'Ayarlar',
         ]) {

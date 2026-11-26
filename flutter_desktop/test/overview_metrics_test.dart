@@ -111,7 +111,7 @@ void main() {
     expect(top.map((p) => p.name), isNot(contains('Çay')));
   });
 
-  test('live operations show open tables, unpaid amounts and the drawer', () {
+  test('live operations show open tables and unpaid amounts', () {
     final live = liveOperations(state(), day);
     expect(live.openTables, 1);
     expect(live.openTableCents, 16000);
@@ -119,8 +119,6 @@ void main() {
     expect(live.openPickups, 0);
     expect(live.onlineNew, 1);
     expect(live.cancelledToday, 1);
-    expect(live.cashOpen, isTrue);
-    expect(live.cashInDrawerCents, 20000 + 32000);
   });
 
   test('peak hour uses arriving orders', () {

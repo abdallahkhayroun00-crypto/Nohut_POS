@@ -121,13 +121,10 @@ class OverviewPanel extends StatelessWidget {
           ),
           _Live(
             icon: Icons.money_outlined,
-            label: 'Kasadaki Nakit',
-            value: live.cashInDrawerCents == null
-                ? 'Kasa kapalı'
-                : formatTry(live.cashInDrawerCents!),
-            detail: live.cashOpen ? 'Beklenen kasa tutarı'
-                : 'Kasa & Ödemeler’den açın',
-            onTap: () => onNavigate('payments'),
+            label: 'Bugün Nakit Tahsilat',
+            value: formatTry(collected.cashCents),
+            detail: 'Kart ${formatTry(collected.cardCents)} · iade düşülmüş',
+            onTap: () => onNavigate('reports'),
           ),
           _Live(
             icon: Icons.pending_actions_outlined,
@@ -136,7 +133,7 @@ class OverviewPanel extends StatelessWidget {
             detail: live.cancelledToday == 0
                 ? 'Açık masa ve Gel-Al bakiyesi'
                 : 'Bugün ${live.cancelledToday} iptal',
-            onTap: () => onNavigate('tables'),
+            onTap: () => onNavigate('payments'),
           ),
           _Live(
             icon: Icons.menu_book_outlined,
