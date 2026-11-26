@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'brand.dart';
@@ -43,6 +45,23 @@ class OnlineOrders extends StatefulWidget {
 }
 
 class _OnlineOrdersState extends State<OnlineOrders> {
+  // Refreshes the waiting-time badges on active orders.
+  Timer? _clock;
+
+  @override
+  void initState() {
+    super.initState();
+    _clock = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _clock?.cancel();
+    super.dispose();
+  }
+
   late String source = widget.initialSource;
   bool history = false;
   String query = '', status = '';
@@ -210,7 +229,8 @@ class _OnlineOrdersState extends State<OnlineOrders> {
       3,
       (i) => orders.where((order) => _lane(order) == i).toList(),
     );
-    final completed = orders.where((order) => _lane(order) == 3);
+    final completed = orders.where((order) => _lane(order) == 3).toList();
+    final now = DateTime.now();
     final partners = source == 'Tümü' ? onlinePartners.keys : [source];
     final canSync = integration.credentials?.valid == true &&
         TrendyolGoReadonly.liveSyncEnabled;
@@ -423,117 +443,88 @@ class _OnlineOrdersState extends State<OnlineOrders> {
           ),
         ),
         if (integration.error.isNotEmpty && partners.contains('Trendyol Go'))
-          Padding(
-            padding: const EdgeInsets.all(10),
-            child: Text(integration.error,
-                style: const TextStyle(color: Color(0xffB54737))),
+          Container(
+            margin: const EdgeInsets.only(top: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+            decoration: BoxDecoration(
+              color: const Color(0xffFBE9E6),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(children: [
+              const Icon(Icons.error_outline, size: 18, color: Color(0xffB54737)),
+              const SizedBox(width: 8),
+              Expanded(child: Text(integration.error,
+                style: const TextStyle(color: Color(0xffB54737)))),
+            ]),
           ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 14),
         if (history)
-          if (orders.isEmpty)
-            const Card(child: ListTile(leading: Icon(Icons.inbox_outlined),
-                title: Text('Bu filtrelere uyan sipariş yok.')))
-          else
-            for (final order in orders)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: TgoOrderCard(order: order),
-              )
-        else
+          _HistoryList(orders: orders, onOpen: _openOrder)
+        else ...[
+          _Summary(
+            counts: [for (final g in groups) g.length],
+            late: [for (final g in groups) g.where((o) => tgoOrderLate(o, now)).length],
+            revenueCents: orders
+                .where((o) => !const ['Cancelled', 'UnSupplied'].contains(o['status']))
+                .fold<int>(0, (sum, o) => sum + (o['totalCents'] as int? ?? 0)),
+            orderCount: orders
+                .where((o) => !const ['Cancelled', 'UnSupplied'].contains(o['status']))
+                .length,
+          ),
+          const SizedBox(height: 14),
           LayoutBuilder(
             builder: (context, constraints) {
-              final wide = constraints.maxWidth >= 830;
-              final width = wide
-                  ? (constraints.maxWidth - 24) / 3
-                  : constraints.maxWidth;
-              const titles = ['Yeni', 'Hazırlanıyor', 'Hazır'];
-              const icons = [Icons.fiber_new_outlined, Icons.restaurant_outlined, Icons.check_circle_outline];
-              const tones = [Color(0xffEAF1E7), Color(0xffFFF2DA), Color(0xffE5F3EA)];
-              return Wrap(
-                spacing: 12,
-                runSpacing: 12,
+              Widget lane(int i) => _Lane(
+                index: i,
+                orders: groups[i],
+                card: (order) => TgoOrderCard(
+                  order: order,
+                  now: now,
+                  onKitchenPrint: () => widget.onPrint(order),
+                  canWrite: integration.canWrite && !integration.writing,
+                  onAction: _applyAction,
+                ),
+              );
+              if (constraints.maxWidth < 830) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (var i = 0; i < 3; i++) ...[
+                      if (i > 0) const SizedBox(height: 12),
+                      lane(i),
+                    ],
+                  ],
+                );
+              }
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  for (var i = 0; i < 3; i++)
-                    SizedBox(
-                      width: width,
-                      child: Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: tones[i],
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: const Color(0xffDCE6DA)),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Row(
-                              children: [
-                                Icon(icons[i], color: NohutBrand.green, size: 19),
-                                const SizedBox(width: 8),
-                                Expanded(child: Text(titles[i],
-                                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800))),
-                                CircleAvatar(
-                                  radius: 15,
-                                  backgroundColor: Colors.white,
-                                  child: Text('${groups[i].length}',
-                                      style: const TextStyle(fontWeight: FontWeight.bold,
-                                          color: NohutBrand.green, fontSize: 12)),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-                            if (groups[i].isEmpty)
-                              Container(
-                                padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 12),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withAlpha(200),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: const Column(
-                                  children: [
-                                    Icon(Icons.inbox_outlined, color: NohutBrand.muted),
-                                    SizedBox(height: 5),
-                                    Text('Bu aşamada sipariş yok',
-                                        textAlign: TextAlign.center,
-                                        style: TextStyle(color: NohutBrand.muted)),
-                                  ],
-                                ),
-                              ),
-                            for (final order in groups[i])
-                              Padding(
-                                padding: const EdgeInsets.only(bottom: 8),
-                                child: TgoOrderCard(
-                                  order: order,
-                                  onKitchenPrint: () => widget.onPrint(order),
-                                  canWrite: integration.canWrite && !integration.writing,
-                                  onAction: _applyAction,
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ),
+                  for (var i = 0; i < 3; i++) ...[
+                    if (i > 0) const SizedBox(width: 12),
+                    Expanded(child: lane(i)),
+                  ],
                 ],
               );
             },
           ),
-        if (!history && completed.isNotEmpty) ...[
-          const SizedBox(height: 16),
-          Card(
-            child: ExpansionTile(
-              leading: const Icon(Icons.task_alt, color: NohutBrand.green),
-              title: Text('Bugün · Tamamlanan ve iptal edilenler (${completed.length})'),
-              subtitle: const Text('Teslim edilen veya kapanan siparişler'),
-              childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-              children: [
-                for (final order in completed)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: TgoOrderCard(order: order),
-                  ),
-              ],
+          if (completed.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Card(
+              margin: EdgeInsets.zero,
+              clipBehavior: Clip.antiAlias,
+              child: ExpansionTile(
+                leading: const Icon(Icons.task_alt, color: NohutBrand.green),
+                title: Text('Bugün · Tamamlanan ve iptal edilenler (${completed.length})',
+                  style: const TextStyle(fontWeight: FontWeight.w700)),
+                subtitle: const Text('Ayrıntı için satıra tıklayın'),
+                childrenPadding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                children: [
+                  for (final order in completed)
+                    _OrderRow(order: order, onTap: () => _openOrder(order)),
+                ],
+              ),
             ),
-          ),
+          ],
         ],
         if (source == 'Yemeksepeti')
           Card(
@@ -547,6 +538,20 @@ class _OnlineOrdersState extends State<OnlineOrders> {
     );
   }
 
+  void _openOrder(Json order) => showDialog<void>(
+    context: context,
+    builder: (ctx) => Dialog(
+      insetPadding: const EdgeInsets.all(24),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 480, maxHeight: 720),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(6),
+          child: TgoOrderCard(order: order),
+        ),
+      ),
+    ),
+  );
+
   static String provider(Json order) => '${order['source'] ?? 'Trendyol Go'}';
 
   static int _lane(Json order) => switch (order['status']) {
@@ -555,4 +560,304 @@ class _OnlineOrdersState extends State<OnlineOrders> {
     'Invoiced' => 2,
     _ => 3,
   };
+}
+
+
+const _laneMeta = [
+  ('Yeni', 'Onay bekliyor', Icons.notifications_active_outlined, Color(0xff325577)),
+  ('Hazırlanıyor', 'Mutfakta', Icons.restaurant_outlined, Color(0xffB7791F)),
+  ('Hazır', 'Kurye bekliyor', Icons.shopping_bag_outlined, Color(0xff2E7D4F)),
+];
+
+class _Summary extends StatelessWidget {
+  const _Summary({
+    required this.counts,
+    required this.late,
+    required this.revenueCents,
+    required this.orderCount,
+  });
+  final List<int> counts, late;
+  final int revenueCents, orderCount;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget tile({
+      required IconData icon,
+      required Color color,
+      required String label,
+      required String value,
+      String? note,
+      bool alert = false,
+    }) => Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: alert ? color.withValues(alpha: 0.08) : Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: alert ? color.withValues(alpha: 0.5) : const Color(0xffE1E7E3)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 38, height: 38,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: color, size: 21),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12, color: NohutBrand.muted,
+                    fontWeight: FontWeight.w600)),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                  textBaseline: TextBaseline.alphabetic,
+                  children: [
+                    Flexible(
+                      child: Text(value, maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 21,
+                          fontWeight: FontWeight.w800,
+                          color: alert ? color : NohutBrand.ink)),
+                    ),
+                    if (note != null) ...[
+                      const SizedBox(width: 8),
+                      Text(note, style: TextStyle(fontSize: 12,
+                        color: color, fontWeight: FontWeight.w700)),
+                    ],
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+    final tiles = [
+      for (var i = 0; i < 3; i++)
+        tile(
+          icon: _laneMeta[i].$3,
+          color: late[i] > 0 ? const Color(0xffB3261E) : _laneMeta[i].$4,
+          label: '${_laneMeta[i].$1} · ${_laneMeta[i].$2}',
+          value: '${counts[i]}',
+          note: late[i] > 0 ? '${late[i]} gecikmede' : null,
+          alert: (i == 0 && counts[i] > 0) || late[i] > 0,
+        ),
+      tile(
+        icon: Icons.payments_outlined,
+        color: NohutBrand.green,
+        label: 'Bugün · $orderCount sipariş',
+        value: formatTry(revenueCents),
+      ),
+    ];
+    return LayoutBuilder(builder: (context, box) {
+      final columns = box.maxWidth >= 900 ? 4 : 2;
+      final width = (box.maxWidth - 10 * (columns - 1)) / columns;
+      return Wrap(
+        spacing: 10,
+        runSpacing: 10,
+        children: [for (final t in tiles) SizedBox(width: width, child: t)],
+      );
+    });
+  }
+}
+
+class _Lane extends StatelessWidget {
+  const _Lane({required this.index, required this.orders, required this.card});
+  final int index;
+  final List<Json> orders;
+  final Widget Function(Json order) card;
+
+  @override
+  Widget build(BuildContext context) {
+    final (title, subtitle, icon, color) = _laneMeta[index];
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xffF4F6F2),
+        borderRadius: BorderRadius.circular(16),
+        border: Border(top: BorderSide(color: color, width: 4)),
+      ),
+      padding: const EdgeInsets.fromLTRB(10, 12, 10, 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Row(
+              children: [
+                Icon(icon, color: color, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text.rich(
+                    TextSpan(children: [
+                      TextSpan(text: title, style: const TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.w800)),
+                      TextSpan(text: '  · $subtitle', style: const TextStyle(
+                        fontSize: 12.5, color: NohutBrand.muted)),
+                    ]),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Container(
+                  constraints: const BoxConstraints(minWidth: 28),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: orders.isEmpty ? Colors.white : color,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Text('${orders.length}', textAlign: TextAlign.center,
+                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13,
+                      color: orders.isEmpty ? NohutBrand.muted : Colors.white)),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          if (orders.isEmpty)
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 18),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xffDDE3DF)),
+              ),
+              child: const Column(
+                children: [
+                  Icon(Icons.inbox_outlined, color: Color(0xffA9B3AD)),
+                  SizedBox(height: 4),
+                  Text('Bu aşamada sipariş yok',
+                    style: TextStyle(color: NohutBrand.muted, fontSize: 12.5)),
+                ],
+              ),
+            ),
+          for (final (i, order) in orders.indexed) ...[
+            if (i > 0) const SizedBox(height: 10),
+            card(order),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// One compact line per closed order; tapping opens the full card.
+class _OrderRow extends StatelessWidget {
+  const _OrderRow({required this.order, required this.onTap});
+  final Json order;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final (label, fg, bg) = tgoStatusStyle('${order['status'] ?? ''}');
+    final items = asMaps(order['lines'])
+        .map((l) => '${l['qty']}× ${l['name']}')
+        .join(', ');
+    final stamp = istanbulStamp(order['createdAt']);
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 132,
+              child: Text(stamp, style: const TextStyle(
+                fontSize: 12.5, color: NohutBrand.muted)),
+            ),
+            SizedBox(
+              width: 72,
+              child: Text('#${displayOrderNumber(order)}',
+                style: const TextStyle(fontWeight: FontWeight.w800)),
+            ),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(items.isEmpty ? '—' : items,
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                  Text('${order['source'] ?? 'Trendyol Go'} · '
+                      'Platform no: ${order['orderNumber']}',
+                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 12, color: NohutBrand.muted)),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            Text(formatTry(order['totalCents'] as int? ?? 0),
+              style: const TextStyle(fontWeight: FontWeight.w700)),
+            const SizedBox(width: 10),
+            Container(
+              width: 104,
+              alignment: Alignment.center,
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              decoration: BoxDecoration(
+                color: bg, borderRadius: BorderRadius.circular(14)),
+              child: Text(label, style: TextStyle(
+                color: fg, fontWeight: FontWeight.w700, fontSize: 12)),
+            ),
+            const Icon(Icons.chevron_right, color: NohutBrand.muted),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HistoryList extends StatelessWidget {
+  const _HistoryList({required this.orders, required this.onOpen});
+  final List<Json> orders;
+  final void Function(Json order) onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    if (orders.isEmpty) {
+      return const Card(
+        margin: EdgeInsets.zero,
+        child: Padding(
+          padding: EdgeInsets.symmetric(vertical: 36),
+          child: Column(children: [
+            Icon(Icons.inbox_outlined, size: 32, color: Color(0xffA9B3AD)),
+            SizedBox(height: 6),
+            Text('Bu filtrelere uyan sipariş yok.',
+              style: TextStyle(color: NohutBrand.muted)),
+          ]),
+        ),
+      );
+    }
+    final valid = orders.where(
+      (o) => !const ['Cancelled', 'UnSupplied'].contains(o['status']));
+    final total = valid.fold<int>(
+      0, (sum, o) => sum + (o['totalCents'] as int? ?? 0));
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 12, 8, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+              child: Text(
+                '${orders.length} sipariş · ${valid.length} geçerli · '
+                'Toplam ${formatTry(total)}',
+                style: const TextStyle(fontWeight: FontWeight.w700)),
+            ),
+            for (final (i, order) in orders.indexed) ...[
+              if (i > 0) const Divider(height: 1),
+              _OrderRow(order: order, onTap: () => onOpen(order)),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
 }

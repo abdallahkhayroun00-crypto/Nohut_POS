@@ -214,6 +214,43 @@ class _TgoSettingsPanelState extends State<TgoSettingsPanel> {
   );
 }
 
+/// Label, foreground and background for a platform package status.
+(String, Color, Color) tgoStatusStyle(String status) => switch (status) {
+  'Created' => ('Yeni', const Color(0xff325577), const Color(0xffe9f0f5)),
+  'Picking' => ('Hazırlanıyor', const Color(0xff765720), const Color(0xfff7ecd4)),
+  'Invoiced' => ('Hazırlandı', NohutBrand.green, const Color(0xffe5ebdf)),
+  'Shipped' => ('Yolda', const Color(0xff325577), const Color(0xffe9f0f5)),
+  'Delivered' => ('Teslim Edildi', NohutBrand.green, const Color(0xffe5ebdf)),
+  'Cancelled' => ('İptal', const Color(0xff8d3930), const Color(0xfff6e6e3)),
+  'UnSupplied' => ('Karşılanamadı', const Color(0xff8d3930), const Color(0xfff6e6e3)),
+  _ => (status.isEmpty ? 'Durum bilinmiyor' : status, NohutBrand.muted,
+      const Color(0xffeeeeea)),
+};
+
+/// Minutes an active order has been waiting, or null when not active.
+int? tgoWaitingMinutes(Json order, DateTime now) {
+  if (!const ['Created', 'Picking', 'Invoiced'].contains(order['status'])) {
+    return null;
+  }
+  final created = DateTime.tryParse('${order['createdAt']}');
+  if (created == null) return null;
+  final minutes = now.toUtc().difference(created.toUtc()).inMinutes;
+  return minutes < 0 ? 0 : minutes;
+}
+
+/// A new order should be accepted within 3 minutes; a picking order should
+/// be ready within its platform preparation time (15 minutes by default).
+bool tgoOrderLate(Json order, DateTime now) {
+  final waiting = tgoWaitingMinutes(order, now);
+  if (waiting == null) return false;
+  final prep = order['preparationMinutes'];
+  return switch (order['status']) {
+    'Created' => waiting >= 3,
+    'Picking' => waiting >= (prep is num && prep > 0 ? prep.toInt() : 15),
+    _ => false,
+  };
+}
+
 class TgoOrderCard extends StatelessWidget {
   const TgoOrderCard({
     super.key,
@@ -221,8 +258,11 @@ class TgoOrderCard extends StatelessWidget {
     this.onKitchenPrint,
     this.onAction,
     this.canWrite = false,
+    this.now,
   });
   final Json order;
+  /// Clock for the waiting badge; defaults to DateTime.now().
+  final DateTime? now;
   final VoidCallback? onKitchenPrint;
   final void Function(Json order, String action)? onAction;
   final bool canWrite;
@@ -231,36 +271,7 @@ class TgoOrderCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final status = '${order['status'] ?? ''}';
-    final (statusLabel, statusColor, statusBg) = switch (status) {
-      'Created' => ('Yeni', const Color(0xff325577), const Color(0xffe9f0f5)),
-      'Picking' => (
-        'Hazırlanıyor',
-        const Color(0xff765720),
-        const Color(0xfff7ecd4),
-      ),
-      'Invoiced' => ('Hazırlandı', NohutBrand.green, const Color(0xffe5ebdf)),
-      'Shipped' => ('Yolda', const Color(0xff325577), const Color(0xffe9f0f5)),
-      'Delivered' => (
-        'Teslim Edildi',
-        NohutBrand.green,
-        const Color(0xffe5ebdf),
-      ),
-      'Cancelled' => (
-        'İptal',
-        const Color(0xff8d3930),
-        const Color(0xfff6e6e3),
-      ),
-      'UnSupplied' => (
-        'Karşılanamadı',
-        const Color(0xff8d3930),
-        const Color(0xfff6e6e3),
-      ),
-      _ => (
-        status.isEmpty ? 'Durum bilinmiyor' : status,
-        NohutBrand.muted,
-        const Color(0xffeeeeea),
-      ),
-    };
+    final (statusLabel, statusColor, statusBg) = tgoStatusStyle(status);
     final payment = '${order['paymentType'] ?? ''}';
     final paymentLabel = switch (payment) {
       'PAY_WITH_CARD' => 'Kart',
@@ -294,9 +305,23 @@ class TgoOrderCard extends StatelessWidget {
     }
     bool reached(String stage) =>
         courierTimeline.any((event) => event['stage'] == stage);
+    final clock = now ?? DateTime.now();
+    final waiting = tgoWaitingMinutes(order, clock);
+    final late = tgoOrderLate(order, clock);
     return Card(
+      margin: EdgeInsets.zero,
+      elevation: status == 'Created' ? 2 : 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(
+          color: status == 'Created'
+              ? const Color(0xff6E93BC)
+              : const Color(0xffE1E7E3),
+          width: status == 'Created' ? 1.6 : 1,
+        ),
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -309,7 +334,39 @@ class TgoOrderCard extends StatelessWidget {
                     style: theme.textTheme.titleLarge,
                   ),
                 ),
-                const SizedBox(width: 8),
+                if (waiting != null) ...[
+                  Tooltip(
+                    message: late
+                        ? (status == 'Created'
+                            ? 'Kabul bekliyor · gecikti'
+                            : 'Hazırlık süresi aşıldı')
+                        : 'Sipariş geleli',
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: late
+                            ? const Color(0xffFBE4E0) : const Color(0xffF1F4F2),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.timer_outlined, size: 14,
+                            color: late
+                                ? const Color(0xffB3261E) : NohutBrand.muted),
+                          const SizedBox(width: 3),
+                          Text('$waiting dk', style: TextStyle(
+                            fontSize: 12, fontWeight: FontWeight.w700,
+                            color: late
+                                ? const Color(0xffB3261E) : NohutBrand.muted)),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                ],
+                const SizedBox(width: 2),
                 DecoratedBox(
                   decoration: BoxDecoration(
                     color: statusBg,
