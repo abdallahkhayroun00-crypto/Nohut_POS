@@ -12,6 +12,7 @@ import 'brand.dart';
 import 'pos_logic.dart';
 import 'pos_store.dart';
 import 'operations.dart';
+import 'finance_logic.dart';
 import 'platform_workflows.dart';
 import 'qr_menu_preview.dart';
 import 'qr_menu_sync.dart';
@@ -731,12 +732,18 @@ class StaffPanel extends StatelessWidget {
             ('Görev', (person['jobTitle'] ?? '').toString()),
             ('İşe Başlama Tarihi', (person['startDate'] ?? '').toString()),
             ('Notlar', (person['notes'] ?? '').toString()),
+            ('Ücret Türü', (person['payType'] ?? 'Saatlik').toString()),
+            ('Ücret (₺ / saat veya hafta)',
+              person['payRateCents'] is int
+                ? ((person['payRateCents'] as int) / 100).toStringAsFixed(2)
+                : ''),
           ];
     final values = await askFields(
       context,
       person == null ? 'Personel Ekle' : 'Personel Bilgilerini Düzenle',
       fields,
-      choices: {1: ['Personel', 'Yönetici']},
+      choices: {1: ['Personel', 'Yönetici'],
+        if (person != null) 6: ['Saatlik', 'Haftalık Sabit']}, 
       validate: (v) {
         if (v[0].trim().isEmpty) return 'Personel adı gerekli';
         if (v[0].length > 120 ||
@@ -745,6 +752,13 @@ class StaffPanel extends StatelessWidget {
             (v.length > 4 && v[4].length > 20) ||
             (v.length > 5 && v[5].length > 1000)) {
           return 'Alan uzunluğu geçersiz';
+        }
+        if (v.length > 7 && v[7].trim().isNotEmpty) {
+          final amount = double.tryParse(v[7].replaceAll(',', '.'));
+          if (amount == null || !amount.isFinite || amount <= 0 ||
+              amount > 10000000) {
+            return 'Ücret pozitif bir tutar olmalı';
+          }
         }
         return null;
       },
@@ -764,6 +778,11 @@ class StaffPanel extends StatelessWidget {
       employee['jobTitle'] = values.length > 3 ? values[3].trim() : '';
       employee['startDate'] = values.length > 4 ? values[4].trim() : '';
       employee['notes'] = values.length > 5 ? values[5].trim() : '';
+      if (values.length > 7 && values[7].trim().isNotEmpty) {
+        final rate = double.parse(values[7].replaceAll(',', '.'));
+        saveEmployeePay(state, employee['id'] as int, values[6],
+          (rate * 100).round());
+      }
     });
   }
 
@@ -788,6 +807,9 @@ class StaffPanel extends StatelessWidget {
               (person['jobTitle'] ?? '').toString(),
             if ((person['phone'] ?? '').toString().isNotEmpty)
               (person['phone'] ?? '').toString(),
+            if (person['payRateCents'] is int)
+              (person['payType'] ?? 'Saatlik').toString() +
+                ' · ' + formatTry(person['payRateCents'] as int),
           ].join(' · ')),
           trailing: Wrap(
             crossAxisAlignment: WrapCrossAlignment.center,

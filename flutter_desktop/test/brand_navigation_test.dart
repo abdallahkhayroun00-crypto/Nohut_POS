@@ -12,7 +12,7 @@ import 'package:nohut_falafel_desktop/order_reporting.dart';
 
 void main() {
   testWidgets(
-    'eleven branded destinations include QR management, open accounts, orders and reviews',
+    'twelve branded destinations include finance, QR management, orders and reviews',
     (t) async {
       final dir = Directory.systemTemp.createTempSync('nohut-brand-');
       final file = '${dir.path}/db';
@@ -79,9 +79,10 @@ void main() {
               w.key is ValueKey<String> &&
               (w.key as ValueKey<String>).value.startsWith('navigation-'),
         ),
-        findsNWidgets(11),
+        findsNWidgets(12),
       );
       expect(find.byKey(const ValueKey('navigation-market-prices')), findsOneWidget);
+      expect(find.byKey(const ValueKey('navigation-finance')), findsOneWidget);
       expect(find.text('Personel Yönetimi'), findsNothing);
       expect(find.text('Online Siparişler'), findsOneWidget);
       await t.runAsync(
@@ -102,6 +103,11 @@ void main() {
         proof.writeAsBytesSync(bytes!.buffer.asUint8List());
         image.dispose();
       });
+      await t.tap(find.byKey(const ValueKey('navigation-finance')));
+      await t.pumpAndSettle();
+      expect(find.widgetWithText(ChoiceChip, 'Haftalık Maaşlar'), findsOneWidget);
+      expect(find.widgetWithText(ChoiceChip, 'Günlük Malzeme'), findsOneWidget);
+      expect(t.takeException(), isNull);
       await t.tap(find.byKey(const ValueKey('navigation-online')));
       await t.pumpAndSettle();
       expect(
