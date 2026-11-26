@@ -8,6 +8,34 @@ import 'order_reporting.dart';
 import 'report_activity.dart';
 import 'platform_net.dart';
 
+/// Where report CSV files are suggested: the user's Documents folder.
+/// The program folder (Program Files) is not writable on Windows.
+String reportExportFolder() {
+  final env = Platform.environment;
+  final home = env['USERPROFILE'] ?? env['HOME'];
+  if (home == null || home.isEmpty) return Directory.systemTemp.path;
+  final documents = Directory('$home${Platform.pathSeparator}Documents');
+  return documents.existsSync() ? documents.path : home;
+}
+
+/// Date presets for the report filter, as Istanbul business days.
+({String from, String to}) reportPreset(String preset, DateTime now) {
+  final local = now.toUtc().add(const Duration(hours: 3));
+  final today = DateTime.utc(local.year, local.month, local.day);
+  String d(DateTime x) => x.toIso8601String().substring(0, 10);
+  return switch (preset) {
+    'Dün' => (from: d(today.subtract(const Duration(days: 1))),
+        to: d(today.subtract(const Duration(days: 1)))),
+    'Son 7 Gün' => (from: d(today.subtract(const Duration(days: 6))), to: d(today)),
+    'Son 30 Gün' => (from: d(today.subtract(const Duration(days: 29))), to: d(today)),
+    'Bu Ay' => (from: d(DateTime.utc(today.year, today.month, 1)), to: d(today)),
+    'Tüm Tarihler' => (from: '', to: ''),
+    _ => (from: d(today), to: d(today)),
+  };
+}
+
+const reportPresets = ['Bugün', 'Dün', 'Son 7 Gün', 'Son 30 Gün', 'Bu Ay', 'Tüm Tarihler'];
+
 class SalesReports extends StatefulWidget {
   const SalesReports({
     super.key, required this.state, required this.edit, this.onlineWarning,
@@ -71,7 +99,7 @@ class _SalesReportsState extends State<SalesReports> {
 
   Future<void> export(String name, String text) async {
     final v = await askFields(context, 'CSV Kaydet', [
-      ('Dosya yolu', '${Directory.current.path}/$name.csv'),
+      ('Dosya yolu', '${reportExportFolder()}${Platform.pathSeparator}$name-${from.isEmpty ? 'tum' : from}${to.isEmpty || to == from ? '' : '_$to'}.csv'),
     ]);
     if (v == null) return;
     try {
@@ -124,26 +152,31 @@ class _SalesReportsState extends State<SalesReports> {
   );
   Widget _summaryInsight(IconData icon, String label, String value) =>
       Container(
-        constraints: const BoxConstraints(minWidth: 185),
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: const Color(0xffF4F7F3),
           borderRadius: BorderRadius.circular(13),
         ),
         child: Row(
-          mainAxisSize: MainAxisSize.min,
           children: [
             Icon(icon, color: NohutBrand.green, size: 21),
             const SizedBox(width: 10),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label, style: const TextStyle(
-                  color: NohutBrand.muted, fontSize: 11)),
-                Text(value, style: const TextStyle(
-                  color: NohutBrand.green, fontWeight: FontWeight.w800,
-                  fontSize: 16)),
-              ],
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: NohutBrand.muted, fontSize: 11)),
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(value, style: const TextStyle(
+                      color: NohutBrand.green, fontWeight: FontWeight.w800,
+                      fontSize: 16)),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -236,7 +269,6 @@ class _SalesReportsState extends State<SalesReports> {
       final hour = created.toUtc().add(const Duration(hours: 3)).hour;
       hourly[hour] = (hourly[hour] ?? 0) + 1;
     }
-    final maximumHour = hourly.values.fold<int>(0, (a, b) => a > b ? a : b);
     final courierMilestones = <String, int>{};
     for (final stage in const ['nearby', 'picked_up', 'delivered']) {
       courierMilestones[stage] = trendyolOrders.where((o) =>
@@ -246,85 +278,124 @@ class _SalesReportsState extends State<SalesReports> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        panelTitle('Raporlar'),
-        const Text('Tarih aralığı ve sipariş kaynağı seçin.'),
-        if (widget.onlineWarning != null)
-          Card(child: ListTile(
-            leading: const Icon(Icons.info_outline, color: NohutBrand.gold),
-            title: const Text('Online platform verileri eksik olabilir'),
-            subtitle: Text(widget.onlineWarning!),
-          )),
-        const SizedBox(height: 16),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 10,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                for (final days in [1, 7, 30])
-                  OutlinedButton(
-                    onPressed: () => setState(() {
-                      final now = DateTime.now().toUtc().add(
-                        const Duration(hours: 3),
-                      );
-                      to = now.toIso8601String().substring(0, 10);
-                      from = now
-                          .subtract(Duration(days: days - 1))
-                          .toIso8601String()
-                          .substring(0, 10);
-                    }),
-                    child: Text(days == 1 ? 'Bugün' : 'Son $days Gün'),
-                  ),
-                OutlinedButton(
-                  onPressed: () async {
-                    final dates = await showDateRangePicker(
-                      context: context,
-                      firstDate: DateTime(2020),
-                      lastDate: DateTime(2100),
-                    );
-                    if (dates != null)
-                      setState(() {
-                        from = dates.start.toIso8601String().substring(0, 10);
-                        to = dates.end.toIso8601String().substring(0, 10);
-                      });
-                  },
-                  child: const Text('Takvimden Seç'),
-                ),
-                TextButton(
-                  onPressed: () => setState(() {
-                    from = to = '';
-                  }),
-                  child: const Text('Tüm Tarihler'),
-                ),
-                SizedBox(
-                  width: 180,
-                  child: DropdownButtonFormField<String>(
-                    initialValue: source,
-                    isExpanded: true,
-                    decoration: const InputDecoration(labelText: 'Kaynak'),
-                    items:
-                        [
-                              'Tümü',
-                              'Masa',
-                              'Gel-Al',
-                              'Trendyol Go',
-                              'Yemeksepeti',
-                              'Migros Yemek',
-                            ]
-                            .map(
-                              (s) => DropdownMenuItem(value: s, child: Text(s)),
-                            )
-                            .toList(),
-                    onChanged: (v) => setState(() => source = v!),
-                  ),
-                ),
-                Text(from.isEmpty ? 'Tüm geçmiş' : '$from → $to'),
-              ],
+        Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Raporlar', style: Theme.of(context).textTheme.titleLarge),
+                  Text(
+                    from.isEmpty
+                        ? 'Tüm geçmiş · ${source == 'Tümü' ? 'tüm kaynaklar' : source}'
+                        : '${from == to ? from : '$from → $to'} · ${source == 'Tümü' ? 'tüm kaynaklar' : source}',
+                    style: const TextStyle(color: NohutBrand.muted)),
+                ],
+              ),
             ),
+          ],
+        ),
+        if (widget.onlineWarning != null) ...[
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xffFFF6E0),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xffEED9A6)),
+            ),
+            child: Row(children: [
+              const Icon(Icons.info_outline, size: 18, color: Color(0xff8A6516)),
+              const SizedBox(width: 10),
+              Expanded(child: Text(
+                'Online platform verileri eksik olabilir · ${widget.onlineWarning!}',
+                style: const TextStyle(color: Color(0xff6B4E10), fontSize: 13))),
+            ]),
+          ),
+        ],
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xffE1E7E3)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Wrap(
+                spacing: 6,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.only(right: 4),
+                    child: Icon(Icons.calendar_month_outlined,
+                      size: 19, color: NohutBrand.green),
+                  ),
+                  for (final preset in reportPresets)
+                    ChoiceChip(
+                      label: Text(preset),
+                      showCheckmark: false,
+                      visualDensity: VisualDensity.compact,
+                      selected: () {
+                        final r = reportPreset(preset, DateTime.now());
+                        return r.from == from && r.to == to;
+                      }(),
+                      onSelected: (_) => setState(() {
+                        final r = reportPreset(preset, DateTime.now());
+                        from = r.from;
+                        to = r.to;
+                      }),
+                    ),
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      visualDensity: VisualDensity.compact),
+                    onPressed: () async {
+                      final now = DateTime.now();
+                      final dates = await showDateRangePicker(
+                        context: context,
+                        firstDate: DateTime(2020),
+                        lastDate: DateTime(now.year, now.month, now.day),
+                      );
+                      if (dates != null)
+                        setState(() {
+                          from = dates.start.toIso8601String().substring(0, 10);
+                          to = dates.end.toIso8601String().substring(0, 10);
+                        });
+                    },
+                    icon: const Icon(Icons.date_range, size: 18),
+                    label: const Text('Takvimden Seç'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 6,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.only(right: 4),
+                    child: Icon(Icons.storefront_outlined,
+                      size: 19, color: NohutBrand.green),
+                  ),
+                  for (final s in const ['Tümü', 'Masa', 'Gel-Al',
+                      'Trendyol Go', 'Yemeksepeti', 'Migros Yemek'])
+                    ChoiceChip(
+                      label: Text(s == 'Tümü' ? 'Tüm kaynaklar' : s),
+                      showCheckmark: false,
+                      visualDensity: VisualDensity.compact,
+                      selected: source == s,
+                      onSelected: (_) => setState(() => source = s),
+                    ),
+                ],
+              ),
+            ],
           ),
         ),
+        const SizedBox(height: 12),
         EvenGrid(
           minTileWidth: 190,
           spacing: 10,
@@ -358,6 +429,7 @@ class _SalesReportsState extends State<SalesReports> {
           children: [
             for (final name in tabs)
               ChoiceChip(
+                showCheckmark: false,
                 label: Text(name),
                 selected: tab == name,
                 onSelected: (_) => setState(() => tab = name),
@@ -401,8 +473,8 @@ class _SalesReportsState extends State<SalesReports> {
                           child: const Text('Oranı Düzenle'),
                         ),
                       ),
-                      Wrap(
-                        spacing: 10, runSpacing: 10,
+                      EvenGrid(
+                        minTileWidth: 180, spacing: 10,
                         children: [
                           _summaryInsight(Icons.payments_outlined,
                             'Brüt', formatTry(p.grossCents)),
@@ -452,9 +524,9 @@ class _SalesReportsState extends State<SalesReports> {
                   const Text('Yerel tahsilat ve platform satış tutarı farklı muhasebe kalemleridir.',
                       style: TextStyle(color: NohutBrand.muted, fontSize: 12)),
                   const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 24,
-                    runSpacing: 12,
+                  EvenGrid(
+                    minTileWidth: 200,
+                    spacing: 10,
                     children: [
                       _summaryInsight(Icons.timer_outlined, 'Ortalama hazırlık',
                           activity.prepAverage == null ? '—' : '${activity.prepAverage} dk'),
@@ -498,32 +570,39 @@ class _SalesReportsState extends State<SalesReports> {
             activity: activity,
             export: () => export('nohut-yogunluk', activity.csv),
           ),
-        if (tab == 'Hazırlık Süresi')
-          Card(
-            child: Column(
-              children: [
-                ListTile(
-                  title: const Text('Tamamlanan hazırlıklar'),
-                  subtitle: Text(
-                    'Ölçülen sipariş · ${activity.prepared.length}',
-                  ),
-                  trailing: Text(
-                    activity.prepAverage == null
-                        ? '—'
-                        : '${activity.prepAverage} dk ort.',
-                  ),
-                ),
-                for (final (duration, order) in activity.prepared)
-                  ListTile(
-                    title: Text(
-                      '#${displayOrderNumber(order)} · ${order['source']}',
-                    ),
-                    subtitle: Text(istanbulStamp(order['readyAt'])),
-                    trailing: Text('${duration.inMinutes} dk'),
-                  ),
-              ],
-            ),
+        if (tab == 'Hazırlık Süresi') ...[
+          EvenGrid(minTileWidth: 200, spacing: 10, children: [
+            _summaryInsight(Icons.timer_outlined, 'Ortalama hazırlık',
+              activity.prepAverage == null ? '—' : '${activity.prepAverage} dk'),
+            _summaryInsight(Icons.check_circle_outline, 'Ölçülen sipariş',
+              '${activity.prepared.length}'),
+            _summaryInsight(Icons.hourglass_bottom, 'En uzun',
+              activity.prepared.isEmpty ? '—'
+                : '${activity.prepared.first.$1.inMinutes} dk'),
+          ]),
+          const SizedBox(height: 12),
+          _ReportTable(
+            title: 'Tamamlanan Hazırlıklar',
+            subtitle: 'En uzun süren üstte · hazır olduğu saat',
+            columns: const ['Hazır', 'Sipariş', 'Kaynak', 'Süre'],
+            flex: const [3, 2, 2, 2],
+            empty: 'Bu dönemde ölçülen hazırlık yok.',
+            rows: [
+              for (final (duration, order) in activity.prepared)
+                [
+                  Text(istanbulStamp(order['readyAt']), style: const TextStyle(
+                    color: NohutBrand.muted, fontSize: 13)),
+                  Text('#${displayOrderNumber(order)}',
+                    style: const TextStyle(fontWeight: FontWeight.w800)),
+                  Text('${order['source']}'),
+                  _Pill('${duration.inMinutes} dk',
+                    duration.inMinutes >= 20 ? const Color(0xffB3261E)
+                      : duration.inMinutes >= 12 ? const Color(0xffB7791F)
+                      : NohutBrand.green),
+                ],
+            ],
           ),
+        ],
         if (tab == 'Trendyol Analitik') ...[
           Card(
             child: Padding(
@@ -537,7 +616,7 @@ class _SalesReportsState extends State<SalesReports> {
                   const Text('Bu rakamlar yalnızca POS tarafından alınmış platform kayıtlarına dayanır. '
                     'Eksik senkronizasyon gerçek sıfır sipariş anlamına gelmez.'),
                   const SizedBox(height: 14),
-                  Wrap(spacing: 12, runSpacing: 10, children: [
+                  EvenGrid(minTileWidth: 180, spacing: 10, children: [
                     _summaryInsight(Icons.receipt_long_outlined,
                       'Alınan sipariş', trendyolOrders.length.toString()),
                     _summaryInsight(Icons.check_circle_outline,
@@ -556,17 +635,16 @@ class _SalesReportsState extends State<SalesReports> {
                   const Text('Kurye Takip · POS gözlemleri',
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
                   const SizedBox(height: 9),
-                  for (final row in const [
-                    ('nearby', 'Kurye Yaklaşıyor'),
-                    ('picked_up', 'Kuryeye Teslim Edildi'),
-                    ('delivered', 'Müşteriye Teslim Edildi'),
-                  ])
-                    ListTile(
-                      dense: true,
-                      title: Text(row.$2),
-                      trailing: Text((courierMilestones[row.$1] ?? 0).toString(),
-                        style: const TextStyle(fontWeight: FontWeight.w800)),
-                    ),
+                  EvenGrid(minTileWidth: 180, spacing: 10, children: [
+                    for (final row in const [
+                      ('nearby', 'Kurye Yaklaşıyor', Icons.near_me_outlined),
+                      ('picked_up', 'Kuryeye Teslim Edildi', Icons.delivery_dining_outlined),
+                      ('delivered', 'Müşteriye Teslim Edildi', Icons.home_outlined),
+                    ])
+                      _summaryInsight(row.$3, row.$2,
+                        (courierMilestones[row.$1] ?? 0).toString()),
+                  ]),
+                  const SizedBox(height: 8),
                   const Text('Olay saatleri, platformun gerçek olay zamanı değil, '
                     'POS tarafından ilk görülen zamandır.',
                     style: TextStyle(fontSize: 12, color: NohutBrand.muted)),
@@ -574,98 +652,84 @@ class _SalesReportsState extends State<SalesReports> {
                   const Text('Sipariş Yoğunluğu · Saatlik',
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
                   const SizedBox(height: 10),
-                  for (var hour = 0; hour < 24; hour++)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Row(children: [
-                        SizedBox(width: 55, child: Text(
-                          hour.toString().padLeft(2, '0') + ':00')),
-                        Expanded(child: LinearProgressIndicator(
-                          value: maximumHour == 0 ? 0 :
-                            ((hourly[hour] ?? 0) / maximumHour).toDouble(),
-                          minHeight: 8,
-                          borderRadius: BorderRadius.circular(6),
-                        )),
-                        const SizedBox(width: 9),
-                        SizedBox(width: 28, child: Text(
-                          (hourly[hour] ?? 0).toString(),
-                          textAlign: TextAlign.right)),
-                      ]),
-                    ),
+                  _HourBars(counts: [for (var h = 0; h < 24; h++) hourly[h] ?? 0]),
                 ],
               ),
             ),
           ),
         ],
         if (tab == 'İptaller')
-          Card(
-            child: Column(
-              children: [
-                ListTile(
-                  title: Text(
-                    '${activity.cancellations.length} iptal / karşılanamadı',
-                  ),
-                ),
-                for (final (date, order) in activity.cancellations)
-                  ListTile(
-                    title: Text(
-                      '#${displayOrderNumber(order)} · ${order['source']}',
-                    ),
-                    subtitle: Text(
-                      [
-                            istanbulStamp(date),
-                            order['cancelReason'],
-                            order['voidReason'],
-                          ]
-                          .where(
-                            (part) => part != null && '$part'.trim().isNotEmpty,
-                          )
-                          .join(' · '),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        if (tab == 'Satışlar')
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  ListTile(
-                    title: const Text('Trendyol Go · Teslim edilen siparişler'),
-                    subtitle: Text(
-                      '${activity.onlineCount} sipariş · Platform toplamı',
-                    ),
-                    trailing: Text(formatTry(activity.onlineSales)),
-                  ),
-                  FilledButton.icon(
-                    onPressed: () =>
-                        export('nohut-tahsilat', ledgerCsv(entries)),
-                    icon: const Icon(Icons.download),
-                    label: const Text('Tahsilat CSV'),
-                  ),
-                  if (entries.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.all(25),
-                      child: Text('Bu dönemde tahsilat yok.'),
-                    ),
-                  for (final e in entries.reversed)
-                    ListTile(
-                      leading: Icon(
-                        e.amount < 0 ? Icons.undo : Icons.check_circle_outline,
-                      ),
-                      title: Text(
-                        '#${displayOrderNumber(mutableOrder(widget.state, e.orderId) ?? {'id': e.orderId})} · ${e.method}',
-                      ),
-                      subtitle: Text('${istanbulStamp(e.stamp)} · ${e.staff}'),
-                      trailing: Text(formatTry(e.amount)),
-                    ),
+          _ReportTable(
+            title: 'İptal ve Karşılanamayan Siparişler',
+            subtitle: '${activity.cancellations.length} kayıt',
+            columns: const ['Tarih', 'Sipariş', 'Kaynak', 'Neden'],
+            flex: const [3, 2, 2, 6],
+            empty: 'Bu dönemde iptal yok.',
+            rows: [
+              for (final (date, order) in activity.cancellations)
+                [
+                  Text(istanbulStamp(date), style: const TextStyle(
+                    color: NohutBrand.muted, fontSize: 13)),
+                  Text('#${displayOrderNumber(order)}',
+                    style: const TextStyle(fontWeight: FontWeight.w800)),
+                  Text('${order['source']}'),
+                  Text(
+                    [order['cancelReason'], order['voidReason']]
+                        .where((part) => part != null && '$part'.trim().isNotEmpty)
+                        .join(' · ')
+                        .ifEmpty('Neden girilmemiş'),
+                    style: const TextStyle(color: Color(0xff8c352e))),
                 ],
-              ),
-            ),
+            ],
           ),
+        if (tab == 'Satışlar') ...[
+          Builder(builder: (context) {
+            final cash = entries.where((e) => e.method == 'Nakit')
+                .fold<int>(0, (n, e) => n + e.amount);
+            final card = entries.where((e) => e.method == 'Kart')
+                .fold<int>(0, (n, e) => n + e.amount);
+            return EvenGrid(minTileWidth: 170, spacing: 10, children: [
+              _summaryInsight(Icons.payments_outlined, 'Nakit (net)', formatTry(cash)),
+              _summaryInsight(Icons.credit_card, 'Kart (net)', formatTry(card)),
+              _summaryInsight(Icons.undo, 'İade', formatTry(refund)),
+              _summaryInsight(Icons.account_balance_wallet_outlined,
+                'Yerel net tahsilat', formatTry(net)),
+              _summaryInsight(Icons.delivery_dining_outlined,
+                'Trendyol Go · ${activity.onlineCount} teslim',
+                formatTry(activity.onlineSales)),
+            ]);
+          }),
+          const SizedBox(height: 12),
+          _ReportTable(
+            title: 'Tahsilat Kayıtları',
+            subtitle: '${entries.length} kayıt · en yenisi üstte',
+            action: FilledButton.icon(
+              onPressed: () => export('nohut-tahsilat', ledgerCsv(entries)),
+              icon: const Icon(Icons.download, size: 18),
+              label: const Text('Tahsilat CSV'),
+            ),
+            columns: const ['Saat', 'Sipariş', 'Kaynak', 'Yöntem', 'Kaydeden', 'Tutar'],
+            flex: const [3, 2, 2, 2, 3, 2],
+            empty: 'Bu dönemde tahsilat yok.',
+            rows: [
+              for (final e in entries.reversed)
+                [
+                  Text(istanbulStamp(e.stamp), style: const TextStyle(
+                    color: NohutBrand.muted, fontSize: 13)),
+                  Text('#${displayOrderNumber(mutableOrder(widget.state, e.orderId) ?? {'id': e.orderId})}',
+                    style: const TextStyle(fontWeight: FontWeight.w800)),
+                  Text(e.source),
+                  _Pill(e.amount < 0 ? '${e.method} · İade' : e.method,
+                    e.amount < 0 ? const Color(0xffB3261E)
+                      : e.method == 'Kart' ? const Color(0xff325577) : NohutBrand.green),
+                  Text(e.staff, overflow: TextOverflow.ellipsis),
+                  Text(formatTry(e.amount), textAlign: TextAlign.right,
+                    style: TextStyle(fontWeight: FontWeight.w800,
+                      color: e.amount < 0 ? const Color(0xffB3261E) : NohutBrand.ink)),
+                ],
+            ],
+          ),
+        ],
         if (tab == 'Ürünler')
           Card(
             child: Padding(
@@ -743,6 +807,158 @@ class _SalesReportsState extends State<SalesReports> {
             ),
           ),
       ],
+    );
+  }
+}
+
+
+extension on String {
+  String ifEmpty(String fallback) => isEmpty ? fallback : this;
+}
+
+class _Pill extends StatelessWidget {
+  const _Pill(this.text, this.color);
+  final String text;
+  final Color color;
+  @override
+  Widget build(BuildContext context) => Align(
+    alignment: Alignment.centerLeft,
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis,
+        style: TextStyle(color: color, fontWeight: FontWeight.w700, fontSize: 12.5)),
+    ),
+  );
+}
+
+/// A compact titled table used by the report tabs.
+class _ReportTable extends StatelessWidget {
+  const _ReportTable({
+    required this.title,
+    required this.columns,
+    required this.flex,
+    required this.rows,
+    required this.empty,
+    this.subtitle,
+    this.action,
+  });
+  final String title, empty;
+  final String? subtitle;
+  final Widget? action;
+  final List<String> columns;
+  final List<int> flex;
+  final List<List<Widget>> rows;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: const Color(0xffE1E7E3)),
+    ),
+    clipBehavior: Clip.antiAlias,
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 14, 12),
+          child: Row(children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: const TextStyle(
+                    fontSize: 16, fontWeight: FontWeight.w800)),
+                  if (subtitle != null)
+                    Text(subtitle!, style: const TextStyle(
+                      fontSize: 12.5, color: NohutBrand.muted)),
+                ],
+              ),
+            ),
+            ?action,
+          ]),
+        ),
+        Container(
+          color: const Color(0xffF4F6F2),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+          child: Row(children: [
+            for (final (i, c) in columns.indexed)
+              Expanded(
+                flex: flex[i],
+                child: Text(c,
+                  textAlign: i == columns.length - 1 && c == 'Tutar'
+                      ? TextAlign.right : TextAlign.left,
+                  style: const TextStyle(fontSize: 12,
+                    fontWeight: FontWeight.w700, color: NohutBrand.muted)),
+              ),
+          ]),
+        ),
+        if (rows.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 28),
+            child: Text(empty, textAlign: TextAlign.center,
+              style: const TextStyle(color: NohutBrand.muted)),
+          ),
+        for (final (i, row) in rows.indexed) ...[
+          if (i > 0) const Divider(height: 1),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            child: Row(children: [
+              for (final (j, cell) in row.indexed)
+                Expanded(flex: flex[j], child: cell),
+            ]),
+          ),
+        ],
+      ],
+    ),
+  );
+}
+
+/// 24 vertical bars, one per Istanbul hour.
+class _HourBars extends StatelessWidget {
+  const _HourBars({required this.counts});
+  final List<int> counts;
+
+  @override
+  Widget build(BuildContext context) {
+    final peak = counts.fold<int>(0, (a, b) => a > b ? a : b);
+    return SizedBox(
+      height: 150,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          for (var h = 0; h < 24; h++)
+            Expanded(
+              child: Tooltip(
+                message: '${h.toString().padLeft(2, '0')}:00 · ${counts[h]} sipariş',
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    if (counts[h] > 0)
+                      Text('${counts[h]}', style: const TextStyle(
+                        fontSize: 10.5, fontWeight: FontWeight.w700)),
+                    Container(
+                      height: peak == 0 ? 2 : 2 + 100 * counts[h] / peak,
+                      margin: const EdgeInsets.symmetric(horizontal: 2),
+                      decoration: BoxDecoration(
+                        color: counts[h] == 0
+                            ? const Color(0xffE6ECE8) : const Color(0xffF27A1A),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(h % 3 == 0 ? h.toString().padLeft(2, '0') : '',
+                      style: const TextStyle(fontSize: 10, color: NohutBrand.muted)),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
