@@ -215,91 +215,179 @@ class _OnlineOrdersState extends State<OnlineOrders> {
     final canSync = integration.credentials?.valid == true &&
         TrendyolGoReadonly.liveSyncEnabled;
     final tgoConnected = integration.status.startsWith('Bağlı ·');
+    Widget partnerPill(String partner) {
+      final isTgo = partner == 'Trendyol Go';
+      final statusText = isTgo ? integration.status : 'Bağlı değil';
+      final ok = isTgo && tgoConnected;
+      final warn = isTgo && canSync && !tgoConnected;
+      final tone = ok
+          ? const Color(0xff2E7D4F)
+          : warn ? const Color(0xffB7791F) : const Color(0xff9AA49F);
+      return Tooltip(
+        message: '$partner panelini aç',
+        child: InkWell(
+          borderRadius: BorderRadius.circular(20),
+          onTap: () => openExternalPage(context, onlinePartners[partner]!.url),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: tone.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: tone.withValues(alpha: 0.35)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 8, height: 8,
+                  decoration: BoxDecoration(color: tone, shape: BoxShape.circle),
+                ),
+                const SizedBox(width: 7),
+                Text('$partner · $statusText',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600, fontSize: 12,
+                    color: NohutBrand.ink)),
+                const SizedBox(width: 5),
+                const Icon(Icons.open_in_new, size: 13, color: NohutBrand.muted),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    Widget chip({
+      required String label,
+      required bool selected,
+      required VoidCallback onTap,
+      IconData? icon,
+      bool choice = false,
+    }) {
+      final text = Text(label, style: TextStyle(
+        color: selected ? Colors.white : NohutBrand.ink,
+        fontWeight: FontWeight.w700, fontSize: 13));
+      final avatar = icon == null ? null : Icon(icon, size: 16,
+        color: selected ? Colors.white : NohutBrand.green);
+      const shape = StadiumBorder(side: BorderSide(color: Color(0xffD5DED8)));
+      return choice
+          ? ChoiceChip(
+              showCheckmark: false, avatar: avatar, label: text,
+              selected: selected, selectedColor: NohutBrand.green,
+              backgroundColor: Colors.white, shape: shape,
+              visualDensity: VisualDensity.compact,
+              onSelected: (value) { if (value) onTap(); },
+            )
+          : FilterChip(
+              showCheckmark: false, label: text,
+              selected: selected, selectedColor: NohutBrand.green,
+              backgroundColor: Colors.white, shape: shape,
+              visualDensity: VisualDensity.compact,
+              onSelected: (_) => onTap(),
+            );
+    }
+
+    final search = TextField(
+      key: ValueKey(history),
+      decoration: const InputDecoration(
+        isDense: true,
+        hintText: 'Sipariş no veya kod ara',
+        prefixIcon: Icon(Icons.search, size: 20),
+      ),
+      onChanged: (value) =>
+          setState(() => query = value.trim().toLowerCase()),
+    );
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: [
-            const Icon(Icons.delivery_dining_outlined, color: NohutBrand.green, size: 24),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text('Sipariş Merkezi',
-                  style: Theme.of(context).textTheme.titleLarge),
-            ),
-            if (integration.syncing)
-              const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
-          ],
-        ),
-        const SizedBox(height: 5),
-        const Text('Tüm platformlar tek ekranda · Bağlantısı olmayan platformlar otomatik sipariş göndermez.'),
+        // One compact header: title + live platform status, then filters.
         Card(
+          margin: EdgeInsets.zero,
           child: Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Wrap(
                   spacing: 8,
-                  runSpacing: 9,
+                  runSpacing: 8,
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    for (final (value, label) in [(false, 'Bugün'), (true, 'Geçmiş')])
-                      ChoiceChip(
-                        showCheckmark: false,
-                        avatar: Icon(value ? Icons.history : Icons.today,
-                            size: 16,
-                            color: history == value
-                                ? Colors.white : NohutBrand.green),
-                        label: Text(label,
-                            style: TextStyle(
-                              color: history == value
-                                  ? Colors.white : NohutBrand.ink,
-                              fontWeight: FontWeight.w700,
-                            )),
-                        selectedColor: NohutBrand.green,
-                        backgroundColor: Colors.white,
-                        selected: history == value,
-                        onSelected: (selected) {
-                          if (!selected) return;
-                          setState(() { history = value; query = ''; });
-                        },
-                      ),
-                    const SizedBox(width: 8),
-                    for (final key in ['Tümü', ...onlinePartners.keys])
-                      FilterChip(
-                        showCheckmark: false,
-                        label: Text(onlinePartners[key]?.label ?? key,
-                            style: TextStyle(
-                              color: source == key
-                                  ? Colors.white : NohutBrand.ink,
-                              fontWeight: FontWeight.w600,
-                            )),
-                        selectedColor: NohutBrand.green,
-                        backgroundColor: Colors.white,
-                        selected: source == key,
-                        onSelected: (_) => setState(() => source = key),
-                      ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.delivery_dining_outlined,
+                          color: NohutBrand.green, size: 24),
+                        const SizedBox(width: 8),
+                        Tooltip(
+                          message: 'Tüm platformlar tek ekranda · Bağlantısı '
+                            'olmayan platformlar otomatik sipariş göndermez.',
+                          child: Text('Sipariş Merkezi',
+                            style: Theme.of(context).textTheme.titleLarge),
+                        ),
+                        const SizedBox(width: 8),
+                      ],
+                    ),
+                    for (final partner in partners) partnerPill(partner),
+                    if (partners.contains('Trendyol Go'))
+                      integration.syncing
+                          ? const Padding(
+                              padding: EdgeInsets.all(8),
+                              child: SizedBox(width: 18, height: 18,
+                                child: CircularProgressIndicator(strokeWidth: 2)),
+                            )
+                          : IconButton(
+                              tooltip: 'Trendyol Go siparişlerini yenile',
+                              onPressed: canSync ? integration.sync : null,
+                              icon: const Icon(Icons.refresh, size: 20),
+                              visualDensity: VisualDensity.compact,
+                            ),
                   ],
                 ),
-                const SizedBox(height: 14),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    SizedBox(
-                      width: 280,
-                      child: TextField(
-                        key: ValueKey(history),
-                        decoration: const InputDecoration(
-                          hintText: 'Sipariş numarası veya kodu ara',
-                          prefixIcon: Icon(Icons.search),
+                const Divider(height: 20),
+                LayoutBuilder(builder: (context, box) {
+                  final filters = Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      for (final (value, label) in [(false, 'Bugün'), (true, 'Geçmiş')])
+                        chip(
+                          label: label, choice: true,
+                          icon: value ? Icons.history : Icons.today,
+                          selected: history == value,
+                          onTap: () => setState(() { history = value; query = ''; }),
                         ),
-                        onChanged: (value) =>
-                            setState(() => query = value.trim().toLowerCase()),
-                      ),
-                    ),
-                    if (history) ...[
+                      Container(width: 1, height: 22,
+                        margin: const EdgeInsets.symmetric(horizontal: 6),
+                        color: const Color(0xffD5DED8)),
+                      for (final key in ['Tümü', ...onlinePartners.keys])
+                        chip(
+                          label: onlinePartners[key]?.label ?? key,
+                          selected: source == key,
+                          onTap: () => setState(() => source = key),
+                        ),
+                    ],
+                  );
+                  if (box.maxWidth < 900) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [filters, const SizedBox(height: 10), search],
+                    );
+                  }
+                  return Row(children: [
+                    Expanded(child: filters),
+                    const SizedBox(width: 12),
+                    SizedBox(width: 260, child: search),
+                  ]);
+                }),
+                if (history) ...[
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
                       OutlinedButton.icon(
                         onPressed: _pickDate,
                         icon: const Icon(Icons.calendar_today_outlined, size: 17),
@@ -328,54 +416,8 @@ class _OnlineOrdersState extends State<OnlineOrders> {
                         onChanged: (value) => setState(() => status = value ?? ''),
                       ),
                     ],
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 10),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: Wrap(
-              spacing: 12,
-              runSpacing: 10,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                for (final partner in partners)
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        partner == 'Trendyol Go' && tgoConnected
-                            ? Icons.check_circle_outline
-                            : Icons.info_outline,
-                        size: 17,
-                        color: partner == 'Trendyol Go' && canSync
-                            ? NohutBrand.green
-                            : NohutBrand.gold,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        '$partner · ${partner == 'Trendyol Go' ? integration.status : 'Bağlı değil'}',
-                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
-                      ),
-                      const SizedBox(width: 6),
-                      IconButton(
-                        tooltip: '$partner panelini aç',
-                        icon: const Icon(Icons.open_in_new, size: 17),
-                        onPressed: () => openExternalPage(context, onlinePartners[partner]!.url),
-                        visualDensity: VisualDensity.compact,
-                      ),
-                    ],
                   ),
-                if (partners.contains('Trendyol Go'))
-                  OutlinedButton.icon(
-                    onPressed: integration.syncing || !canSync ? null : integration.sync,
-                    icon: const Icon(Icons.refresh, size: 18),
-                    label: const Text('Yenile'),
-                  ),
+                ],
               ],
             ),
           ),

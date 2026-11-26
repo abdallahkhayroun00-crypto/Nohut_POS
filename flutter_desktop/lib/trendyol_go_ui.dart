@@ -331,100 +331,56 @@ class TgoOrderCard extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 6),
-            Wrap(
-              spacing: 12,
-              runSpacing: 4,
-              children: [
-                const Text('Uber Eats Trendyol Go'),
-                Text('Platform no: ${order['orderNumber']}'),
-                Text(istanbulStamp(order['createdAt'])),
-                Text(order['pickup'] == true ? 'Gel-Al' : 'Paket Servis'),
-                if ('${order['orderCode'] ?? ''}'.isNotEmpty)
-                  Text("Sipariş kodu: ${order['orderCode']}"),
-                if (order['testPackage'] == true) const Text('Test siparişi'),
-              ],
+            const SizedBox(height: 4),
+            DefaultTextStyle.merge(
+              style: const TextStyle(fontSize: 12.5, color: NohutBrand.muted),
+              child: Wrap(
+                spacing: 10,
+                runSpacing: 2,
+                children: [
+                  Text(order['source'] is String &&
+                          order['source'] != 'Trendyol Go'
+                      ? '${order['source']}' : 'Trendyol Go',
+                    style: const TextStyle(
+                      color: NohutBrand.green, fontWeight: FontWeight.w700)),
+                  Text(istanbulStamp(order['createdAt'])),
+                  Text(order['pickup'] == true ? 'Gel-Al' : 'Paket Servis'),
+                  if ('${order['orderCode'] ?? ''}'.isNotEmpty)
+                    Text("Kod: ${order['orderCode']}"),
+                  Text('Platform no: ${order['orderNumber']}'),
+                  if (order['testPackage'] == true) const Text('Test siparişi'),
+                ],
+              ),
             ),
-            const Divider(height: 20),
-            if (customer.isNotEmpty || contact.isNotEmpty || email.isNotEmpty || address.isNotEmpty)
-              Container(
-                padding: const EdgeInsets.all(12),
-                margin: const EdgeInsets.only(bottom: 12),
-                decoration: BoxDecoration(
-                  color: const Color(0xffF3F7F3),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Müşteri ve Teslimat', style: TextStyle(
-                      color: NohutBrand.green, fontWeight: FontWeight.w800)),
-                    if (customer.isNotEmpty) SelectableText('Müşteri: $customer'),
-                    if (contact.isNotEmpty) SelectableText('Telefon: $contact'),
-                    if (email.isNotEmpty) SelectableText('E-posta: $email'),
-                    if (address.isNotEmpty) SelectableText('Adres: $address'),
-                  ],
-                ),
-              ),
-            if (duration is num && duration > 0)
-              Text('Hazırlık süresi: ${duration.toInt()} dk'),
-            if (showCourier && order['courierNearby'] == true)
-              const Text('🛵 Kurye restorana yaklaştı.',
-                  style: TextStyle(color: NohutBrand.green,
-                      fontWeight: FontWeight.w800)),
-            if (showCourier && eta.isNotEmpty)
-              Text('Tahmini kurye varışı: $eta'),
-            if (showCourier && eta.isEmpty)
-              const Text('Kurye varış zamanı henüz bildirilmedi.',
-                  style: TextStyle(color: NohutBrand.muted, fontSize: 12)),
-            if (deliveryEta.isNotEmpty)
-              Text('Tahmini teslimat: $deliveryEta'),
-            if (order['pickup'] != true) ...[
-              const SizedBox(height: 10),
-              const Text('Kurye Takip', style: TextStyle(
-                color: NohutBrand.green, fontWeight: FontWeight.w800)),
-              for (final step in const [
-                ('nearby', 'Kurye Yaklaşıyor'),
-                ('picked_up', 'Kuryeye Teslim Edildi'),
-                ('delivered', 'Müşteriye Teslim Edildi'),
-              ])
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  dense: true,
-                  leading: Icon(
-                    reached(step.$1)
-                        ? Icons.check_circle_outline
-                        : Icons.radio_button_unchecked,
-                    color: reached(step.$1)
-                        ? NohutBrand.green : NohutBrand.muted,
-                  ),
-                  title: Text(step.$2),
-                  subtitle: Text(observedAt(step.$1)),
-                ),
-              const Text(
-                'Saatler platformun gerçek olay zamanı değil, POS tarafından ilk görüldüğü zamandır.',
-                style: TextStyle(fontSize: 11, color: NohutBrand.muted),
-              ),
-            ],
-            if (reason.isNotEmpty) Text('İptal nedeni: $reason'),
+            const Divider(height: 18),
+            // What the kitchen needs first: items, then the customer note.
             for (final line in lines)
               Padding(
-                padding: const EdgeInsets.only(bottom: 5),
+                padding: const EdgeInsets.only(bottom: 6),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    SizedBox(
-                      width: 34,
+                    Container(
+                      width: 30,
+                      margin: const EdgeInsets.only(right: 10),
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: const Color(0xffEEF3EF),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
                       child: Text(
                         '${line['qty']}×',
-                        style: const TextStyle(fontWeight: FontWeight.w700),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800, color: NohutBrand.green),
                       ),
                     ),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('${line['name']}'),
+                          Text('${line['name']}', style: const TextStyle(
+                            fontSize: 15, fontWeight: FontWeight.w600)),
                           if (line['options'] case final List options
                               when options.isNotEmpty)
                             Text(
@@ -438,19 +394,40 @@ class TgoOrderCard extends StatelessWidget {
                 ),
               ),
             if (note.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 5),
-                child: Text(
-                  'Müşteri notu: $note',
-                  style: theme.textTheme.bodySmall,
+              Container(
+                margin: const EdgeInsets.only(top: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                decoration: BoxDecoration(
+                  color: const Color(0xffFFF6E0),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xffEED9A6)),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.sticky_note_2_outlined,
+                      size: 16, color: Color(0xff8A6516)),
+                    const SizedBox(width: 6),
+                    Expanded(child: Text('Müşteri notu: $note',
+                      style: const TextStyle(color: Color(0xff6B4E10),
+                        fontWeight: FontWeight.w600))),
+                  ],
                 ),
               ),
-            const Divider(height: 20),
+            if (reason.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text('İptal nedeni: $reason',
+                  style: const TextStyle(color: Color(0xff8d3930),
+                    fontWeight: FontWeight.w600)),
+              ),
+            const Divider(height: 18),
             Row(
               children: [
                 Expanded(
                   child: Text(
                     paymentLabel.isEmpty ? 'Platform toplamı' : paymentLabel,
+                    style: const TextStyle(color: NohutBrand.muted),
                   ),
                 ),
                 Text(
@@ -462,45 +439,53 @@ class TgoOrderCard extends StatelessWidget {
               ],
             ),
             if (onAction != null && tgoKitchenActive(order)) ...[
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 9,
-                runSpacing: 8,
-                crossAxisAlignment: WrapCrossAlignment.center,
+              const SizedBox(height: 10),
+              Row(
                 children: [
-                  if (status == 'Created')
-                    FilledButton.icon(
-                      onPressed: canWrite ? () => onAction!(order, 'accept') : null,
-                      icon: const Icon(Icons.check_circle_outline, size: 17),
-                      label: const Text('Kabul Et'),
+                  if (status == 'Created' || status == 'Picking')
+                    Expanded(
+                      child: FilledButton.icon(
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size.fromHeight(44)),
+                        onPressed: canWrite
+                            ? () => onAction!(order,
+                                status == 'Created' ? 'accept' : 'ready')
+                            : null,
+                        icon: Icon(status == 'Created'
+                            ? Icons.check_circle_outline
+                            : Icons.restaurant_outlined, size: 18),
+                        label: Text(status == 'Created' ? 'Kabul Et' : 'Hazır'),
+                      ),
                     ),
-                  if (status == 'Picking')
-                    FilledButton.icon(
-                      onPressed: canWrite ? () => onAction!(order, 'ready') : null,
-                      icon: const Icon(Icons.restaurant_outlined, size: 17),
-                      label: const Text('Hazır'),
-                    ),
-                  OutlinedButton.icon(
+                  if (status == 'Created' || status == 'Picking')
+                    const SizedBox(width: 6),
+                  IconButton.outlined(
+                    tooltip: 'Siparişi İptal Et',
                     onPressed: canWrite ? () => onAction!(order, 'cancel') : null,
-                    icon: const Icon(Icons.cancel_outlined, size: 17),
-                    label: const Text('Siparişi İptal Et'),
+                    icon: const Icon(Icons.cancel_outlined, size: 19),
                   ),
-                  if (!canWrite)
-                    const Text('API işlem yetkisi etkin değil',
-                      style: TextStyle(fontSize: 12, color: NohutBrand.muted)),
-                  TextButton.icon(
+                  IconButton(
+                    tooltip: 'Partner Paneli',
                     onPressed: () => openExternalPage(
                       context, 'https://partner.tgoyemek.com/'),
-                    icon: const Icon(Icons.open_in_new, size: 16),
-                    label: const Text('Partner Paneli'),
+                    icon: const Icon(Icons.open_in_new, size: 18),
                   ),
                 ],
               ),
+              if (!canWrite)
+                const Padding(
+                  padding: EdgeInsets.only(top: 4),
+                  child: Text('API işlem yetkisi etkin değil',
+                    style: TextStyle(fontSize: 12, color: NohutBrand.muted)),
+                ),
             ],
             if (printState != null)
-              Text(
-                'Mutfak fişi · $printState',
-                style: theme.textTheme.bodySmall,
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(
+                  'Mutfak fişi · $printState',
+                  style: theme.textTheme.bodySmall,
+                ),
               )
             else if (onKitchenPrint != null && tgoKitchenActive(order))
               Align(
@@ -509,6 +494,103 @@ class TgoOrderCard extends StatelessWidget {
                   onPressed: onKitchenPrint,
                   icon: const Icon(Icons.print_outlined),
                   label: const Text('Mutfak Fişi Yazdır'),
+                ),
+              ),
+            // Secondary information: timing, courier progress, customer.
+            if ((duration is num && duration > 0) || deliveryEta.isNotEmpty ||
+                (showCourier && (eta.isNotEmpty || order['courierNearby'] == true)))
+              Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: DefaultTextStyle.merge(
+                  style: const TextStyle(fontSize: 12.5),
+                  child: Wrap(
+                    spacing: 12,
+                    runSpacing: 4,
+                    children: [
+                      if (duration is num && duration > 0)
+                        Text('Hazırlık süresi: ${duration.toInt()} dk'),
+                      if (showCourier && eta.isNotEmpty)
+                        Text('Tahmini kurye varışı: $eta'),
+                      if (deliveryEta.isNotEmpty)
+                        Text('Tahmini teslimat: $deliveryEta'),
+                      if (showCourier && order['courierNearby'] == true)
+                        const Text('🛵 Kurye restorana yaklaştı.',
+                          style: TextStyle(color: NohutBrand.green,
+                            fontWeight: FontWeight.w800)),
+                    ],
+                  ),
+                ),
+              ),
+            if (order['pickup'] != true) ...[
+              const SizedBox(height: 10),
+              Tooltip(
+                message: 'Kurye Takip · Saatler platformun gerçek olay zamanı '
+                  'değil, POS tarafından ilk görüldüğü zamandır.',
+                child: Row(
+                  children: [
+                    for (final (i, step) in const [
+                      ('nearby', 'Yaklaşıyor'),
+                      ('picked_up', 'Kuryede'),
+                      ('delivered', 'Teslim'),
+                    ].indexed) ...[
+                      if (i > 0)
+                        Expanded(
+                          child: Container(
+                            height: 2,
+                            margin: const EdgeInsets.symmetric(horizontal: 4),
+                            color: reached(step.$1)
+                                ? NohutBrand.green : const Color(0xffDCE3DE),
+                          ),
+                        ),
+                      Tooltip(
+                        message: observedAt(step.$1),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              reached(step.$1)
+                                  ? Icons.check_circle
+                                  : Icons.radio_button_unchecked,
+                              size: 15,
+                              color: reached(step.$1)
+                                  ? NohutBrand.green : const Color(0xffA9B3AD),
+                            ),
+                            const SizedBox(width: 4),
+                            Text(step.$2, style: TextStyle(
+                              fontSize: 12,
+                              color: reached(step.$1)
+                                  ? NohutBrand.green : NohutBrand.muted,
+                              fontWeight: reached(step.$1)
+                                  ? FontWeight.w700 : FontWeight.w400)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+            if (customer.isNotEmpty || contact.isNotEmpty || email.isNotEmpty || address.isNotEmpty)
+              Container(
+                padding: const EdgeInsets.all(10),
+                margin: const EdgeInsets.only(top: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xffF3F7F3),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: DefaultTextStyle.merge(
+                  style: const TextStyle(fontSize: 12.5),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Müşteri ve Teslimat', style: TextStyle(
+                        color: NohutBrand.green, fontWeight: FontWeight.w800)),
+                      if (customer.isNotEmpty) SelectableText('Müşteri: $customer'),
+                      if (contact.isNotEmpty) SelectableText('Telefon: $contact'),
+                      if (email.isNotEmpty) SelectableText('E-posta: $email'),
+                      if (address.isNotEmpty) SelectableText('Adres: $address'),
+                    ],
+                  ),
                 ),
               ),
           ],
