@@ -337,10 +337,18 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       printerSettings['receiptPolicy'] = 'onPayment';
       printerSettings['autoPrint'] = false;
       printerSettings['printerModel'] = 'XP-237B';
-      if (printerSettings['receiptLayoutVersion'] != 2) {
+      final layoutVersion = printerSettings['receiptLayoutVersion'];
+      if (layoutVersion is! int || layoutVersion < 2) {
         printerSettings['paperWidthMm'] = 56;
-        printerSettings['receiptLayoutVersion'] = 2;
       }
+      if (layoutVersion is! int || layoutVersion < 3) {
+        // Mevax 57 mm thermal rolls; only the old untouched default moves.
+        if (printerSettings['paperWidthMm'] == 56) {
+          printerSettings['paperWidthMm'] = 57;
+        }
+        printerSettings['receiptLayoutVersion'] = 3;
+      }
+      printerSettings.putIfAbsent('receiptSidePaddingMm', () => 3);
       printerSettings.putIfAbsent('receiptMarginMm', () => 4);
       printerSettings.putIfAbsent('receiptOffsetMm', () => 0);
       printerSettings.putIfAbsent('receiptLogoMm', () => 18);

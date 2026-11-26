@@ -106,8 +106,20 @@ void main() {
     expect(text, isNot(contains('Kalan')));
     expect(text, contains('!! ÖDENDİ'));
     expect(text, contains('Nakit 100,00 ₺'));
-    expect(text, contains('  Alınan 200,00 ₺ · Para üstü 100,00 ₺'));
+    expect(text, contains('  Alınan 200,00 ₺\n  Para üstü 100,00 ₺'));
     expect(text, contains('Kart 40,00 ₺'));
     expect(RegExp(r' · $', multiLine: true).hasMatch(text), isFalse);
+  });
+
+  test('receipt keeps left and right safety margins inside the print width',
+      () {
+    final cfg = ReceiptDimensions(null);
+    expect(cfg.paper, 57);
+    expect(cfg.side, 3);
+    expect(ReceiptDimensions({'receiptSidePaddingMm': 0}).side, 0);
+    expect(() => ReceiptDimensions({'receiptSidePaddingMm': 9}),
+        throwsFormatException);
+    expect(() => ReceiptDimensions({'printableWidthMm': 30,
+      'receiptSidePaddingMm': 2}), throwsFormatException);
   });
 }
