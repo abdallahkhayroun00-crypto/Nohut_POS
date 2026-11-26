@@ -137,16 +137,8 @@ Json submitStaffOrder(PosStore store, Json payload) {
       batch['staff'] = staff['name'];
       batch['staffId'] = staff['id'];
     } else {
-      order = newLocalOrder(
-        state: s,
-        source: '$source',
-        table: source == 'Masa' ? table as int : null,
-        productLines: lines,
-        cashier: '${staff['name']}',
-        pickupChannel: '${payload['pickupChannel'] ?? 'Tezgahtan'}',
-      );
-      ((order['batches'] as List).first as Map)['staffId'] = staff['id'];
       final customer = payload['customer'];
+      Json? pickup;
       if (source == 'Gel-Al' && customer is Map) {
         for (final field in ['name', 'phone', 'time']) {
           if (customer[field] != null &&
@@ -155,11 +147,21 @@ Json submitStaffOrder(PosStore store, Json payload) {
             throw const FormatException('Müşteri bilgisi geçersiz');
           }
         }
-        order['customer'] = {
+        pickup = {
           for (final field in ['name', 'phone', 'time'])
             field: customer[field] ?? '',
         };
       }
+      order = newLocalOrder(
+        state: s,
+        source: '$source',
+        table: source == 'Masa' ? table as int : null,
+        productLines: lines,
+        cashier: '${staff['name']}',
+        staffId: staff['id'] as int,
+        pickupChannel: '${payload['pickupChannel'] ?? 'Tezgahtan'}',
+        customer: pickup,
+      );
     }
     finishPickupIfSettled(order);
     recordStaffNotice(

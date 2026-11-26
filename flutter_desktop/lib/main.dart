@@ -613,11 +613,12 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
         pickupChannel: request.pickupChannel,
         productLines: request.lines,
         cashier: personName,
+        staffId: personId,
+        customer: request.source == 'Gel-Al'
+            ? linkedPickupCustomer(data, request.customer)
+            : null,
       );
-      ((o['batches'] as List).first as Map)['staffId'] = personId;
-      o['customer'] = request.source == 'Gel-Al'
-          ? linkedPickupCustomer(data, request.customer)
-          : request.customer;
+      if (request.source != 'Gel-Al') o['customer'] = request.customer;
       created = o['id'] as int;
     });
     final request = await showDialog<OrderRequest>(

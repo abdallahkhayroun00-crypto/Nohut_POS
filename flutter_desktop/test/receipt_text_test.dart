@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nohut_falafel_desktop/order_actions.dart';
 import 'package:nohut_falafel_desktop/receipt_printer.dart';
+import 'package:nohut_falafel_desktop/staff_commands.dart';
 import 'package:nohut_falafel_desktop/operations.dart';
 import 'package:nohut_falafel_desktop/pos_logic.dart';
 import 'package:nohut_falafel_desktop/pos_store.dart';
@@ -57,8 +58,8 @@ void main() {
       source: 'Gel-Al',
       productLines: [row('Ayran', 35)],
       pickupChannel: 'Telefon',
+      customer: {'name': 'Ayşe', 'phone': '05551234567', 'time': '13:15'},
     );
-    o['customer'] = {'name': 'Ayşe', 'phone': '05551234567', 'time': '13:15'};
     addOrderBatch(s, o['id'] as int, [row('Falafel', 140)], cashier: 'Elif');
     final job = asMaps(s['printJobs']).last;
     final text = receiptText(s, job);
@@ -158,6 +159,69 @@ void main() {
       expect(sent.last, startsWith('NOHUT FALAFEL · SİPARİŞ FİŞİ'));
     } finally {
       printer.dispose();
+      store.dispose();
+      dir.deleteSync(recursive: true);
+    }
+  });
+
+  // Spec V5 §11.1 regression gate: the FIRST Gel-Al ticket must already
+  // carry the pickup name and promised time (never the phone), on every
+  // entry path, because the print snapshot is frozen at creation.
+  void expectPickupTicket(Json state, Json job) {
+    final text = receiptText(state, job);
+    expect(text, contains('Müşteri: Ayşe · Saat 13:15'));
+    expect(text, isNot(contains('0555')));
+    expect('${job['snapshot']}', isNot(contains('0555')));
+  }
+
+  test('first Gel-Al ticket has name and time (cashier path)', () {
+    final s = state();
+    final o = newLocalOrder(
+      state: s,
+      source: 'Gel-Al',
+      productLines: [row('Ayran', 35)],
+      pickupChannel: 'Telefon',
+      cashier: 'Elif',
+      staffId: 2,
+      customer: {'name': ' Ayşe ', 'phone': '05551234567', 'time': '13:15'},
+    );
+    final first = asMaps(s['printJobs']).single;
+    expectPickupTicket(s, first);
+    expect((o['customer'] as Map)['phone'], '05551234567');
+    expect(asMaps(o['batches']).first['staffId'], 2);
+    expect(asMaps((first['snapshot'] as Map)['batch']['lines']), hasLength(1));
+    expect((first['snapshot'] as Map)['batch']['staffId'], 2);
+    // Masa orders never take pickup details.
+    final masa = newLocalOrder(state: s, source: 'Masa', table: 2,
+        productLines: [row('Ayran', 35)], customer: {'name': 'X'});
+    expect((masa['customer'] as Map)['name'], '');
+  });
+
+  test('first Gel-Al ticket has name and time (phone / LAN path)', () {
+    final dir = Directory.systemTemp.createTempSync('nohut-first');
+    final store = PosStore(databaseFile: '${dir.path}/db');
+    try {
+      final s = state();
+      s['employees'] = [
+        {'id': 2, 'name': 'Mehmet', 'role': 'Personel', 'active': true},
+      ];
+      expect(store.replace(s, store.read().revision).ok, true);
+      submitStaffOrder(store, {
+        'requestId': 'staff_first_0001',
+        'expectedRevision': store.read().revision,
+        'staffId': 2,
+        'source': 'Gel-Al',
+        'pickupChannel': 'Telefon',
+        'customer': {'name': 'Ayşe', 'phone': '05551234567', 'time': '13:15'},
+        'lines': [
+          {'productId': 1, 'qty': 1},
+        ],
+      });
+      final data = store.read().data;
+      final job = asMaps(data['printJobs']).single;
+      expectPickupTicket(data, job);
+      expect(receiptText(data, job), contains('Mehmet'));
+    } finally {
       store.dispose();
       dir.deleteSync(recursive: true);
     }
