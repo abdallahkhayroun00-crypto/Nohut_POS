@@ -16,11 +16,15 @@ class DashboardSales extends StatefulWidget {
     required this.state,
     required this.businessDay,
     this.onlineWarning,
+    this.showSummary = true,
   });
 
   final Json state;
   final String businessDay;
   final String? onlineWarning;
+  /// False hides the today total and per-channel cards (Genel Bakış shows
+  /// its own summary) and keeps only the sales chart.
+  final bool showSummary;
 
   @override
   State<DashboardSales> createState() => _DashboardSalesState();
@@ -442,12 +446,13 @@ class _DashboardSalesState extends State<DashboardSales> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (widget.onlineWarning != null)
+        if (widget.showSummary && widget.onlineWarning != null)
           Card(child: ListTile(
             leading: const Icon(Icons.info_outline, color: NohutBrand.gold),
             title: const Text('Online satış verileri eksik olabilir'),
             subtitle: Text(widget.onlineWarning!),
           )),
+        if (widget.showSummary) ...[
         Card(
           child: Padding(
             padding: const EdgeInsets.all(19),
@@ -509,6 +514,7 @@ class _DashboardSalesState extends State<DashboardSales> {
           },
         ),
         const SizedBox(height: 16),
+        ],
         Card(
           child: Padding(
             padding: const EdgeInsets.all(18),

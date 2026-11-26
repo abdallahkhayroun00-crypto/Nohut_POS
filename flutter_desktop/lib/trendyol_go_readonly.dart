@@ -226,6 +226,73 @@ String tgoKitchenTicket(Json order) {
   ].join('\n');
 }
 
+/// Restaurant-caused cancellation reasons accepted by the MEAL API.
+const tgoCancelReasons = <int, String>{
+  621: 'Tedarik problemi',
+  622: 'Mağaza kapalı',
+  623: 'Sipariş hazırlanamadı',
+  627: 'Sipariş karışıklığı',
+};
+
+/// Builds a documented Trendyol Go Yemek order write
+/// (developers.tgoapps.com → Yemek Entegrasyonu → Sipariş Entegrasyonu):
+///
+/// * Kabul Et → `PUT …/suppliers/{supplierId}/packages/picked`
+///   `{"packageId", "preparationTime"}`
+/// * Hazır → `PUT …/suppliers/{supplierId}/packages/invoiced`
+///   `{"packageId"}` (`actualDate` is optional and omitted)
+/// * İptal → `PUT …/suppliers/{supplierId}/packages/unsupplied`
+///   `{"packageId", "itemIdList", "reasonId"}`
+///
+/// The package ID belongs in the JSON body, never in the URL path.
+({String path, Map<String, dynamic> body}) tgoWriteRequest({
+  required String supplierId,
+  required Json order,
+  required String action,
+  int? preparationMinutes,
+  int? reasonId,
+}) {
+  if (!RegExp(r'^[0-9]{1,20}$').hasMatch(supplierId)) {
+    throw const FormatException('Satıcı kimliği geçersiz.');
+  }
+  final packageId = '${order['packageId'] ?? ''}';
+  if (!RegExp(r'^[A-Za-z0-9-]{1,80}$').hasMatch(packageId)) {
+    throw const FormatException('Paket kimliği geçersiz.');
+  }
+  final base = '/integrator/order/meal/suppliers/$supplierId/packages';
+  switch (action) {
+    case 'accept':
+      if (preparationMinutes == null ||
+          preparationMinutes < 1 || preparationMinutes > 120) {
+        throw const FormatException(
+          'Hazırlama süresi 1-120 dakika arasında olmalı.',
+        );
+      }
+      return (
+        path: '$base/picked',
+        body: {'packageId': packageId, 'preparationTime': preparationMinutes},
+      );
+    case 'ready':
+      return (path: '$base/invoiced', body: {'packageId': packageId});
+    case 'cancel':
+      if (!tgoCancelReasons.containsKey(reasonId)) {
+        throw const FormatException('Geçerli restoran iptal nedenini seçin.');
+      }
+      final ids = (order['packageItemIds'] as List? ?? [])
+          .map((v) => '$v').where((v) => v.isNotEmpty).toList();
+      if (ids.isEmpty) {
+        throw const FormatException(
+          'İptal için paket ürün kimlikleri bulunamadı.',
+        );
+      }
+      return (
+        path: '$base/unsupplied',
+        body: {'packageId': packageId, 'itemIdList': ids, 'reasonId': reasonId},
+      );
+  }
+  throw const FormatException('Desteklenmeyen işlem.');
+}
+
 class TrendyolGoReadonly extends ChangeNotifier {
   TrendyolGoReadonly(this.store, {this.onNewOrders, this.onOrdersSynced})
     : vault = TgoWindowsVault(store.filePath);
@@ -237,9 +304,12 @@ class TrendyolGoReadonly extends ChangeNotifier {
     'NOHUT_TRENDYOL_LIVE_SYNC',
     defaultValue: true,
   );
+  /// Kabul Et / Hazır / İptal requests follow the documented MEAL order
+  /// endpoints. Build with --dart-define=NOHUT_TRENDYOL_WRITE_ACTIONS=false
+  /// to ship a read-only POS.
   static const writeEnabled = bool.fromEnvironment(
     'NOHUT_TRENDYOL_WRITE_ACTIONS',
-    defaultValue: false,
+    defaultValue: true,
   );
   bool get canWrite => writeEnabled &&
       liveSyncEnabled && credentials?.valid == true &&
@@ -315,8 +385,7 @@ class TrendyolGoReadonly extends ChangeNotifier {
     String action, {
     int? reasonId,
     String? explanation,
-    double? receiptAmount,
-    int? bagCount,
+    int? preparationMinutes,
   }) async {
     if (!canWrite || writing) {
       throw const FormatException(
@@ -344,25 +413,14 @@ class TrendyolGoReadonly extends ChangeNotifier {
         action == 'cancel' && !['Created', 'Picking'].contains(current)) {
       throw const FormatException('Sipariş durumu değişmiş. Yeniden kontrol edin.');
     }
-    if (action == 'cancel' && ![621, 622, 623, 627].contains(reasonId)) {
-      throw const FormatException('Geçerli restoran iptal nedenini seçin.');
-    }
-    if (action == 'ready' &&
-        (receiptAmount == null ||
-         !receiptAmount.isFinite ||
-         receiptAmount <= 0 ||
-         bagCount == null ||
-         bagCount < 1 || bagCount > 10)) {
-      throw const FormatException(
-        'Gerçek fiş tutarı ve 1-10 arasında poşet adedi gerekli.',
-      );
-    }
-    final operation = switch (action) {
-      'accept' => 'picked',
-      'ready' => 'invoiced',
-      'cancel' => 'unsupplied',
-      _ => throw const FormatException('Desteklenmeyen işlem.'),
-    };
+    // Validates every field before any network call.
+    final write = tgoWriteRequest(
+      supplierId: account.supplierId,
+      order: order,
+      action: action,
+      preparationMinutes: preparationMinutes,
+      reasonId: reasonId,
+    );
     writing = true;
     notifyListeners();
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 12);
@@ -383,7 +441,7 @@ class TrendyolGoReadonly extends ChangeNotifier {
         throw const FormatException('Sipariş durumu platformda değişmiş. Yenileyin.');
       }
 
-      final uri = Uri.https('api.tgoapis.com', '$basePath/$operation');
+      final uri = Uri.https('api.tgoapis.com', write.path);
       final request = await client.openUrl('PUT', uri);
       request.followRedirects = false;
       request.headers
@@ -394,28 +452,8 @@ class TrendyolGoReadonly extends ChangeNotifier {
         ..set('x-agentname', 'NohutFalafelPOS')
         ..set('x-executor-user', account.email)
         ..set(HttpHeaders.acceptHeader, 'application/json');
-      if (action == 'ready') {
-        request.headers.contentType = ContentType.json;
-        request.write(jsonEncode({
-          'invoiceAmount': receiptAmount,
-          'bagCount': bagCount,
-          'receiptLink': null,
-          'invoiceTaxAmount': null,
-        }));
-      } else if (action == 'cancel') {
-        request.headers.contentType = ContentType.json;
-        final ids = (order['packageItemIds'] as List? ?? [])
-            .map((v) => '$v').where((v) => v.isNotEmpty).toList();
-        if (ids.isEmpty) {
-          throw const FormatException('İptal için paket ürün kimlikleri bulunamadı.');
-        }
-        request.write(jsonEncode({
-          'itemIdList': ids,
-          'reasonId': reasonId,
-          'causedCancelPackageItemIds': reasonId == 621 ? ids : <String>[],
-          'description': (explanation ?? '').trim(),
-        }));
-      }
+      request.headers.contentType = ContentType.json;
+      request.write(jsonEncode(write.body));
       final result = await request.close().timeout(const Duration(seconds: 20));
       final responseBody = await utf8.decoder.bind(result).join()
           .timeout(const Duration(seconds: 20));

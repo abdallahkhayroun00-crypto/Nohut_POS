@@ -53,12 +53,28 @@ abstract final class NohutBrand {
           fontWeight: FontWeight.w600,
         ),
       ),
+      // Flat cards with a light outline everywhere (same as the new panels).
       cardTheme: CardThemeData(
         color: card,
-        elevation: 0.5,
+        elevation: 0,
+        surfaceTintColor: Colors.transparent,
+        margin: const EdgeInsets.symmetric(vertical: 6),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
-          side: const BorderSide(color: Color(0xffE0E8E2)),
+          side: const BorderSide(color: Color(0xffE1E7E3)),
+        ),
+      ),
+      expansionTileTheme: const ExpansionTileThemeData(
+        shape: Border(),
+        collapsedShape: Border(),
+        iconColor: green,
+        collapsedIconColor: green,
+      ),
+      segmentedButtonTheme: SegmentedButtonThemeData(
+        style: SegmentedButton.styleFrom(
+          selectedBackgroundColor: green,
+          selectedForegroundColor: Colors.white,
+          side: const BorderSide(color: Color(0xffD5DED8)),
         ),
       ),
       dialogTheme: DialogThemeData(
@@ -108,4 +124,38 @@ abstract final class NohutBrand {
       ),
     );
   }
+}
+
+/// Lays tiles out in balanced rows that fill the available width
+/// (5 tiles on 4 columns → 3 + 2, never 4 + 1).
+class EvenGrid extends StatelessWidget {
+  const EvenGrid({
+    super.key,
+    required this.children,
+    this.minTileWidth = 200,
+    this.spacing = 12,
+  });
+  final List<Widget> children;
+  final double minTileWidth, spacing;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, box) {
+      final n = children.length;
+      if (n == 0) return const SizedBox.shrink();
+      final fit = ((box.maxWidth + spacing) / (minTileWidth + spacing))
+          .floor()
+          .clamp(1, n);
+      final rows = (n / fit).ceil();
+      final columns = (n / rows).ceil();
+      final width = (box.maxWidth - spacing * (columns - 1)) / columns;
+      return Wrap(
+        spacing: spacing,
+        runSpacing: spacing,
+        children: [
+          for (final child in children) SizedBox(width: width, child: child),
+        ],
+      );
+    },
+  );
 }

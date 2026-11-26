@@ -15,7 +15,8 @@ void main() {
         'Yazdırma Kuyruğu',
       ])
         expect(find.textContaining(label), findsNothing);
-      await helpers.click(t, 'Kasa & Ödemeler');
+      await helpers.click(t, 'Masalar & Siparişler');
+      await helpers.click(t, 'Ödeme Bekleyen');
       expect(find.text('Kasayı Aç'), findsNothing);
       expect(find.text('Kasayı Kapat'), findsNothing);
       await helpers.click(t, 'Raporlar');
@@ -78,7 +79,8 @@ void main() {
         ],
       );
       final file = await helpers.mountManager(t, s);
-      await helpers.click(t, 'Kasa & Ödemeler');
+      await helpers.click(t, 'Masalar & Siparişler');
+      await helpers.click(t, 'Ödeme Bekleyen');
       await helpers.click(t, 'Kalan 140,00 ₺');
       expect(find.text('Hesap ve Sipariş'), findsOneWidget);
       expect(find.text('Ürünleri Düzenle'), findsOneWidget);

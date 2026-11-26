@@ -11,7 +11,9 @@ import 'group_payments.dart';
 import 'trendyol_go_readonly.dart';
 import 'trendyol_go_ui.dart';
 import 'sales_reports.dart';
-import 'dashboard_sales.dart';
+import 'overview_metrics.dart';
+import 'overview_panel.dart';
+import 'tables_panel.dart';
 import 'finance_ui.dart';
 import 'order_alerts.dart';
 import 'staff_order_popup.dart';
@@ -184,9 +186,12 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     Icons.account_balance_wallet_outlined, Icons.trending_up_outlined,
     Icons.settings_outlined,
   ];
+  // Kasa & Ödemeler lives inside Masalar & Siparişler on Windows
+  // ("Ödeme Bekleyen" tab); the shared list keeps it for the Android app.
   static final sections = [
     for (var i=0;i<managementSections.length;i++)
-      (managementSections[i].$1,_sectionIcons[i],managementSections[i].$2),
+      if (managementSections[i].$1 != 'payments')
+        (managementSections[i].$1,_sectionIcons[i],managementSections[i].$2),
   ];
 
   @override
@@ -476,6 +481,10 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
 
   void _switch(String next) {
     setState(() {
+      if (next == 'payments') {
+        next = 'tables';
+        localView = 'unpaid';
+      }
       page = next;
       if (next == 'online') {
         onlinePlatform = 'Tümü';
@@ -858,8 +867,8 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       context: context,
       builder: (ctx) => Dialog(
         child: SizedBox(
-          width: 900,
-          height: MediaQuery.sizeOf(ctx).height * .88,
+          width: 1040,
+          height: MediaQuery.sizeOf(ctx).height * .9,
           child: Column(
             children: [
               Padding(
@@ -1674,23 +1683,69 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Align(
-              alignment: Alignment.centerLeft,
-              child: SegmentedButton<String>(
-                segments: const [
-                  ButtonSegment(value: 'plan', label: Text('Masa Planı')),
-                  ButtonSegment(value: 'list', label: Text('Liste')),
-                  ButtonSegment(value: 'pickup', label: Text('Gel-Al')),
-                ],
-                selected: {localView},
-                onSelectionChanged: (value) => setState(() {
-                  localView = value.single;
-                  orderFilter = 'Tümü';
-                }),
-              ),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment(value: 'plan',
+                      icon: Icon(Icons.grid_view_outlined, size: 18),
+                      label: Text('Masa Planı')),
+                    ButtonSegment(value: 'list',
+                      icon: Icon(Icons.list_alt_outlined, size: 18),
+                      label: Text('Liste')),
+                    ButtonSegment(value: 'pickup',
+                      icon: Icon(Icons.shopping_bag_outlined, size: 18),
+                      label: Text('Gel-Al')),
+                    ButtonSegment(value: 'unpaid',
+                      icon: Icon(Icons.payments_outlined, size: 18),
+                      label: Text('Ödeme Bekleyen')),
+                  ],
+                  selected: {localView},
+                  onSelectionChanged: (value) => setState(() {
+                    localView = value.single;
+                    orderFilter = 'Tümü';
+                  }),
+                ),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    if (localView == 'plan' && !floorEditing)
+                      OutlinedButton.icon(
+                        onPressed: () => setState(() {
+                          floorEditing = true;
+                          draftFloor = {...positionsFromJson(db['floorPositions'])};
+                        }),
+                        icon: const Icon(Icons.open_with),
+                        label: const Text('Yerleşimi Düzenle'),
+                      ),
+                    if (localView == 'plan')
+                      FilledButton.icon(
+                        onPressed: () => _composer(),
+                        icon: const Icon(Icons.add),
+                        label: const Text('Masa Siparişi'),
+                      )
+                    else
+                      FilledButton.icon(
+                        onPressed: () => _composer(pickup: localView == 'pickup'),
+                        icon: const Icon(Icons.add),
+                        label: const Text('Sipariş Al'),
+                      ),
+                  ],
+                ),
+              ],
             ),
             const SizedBox(height: 16),
-            if (localView == 'plan') _tables(db) else _orders(db),
+            if (localView == 'plan')
+              _tables(db)
+            else if (localView == 'unpaid')
+              _payments(db)
+            else
+              _orders(db),
           ],
         );
       case 'online':
@@ -1721,8 +1776,6 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
             ));
           },
         );
-      case 'payments':
-        return _payments(db);
       case 'reports':
         return _reports(db);
       case 'finance':
@@ -1772,42 +1825,6 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
         ),
       );
 
-  Widget _metric(
-    String label,
-    String amount,
-    IconData icon, {
-    Color color = dark,
-  }) => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(18),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, color: color),
-              const SizedBox(width: 9),
-              Expanded(
-                child: Text(
-                  label,
-                  style: const TextStyle(
-                    color: Color(0xff526251),
-                    fontSize: 12,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Text(
-            amount,
-            style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w900),
-          ),
-        ],
-      ),
-    ),
-  );
-
   String? get _onlineDataWarning {
     if (tgo.credentials?.valid != true) {
       return 'Trendyol Go API henüz bağlı değil. Yemeksepeti ve Migros '
@@ -1832,34 +1849,19 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       _sectionTitle(
-        'Günlük',
-        businessDay,
+        'Bugün',
+        turkishLongDate(businessDay),
         action: FilledButton.icon(
           onPressed: () => _composer(),
           icon: const Icon(Icons.add),
           label: const Text('Sipariş Al'),
         ),
       ),
-      DashboardSales(
+      OverviewPanel(
         state: db,
         businessDay: businessDay,
         onlineWarning: _onlineDataWarning,
-      ),
-      Card(
-        child: ListTile(
-          leading: const Icon(Icons.account_balance_wallet_outlined),
-          title: const Text('Açık Hesaplar · Gel-Al'),
-          subtitle: Text(
-            pickupOpenAccounts(db).length.toString() +
-            ' müşteri / hesap · Birikmiş ödenmemiş siparişler',
-          ),
-          trailing: Text(
-            formatTry(pickupOpenAccounts(db).fold<int>(
-              0, (sum, account) => sum + account.dueCents)),
-            style: const TextStyle(fontWeight: FontWeight.w800),
-          ),
-          onTap: () => _switch('open-accounts'),
-        ),
+        onNavigate: _switch,
       ),
       const SizedBox(height: 16),
       StaffPerformanceChart(state: db, day: businessDay),
@@ -1878,26 +1880,10 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _sectionTitle(
-          'Masa Yönetimi',
-          '5 masa · KAPI ve sandalyeler · Masa hesabı ve ödeme yalnızca PC üzerinde.',
-          action: FilledButton.icon(
-            onPressed: () => _composer(),
-            icon: const Icon(Icons.add),
-            label: const Text('Masa Siparişi'),
-          ),
-        ),
+        TablesSummaryStrip(state: db, now: DateTime.now()),
+        const SizedBox(height: 14),
         Row(
           children: [
-            if (!floorEditing)
-              OutlinedButton.icon(
-                onPressed: () => setState(() {
-                  floorEditing = true;
-                  draftFloor = {...positionsFromJson(db['floorPositions'])};
-                }),
-                icon: const Icon(Icons.open_with),
-                label: const Text('Yerleşimi Düzenle'),
-              ),
             if (floorEditing) ...[
               OutlinedButton(
                 onPressed: () =>
@@ -1930,8 +1916,9 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
             ],
           ],
         ),
-        const SizedBox(height: 15),
-        RestaurantFloorPlan(
+        if (floorEditing) const SizedBox(height: 12),
+        LayoutBuilder(builder: (context, box) {
+          final plan = RestaurantFloorPlan(
           state: db,
           positions: positions,
           editing: floorEditing,
@@ -1951,7 +1938,26 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
             };
             if (validFloorPlacement(next)) draftFloor = next;
           }),
-        ),
+          );
+          if (floorEditing || box.maxWidth < 1150) return plan;
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(flex: 3, child: plan),
+              const SizedBox(width: 12),
+              SizedBox(
+                width: min(420, box.maxWidth * 0.34),
+                child: OpenOrdersPanel(
+                  state: db,
+                  now: DateTime.now(),
+                  onOpenTable: _onTable,
+                  onOpenOrder: (o) => _showOrder(o['id'] as int),
+                  onPrintBill: _printBillBeforePayment,
+                ),
+              ),
+            ],
+          );
+        }),
         const SizedBox(height: 17),
         if (order != null && order['source'] == 'Masa')
           OutlinedButton(
@@ -1959,16 +1965,19 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
             child: Text('Masa ${order['table']} · Hesabı Aç'),
           ),
         if (order == null)
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(17),
-              child: Text(
-                floorEditing
-                    ? 'Masaları sürükleyin. Numaralar, hesaplar ve 5 masa değişmez.'
-                    : 'Boş masaya tıklayın: yeni sipariş. Dolu masaya tıklayın: hesap, ek sipariş ve ödeme.',
-                style: const TextStyle(color: Color(0xff647a67)),
+          Row(
+            children: [
+              const Icon(Icons.info_outline, size: 16, color: Color(0xff647a67)),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  floorEditing
+                      ? 'Masaları sürükleyin. Numaralar, hesaplar ve 5 masa değişmez.'
+                      : 'Boş masaya tıklayın: yeni sipariş. Dolu masaya tıklayın: hesap, ek sipariş ve ödeme.',
+                  style: const TextStyle(color: Color(0xff647a67), fontSize: 12.5),
+                ),
               ),
-            ),
+            ],
           ),
       ],
     );
@@ -1977,252 +1986,314 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
   Widget _orderDetail(Json o) {
     final id = o['id'] as int;
     final closed = o['closed'] == true;
+    final local = o['source'] == 'Masa' || o['source'] == 'Gel-Al';
     final total = orderTotalCents(o), paid = orderPaidCents(o);
+    final due = orderDueCents(o);
     final split = asMaps(o['guestChecks']);
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(19),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
+    final customerName = o['customer'] is Map
+        ? '${(o['customer'] as Map)['name'] ?? ''}'.trim() : '';
+    final title = o['table'] != null
+        ? 'Masa ${o['table']}'
+        : '${o['source']}${customerName.isEmpty ? '' : ' · $customerName'}';
+    final statusText = closed
+        ? 'Kapalı'
+        : o['source'] == 'Gel-Al' && o['deliveredAt'] != null
+            ? 'Teslim Edildi'
+            : 'Açık';
+    const border = Color(0xffE1E7E3);
+    // No fill by default: the dialog is white, and ListTiles inside need
+    // their Material ancestor to stay visible.
+    BoxDecoration panel([Color? color]) => BoxDecoration(
+      color: color,
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: border),
+    );
+
+    Widget wide(Widget button) => SizedBox(width: double.infinity, child: button);
+
+    final items = Container(
+      padding: const EdgeInsets.all(16),
+      decoration: panel(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(children: [
+            const Text('Ürünler', style: TextStyle(
+              fontSize: 16, fontWeight: FontWeight.w800)),
+            const SizedBox(width: 8),
+            Text('${itemCount(o)} adet', style: const TextStyle(
+              color: NohutBrand.muted, fontSize: 12.5)),
+          ]),
+          const SizedBox(height: 8),
+          for (final line in activeLines(o))
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 34,
+                    padding: const EdgeInsets.symmetric(vertical: 3),
+                    decoration: BoxDecoration(
+                      color: const Color(0xffEEF3EF),
+                      borderRadius: BorderRadius.circular(7),
+                    ),
+                    child: Text('${line['qty']}×',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontWeight: FontWeight.w800,
+                        color: NohutBrand.green)),
+                  ),
+                  const SizedBox(width: 11),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${line['name'] ?? line['productKey'] ?? 'Ürün'}',
+                          style: const TextStyle(fontWeight: FontWeight.w600,
+                            fontSize: 14.5),
+                        ),
+                        if ('${line['note'] ?? ''}'.isNotEmpty)
+                          Text('Not: ${line['note']}', style: const TextStyle(
+                            fontSize: 12.5, color: Color(0xff8A6516))),
+                        if ((line['removed'] as List? ?? []).isNotEmpty)
+                          Text(
+                            'Çıkar: ${(line['removed'] as List).join(', ')}',
+                            style: const TextStyle(fontSize: 12.5,
+                              color: NohutBrand.muted),
+                          ),
+                      ],
+                    ),
+                  ),
+                  Text(
+                    formatTry(
+                      cents(line['price']) *
+                          ((line['qty'] as num?)?.toInt() ?? 0),
+                    ),
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ],
+              ),
+            ),
+          if (split.isNotEmpty) ...[
+            const Divider(height: 24),
+            const Text(
+              'Kişi Hesapları',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+            ),
+            for (final guest in split)
+              Builder(
+                builder: (context) {
+                  final allocated = asMaps(guest['allocations'])
+                      .fold<int>(0, (sum, a) => sum + (a['cents'] as int));
+                  final rest = guestBalance(
+                    o,
+                    guest['id'] as int,
+                  ).clamp(0, allocated).toInt();
+                  return ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: CircleAvatar(
+                      radius: 16,
+                      backgroundColor: const Color(0xffEEF3EF),
+                      child: Icon(rest > 0 ? Icons.person_outline : Icons.check,
+                        size: 18, color: NohutBrand.green),
+                    ),
+                    title: Text(
+                      '${guest['name'] ?? 'Kişi'} · ${formatTry(allocated)}',
+                    ),
+                    subtitle: Text('Kalan ${formatTry(rest)}'),
+                    trailing: rest > 0 && !closed
+                        ? FilledButton(
+                            onPressed: () => _pay(
+                              o,
+                              guestId: guest['id'] as int,
+                              guestName: '${guest['name']}',
+                              maximumCents: rest,
+                            ),
+                            child: const Text('Öde'),
+                          )
+                        : const Icon(Icons.check_circle, color: emerald),
+                  );
+                },
+              ),
+          ],
+        ],
+      ),
+    );
+
+    final canSplitByProduct = due > 0 &&
+        checkLines(o).any((line) => line.total > allocatedTo(o, line.key));
+    final payment = Container(
+      padding: const EdgeInsets.all(16),
+      decoration: panel(const Color(0xffF4F6F2)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text('KALAN', style: TextStyle(fontSize: 11.5,
+            letterSpacing: 1.1, fontWeight: FontWeight.w800,
+            color: NohutBrand.muted)),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(formatTry(due), style: TextStyle(
+              fontSize: 34, fontWeight: FontWeight.w900,
+              color: due > 0 ? NohutBrand.ink : const Color(0xff2C6E86))),
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: total <= 0 ? 0 : (paid / total).clamp(0, 1).toDouble(),
+              minHeight: 7,
+              color: const Color(0xff2E7D4F),
+              backgroundColor: const Color(0xffDCE3DE),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(children: [
+            Expanded(child: Text('Toplam: ${formatTry(total)}',
+              style: const TextStyle(fontWeight: FontWeight.w700))),
+            Text('Alınan: ${formatTry(paid)}',
+              style: const TextStyle(color: NohutBrand.muted)),
+          ]),
+          if (o['terminalPending'] != null) ...[
+            const SizedBox(height: 12),
+            const Text(
+              'Terminal sonucu bekleniyor. Yeniden ödeme başlatmayın.',
+              style: TextStyle(color: Color(0xff8c352e),
+                fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 6),
+            OutlinedButton(
+              onPressed: !inpos.gateway.ready || terminalBusy
+                  ? null
+                  : () async {
+                      terminalBusy = true;
+                      try {
+                        final reply = await inpos.reconcile(
+                          '${o['terminalPending']}',
+                        );
+                        if (mounted) {
+                          _notify('inPOS: ${reply.status.name}');
+                          if (reply.status == TerminalStatus.approved)
+                            await _offerReceipt(id);
+                        }
+                      } catch (e) {
+                        if (mounted) _notify('$e', error: true);
+                      } finally {
+                        terminalBusy = false;
+                      }
+                    },
+              child: const Text('Terminal Sonucunu Sorgula'),
+            ),
+          ],
+          if (!closed && local) ...[
+            const SizedBox(height: 14),
+            if (split.isEmpty && due > 0)
+              wide(FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(50),
+                  textStyle: const TextStyle(fontFamily: NohutBrand.bodyFont,
+                    fontSize: 16, fontWeight: FontWeight.w800),
+                ),
+                onPressed: () => _pay(o),
+                icon: const Icon(Icons.payments),
+                label: const Text('Nakit / Kart'),
+              )),
+            if (o['source'] == 'Masa' && due == 0)
+              wide(FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(50),
+                  backgroundColor: const Color(0xff2C6E86),
+                ),
+                onPressed: () => _closeTable(o),
+                icon: const Icon(Icons.done_all),
+                label: const Text('Masayı Kapat'),
+              )),
+            if (canSplitByProduct || (split.isEmpty && paid == 0))
+              const SizedBox(height: 8),
+            Row(children: [
+              if (canSplitByProduct)
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Sipariş #${displayOrderNumber(o)} · ${o['source']}${o['table'] == null ? '' : ' · Masa ${o['table']}'}',
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '${o['numberDay'] ?? ''} · ${closed
-                            ? 'Kapalı'
-                            : o['source'] == 'Gel-Al' && o['deliveredAt'] != null
-                            ? 'Teslim Edildi'
-                            : 'Açık'}',
-                        style: const TextStyle(
-                          color: Color(0xff708273),
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
+                  child: OutlinedButton.icon(
+                    onPressed: () => _selectProductsToPay(o),
+                    icon: const Icon(Icons.checklist, size: 18),
+                    label: const Text('Ürün seçerek öde',
+                      maxLines: 1, overflow: TextOverflow.ellipsis),
                   ),
                 ),
-                if (o['source'] == 'Masa' || o['source'] == 'Gel-Al')
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: OutlinedButton.icon(
-                      key: ValueKey('prepay-print-' + id.toString()),
-                      onPressed: () => _printBillBeforePayment(o),
-                      icon: const Icon(Icons.print_outlined),
-                      label: const Text('Ön Fiş Yazdır'),
-                    ),
-                  ),
-                if (!closed &&
-                    (o['source'] == 'Masa' || o['source'] == 'Gel-Al'))
-                  OutlinedButton.icon(
-                    onPressed: () =>
-                        _composer(table: o['table'] as int?, addToOrder: id),
-                    icon: const Icon(Icons.add),
-                    label: const Text('Ek Sipariş'),
-                  ),
-              ],
-            ),
-            const Divider(height: 26),
-            for (final line in activeLines(o))
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 36,
-                      padding: const EdgeInsets.all(6),
+              if (canSplitByProduct && split.isEmpty && paid == 0)
+                const SizedBox(width: 8),
+              if (split.isEmpty && paid == 0)
+                Expanded(
+                  child: PopupMenuButton<int>(
+                    tooltip: 'Hesabı eşit böl',
+                    onSelected: (n) => _equalSplit(o, n),
+                    itemBuilder: (context) => [
+                      for (final n in [2, 3, 4, 5, 6, 7, 8, 9, 10])
+                        PopupMenuItem(
+                          value: n,
+                          child: Text('$n kişiye eşit böl'),
+                        ),
+                    ],
+                    child: Container(
+                      height: 40,
+                      alignment: Alignment.center,
                       decoration: BoxDecoration(
-                        color: cream,
-                        borderRadius: BorderRadius.circular(9),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: const Color(0xffBECFC5)),
                       ),
-                      child: Text(
-                        '${line['qty']}×',
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                    const SizedBox(width: 11),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text(
-                            '${line['name'] ?? line['productKey'] ?? 'Ürün'}',
-                            style: const TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                          if ('${line['note'] ?? ''}'.isNotEmpty)
-                            Text('Not: ${line['note']}'),
-                          if ((line['removed'] as List? ?? []).isNotEmpty)
-                            Text(
-                              'Çıkar: ${(line['removed'] as List).join(', ')}',
-                            ),
+                          Icon(Icons.call_split, size: 18, color: NohutBrand.green),
+                          SizedBox(width: 6),
+                          Flexible(child: Text('Hesabı Eşit Böl',
+                            maxLines: 1, overflow: TextOverflow.ellipsis,
+                            style: TextStyle(color: NohutBrand.green,
+                              fontWeight: FontWeight.w600))),
                         ],
                       ),
                     ),
-                    Text(
-                      formatTry(
-                        cents(line['price']) *
-                            ((line['qty'] as num?)?.toInt() ?? 0),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
-              ),
-            const Divider(height: 25),
+            ]),
+            const Divider(height: 26),
+            const Text('Diğer İşlemler', style: TextStyle(fontSize: 12,
+              fontWeight: FontWeight.w800, color: NohutBrand.muted)),
+            const SizedBox(height: 6),
             Wrap(
-              alignment: WrapAlignment.spaceBetween,
-              runSpacing: 10,
+              spacing: 8,
+              runSpacing: 8,
               children: [
-                Text(
-                  'Toplam: ${formatTry(total)}',
-                  style: const TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w800,
-                  ),
+                OutlinedButton.icon(
+                  onPressed: () => _editProducts(o),
+                  icon: const Icon(Icons.edit_outlined, size: 18),
+                  label: const Text('Ürünleri Düzenle'),
                 ),
-                Text(
-                  'Alınan: ${formatTry(paid)}',
-                  style: const TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w600,
+                if (o['source'] == 'Masa')
+                  OutlinedButton.icon(
+                    onPressed: () => _moveOrder(o),
+                    icon: const Icon(Icons.swap_horiz, size: 18),
+                    label: const Text('Masayı Taşı'),
                   ),
-                ),
-                Text(
-                  'Kalan: ${formatTry(orderDueCents(o))}',
-                  style: const TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w900,
-                    color: dark,
-                  ),
-                ),
               ],
             ),
-            if (o['terminalPending'] != null) ...[
-              const Text(
-                'Terminal sonucu bekleniyor. Yeniden ödeme başlatmayın.',
-              ),
-              OutlinedButton(
-                onPressed: !inpos.gateway.ready || terminalBusy
-                    ? null
-                    : () async {
-                        terminalBusy = true;
-                        try {
-                          final reply = await inpos.reconcile(
-                            '${o['terminalPending']}',
-                          );
-                          if (mounted) {
-                            _notify('inPOS: ${reply.status.name}');
-                            if (reply.status == TerminalStatus.approved)
-                              await _offerReceipt(id);
-                          }
-                        } catch (e) {
-                          if (mounted) _notify('$e', error: true);
-                        } finally {
-                          terminalBusy = false;
-                        }
-                      },
-                child: const Text('Terminal Sonucunu Sorgula'),
-              ),
-            ],
-            if (split.isNotEmpty) ...[
-              const Divider(height: 24),
-              const Text(
-                'Kişi Hesapları',
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
-              ),
-              for (final guest in split)
-                Builder(
-                  builder: (context) {
-                    final allocated = asMaps(guest['allocations'])
-                        .fold<int>(0, (sum, a) => sum + (a['cents'] as int));
-                    final rest = guestBalance(
-                      o,
-                      guest['id'] as int,
-                    ).clamp(0, allocated).toInt();
-                    return ListTile(
-                      title: Text(
-                        '${guest['name'] ?? 'Kişi'} · ${formatTry(allocated)}',
-                      ),
-                      subtitle: Text('Kalan ${formatTry(rest)}'),
-                      trailing: rest > 0 && !closed
-                          ? FilledButton(
-                              onPressed: () => _pay(
-                                o,
-                                guestId: guest['id'] as int,
-                                guestName: '${guest['name']}',
-                                maximumCents: rest,
-                              ),
-                              child: const Text('Öde'),
-                            )
-                          : const Icon(Icons.check_circle, color: emerald),
-                    );
-                  },
-                ),
-            ],
-            const SizedBox(height: 17),
-            if (!closed && (o['source'] == 'Masa' || o['source'] == 'Gel-Al'))
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  if (split.isEmpty && orderDueCents(o) > 0)
-                    FilledButton.icon(
-                      onPressed: () => _pay(o),
-                      icon: const Icon(Icons.payments),
-                      label: const Text('Nakit / Kart'),
-                    ),
-                  if (orderDueCents(o) > 0 &&
-                      checkLines(o)
-                          .any((line) => line.total > allocatedTo(o, line.key)))
-                    OutlinedButton.icon(
-                      onPressed: () => _selectProductsToPay(o),
-                      icon: const Icon(Icons.checklist),
-                      label: const Text('Ürün seçerek öde'),
-                    ),
-                  if (split.isEmpty && orderPaidCents(o) == 0)
-                    PopupMenuButton<int>(
-                      onSelected: (n) => _equalSplit(o, n),
-                      itemBuilder: (context) => [
-                        for (final n in [2, 3, 4, 5, 6, 7, 8, 9, 10])
-                          PopupMenuItem(
-                            value: n,
-                            child: Text('$n kişiye eşit böl'),
-                          ),
-                      ],
-                      child: const Chip(label: Text('⚖ Hesabı Eşit Böl')),
-                    ),
-                  OutlinedButton.icon(
-                    onPressed: () => _editProducts(o),
-                    icon: const Icon(Icons.edit_outlined),
-                    label: const Text('Ürünleri Düzenle'),
-                  ),
-                  if (o['source'] == 'Masa')
-                    OutlinedButton.icon(
-                      onPressed: () => _moveOrder(o),
-                      icon: const Icon(Icons.swap_horiz),
-                      label: const Text('Masayı Taşı'),
-                    ),
-                  if (o['source'] == 'Masa' && orderDueCents(o) == 0)
-                    OutlinedButton.icon(
-                      onPressed: () => _closeTable(o),
-                      icon: const Icon(Icons.done_all),
-                      label: const Text('Masayı Kapat'),
-                    ),
-                ],
-              ),
-
-            if (!isPlatform(o))
-              OutlinedButton.icon(
+          ],
+          if (closed) ...[
+            const SizedBox(height: 12),
+            const Text(
+              'Bu hesap kapalı. Ek ürün ve yeni ödeme eklenemez.',
+              style: TextStyle(color: Colors.teal),
+            ),
+          ],
+          if (!isPlatform(o)) ...[
+            const SizedBox(height: 10),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                style: TextButton.styleFrom(
+                  foregroundColor: const Color(0xffB3261E)),
                 onPressed: () async {
                   if (await confirmAction(
                     context,
@@ -2243,27 +2314,121 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                     }
                   }
                 },
-                icon: const Icon(Icons.delete_forever),
+                icon: const Icon(Icons.delete_forever, size: 18),
                 label: const Text('Kalıcı Sil'),
               ),
-            OrderOperations(
-              printSettings: store.read().data['settings'] as Map?,
-              order: o,
-              edit: _edit,
-              printerName:
-                  '${store.read().data['settings']?['printerName'] ?? ''}',
             ),
-            if (closed)
-              const Padding(
-                padding: EdgeInsets.only(top: 12),
-                child: Text(
-                  'Bu hesap kapalı. Ek ürün ve yeni ödeme eklenemez.',
-                  style: TextStyle(color: Colors.teal),
+          ],
+        ],
+      ),
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
+          decoration: panel(),
+          child: Row(
+            children: [
+              Container(
+                width: 46, height: 46,
+                decoration: BoxDecoration(
+                  color: const Color(0xffFFF1D6),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(o['source'] == 'Masa'
+                    ? Icons.table_restaurant_outlined
+                    : Icons.shopping_bag_outlined,
+                  color: const Color(0xff6E4614)),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(children: [
+                      Flexible(
+                        child: Text(title, maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 20,
+                            fontWeight: FontWeight.w900)),
+                      ),
+                      const SizedBox(width: 8),
+                      StatusPill(closed
+                          ? localStatusStyle(o)
+                          : statusText == 'Teslim Edildi'
+                              ? ('Teslim Edildi', NohutBrand.green,
+                                  const Color(0xffe5ebdf))
+                              : localStatusStyle(o)),
+                    ]),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Sipariş #${displayOrderNumber(o)} · ${o['source']}${o['table'] == null ? '' : ' · Masa ${o['table']}'}',
+                      style: const TextStyle(color: NohutBrand.muted,
+                        fontSize: 12.5),
+                    ),
+                    Text(
+                      '${o['numberDay'] ?? ''} · $statusText · '
+                      '${istanbulStamp(o['createdAt']).substring(11)} açıldı'
+                      '${closed ? '' : ' · ${durationLabel(openMinutes(o, DateTime.now()))}'}'
+                      ' · ${orderOwnerName(o)}',
+                      style: const TextStyle(color: Color(0xff708273),
+                        fontSize: 12),
+                    ),
+                  ],
                 ),
               ),
-          ],
+              if (local)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: OutlinedButton.icon(
+                    key: ValueKey('prepay-print-$id'),
+                    onPressed: () => _printBillBeforePayment(o),
+                    icon: const Icon(Icons.print_outlined),
+                    label: const Text('Ön Fiş Yazdır'),
+                  ),
+                ),
+              if (!closed && local)
+                FilledButton.tonalIcon(
+                  onPressed: () =>
+                      _composer(table: o['table'] as int?, addToOrder: id),
+                  icon: const Icon(Icons.add),
+                  label: const Text('Ek Sipariş'),
+                ),
+            ],
+          ),
         ),
-      ),
+        const SizedBox(height: 12),
+        LayoutBuilder(builder: (context, box) {
+          if (box.maxWidth < 760) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [payment, const SizedBox(height: 12), items],
+            );
+          }
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: items),
+              const SizedBox(width: 12),
+              SizedBox(width: 340, child: payment),
+            ],
+          );
+        }),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(4),
+          decoration: panel(),
+          child: OrderOperations(
+            printSettings: store.read().data['settings'] as Map?,
+            order: o,
+            edit: _edit,
+            printerName:
+                '${store.read().data['settings']?['printerName'] ?? ''}',
+          ),
+        ),
+      ],
     );
   }
 
@@ -2335,9 +2500,6 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
         : orderTotalCents(order);
     String remaining(Json order) =>
         isRemote(order) ? '—' : formatTry(orderDueCents(order));
-    String orderStamp(Json order) => isRemote(order)
-        ? '${order['numberDay']} · #${order['orderNumber']} · ${order['status']}'
-        : '${order['numberDay'] ?? ''} · ${order['created'] ?? ''}';
     void openOrder(Json order) {
       if (isRemote(order)) {
         _showTrendyolOrders();
@@ -2346,49 +2508,103 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       }
     }
 
+    String clock(Json order) {
+      final at = DateTime.tryParse('${order['createdAt']}');
+      if (at == null) return '${order['created'] ?? ''}';
+      final local = istanbulStamp(order['createdAt']);
+      return local.startsWith(businessDay) ? local.substring(11) : local;
+    }
+    (String, Color, Color) statusOf(Json o) =>
+        isRemote(o) ? tgoStatusStyle('${o['status'] ?? ''}') : localStatusStyle(o);
+    String itemsOf(Json o) => isRemote(o)
+        ? asMaps(o['lines']).map((l) => '${l['qty']}× ${l['name']}').join(', ')
+        : itemsSummary(o, limit: 4);
+    IconData iconOf(Json o) => switch ('${o['source']}') {
+      'Masa' => Icons.table_restaurant_outlined,
+      'Gel-Al' => Icons.shopping_bag_outlined,
+      _ => Icons.delivery_dining_outlined,
+    };
+    final sumTotal = combined.fold<int>(0, (n, o) => n + total(o));
+    final sumDue = combined.where((o) => !isRemote(o))
+        .fold<int>(0, (n, o) => n + orderDueCents(o));
+    const muted = TextStyle(color: NohutBrand.muted, fontSize: 12);
+    const head = TextStyle(color: NohutBrand.muted, fontSize: 12,
+      fontWeight: FontWeight.w700);
+
+    Widget chip(String label, bool selected, VoidCallback onTap) => ChoiceChip(
+      label: Text(label),
+      selected: selected,
+      showCheckmark: false,
+      visualDensity: VisualDensity.compact,
+      onSelected: (_) => onTap(),
+    );
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _sectionTitle(
-          'Siparişler',
-          'Varsayılan: Bugün ($businessDay). Geçmiş siparişler tarih filtresiyle açılır.',
-          action: FilledButton.icon(
-            onPressed: () => _composer(pickup: localView == 'pickup'),
-            icon: const Icon(Icons.add),
-            label: const Text('Sipariş Al'),
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xffE1E7E3)),
           ),
-        ),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    SizedBox(
-                      width: 350,
-                      child: TextField(
-                        decoration: const InputDecoration(
-                          hintText: 'Sipariş, masa, müşteri veya ürün ara',
-                          prefixIcon: Icon(Icons.search),
-                        ),
-                        onChanged: (v) => setState(() => orderSearch = v),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Wrap(
+                spacing: 8,
+                runSpacing: 10,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  SizedBox(
+                    width: 320,
+                    child: TextField(
+                      decoration: const InputDecoration(
+                        isDense: true,
+                        hintText: 'Sipariş, masa, müşteri veya ürün ara',
+                        prefixIcon: Icon(Icons.search, size: 20),
                       ),
+                      onChanged: (v) => setState(() => orderSearch = v),
                     ),
-                    for (final status in [
-                      '', 'Kalan', 'Ödendi',
-                      if (localView == 'pickup') 'Teslim Edildi',
-                      'Kapalı',
-                    ])
-                      ChoiceChip(
-                        label: Text(status.isEmpty ? 'Tümü' : status),
-                        selected: orderStatus == status,
-                        onSelected: (_) => setState(() => orderStatus = status),
-                      ),
+                  ),
+                  const SizedBox(width: 4),
+                  for (final status in [
+                    '', 'Kalan', 'Ödendi',
+                    if (localView == 'pickup') 'Teslim Edildi',
+                    'Kapalı',
+                  ])
+                    chip(status.isEmpty ? 'Tümü' : status, orderStatus == status,
+                      () => setState(() => orderStatus = status)),
+                  Container(width: 1, height: 24,
+                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                    color: const Color(0xffD5DED8)),
+                  for (final filter in [
+                    'Tümü', 'Masa', 'Gel-Al',
+                    if (localView != 'pickup') 'Trendyol Go',
+                  ])
+                    chip(filter == 'Tümü' ? 'Tüm kaynaklar' : filter,
+                      orderFilter == filter,
+                      () => setState(() {
+                        orderFilter = filter;
+                        selectedOrder = null;
+                      })),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text.rich(TextSpan(children: [
+                      TextSpan(text: '${combined.length} kayıt',
+                        style: const TextStyle(fontWeight: FontWeight.w800)),
+                      TextSpan(text: ' · Toplam ${formatTry(sumTotal)}'
+                        ' · Kalan ${formatTry(sumDue)}'
+                        '${orderFrom.isEmpty && orderTo.isEmpty ? ' · Tüm tarihler' : ' · $orderFrom – $orderTo'}',
+                        style: const TextStyle(color: NohutBrand.muted)),
+                    ])),
+                  ),
+                  if (orderFrom.isNotEmpty || orderTo.isNotEmpty)
                     TextButton.icon(
                       onPressed: () => setState(() {
                         orderFrom = ''; orderTo = '';
@@ -2396,159 +2612,175 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                       icon: const Icon(Icons.event_available_outlined, size: 17),
                       label: const Text('Tüm Tarihler'),
                     ),
-                    OutlinedButton(
-                              onPressed: () async {
-                                final v = await askFields(context, 'Sipariş Filtreleri', [
-                                  ('Sipariş / masa / müşteri / ürün ara', orderSearch),
-                                  (
-                                    'Durum: boş / Kalan / Ödendi / Kapalı / İptal / Hazır / Hazırlanıyor / Teslim Edildi',
-                                    orderStatus,
-                                  ),
-                                  ('Siparişi alan personel', orderStaff),
-                                  ('Başlangıç YYYY-MM-DD', orderFrom),
-                                  ('Bitiş YYYY-MM-DD', orderTo),
-                                ]);
-                                if (v != null && mounted) {
-                                  if (v.skip(3).any((d) => d.isNotEmpty && !validBusinessDate(d)) ||
-                                      v[3].isNotEmpty &&
-                                          v[4].isNotEmpty &&
-                                          v[3].compareTo(v[4]) > 0) {
-                                    _notify('Tarih aralığı geçersiz', error: true);
-                                    return;
-                                  }
-                                  setState(() {
-                                    orderSearch = v[0];
-                                    orderStatus = v[1];
-                                    orderStaff = v[2];
-                                    orderFrom = v[3];
-                                    orderTo = v[4];
-                                    selectedOrder = null;
-                                  });
-                                }
-                              },
-                              child: const Text('Gelişmiş Filtreler'),
-                            ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                const Divider(),
-                Wrap(
-                  spacing: 7,
-                  runSpacing: 7,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    for (final filter in [
-                      'Tümü', 'Masa', 'Gel-Al',
-                      if (localView != 'pickup') 'Trendyol Go',
-                    ])
-                      ChoiceChip(
-                        label: Text(filter),
-                        selected: orderFilter == filter,
-                        onSelected: (_) => setState(() {
-                          orderFilter = filter;
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.tune, size: 17),
+                    onPressed: () async {
+                      final v = await askFields(context, 'Sipariş Filtreleri', [
+                        ('Sipariş / masa / müşteri / ürün ara', orderSearch),
+                        (
+                          'Durum: boş / Kalan / Ödendi / Kapalı / İptal / Hazır / Hazırlanıyor / Teslim Edildi',
+                          orderStatus,
+                        ),
+                        ('Siparişi alan personel', orderStaff),
+                        ('Başlangıç YYYY-MM-DD', orderFrom),
+                        ('Bitiş YYYY-MM-DD', orderTo),
+                      ]);
+                      if (v != null && mounted) {
+                        if (v.skip(3).any((d) => d.isNotEmpty && !validBusinessDate(d)) ||
+                            v[3].isNotEmpty &&
+                                v[4].isNotEmpty &&
+                                v[3].compareTo(v[4]) > 0) {
+                          _notify('Tarih aralığı geçersiz', error: true);
+                          return;
+                        }
+                        setState(() {
+                          orderSearch = v[0];
+                          orderStatus = v[1];
+                          orderStaff = v[2];
+                          orderFrom = v[3];
+                          orderTo = v[4];
                           selectedOrder = null;
-                        }),
-                      ),
-                    const SizedBox(width: 8),
-                    Text('${combined.length} kayıt',
-                      style: const TextStyle(color: NohutBrand.muted,
-                          fontWeight: FontWeight.w700)),
-                  ],
-                ),
-              ],
-            ),
+                        });
+                      }
+                    },
+                    label: const Text('Gelişmiş Filtreler'),
+                  ),
+                ],
+              ),
+            ],
           ),
         ),
         const SizedBox(height: 12),
-
-        Card(
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xffE1E7E3)),
+          ),
+          clipBehavior: Clip.antiAlias,
           child: combined.isEmpty
-              ? const ListTile(title: Text('Sipariş bulunamadı'))
+              ? const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 40),
+                  child: Column(children: [
+                    Icon(Icons.inbox_outlined, size: 32, color: Color(0xffA9B3AD)),
+                    SizedBox(height: 6),
+                    Text('Sipariş bulunamadı',
+                      style: TextStyle(color: NohutBrand.muted)),
+                  ]),
+                )
               : LayoutBuilder(
                   builder: (context, constraints) {
-                    final compact = constraints.maxWidth < 690;
-                    if (compact) {
-                      return Column(
-                        children: [
-                          for (final o in combined)
-                            ListTile(
-                              title: Text(
-                                '#${displayOrderNumber(o)} · ${o['table'] == null ? o['source'] : "Masa ${o['table']}"}',
-                              ),
-                              subtitle: Text(orderStamp(o)),
-                              trailing: isRemote(o)
-                                ? Text(remaining(o))
-                                : Row(mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(remaining(o)),
-                                    IconButton(
-                                      key: ValueKey('orders-print-' +
-                                        o['id'].toString()),
-                                      tooltip: 'Ön Fiş Yazdır',
-                                      icon: const Icon(Icons.print_outlined),
-                                      onPressed: () =>
-                                        _printBillBeforePayment(o),
+                    final compact = constraints.maxWidth < 760;
+                    Widget printButton(Json o) => IconButton(
+                      visualDensity: VisualDensity.compact,
+                      key: ValueKey('orders-print-${o['id']}'),
+                      tooltip: 'Ön Fiş Yazdır',
+                      icon: const Icon(Icons.print_outlined, size: 19),
+                      onPressed: () => _printBillBeforePayment(o),
+                    );
+                    final rows = <Widget>[
+                      if (!compact)
+                        Container(
+                          color: const Color(0xffF4F6F2),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 10),
+                          child: const Row(children: [
+                            SizedBox(width: 70, child: Text('Sipariş', style: head)),
+                            SizedBox(width: 150, child: Text('Masa / Kaynak', style: head)),
+                            SizedBox(width: 120, child: Text('Saat', style: head)),
+                            Expanded(child: Text('Ürünler', style: head)),
+                            SizedBox(width: 100, child: Text('Toplam',
+                              textAlign: TextAlign.right, style: head)),
+                            SizedBox(width: 100, child: Text('Kalan',
+                              textAlign: TextAlign.right, style: head)),
+                            SizedBox(width: 16),
+                            SizedBox(width: 112, child: Text('Durum', style: head)),
+                            SizedBox(width: 172, child: Text('İşlem', style: head)),
+                          ]),
+                        ),
+                      for (final (i, o) in combined.indexed) ...[
+                        if (i > 0 || compact) const Divider(height: 1),
+                        InkWell(
+                          onTap: () => openOrder(o),
+                          child: Padding(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: 16, vertical: compact ? 10 : 8),
+                            child: compact
+                                ? Row(children: [
+                                    Icon(iconOf(o), size: 20, color: NohutBrand.green),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text('#${displayOrderNumber(o)} · ${o['table'] == null ? o['source'] : "Masa ${o['table']}"}',
+                                            style: const TextStyle(fontWeight: FontWeight.w800)),
+                                          Text(itemsOf(o), maxLines: 1,
+                                            overflow: TextOverflow.ellipsis),
+                                          Text(clock(o), style: muted),
+                                        ],
+                                      ),
                                     ),
-                                  ]),
-                              onTap: () => openOrder(o),
-                            ),
-                        ],
-                      );
-                    }
-                    return SizedBox(
-                      width: double.infinity,
-                      child: DataTable(
-                        columnSpacing: 14,
-                        horizontalMargin: 14,
-                        columns: const [
-                          DataColumn(label: Text('Sipariş')),
-                          DataColumn(label: Text('Masa / Kaynak')),
-                          DataColumn(label: Text('Zaman')),
-                          DataColumn(numeric: true, label: Text('Toplam')),
-                          DataColumn(numeric: true, label: Text('Kalan')),
-                          DataColumn(label: Text('İşlem')),
-                        ],
-                        rows: [
-                          for (final o in combined)
-                            DataRow(
-                              cells: [
-                                DataCell(Text('#${displayOrderNumber(o)}')),
-                                DataCell(
-                                  Text(
-                                    o['table'] == null
-                                        ? '${o['source']}'
-                                        : "Masa ${o['table']}",
-                                  ),
-                                ),
-                                DataCell(Text(orderStamp(o))),
-                                DataCell(Text(formatTry(total(o)))),
-                                DataCell(Text(remaining(o))),
-                                DataCell(
-                                  Wrap(spacing: 4, runSpacing: 3,
-                                    crossAxisAlignment:
-                                      WrapCrossAlignment.center,
-                                    children: [
-                                    TextButton(
-                                      onPressed: () => openOrder(o),
-                                      child: Text(isRemote(o)
-                                          ? 'Platform Siparişi'
-                                          : 'Hesabı Aç'),
+                                    Column(
+                                      crossAxisAlignment: CrossAxisAlignment.end,
+                                      children: [
+                                        Text(remaining(o), style: const TextStyle(
+                                          fontWeight: FontWeight.w800)),
+                                        const SizedBox(height: 3),
+                                        StatusPill(statusOf(o)),
+                                      ],
                                     ),
-                                    if (!isRemote(o))
-                                      IconButton(
-                                        key: ValueKey('orders-print-' +
-                                          o['id'].toString()),
-                                        tooltip: 'Ön Fiş Yazdır',
-                                        icon: const Icon(
-                                          Icons.print_outlined, size: 19),
-                                        onPressed: () =>
-                                          _printBillBeforePayment(o)),
+                                    if (!isRemote(o)) printButton(o),
+                                  ])
+                                : Row(children: [
+                                    SizedBox(width: 70, child: Text(
+                                      '#${displayOrderNumber(o)}',
+                                      style: const TextStyle(fontWeight: FontWeight.w800))),
+                                    SizedBox(width: 150, child: Row(children: [
+                                      Icon(iconOf(o), size: 18, color: NohutBrand.green),
+                                      const SizedBox(width: 8),
+                                      Flexible(child: Text(
+                                        o['table'] == null ? '${o['source']}' : 'Masa ${o['table']}',
+                                        maxLines: 1, overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(fontWeight: FontWeight.w600))),
+                                    ])),
+                                    SizedBox(width: 120, child: Text(clock(o), style: muted)),
+                                    Expanded(child: Text(itemsOf(o), maxLines: 1,
+                                      overflow: TextOverflow.ellipsis)),
+                                    SizedBox(width: 100, child: Text(formatTry(total(o)),
+                                      textAlign: TextAlign.right)),
+                                    SizedBox(width: 100, child: Text(remaining(o),
+                                      textAlign: TextAlign.right,
+                                      style: TextStyle(fontWeight: FontWeight.w800,
+                                        color: !isRemote(o) && orderDueCents(o) > 0
+                                            ? NohutBrand.ink : NohutBrand.muted))),
+                                    const SizedBox(width: 16),
+                                    SizedBox(width: 112, child: Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: StatusPill(statusOf(o)))),
+                                    SizedBox(width: 172, child: Row(children: [
+                                      Flexible(
+                                        child: TextButton(
+                                          style: TextButton.styleFrom(
+                                            visualDensity: VisualDensity.compact),
+                                          onPressed: () => openOrder(o),
+                                          child: Text(
+                                            isRemote(o)
+                                                ? 'Platform Siparişi' : 'Hesabı Aç',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis),
+                                        ),
+                                      ),
+                                      if (!isRemote(o)) printButton(o),
+                                    ])),
                                   ]),
-                                ),
-                              ],
-                            ),
-                        ],
-                      ),
+                          ),
+                        ),
+                      ],
+                    ];
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: rows,
                     );
                   },
                 ),
@@ -2623,62 +2855,165 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
               o['cancelled'] != true &&
               orderDueCents(o) > 0,
         )
-        .toList();
+        .toList()
+      ..sort((a, b) => '${a['createdAt']}'.compareTo('${b['createdAt']}'));
     final totalDue = locals.fold<int>(0, (s, o) => s + orderDueCents(o));
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _sectionTitle(
-          'Kasa & Ödemeler',
-          'Nakit, kart ve kişi hesaplarını tek yerden takip edin.',
-        ),
-        Row(
-          children: [
-            Expanded(
-              child: _metric(
-                'Açık Hesaplar',
-                '${locals.length}',
-                Icons.receipt_long,
-              ),
+    final paidPart = locals.fold<int>(0, (s, o) => s + orderPaidCents(o));
+    final today = dayCollections(db, businessDay);
+    final now = DateTime.now();
+    Widget stat(IconData icon, String label, String value, String note) =>
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xffE1E7E3)),
+          ),
+          child: Row(children: [
+            Container(
+              width: 38, height: 38,
+              decoration: BoxDecoration(
+                color: NohutBrand.green.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(10)),
+              child: Icon(icon, size: 20, color: NohutBrand.green),
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: _metric(
-                'Restoran Alacağı',
-                formatTry(totalDue),
-                Icons.payments,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label, style: const TextStyle(fontSize: 12,
+                    color: NohutBrand.muted, fontWeight: FontWeight.w600)),
+                  Text(value, maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 19,
+                      fontWeight: FontWeight.w800)),
+                  Text(note, maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 11.5,
+                      color: NohutBrand.muted)),
+                ],
               ),
             ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        _notice(
-          'Kart tahsilatı bu sürümde banka POS terminaline otomatik aktarılmaz. Fiziksel mali fiş / ÖKC entegrasyonu yoktur.',
-        ),
-        const SizedBox(height: 13),
-        Card(
+          ]),
+        );
+    final stats = [
+      stat(Icons.receipt_long_outlined, 'Açık Hesap', '${locals.length}',
+        'Ödemesi tamamlanmamış masa ve Gel-Al'),
+      stat(Icons.pending_actions_outlined, 'Restoran Alacağı',
+        formatTry(totalDue),
+        paidPart > 0 ? '${formatTry(paidPart)} kısmen alındı' : 'Tahsil edilecek toplam'),
+      stat(Icons.payments_outlined, 'Bugün Nakit', formatTry(today.cashCents),
+        'Nakit tahsilat (iade düşülmüş)'),
+      stat(Icons.credit_card_outlined, 'Bugün Kart', formatTry(today.cardCents),
+        'Kart tahsilat (iade düşülmüş)'),
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        LayoutBuilder(builder: (context, box) {
+          final columns = box.maxWidth >= 900 ? 4 : 2;
+          final width = (box.maxWidth - 12 * (columns - 1)) / columns;
+          return Wrap(spacing: 12, runSpacing: 12, children: [
+            for (final s in stats) SizedBox(width: width, child: s),
+          ]);
+        }),
+        const SizedBox(height: 14),
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xffE1E7E3)),
+          ),
+          clipBehavior: Clip.antiAlias,
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+                child: Text(
+                  locals.isEmpty
+                      ? 'Ödeme bekleyen hesap yok'
+                      : 'Ödeme Bekleyen Hesaplar · en eskisi üstte',
+                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+                ),
+              ),
               if (locals.isEmpty)
-                const ListTile(title: Text('Açık ödeme bulunmuyor')),
-              for (final o in locals)
-                ListTile(
-                  title: Text(
-                    '#${displayOrderNumber(o)} · ${o['source']}${o['table'] == null ? '' : ' · Masa ${o['table']}'}',
-                  ),
-                  subtitle: Text('Toplam ${formatTry(orderTotalCents(o))}'),
-                  trailing: FilledButton(
-                    onPressed: () => _focusOrder(o),
-                    child: Text('Kalan ${formatTry(orderDueCents(o))}'),
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 28),
+                  child: Column(children: [
+                    Icon(Icons.check_circle_outline, size: 32,
+                      color: Color(0xff7FB08F)),
+                    SizedBox(height: 4),
+                    Text('Tüm hesaplar ödendi',
+                      style: TextStyle(color: NohutBrand.muted)),
+                  ]),
+                ),
+              for (final o in locals) ...[
+                const Divider(height: 1),
+                InkWell(
+                  onTap: () => _focusOrder(o),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    child: Row(children: [
+                      Icon(o['source'] == 'Masa'
+                          ? Icons.table_restaurant_outlined
+                          : Icons.shopping_bag_outlined,
+                        color: NohutBrand.green),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '${o['table'] == null ? 'Gel-Al' : 'Masa ${o['table']}'} · #${displayOrderNumber(o)}',
+                              style: const TextStyle(fontWeight: FontWeight.w800),
+                            ),
+                            Text(itemsSummary(o, limit: 4), maxLines: 1,
+                              overflow: TextOverflow.ellipsis),
+                            Text(
+                              '${durationLabel(openMinutes(o, now))} önce · '
+                              '${orderOwnerName(o)} · Toplam ${formatTry(orderTotalCents(o))}'
+                              '${orderPaidCents(o) > 0 ? ' · Alınan ${formatTry(orderPaidCents(o))}' : ''}',
+                              style: const TextStyle(fontSize: 12,
+                                color: NohutBrand.muted),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      StatusPill(localStatusStyle(o)),
+                      const SizedBox(width: 10),
+                      IconButton(
+                        tooltip: 'Ön Fiş Yazdır',
+                        icon: const Icon(Icons.print_outlined, size: 19),
+                        onPressed: () => _printBillBeforePayment(o),
+                      ),
+                      const SizedBox(width: 4),
+                      FilledButton(
+                        onPressed: () => _focusOrder(o),
+                        child: Text('Kalan ${formatTry(orderDueCents(o))}'),
+                      ),
+                    ]),
                   ),
                 ),
+              ],
             ],
           ),
         ),
         const SizedBox(height: 12),
+        const Row(children: [
+          Icon(Icons.info_outline, size: 16, color: Color(0xff8A6516)),
+          SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              'Kart tahsilatı bu sürümde banka POS terminaline otomatik aktarılmaz. Fiziksel mali fiş / ÖKC entegrasyonu yoktur.',
+              style: TextStyle(color: Color(0xff8A6516), fontSize: 12),
+            ),
+          ),
+        ]),
       ],
     );
   }
+
 
   Widget _staff(Json db) => StaffPanel(state: db, edit: _edit);
 

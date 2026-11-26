@@ -12,7 +12,7 @@ import 'package:nohut_falafel_desktop/order_reporting.dart';
 
 void main() {
   testWidgets(
-    'twelve branded destinations include finance, QR management, orders and reviews',
+    'eleven branded destinations include finance, QR management, orders and reviews',
     (t) async {
       final dir = Directory.systemTemp.createTempSync('nohut-brand-');
       final file = '${dir.path}/db';
@@ -79,12 +79,13 @@ void main() {
               w.key is ValueKey<String> &&
               (w.key as ValueKey<String>).value.startsWith('navigation-'),
         ),
-        findsNWidgets(12),
+        findsNWidgets(11),
       );
       expect(find.byKey(const ValueKey('navigation-market-prices')), findsOneWidget);
       expect(find.byKey(const ValueKey('navigation-finance')), findsOneWidget);
       expect(find.text('Personel Yönetimi'), findsNothing);
       expect(find.text('Online Siparişler'), findsOneWidget);
+      expect(find.byKey(const ValueKey('navigation-payments')), findsNothing);
       await t.runAsync(
         () => precacheImage(
           const AssetImage('assets/brand/nohut-logo.webp'),
@@ -122,23 +123,23 @@ void main() {
       await t.pumpAndSettle();
       expect(find.text('Teslim Edildi'), findsOneWidget);
       expect(find.text(istanbulStamp(today.toIso8601String())), findsOneWidget);
-      expect(find.text('Platform no: PLATFORM-98'), findsNothing);
+      expect(find.textContaining('Platform no: PLATFORM-98'), findsNothing);
       await t.tap(find.text('Geçmiş'));
       await t.pumpAndSettle();
-      expect(find.text('Platform no: PLATFORM-98'), findsOneWidget);
-      expect(find.text('Platform no: PLATFORM-99'), findsNothing);
+      expect(find.textContaining('Platform no: PLATFORM-98'), findsOneWidget);
+      expect(find.textContaining('Platform no: PLATFORM-99'), findsNothing);
       await t.enterText(
         find.byType(TextField).first,
         'no-match',
       );
       await t.pumpAndSettle();
-      expect(find.text('Platform no: PLATFORM-98'), findsNothing);
+      expect(find.textContaining('Platform no: PLATFORM-98'), findsNothing);
       await t.enterText(
         find.byType(TextField).first,
         'PLATFORM-98',
       );
       await t.pumpAndSettle();
-      expect(find.text('Platform no: PLATFORM-98'), findsOneWidget);
+      expect(find.textContaining('Platform no: PLATFORM-98'), findsOneWidget);
       await t.ensureVisible(find.widgetWithText(ChoiceChip, 'Bugün'));
       await t.tap(find.widgetWithText(ChoiceChip, 'Bugün'));
       await t.pumpAndSettle();
@@ -146,15 +147,15 @@ void main() {
       await t.ensureVisible(find.textContaining('Tamamlanan ve iptal edilenler'));
       await t.tap(find.textContaining('Tamamlanan ve iptal edilenler'));
       await t.pumpAndSettle();
-      expect(find.text('Platform no: PLATFORM-99'), findsOneWidget);
-      expect(find.text('Platform no: PLATFORM-98'), findsNothing);
+      expect(find.textContaining('Platform no: PLATFORM-99'), findsOneWidget);
+      expect(find.textContaining('Platform no: PLATFORM-98'), findsNothing);
       expect(find.text('PAY_WITH_CARD'), findsNothing);
       await t.ensureVisible(find.widgetWithText(FilterChip, 'Migros Yemek'));
       await t.tap(find.widgetWithText(FilterChip, 'Migros Yemek'));
       await t.pumpAndSettle();
       expect(find.text('Migros Yemek · Bağlı değil'), findsOneWidget);
       expect(find.byTooltip('Migros Yemek panelini aç'), findsOneWidget);
-      expect(find.text('Platform no: PLATFORM-99'), findsNothing);
+      expect(find.textContaining('Platform no: PLATFORM-99'), findsNothing);
       await t.tap(find.byKey(const ValueKey('navigation-reviews')));
       await t.pumpAndSettle();
       expect(find.byTooltip('Yenile'), findsOneWidget);

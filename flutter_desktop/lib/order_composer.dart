@@ -185,6 +185,19 @@ class _OrderComposerState extends State<_OrderComposer> {
   }
 
   void add(Product p, {String note = '', String removed = ''}) {
+    // A plain repeat of the same product increases its quantity; lines with
+    // notes, removals or campaign choices stay separate.
+    if (note.isEmpty && removed.trim().isEmpty && p.campaignData == null) {
+      final same = draft.where((l) =>
+          l['productId'] == p.id && l['customItem'] != true &&
+          l['_unavailable'] != true && '${l['note'] ?? ''}'.isEmpty &&
+          (l['removed'] as List? ?? const []).isEmpty &&
+          l['components'] == null && (l['qty'] as int) < 1000).firstOrNull;
+      if (same != null) {
+        setState(() => same['qty'] = (same['qty'] as int) + 1);
+        return;
+      }
+    }
     if (draft.length >= 200) {
       setState(
         () => saveError = 'Bir sipariş en fazla 200 ayrı satır içerebilir.',
@@ -280,6 +293,10 @@ class _OrderComposerState extends State<_OrderComposer> {
     }
   }
 
+  int inCart(Product p) => draft
+      .where((l) => l['productId'] == p.id && l['customItem'] != true)
+      .fold<int>(0, (n, l) => n + (l['qty'] as int));
+
   Widget productList() {
     final visibleProducts = products
         .where(
@@ -290,14 +307,29 @@ class _OrderComposerState extends State<_OrderComposer> {
         )
         .toList();
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        TextField(
-          decoration: const InputDecoration(
-            labelText: 'Ürün ara',
-            prefixIcon: Icon(Icons.search),
-          ),
-          onChanged: (v) => setState(() => search = v),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                decoration: const InputDecoration(
+                  isDense: true,
+                  hintText: 'Ürün ara',
+                  prefixIcon: Icon(Icons.search, size: 20),
+                ),
+                onChanged: (v) => setState(() => search = v),
+              ),
+            ),
+            const SizedBox(width: 8),
+            OutlinedButton.icon(
+              onPressed: addCustomItem,
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('Özel Ürün Ekle'),
+            ),
+          ],
         ),
+        const SizedBox(height: 10),
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: Row(
@@ -318,6 +350,8 @@ class _OrderComposerState extends State<_OrderComposer> {
                   padding: const EdgeInsets.only(right: 6),
                   child: ChoiceChip(
                     label: Text(x.$2),
+                    showCheckmark: false,
+                    visualDensity: VisualDensity.compact,
                     selected: category == x.$1,
                     onSelected: (_) => setState(() => category = x.$1),
                   ),
@@ -325,188 +359,300 @@ class _OrderComposerState extends State<_OrderComposer> {
             ],
           ),
         ),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: TextButton.icon(
-            onPressed: addCustomItem,
-            icon: const Icon(Icons.add),
-            label: const Text('Özel Ürün Ekle'),
-          ),
-        ),
+        const SizedBox(height: 10),
         Expanded(
-          child: ListView.builder(
-            itemCount: visibleProducts.length,
-            itemBuilder: (context, i) {
-              final p = visibleProducts[i];
-              return Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(10),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          if (p.image != null)
-                            SizedBox(
-                              width: 46,
-                              height: 46,
-                              child: Image.network(
-                                Uri.parse(
-                                  'https://nohutfalafel.github.io/qr-menu/',
-                                ).resolve(p.image!).toString(),
-                                fit: BoxFit.contain,
-                                errorBuilder: (_, __, ___) =>
-                                    const Icon(Icons.restaurant_menu),
-                              ),
-                            ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              p.name,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                          Text(
-                            p.price == null
-                                ? 'Fiyat yok'
-                                : formatTry(cents(p.price)),
-                          ),
-                        ],
-                      ),
-                      if (p.descriptionTr?.isNotEmpty == true)
-                        Text(
-                          p.descriptionTr!,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      Wrap(
-                        spacing: 8,
-                        children: [
-                          FilledButton.tonalIcon(
-                            onPressed: p.price == null ? null : () => add(p),
-                            icon: const Icon(Icons.add),
-                            label: const Text('Ekle'),
-                          ),
-                          TextButton(
-                            onPressed: p.price == null
-                                ? null
-                                : () => customize(p),
-                            child: const Text('Not / Malzeme'),
-                          ),
-                        ],
-                      ),
-                    ],
+          child: visibleProducts.isEmpty
+              ? const Center(child: Text('Bu kategoride ürün yok',
+                  style: TextStyle(color: NohutBrand.muted)))
+              : GridView.builder(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                    maxCrossAxisExtent: 250,
+                    mainAxisExtent: 176,
+                    crossAxisSpacing: 10,
+                    mainAxisSpacing: 10,
                   ),
+                  itemCount: visibleProducts.length,
+                  itemBuilder: (context, i) => productTile(visibleProducts[i]),
                 ),
-              );
-            },
-          ),
         ),
       ],
+    );
+  }
+
+  Widget productTile(Product p) {
+    final count = inCart(p);
+    final available = p.price != null;
+    return Card(
+      margin: EdgeInsets.zero,
+      elevation: 0,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(
+          color: count > 0 ? NohutBrand.green : const Color(0xffE1E7E3),
+          width: count > 0 ? 1.6 : 1,
+        ),
+      ),
+      color: count > 0 ? const Color(0xffF3F8F4) : Colors.white,
+      child: InkWell(
+        onTap: available ? () => add(p) : null,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(10, 10, 10, 6),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: const Color(0xffF1F4F2),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: p.image == null
+                        ? const Icon(Icons.restaurant_menu,
+                            size: 20, color: NohutBrand.muted)
+                        : Image.network(
+                            Uri.parse('https://nohutfalafel.github.io/qr-menu/')
+                                .resolve(p.image!).toString(),
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => const Icon(
+                              Icons.restaurant_menu,
+                              size: 20, color: NohutBrand.muted),
+                          ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      p.name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700, fontSize: 14, height: 1.2),
+                    ),
+                  ),
+                  if (count > 0)
+                    Container(
+                      margin: const EdgeInsets.only(left: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: NohutBrand.green,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text('×$count', style: const TextStyle(
+                        color: Colors.white, fontSize: 12,
+                        fontWeight: FontWeight.w800)),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                p.descriptionTr ?? '',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 11.5,
+                  color: NohutBrand.muted, height: 1.25),
+              ),
+              const Spacer(),
+              Text(
+                available ? formatTry(cents(p.price)) : 'Fiyat yok',
+                style: TextStyle(
+                  fontWeight: FontWeight.w800, fontSize: 15,
+                  color: available ? NohutBrand.ink : NohutBrand.muted),
+              ),
+              Row(
+                children: [
+                  FilledButton.tonalIcon(
+                    style: FilledButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                    ),
+                    onPressed: available ? () => add(p) : null,
+                    icon: const Icon(Icons.add, size: 16),
+                    label: const Text('Ekle'),
+                  ),
+                  const SizedBox(width: 2),
+                  Flexible(
+                    child: TextButton(
+                      style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(horizontal: 6),
+                      ),
+                      onPressed: available ? () => customize(p) : null,
+                      child: const Text('Not / Malzeme',
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
   Widget cartList() => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
-      const Text(
-        'Sipariş Sepeti',
-        style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
+      Row(
+        children: [
+          const Text(
+            'Sipariş Sepeti',
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
+          ),
+          const SizedBox(width: 8),
+          if (draft.isNotEmpty)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: NohutBrand.green,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                '${draft.fold<int>(0, (n, l) => n + (l['qty'] as int))}',
+                style: const TextStyle(color: Colors.white,
+                  fontWeight: FontWeight.w800, fontSize: 12)),
+            ),
+        ],
       ),
       const Text(
         'Aynı ürüne farklı notlar ekleyebilirsiniz.',
-        style: TextStyle(fontSize: 12),
+        style: TextStyle(fontSize: 12, color: NohutBrand.muted),
       ),
+      const SizedBox(height: 8),
       Expanded(
         child: draft.isEmpty
-            ? const Center(child: Text('Sepet boş'))
-            : ListView(
-                children: [
-                  for (final line in draft)
-                    Card(
-                      key: ValueKey(line['_draftId']),
-                      child: Padding(
-                        padding: const EdgeInsets.all(8),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              "${line['name']}${line['_unavailable'] == true ? ' · Satış dışı, satırı kaldırın' : ''}",
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            for (final component in asMaps(line['components']))
-                              Text(
-                                component['name'].toString() +
-                                    ' · ' +
-                                    campaignComponentDetails(component),
-                              ),
-                            if ('${line['note']}'.isNotEmpty)
-                              Text('Not: ${line['note']}'),
-                            if ((line['removed'] as List).isNotEmpty)
-                              Text(
-                                'Çıkar: ${(line['removed'] as List).join(', ')}',
-                              ),
-                            Text(
-                              formatTry(
-                                cents(line['price']) * (line['qty'] as int),
-                              ),
-                            ),
-                            Wrap(
-                              crossAxisAlignment: WrapCrossAlignment.center,
-                              children: [
-                                IconButton(
-                                  tooltip: 'Adedi azalt',
-                                  onPressed: () => setState(() {
-                                    if (line['qty'] == 1) {
-                                      draft.remove(line);
-                                    } else {
-                                      line['qty'] = (line['qty'] as int) - 1;
-                                    }
-                                  }),
-                                  icon: const Icon(Icons.remove_circle_outline),
-                                ),
-                                Text('${line['qty']}'),
-                                IconButton(
-                                  tooltip: 'Adedi artır',
-                                  onPressed: (line['qty'] as int) >= 1000
-                                      ? null
-                                      : () => setState(
-                                          () => line['qty'] =
-                                              (line['qty'] as int) + 1,
-                                        ),
-                                  icon: const Icon(Icons.add_circle_outline),
-                                ),
-                                IconButton(
-                                  tooltip: 'Satır notunu düzenle',
-                                  onPressed:
-                                      line['_unavailable'] == true ||
-                                          line['customItem'] == true
-                                      ? null
-                                      : () => customize(
-                                          products.firstWhere(
-                                            (p) => p.id == line['productId'],
-                                          ),
-                                          line,
-                                        ),
-                                  icon: const Icon(Icons.edit_outlined),
-                                ),
-                                IconButton(
-                                  tooltip: 'Satırı kaldır',
-                                  onPressed: () =>
-                                      setState(() => draft.remove(line)),
-                                  icon: const Icon(Icons.delete_outline),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
+            ? const Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.shopping_basket_outlined,
+                      size: 34, color: Color(0xffA9B3AD)),
+                    SizedBox(height: 6),
+                    Text('Sepet boş', style: TextStyle(
+                      color: NohutBrand.muted, fontWeight: FontWeight.w600)),
+                    Text('Ürüne dokunarak ekleyin',
+                      style: TextStyle(color: NohutBrand.muted, fontSize: 12)),
+                  ],
+                ),
+              )
+            : ListView.separated(
+                itemCount: draft.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 6),
+                itemBuilder: (context, i) {
+                  final line = draft[i];
+                  final unavailable = line['_unavailable'] == true;
+                  final details = [
+                    for (final component in asMaps(line['components']))
+                      '${component['name']} · ${campaignComponentDetails(component)}',
+                    if ('${line['note']}'.isNotEmpty) 'Not: ${line['note']}',
+                    if ((line['removed'] as List).isNotEmpty)
+                      'Çıkar: ${(line['removed'] as List).join(', ')}',
+                  ];
+                  return Container(
+                    key: ValueKey(line['_draftId']),
+                    padding: const EdgeInsets.fromLTRB(6, 6, 4, 6),
+                    decoration: BoxDecoration(
+                      color: unavailable ? const Color(0xffFBE9E6) : Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xffE1E7E3)),
                     ),
-                ],
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Container(
+                          decoration: BoxDecoration(
+                            color: const Color(0xffF1F4F2),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                tooltip: 'Adedi azalt',
+                                visualDensity: VisualDensity.compact,
+                                iconSize: 18,
+                                onPressed: () => setState(() {
+                                  if (line['qty'] == 1) {
+                                    draft.remove(line);
+                                  } else {
+                                    line['qty'] = (line['qty'] as int) - 1;
+                                  }
+                                }),
+                                icon: const Icon(Icons.remove),
+                              ),
+                              Text('${line['qty']}', style: const TextStyle(
+                                fontWeight: FontWeight.w800, fontSize: 15)),
+                              IconButton(
+                                tooltip: 'Adedi artır',
+                                visualDensity: VisualDensity.compact,
+                                iconSize: 18,
+                                onPressed: (line['qty'] as int) >= 1000
+                                    ? null
+                                    : () => setState(
+                                        () => line['qty'] =
+                                            (line['qty'] as int) + 1,
+                                      ),
+                                icon: const Icon(Icons.add),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                "${line['name']}${unavailable ? ' · Satış dışı, satırı kaldırın' : ''}",
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  color: unavailable
+                                      ? const Color(0xff8c352e) : NohutBrand.ink,
+                                ),
+                              ),
+                              for (final d in details)
+                                Text(d, style: const TextStyle(
+                                  fontSize: 12, color: NohutBrand.muted)),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          formatTry(cents(line['price']) * (line['qty'] as int)),
+                          style: const TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                        IconButton(
+                          tooltip: 'Satır notunu düzenle',
+                          visualDensity: VisualDensity.compact,
+                          iconSize: 19,
+                          onPressed: unavailable || line['customItem'] == true
+                              ? null
+                              : () => customize(
+                                  products.firstWhere(
+                                    (p) => p.id == line['productId'],
+                                  ),
+                                  line,
+                                ),
+                          icon: const Icon(Icons.edit_note),
+                        ),
+                        IconButton(
+                          tooltip: 'Satırı kaldır',
+                          visualDensity: VisualDensity.compact,
+                          iconSize: 19,
+                          onPressed: () => setState(() => draft.remove(line)),
+                          icon: const Icon(Icons.delete_outline),
+                        ),
+                      ],
+                    ),
+                  );
+                },
               ),
       ),
     ],
@@ -677,120 +823,157 @@ class _OrderComposerState extends State<_OrderComposer> {
               const SizedBox(height: 12),
               Expanded(
                 child: LayoutBuilder(
-                  builder: (context, c) => c.maxWidth >= 740
-                      ? Row(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                  builder: (context, c) {
+                    final cart = Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xffF4F6F2),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Expanded(child: cartList()),
+                        if (saveError != null) ...[
+                          Text(
+                            saveError!,
+                            style: const TextStyle(color: Color(0xff8c352e)),
+                          ),
+                          OutlinedButton.icon(
+                            onPressed: () => setState(() {
+                              products = widget.refreshProducts?.call() ?? products;
+                              tableOrders = widget.refreshTables?.call() ?? tableOrders;
+                              for (final line in draft) {
+                                if (line['customItem'] == true) continue;
+                                final product = products
+                                    .where((p) => p.id == line['productId'])
+                                    .firstOrNull;
+                                line['_unavailable'] =
+                                    product == null ||
+                                    !product.active ||
+                                    product.price == null;
+                                if (product != null && product.price != null) {
+                                  if (product.campaignData != null) {
+                                    try {
+                                      line['components'] = mergeCampaignComponents(
+                                        asMaps(product.campaignData!['components']),
+                                        line['components'],
+                                      );
+                                    } on FormatException {
+                                      line['_unavailable'] = true;
+                                    }
+                                  }
+                                  line['basePrice'] = product.price;
+                                  line['price'] = fromCents(
+                                    cents(product.price) +
+                                        (line['adjustmentCents'] as int? ?? 0) +
+                                        componentExtraCents(line),
+                                  );
+                                  line['name'] = product.name;
+                                }
+                              }
+                              saveError =
+                                  'Güncel fiyatlar ve masalar yüklendi. Sepeti kontrol edip kaydedin.';
+                            }),
+                            icon: const Icon(Icons.refresh),
+                            label: const Text('Güncel Menü ve Masaları Al'),
+                          ),
+                        ],
+                        const Divider(height: 20),
+                        Row(
                           children: [
-                            Expanded(flex: 3, child: productList()),
-                            const VerticalDivider(width: 24),
-                            Expanded(flex: 2, child: cartList()),
-                          ],
-                        )
-                      : Column(
-                          children: [
-                            Expanded(flex: 3, child: productList()),
-                            const Divider(),
-                            Expanded(flex: 2, child: cartList()),
+                            Expanded(
+                              child: Text(
+                                'Ürün: ${draft.fold<int>(0, (n, l) => n + (l['qty'] as int))}',
+                                style: const TextStyle(color: NohutBrand.muted),
+                              ),
+                            ),
+                            Flexible(
+                              flex: 3,
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: Alignment.centerRight,
+                                child: Text.rich(TextSpan(children: [
+                                  const TextSpan(text: 'Toplam  ', style: TextStyle(
+                                    color: NohutBrand.muted, fontWeight: FontWeight.w600)),
+                                  TextSpan(text: formatTry(total), style: const TextStyle(
+                                    fontSize: 22, fontWeight: FontWeight.w900)),
+                                ])),
+                              ),
+                            ),
                           ],
                         ),
+                        const SizedBox(height: 10),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            FilledButton.icon(
+                              style: FilledButton.styleFrom(
+                                minimumSize: const Size.fromHeight(50),
+                                textStyle: const TextStyle(
+                                  fontFamily: NohutBrand.bodyFont, fontSize: 16, fontWeight: FontWeight.w800),
+                              ),
+                              onPressed:
+                                  draft.isEmpty ||
+                                      draft.any((l) => l['_unavailable'] == true) ||
+                                      (source == 'Masa' && table == null) ||
+                                      (lockedOrder == null && selectedEmployeeId == null)
+                                  ? null
+                                  : () {
+                                      final request = OrderRequest(
+                                        source: source,
+                                        table: source == 'Masa' ? table : null,
+                                        pickupChannel: pickup,
+                                        customer: pickupCustomer,
+                                        staffId: selectedEmployeeId,
+                                        expectedTableOrderId:
+                                            tableOrders[table]?['id'] as int?,
+                                        lines: draft
+                                            .map(
+                                              (line) => Map<String, dynamic>.from(line)
+                                                ..remove('_draftId')
+                                                ..remove('_unavailable'),
+                                            )
+                                            .toList(),
+                                      );
+                                      if (widget.onSubmit?.call(request) ?? true) {
+                                        Navigator.pop(context, request);
+                                      } else {
+                                        setState(
+                                          () => saveError =
+                                              'Kaydedilemedi. Güncel menü ve masaları alın; sepetiniz korunuyor.',
+                                        );
+                                      }
+                                    },
+                              icon: const Icon(Icons.save),
+                              label: const Text('Siparişi Kaydet'),
+                            ),
+                          ],
+                        ),
+                        ],
+                      ),
+                    );
+                    return c.maxWidth >= 740
+                        ? Row(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Expanded(child: productList()),
+                              const SizedBox(width: 14),
+                              SizedBox(
+                                width: (c.maxWidth * 0.38).clamp(330.0, 430.0),
+                                child: cart,
+                              ),
+                            ],
+                          )
+                        : Column(
+                            children: [
+                              Expanded(flex: 3, child: productList()),
+                              const SizedBox(height: 10),
+                              Expanded(flex: 2, child: cart),
+                            ],
+                          );
+                  },
                 ),
-              ),
-              if (saveError != null) ...[
-                Text(
-                  saveError!,
-                  style: const TextStyle(color: Color(0xff8c352e)),
-                ),
-                OutlinedButton.icon(
-                  onPressed: () => setState(() {
-                    products = widget.refreshProducts?.call() ?? products;
-                    tableOrders = widget.refreshTables?.call() ?? tableOrders;
-                    for (final line in draft) {
-                      if (line['customItem'] == true) continue;
-                      final product = products
-                          .where((p) => p.id == line['productId'])
-                          .firstOrNull;
-                      line['_unavailable'] =
-                          product == null ||
-                          !product.active ||
-                          product.price == null;
-                      if (product != null && product.price != null) {
-                        if (product.campaignData != null) {
-                          try {
-                            line['components'] = mergeCampaignComponents(
-                              asMaps(product.campaignData!['components']),
-                              line['components'],
-                            );
-                          } on FormatException {
-                            line['_unavailable'] = true;
-                          }
-                        }
-                        line['basePrice'] = product.price;
-                        line['price'] = fromCents(
-                          cents(product.price) +
-                              (line['adjustmentCents'] as int? ?? 0) +
-                              componentExtraCents(line),
-                        );
-                        line['name'] = product.name;
-                      }
-                    }
-                    saveError =
-                        'Güncel fiyatlar ve masalar yüklendi. Sepeti kontrol edip kaydedin.';
-                  }),
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('Güncel Menü ve Masaları Al'),
-                ),
-              ],
-              const Divider(),
-              Wrap(
-                alignment: WrapAlignment.spaceBetween,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                spacing: 12,
-                runSpacing: 8,
-                children: [
-                  Text(
-                    'Ürün: ${draft.fold<int>(0, (n, l) => n + (l['qty'] as int))} · Toplam ${formatTry(total)}',
-                    style: const TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  FilledButton.icon(
-                    onPressed:
-                        draft.isEmpty ||
-                            draft.any((l) => l['_unavailable'] == true) ||
-                            (source == 'Masa' && table == null) ||
-                            (lockedOrder == null && selectedEmployeeId == null)
-                        ? null
-                        : () {
-                            final request = OrderRequest(
-                              source: source,
-                              table: source == 'Masa' ? table : null,
-                              pickupChannel: pickup,
-                              customer: pickupCustomer,
-                              staffId: selectedEmployeeId,
-                              expectedTableOrderId:
-                                  tableOrders[table]?['id'] as int?,
-                              lines: draft
-                                  .map(
-                                    (line) => Map<String, dynamic>.from(line)
-                                      ..remove('_draftId')
-                                      ..remove('_unavailable'),
-                                  )
-                                  .toList(),
-                            );
-                            if (widget.onSubmit?.call(request) ?? true) {
-                              Navigator.pop(context, request);
-                            } else {
-                              setState(
-                                () => saveError =
-                                    'Kaydedilemedi. Güncel menü ve masaları alın; sepetiniz korunuyor.',
-                              );
-                            }
-                          },
-                    icon: const Icon(Icons.save),
-                    label: const Text('Siparişi Kaydet'),
-                  ),
-                ],
               ),
             ],
           ),
