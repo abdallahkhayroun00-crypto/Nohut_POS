@@ -42,3 +42,21 @@ The sequence represents the **order in which the POS first records the tickets f
 
 - https://developers.tgoapps.com/docs/authorization
 - https://developers.tgoapps.com/docs/trendyol-go-yemek-entegrasyonu/siparis-entegrasyonu/ymk-siparis-paketlerini.cekme
+
+## Kabul Et / Hazır / İptal (2026-11-26)
+
+Order actions are enabled by default and follow developers.tgoapps.com →
+Uber Eats Trendyol Go - Yemek → Sipariş Entegrasyonu. The package ID is sent
+in the JSON body; it is never part of the URL path:
+
+| Button | Request | Body |
+|---|---|---|
+| Kabul Et | `PUT /integrator/order/meal/suppliers/{supplierId}/packages/picked` | `packageId`, `preparationTime` (minutes, asked before sending) |
+| Hazır | `PUT …/packages/invoiced` | `packageId` (optional `actualDate` is omitted) |
+| Siparişi İptal Et | `PUT …/packages/unsupplied` | `packageId`, `itemIdList`, `reasonId` (621/622/623/627) |
+
+Before each write the POS reads `GET …/packages/{packageId}` and refuses to
+send if the platform status has changed. Local SQLite is updated only by the
+next successful sync. Build with
+`--dart-define=NOHUT_TRENDYOL_WRITE_ACTIONS=false` for a read-only POS.
+Test the first real order while watching the Partner Paneli.

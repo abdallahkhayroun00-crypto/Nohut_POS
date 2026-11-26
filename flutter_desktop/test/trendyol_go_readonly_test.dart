@@ -92,8 +92,61 @@ void main() {
     expect(order['deliveryEta'], '15 - 30 dk');
   });
 
-  test('Production order writes require explicit verified opt-in', () {
-    expect(TrendyolGoReadonly.writeEnabled, false);
+  test('Order write actions are enabled in standard builds', () {
+    expect(TrendyolGoReadonly.writeEnabled, true);
+  });
+
+  group('Documented MEAL write requests (packageId in body, not path)', () {
+    final order = <String, dynamic>{
+      'packageId': '5000',
+      'packageItemIds': ['item-1', 'item-2'],
+    };
+    const base = '/integrator/order/meal/suppliers/12345/packages';
+
+    test('Kabul Et → PUT packages/picked with preparationTime', () {
+      final w = tgoWriteRequest(supplierId: '12345', order: order,
+        action: 'accept', preparationMinutes: 20);
+      expect(w.path, '$base/picked');
+      expect(w.body, {'packageId': '5000', 'preparationTime': 20});
+    });
+
+    test('Hazır → PUT packages/invoiced with only packageId', () {
+      final w = tgoWriteRequest(supplierId: '12345', order: order,
+        action: 'ready');
+      expect(w.path, '$base/invoiced');
+      expect(w.body, {'packageId': '5000'});
+    });
+
+    test('İptal → PUT packages/unsupplied with items and reason', () {
+      final w = tgoWriteRequest(supplierId: '12345', order: order,
+        action: 'cancel', reasonId: 622);
+      expect(w.path, '$base/unsupplied');
+      expect(w.body, {
+        'packageId': '5000',
+        'itemIdList': ['item-1', 'item-2'],
+        'reasonId': 622,
+      });
+    });
+
+    test('Rejects invalid input before any network call', () {
+      for (final minutes in [null, 0, 121]) {
+        expect(() => tgoWriteRequest(supplierId: '12345', order: order,
+          action: 'accept', preparationMinutes: minutes),
+          throwsFormatException);
+      }
+      expect(() => tgoWriteRequest(supplierId: '12345', order: order,
+        action: 'cancel', reasonId: 999), throwsFormatException);
+      expect(() => tgoWriteRequest(supplierId: '12345',
+        order: {'packageId': '5000'}, action: 'cancel', reasonId: 621),
+        throwsFormatException);
+      expect(() => tgoWriteRequest(supplierId: '12345',
+        order: {'packageId': '50/00'}, action: 'ready'),
+        throwsFormatException);
+      expect(() => tgoWriteRequest(supplierId: 'abc', order: order,
+        action: 'ready'), throwsFormatException);
+      expect(() => tgoWriteRequest(supplierId: '12345', order: order,
+        action: 'delete'), throwsFormatException);
+    });
   });
 
   test('Rejects packages without a stable external identifier', () {

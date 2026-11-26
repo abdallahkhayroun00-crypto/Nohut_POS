@@ -64,15 +64,9 @@ class _OnlineOrdersState extends State<OnlineOrders> {
     if (!widget.integration.canWrite || widget.integration.writing) return;
     int? reasonId;
     String? explanation;
-    double? receiptAmount;
-    int? bagCount;
+    int? preparationMinutes;
     if (action == 'cancel') {
-      const reasons = {
-        621: 'Tedarik problemi',
-        622: 'Mağaza kapalı',
-        623: 'Sipariş hazırlanamadı',
-        627: 'Sipariş karışıklığı',
-      };
+      const reasons = tgoCancelReasons;
       reasonId = await showDialog<int>(
         context: context,
         builder: (ctx) => SimpleDialog(
@@ -95,58 +89,41 @@ class _OnlineOrdersState extends State<OnlineOrders> {
       );
       if (reasonId == null || !mounted) return;
       explanation = reasons[reasonId];
-    } else if (action == 'ready') {
-      var value = ((order['totalCents'] as int? ?? 0) / 100)
-          .toStringAsFixed(2);
-      var bags = '1';
-      final result = await showDialog<List<String>>(
+    } else if (action == 'accept') {
+      final suggested = order['preparationMinutes'];
+      var minutes = suggested is int && suggested >= 1 && suggested <= 120
+          ? '$suggested' : '20';
+      final result = await showDialog<String>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('Hazır · Fiş ve Poşet Bilgileri'),
+          title: const Text('Kabul Et · Hazırlama Süresi'),
           content: SizedBox(
-            width: 390,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  'Platforma gönderilecek gerçek mali fiş tutarını doğrulayın. '
-                  'Bu işlem banka tahsilatı veya mali fiş oluşturmaz.',
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  initialValue: value,
-                  autofocus: true,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(labelText: 'Fiş tutarı (₺)'),
-                  onChanged: (next) => value = next,
-                ),
-                const SizedBox(height: 10),
-                TextFormField(
-                  initialValue: bags,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'Gerçek poşet adedi (1-10)'),
-                  onChanged: (next) => bags = next,
-                ),
-              ],
+            width: 360,
+            child: TextFormField(
+              key: const ValueKey('tgo-preparation-minutes'),
+              initialValue: minutes,
+              autofocus: true,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'Hazırlama süresi (dakika, 1-120)'),
+              onChanged: (next) => minutes = next,
             ),
           ),
           actions: [
             TextButton(onPressed: () => Navigator.pop(ctx),
               child: const Text('Vazgeç')),
-            FilledButton(onPressed: () => Navigator.pop(ctx, [value, bags]),
+            FilledButton(onPressed: () => Navigator.pop(ctx, minutes),
               child: const Text('Devam Et')),
           ],
         ),
       );
       if (result == null || !mounted) return;
-      receiptAmount = double.tryParse(result[0].replaceAll(',', '.'));
-      bagCount = int.tryParse(result[1]);
-      if (receiptAmount == null || !receiptAmount.isFinite ||
-          receiptAmount <= 0 || bagCount == null ||
-          bagCount < 1 || bagCount > 10) {
+      preparationMinutes = int.tryParse(result.trim());
+      if (preparationMinutes == null ||
+          preparationMinutes < 1 || preparationMinutes > 120) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text(
-            'Geçerli mali fiş tutarı ve gerçek poşet adedi gerekli.')),
+            'Hazırlama süresi 1-120 dakika arasında olmalı.')),
         );
         return;
       }
@@ -164,6 +141,7 @@ class _OnlineOrdersState extends State<OnlineOrders> {
           'Platform siparişi #${order['orderNumber']}\n'
           'Bu işlem doğrudan platform API’sine gönderilir. '
           'Sipariş durumu platform tarafından onaylanmadan değişmez.'
+          '${preparationMinutes == null ? '' : '\nHazırlama süresi: $preparationMinutes dk'}'
           '${explanation == null ? '' : '\nNeden: $explanation'}',
         ),
         actions: [
@@ -182,8 +160,7 @@ class _OnlineOrdersState extends State<OnlineOrders> {
         order, action,
         reasonId: reasonId,
         explanation: explanation,
-        receiptAmount: receiptAmount,
-        bagCount: bagCount,
+        preparationMinutes: preparationMinutes,
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
