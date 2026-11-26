@@ -17,12 +17,16 @@ class ReceiptArtwork {
 
 class ReceiptDimensions {
   ReceiptDimensions(Map? settings)
-    : paper = (settings?['paperWidthMm'] as num? ?? 56).toDouble(),
+    : paper = (settings?['paperWidthMm'] as num? ?? 57).toDouble(),
       width = (settings?['printableWidthMm'] as num? ?? 48).toDouble(),
       margin = (settings?['receiptMarginMm'] as num? ?? 4).toDouble(),
       offset = (settings?['receiptOffsetMm'] as num? ?? 0).toDouble(),
-      logo = (settings?['receiptLogoMm'] as num? ?? 18).toDouble() {
-    if (![paper, width, margin, offset, logo].every((v) => v.isFinite) ||
+      logo = (settings?['receiptLogoMm'] as num? ?? 18).toDouble(),
+      side = (settings?['receiptSidePaddingMm'] as num? ?? 3).toDouble() {
+    if (![paper, width, margin, offset, logo, side].every((v) => v.isFinite) ||
+        side < 0 ||
+        side > 8 ||
+        width - 2 * side < 28 ||
         paper < 40 ||
         paper > 80 ||
         width < 30 ||
@@ -36,11 +40,15 @@ class ReceiptDimensions {
         (paper - width) / 2 + offset < 0 ||
         (paper - width) / 2 + offset + width > paper) {
       throw const FormatException(
-        'XP-237B: baskı 30–48 mm olmalı ve kağıda sığmalı',
+        'XP-237B: baskı 30–48 mm olmalı, kağıda sığmalı; sol/sağ boşluk 0–8 mm',
       );
     }
   }
   final double paper, width, margin, offset, logo;
+
+  /// White space kept inside the print width on the left and right, so text
+  /// never runs to the paper edge (57 mm rolls, XP-237B 48 mm head).
+  final double side;
   int get dots => (width * 8).round();
 }
 
@@ -81,6 +89,7 @@ Future<ReceiptArtwork> renderReceipt(String text, {Map? settings}) {
     cfg.margin,
     cfg.offset,
     cfg.logo,
+    cfg.side,
   ]);
   if (key != _cachedKey || _cachedArtwork == null) {
     _cachedKey = key;
@@ -101,7 +110,10 @@ Future<ReceiptArtwork> _renderReceipt(String text, {Map? settings}) async {
   final recorder = ui.PictureRecorder();
   // Build on a separate recorder so the final white background has exact height.
   final drawing = Canvas(recorder);
-  final w = cfg.dots.toDouble(), gap = cfg.margin * 8;
+  final side = cfg.side * 8;
+  // Everything is drawn inside the left/right safety margins.
+  final w = cfg.dots - 2 * side, gap = cfg.margin * 8;
+  drawing.translate(side, 0);
   var y = gap;
   TextPainter painter(
     String value,
@@ -376,7 +388,7 @@ Future<ReceiptArtwork> _renderReceipt(String text, {Map? settings}) async {
   final finalRecorder = ui.PictureRecorder(),
       finalCanvas = Canvas(finalRecorder);
   finalCanvas.drawRect(
-    Rect.fromLTWH(0, 0, w, y.ceilToDouble()),
+    Rect.fromLTWH(0, 0, cfg.dots.toDouble(), y.ceilToDouble()),
     Paint()..color = Colors.white,
   );
   finalCanvas.drawPicture(picture);

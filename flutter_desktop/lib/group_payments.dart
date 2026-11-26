@@ -166,9 +166,10 @@ String recordCombinedPickupPayment(
     '!! ÖDENDİ',
     '---',
     if (requiredCash > 0) 'Nakit ${formatTry(requiredCash)}',
-    if (receivedCents != null && receivedCents > requiredCash)
-      '  Alınan ${formatTry(receivedCents)} · '
-          'Para üstü ${formatTry(receivedCents - requiredCash)}',
+    if (receivedCents != null && receivedCents > requiredCash) ...[
+      '  Alınan ${formatTry(receivedCents)}',
+      '  Para üstü ${formatTry(receivedCents - requiredCash)}',
+    ],
     if (total - requiredCash > 0) 'Kart ${formatTry(total - requiredCash)}',
     'İşlem: $ref',
   ];

@@ -93,7 +93,10 @@ void main() {
       await helpers.click(t, 'Kaydet');
       final db = PosStore(databaseFile: file);
       expect(mutableOrder(db.read().data, 1200)!['table'], 4);
-      expect(db.read().data['settings']['receiptPolicy'], 'onPayment');
+      // The old forced payment-only policy is migrated away once.
+      expect(db.read().data['settings']['receiptPolicy'], isNull);
+      expect(db.read().data['settings']['autoPrint'], true);
+      expect(db.read().data['settings']['receiptPolicyVersion'], 2);
       db.dispose();
       expect(t.takeException(), isNull);
     },

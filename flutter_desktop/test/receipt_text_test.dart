@@ -1,4 +1,8 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:nohut_falafel_desktop/order_actions.dart';
+import 'package:nohut_falafel_desktop/receipt_printer.dart';
 import 'package:nohut_falafel_desktop/operations.dart';
 import 'package:nohut_falafel_desktop/pos_logic.dart';
 import 'package:nohut_falafel_desktop/pos_store.dart';
@@ -106,8 +110,56 @@ void main() {
     expect(text, isNot(contains('Kalan')));
     expect(text, contains('!! ÖDENDİ'));
     expect(text, contains('Nakit 100,00 ₺'));
-    expect(text, contains('  Alınan 200,00 ₺ · Para üstü 100,00 ₺'));
+    expect(text, contains('  Alınan 200,00 ₺\n  Para üstü 100,00 ₺'));
     expect(text, contains('Kart 40,00 ₺'));
     expect(RegExp(r' · $', multiLine: true).hasMatch(text), isFalse);
+  });
+
+  test('receipt keeps left and right safety margins inside the print width',
+      () {
+    final cfg = ReceiptDimensions(null);
+    expect(cfg.paper, 57);
+    expect(cfg.side, 3);
+    expect(ReceiptDimensions({'receiptSidePaddingMm': 0}).side, 0);
+    expect(() => ReceiptDimensions({'receiptSidePaddingMm': 9}),
+        throwsFormatException);
+    expect(() => ReceiptDimensions({'printableWidthMm': 30,
+      'receiptSidePaddingMm': 2}), throwsFormatException);
+  });
+
+  test('order slip follows the auto switch; Hesap Özeti always prints',
+      () async {
+    final dir = Directory.systemTemp.createTempSync('nohut-slip');
+    final store = PosStore(databaseFile: '${dir.path}/db');
+    final sent = <String>[];
+    final printer = ReceiptPrinter(store, transport: (text, name) async {
+      sent.add(text);
+    });
+    try {
+      final s = state();
+      (s['settings'] as Map)['autoPrint'] = false;
+      final o = newLocalOrder(state: s, source: 'Masa', table: 1,
+          productLines: [row('Ayran', 35)]);
+      recordPayment(o, 3500, 'Kart');
+      queuePaymentReceipt(s, o, requestId: 'r1');
+      expect(store.replace(s, store.read().revision).ok, true);
+      for (var i = 0; i < 4; i++) {
+        await printer.pump();
+      }
+      expect(sent, hasLength(1));
+      expect(sent.single, startsWith('NOHUT FALAFEL · HESAP ÖZETİ'));
+      final next = store.read().data;
+      (next['settings'] as Map)['autoPrint'] = true;
+      store.replace(next, store.read().revision);
+      for (var i = 0; i < 4; i++) {
+        await printer.pump();
+      }
+      expect(sent, hasLength(2));
+      expect(sent.last, startsWith('NOHUT FALAFEL · SİPARİŞ FİŞİ'));
+    } finally {
+      printer.dispose();
+      store.dispose();
+      dir.deleteSync(recursive: true);
+    }
   });
 }

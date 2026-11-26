@@ -106,7 +106,7 @@ class _SimpleSettingsState extends State<SimpleSettings> {
   Widget printerLayout(Map settings, Widget controls) {
     final preview = section(
       'Fiş Önizleme',
-      'Örnek hesap · ${settings['paperWidthMm'] ?? 56} mm',
+      'Örnek hesap · ${settings['paperWidthMm'] ?? 57} mm',
       [
         ReceiptPreview(
           settings: settings,
@@ -571,7 +571,7 @@ class _SimpleSettingsState extends State<SimpleSettings> {
                   leading: const Icon(Icons.print_outlined),
                   title: Text('${settings['printerName'] ?? 'XP-237B'}'),
                   subtitle: Text(
-                    '${settings['paperWidthMm'] ?? 56} mm kağıt · ${settings['printableWidthMm'] ?? 48} mm baskı · Aynı fiş tasarımı',
+                    '${settings['paperWidthMm'] ?? 57} mm kağıt (Mevax termal rulo) · ${settings['printableWidthMm'] ?? 48} mm baskı · sol/sağ ${settings['receiptSidePaddingMm'] ?? 3} mm boşluk',
                   ),
                 ),
                 DropdownButtonFormField<String>(
@@ -616,7 +616,7 @@ class _SimpleSettingsState extends State<SimpleSettings> {
                       [
                         (
                           'Kağıt genişliği (mm)',
-                          '${settings['paperWidthMm'] ?? 56}',
+                          '${settings['paperWidthMm'] ?? 57}',
                         ),
                         (
                           'Baskı genişliği (mm)',
@@ -634,6 +634,10 @@ class _SimpleSettingsState extends State<SimpleSettings> {
                           'Logo boyutu (mm)',
                           '${settings['receiptLogoMm'] ?? 18}',
                         ),
+                        (
+                          'Sol / sağ boşluk (mm)',
+                          '${settings['receiptSidePaddingMm'] ?? 3}',
+                        ),
                       ],
                       validate: (v) {
                         final values = v
@@ -649,6 +653,7 @@ class _SimpleSettingsState extends State<SimpleSettings> {
                             'receiptMarginMm': p[2],
                             'receiptOffsetMm': p[3],
                             'receiptLogoMm': p[4],
+                            'receiptSidePaddingMm': p[5],
                           });
                         } on FormatException catch (e) {
                           return e.message;
@@ -666,21 +671,24 @@ class _SimpleSettingsState extends State<SimpleSettings> {
                             p[2] > 10 ||
                             p[3].abs() > 10 ||
                             p[4] < 10 ||
-                            p[4] > 25)
-                          return 'Ölçüler: kağıt 40–80, baskı 30–48, boşluk 2–10, kaydırma ±10, logo 10–25 mm';
+                            p[4] > 25 ||
+                            p[5] < 0 ||
+                            p[5] > 8)
+                          return 'Ölçüler: kağıt 40–80, baskı 30–48, boşluk 2–10, kaydırma ±10, logo 10–25, sol/sağ 0–8 mm';
                         return null;
                       },
                     );
                     if (v != null)
                       widget.edit((s) {
                         final cfg = s['settings'] as Map;
-                        for (var i = 0; i < 5; i++)
+                        for (var i = 0; i < 6; i++)
                           cfg[[
                             'paperWidthMm',
                             'printableWidthMm',
                             'receiptMarginMm',
                             'receiptOffsetMm',
                             'receiptLogoMm',
+                            'receiptSidePaddingMm',
                           ][i]] = double.parse(
                             v[i].replaceAll(',', '.'),
                           );
@@ -694,7 +702,7 @@ class _SimpleSettingsState extends State<SimpleSettings> {
                   onPressed: () async {
                     try {
                       await windowsPrint(
-                        'HİZALAMA TESTİ\nSol |--------------------| Sağ\nOrtalanmış baskı alanı\nKağıt: ${settings['paperWidthMm'] ?? 56} mm\nBu bir sipariş değildir.',
+                        'HİZALAMA TESTİ\nSol |--------------------| Sağ\nOrtalanmış baskı alanı\nKağıt: ${settings['paperWidthMm'] ?? 57} mm\nBu bir sipariş değildir.',
                         '${settings['printerName'] ?? 'XP-237B'}',
                         settings: settings,
                       );

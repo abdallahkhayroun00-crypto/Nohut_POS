@@ -197,8 +197,10 @@ String billText(Json o) {
       if (p['method'] == 'Nakit' &&
           p['received'] != null &&
           cents(p['received']) > cents(p['amount']))
-        '  Alınan ${formatTry(cents(p['received']))} · '
-            'Para üstü ${formatTry(cents(p['received']) - cents(p['amount']))}',
+        ...[
+          '  Alınan ${formatTry(cents(p['received']))}',
+          '  Para üstü ${formatTry(cents(p['received']) - cents(p['amount']))}',
+        ],
     ],
   ].join('\n');
 }

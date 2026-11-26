@@ -98,11 +98,13 @@ class ReceiptPrinter {
         store.replace(updated, current.revision);
         return;
       }
-      if (!paymentOnly && settings['autoPrint'] != true) return;
+      // A Hesap Özeti is always requested by the cashier, so it prints even
+      // while automatic order slips are switched off.
+      final slipsOn = !paymentOnly && settings['autoPrint'] == true;
       Map? job;
       for (final candidate in (next['printJobs'] as List).cast<Map>()) {
         final o = mutableOrder(next, candidate['orderId'] as int);
-        if ((!paymentOnly || candidate['kind'] == 'paymentReceipt') &&
+        if ((slipsOn || candidate['kind'] == 'paymentReceipt') &&
             candidate['state'] == 'Bekliyor' &&
             candidate['createdAt'] is String &&
             (settings['autoPrintEnabledAt'] == null ||
