@@ -202,8 +202,16 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     final initial = store.read(), migrated = copyJson(initial.data);
     final settings =
         migrated.putIfAbsent('settings', () => <String, dynamic>{}) as Map;
-    settings['receiptPolicy'] = 'onPayment';
-    settings['autoPrint'] = false;
+    // One-time move away from the old forced "print on payment only"
+    // policy: every order prints one Sipariş Fişi again. Afterwards the
+    // "Otomatik Masa / Gel-Al Fişi" switch alone decides; the start time
+    // stops old queued jobs from printing.
+    if (settings['receiptPolicyVersion'] != 2) {
+      settings.remove('receiptPolicy');
+      settings['autoPrint'] = true;
+      settings['autoPrintEnabledAt'] = DateTime.now().toUtc().toIso8601String();
+      settings['receiptPolicyVersion'] = 2;
+    }
     store.replace(migrated, initial.revision);
     onlineSound = OnlineOrderSoundPlayer();
     onlineAlarm = OnlineOrderAlarm(
@@ -334,8 +342,6 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       // The website sync supplies published prices when enabled.
       final printerSettings =
           next.putIfAbsent('settings', () => <String, dynamic>{}) as Map;
-      printerSettings['receiptPolicy'] = 'onPayment';
-      printerSettings['autoPrint'] = false;
       printerSettings['printerModel'] = 'XP-237B';
       final layoutVersion = printerSettings['receiptLayoutVersion'];
       if (layoutVersion is! int || layoutVersion < 2) {
