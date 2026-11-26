@@ -11,7 +11,8 @@ import 'group_payments.dart';
 import 'trendyol_go_readonly.dart';
 import 'trendyol_go_ui.dart';
 import 'sales_reports.dart';
-import 'dashboard_sales.dart';
+import 'overview_metrics.dart';
+import 'overview_panel.dart';
 import 'finance_ui.dart';
 import 'order_alerts.dart';
 import 'staff_order_popup.dart';
@@ -1832,34 +1833,19 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       _sectionTitle(
-        'Günlük',
-        businessDay,
+        'Bugün',
+        turkishLongDate(businessDay),
         action: FilledButton.icon(
           onPressed: () => _composer(),
           icon: const Icon(Icons.add),
           label: const Text('Sipariş Al'),
         ),
       ),
-      DashboardSales(
+      OverviewPanel(
         state: db,
         businessDay: businessDay,
         onlineWarning: _onlineDataWarning,
-      ),
-      Card(
-        child: ListTile(
-          leading: const Icon(Icons.account_balance_wallet_outlined),
-          title: const Text('Açık Hesaplar · Gel-Al'),
-          subtitle: Text(
-            pickupOpenAccounts(db).length.toString() +
-            ' müşteri / hesap · Birikmiş ödenmemiş siparişler',
-          ),
-          trailing: Text(
-            formatTry(pickupOpenAccounts(db).fold<int>(
-              0, (sum, account) => sum + account.dueCents)),
-            style: const TextStyle(fontWeight: FontWeight.w800),
-          ),
-          onTap: () => _switch('open-accounts'),
-        ),
+        onNavigate: _switch,
       ),
       const SizedBox(height: 16),
       StaffPerformanceChart(state: db, day: businessDay),
