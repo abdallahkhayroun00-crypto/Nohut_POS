@@ -191,11 +191,15 @@ Json submitStaffAction(PosStore store, Json payload) {
       throw const FormatException('Silme bilgisi geçersiz');
     if (payload['confirmed'] != true)
       throw const FormatException('Silmeyi onaylayın');
+    final reason = payload['reason'];
+    if (reason != null && (reason is! String || reason.length > 500))
+      throw const FormatException('Silme nedeni geçersiz');
     return store.deleteOrder(
       payload['orderId'] as int,
       payload['expectedRevision'] as int,
       requestId,
       staffId: payload['staffId'] as int,
+      reason: reason as String? ?? 'Personel telefonundan silindi',
     );
   }
   return store.command(requestId, payload, (s) {

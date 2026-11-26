@@ -5,8 +5,41 @@ import 'dart:convert';
 
 typedef Json = Map<String, dynamic>;
 
-Json copyJson(Json value) =>
-    Map<String, dynamic>.from(jsonDecode(jsonEncode(value)) as Map);
+/// Deep copy with exactly the JSON round-trip contract (string keys,
+/// finite numbers, bool, null, String, List, Map) but without serializing
+/// text: the old `jsonDecode(jsonEncode(..))` cost ~3 s at 50k orders.
+/// Anything JSON could not encode still throws, as before.
+Json copyJson(Json value) => _copyJsonValue(value) as Map<String, dynamic>;
+
+Object? _copyJsonValue(Object? value) {
+  if (value == null || value is String || value is bool || value is int) {
+    return value;
+  }
+  if (value is double) {
+    if (!value.isFinite) {
+      throw JsonUnsupportedObjectError(value);
+    }
+    return value;
+  }
+  if (value is Map) {
+    final out = <String, dynamic>{};
+    for (final entry in value.entries) {
+      final key = entry.key;
+      if (key is! String) throw JsonUnsupportedObjectError(value);
+      out[key] = _copyJsonValue(entry.value);
+    }
+    return out;
+  }
+  if (value is List) {
+    return <dynamic>[for (final item in value) _copyJsonValue(item)];
+  }
+  // Same as jsonEncode: objects with toJson() are converted, others throw.
+  try {
+    return _copyJsonValue(jsonDecode(jsonEncode(value)));
+  } on JsonUnsupportedObjectError {
+    rethrow;
+  }
+}
 
 List<Json> asMaps(Object? source) {
   if (source is! List) return <Json>[];

@@ -16,11 +16,20 @@ library;
 
 part 'sync_field_paths.g.dart';
 
-/// `integrations.menu.Trendyol Go[]` → `integrations.menu.{platform}[]`.
-String normalizeFieldPath(String path) => path.replaceFirstMapped(
-  RegExp(r'^integrations\.(menu|stores)\.[^.\[]+'),
-  (m) => 'integrations.${m[1]}.{platform}',
-);
+/// `integrations.menu.Trendyol Go[]` → `integrations.menu.{platform}[]`;
+/// an archived (soft-deleted) order and its related rows follow exactly the
+/// same field rules as live ones: `deletedOrders[].order.x` → `orders[].x`,
+/// `deletedOrders[].related.printJobs[].x` → `printJobs[].x`.
+String normalizeFieldPath(String path) => path
+    .replaceFirstMapped(
+      RegExp(r'^integrations\.(menu|stores)\.[^.\[]+'),
+      (m) => 'integrations.${m[1]}.{platform}',
+    )
+    .replaceFirst(RegExp(r'^deletedOrders\[\]\.order(?=\.|$)'), 'orders[]')
+    .replaceFirstMapped(
+      RegExp(r'^deletedOrders\[\]\.related\.(printJobs|staffNotices|terminalAttempts)(?=\[|$)'),
+      (m) => m[1]!,
+    );
 
 bool _underOpaque(String path) {
   for (final root in opaqueStatePaths.keys) {
@@ -155,6 +164,12 @@ const cloudAllowedFieldPaths = <String>{
   'tgoOperationAudit[].packageId', 'tgoOperationAudit[].orderNumber',
   'tgoOperationAudit[].action', 'tgoOperationAudit[].result',
   'tgoOperationAudit[].at',
+  // Soft-deleted orders (tombstones with audit); the archived order itself
+  // is projected through the `orders[]` rules above.
+  'deletedOrders', 'deletedOrders[].orderId', 'orders[]', 'deletedOrders[].deletedAt',
+  'deletedOrders[].deletedBy', 'deletedOrders[].deletedByStaffId',
+  'deletedOrders[].reason', 'deletedOrders[].requestId',
+  'deletedOrders[].revision',
 };
 
 /// Personal contact / secret field paths that must never be allowlisted.

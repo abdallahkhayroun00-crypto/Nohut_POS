@@ -2343,18 +2343,30 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                 style: TextButton.styleFrom(
                   foregroundColor: const Color(0xffB3261E)),
                 onPressed: () async {
+                  final v = await askFields(
+                    context,
+                    'Siparişi sil (arşive taşı)',
+                    [('Silme nedeni', '')],
+                    validate: (v) => v[0].trim().isEmpty
+                        ? 'Silme nedeni gerekli' : null,
+                  );
+                  if (v == null || !mounted) return;
                   if (await confirmAction(
                     context,
-                    'Siparişi kalıcı sil?',
+                    'Sipariş silinsin mi?',
                     '#${displayOrderNumber(o)} · Toplam ${formatTry(total)} · Tahsilat ${formatTry(paid)}\n'
-                        'Sipariş, ödemeleri ve rapor tutarları aktif veritabanından kaldırılır. Son günlük numara yeniden kullanılabilir; diğer numaralar değişmez.',
-                    confirm: 'Kalıcı Sil',
+                        'Sipariş raporlardan ve listelerden çıkar, ancak tüm '
+                        'kaydı (ürünler, ödemeler, fişler) kimin, ne zaman ve '
+                        'neden sildiği ile birlikte arşivde saklanır. Son günlük '
+                        'numara yeniden kullanılabilir.',
+                    confirm: 'Sil (Arşive Taşı)',
                   )) {
                     try {
                       store.deleteOrder(
                         o['id'] as int,
                         store.read().revision,
                         'delete_${DateTime.now().microsecondsSinceEpoch}',
+                        reason: v[0],
                       );
                       if (mounted) Navigator.of(context).pop();
                     } catch (e) {
@@ -2362,8 +2374,8 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                     }
                   }
                 },
-                icon: const Icon(Icons.delete_forever, size: 18),
-                label: const Text('Kalıcı Sil'),
+                icon: const Icon(Icons.delete_outline, size: 18),
+                label: const Text('Siparişi Sil'),
               ),
             ),
           ],

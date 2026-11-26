@@ -32,7 +32,9 @@ The database lives at `%APPDATA%\NohutFalafel\nohut-pos.sqlite3` and can be over
 | `backup_history` | `backup_id` | Backup runs: time, revision, sizes, SHA-256, destination, status, verification, reason, error | INTERNAL, DEVICE_LOCAL | Local history; never pruned | VERIFIED_EXISTING (Phase 1) |
 | `sync_outbox`, `sync_state` | — | — | — | Spec §4.4 | PROPOSED_V5 |
 
-**History-loss finding (P1 for Phase 2):** `PosStore.deleteOrder` physically removes the order, its print jobs, staff notices and terminal attempts. It also deletes the matching `command_receipts`; only the request IDs remain in `deleted_requests`. This conflicts with the V5 "lossless business history" rule, which calls for tombstones rather than physical delete. It is not changed in Phase 0, and needs an owner decision plus a tombstone design in PR-04.
+**History-loss finding (resolved in Phase 1B):** `PosStore.deleteOrder` physically removes the order, its print jobs, staff notices and terminal attempts. It also deletes the matching `command_receipts`; only the request IDs remain in `deleted_requests`. **Phase 1B change:** deletion is now an audited soft delete.
+- The order, its print jobs, staff notices and terminal attempts move unchanged into `deletedOrders`, together with `deletedAt`, `deletedBy`, `deletedByStaffId`, `reason` and `requestId`.
+- Command receipts are **kept**. Their IDs are also listed in `deleted_requests`, so a replay is refused.
 
 ---
 
@@ -44,6 +46,7 @@ Every key below is registered in `lib/sync_registry.dart`. CI fails if a new key
 |---|---|---|---|---|---|---|
 | `employees` | `emptyPosState`, finance/personnel UI | `{id:int, name, role, active}`. ID is stable and never reused. | PERSONAL_PII, INTERNAL | `employees` | POS→Cloud. Deactivate, never delete. Keep attribution. | VERIFIED_EXISTING |
 | `orders` | `newLocalOrder`, `addOrderBatch`, payments, cancellations, platform demo | Local Masa/Gel-Al orders and demo platform orders (detail in §3). ID `int` from `nextId`. | FINANCIAL, PERSONAL_PII, INTERNAL | `orders`, `order_batches`, `order_items`, `payments`, `order_events` | Full history. Phone protected and never printed. | VERIFIED_EXISTING |
+| `deletedOrders` | `PosStore.deleteOrder` (Phase 1B) | Soft-deleted orders, each `{orderId, deletedAt, deletedBy, deletedByStaffId, reason, requestId, revision, order, related{printJobs, staffNotices, terminalAttempts}}` | FINANCIAL, PERSONAL_PII, INTERNAL | `orders` (deleted_at tombstone) + `audit_logs` | Never erased. Excluded from reports exactly as before. The archived order follows the `orders[]` field rules. | VERIFIED_EXISTING (Phase 1B) |
 | `nextId` | `newLocalOrder` | Monotonic order ID sequence (starts at 1200). | INTERNAL | — | Single-writer authority, not replicated. | VERIFIED_EXISTING |
 | `printJobs` | `queueLocalKitchen`, `queuePaymentReceipt` | `{orderId, batchId, kind?, state, createdAt, attempts, error, spooledAt, snapshot{order{id,dailyNumber,numberDay,source,table,createdAt,pickupChannel,customer{name,time}}, batch}, text?}`. Key: (`orderId`, `batchId`). | INTERNAL, PERSONAL_PII (name/time only; phone excluded since this PR) | `receipt_snapshots`, `print_jobs` | Audit only. Never replayed on another machine or after restore. | VERIFIED_EXISTING |
 | `settings` | many | Business and device settings (§4). | INTERNAL, DEVICE_LOCAL | `restaurant_settings` (business keys only) | Printer/paper/device keys stay local. | VERIFIED_EXISTING |

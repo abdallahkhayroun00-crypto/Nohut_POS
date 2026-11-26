@@ -15,7 +15,6 @@ import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
 import '../support/synthetic_pos.dart';
-import 'package:nohut_falafel_desktop/pos_logic.dart';
 import 'package:nohut_falafel_desktop/pos_store.dart';
 import 'package:sqlite3/sqlite3.dart';
 
@@ -57,11 +56,12 @@ void main() {
 
         // Write latency of one more order on a store of this size: the
         // whole JSON snapshot is rewritten on every committed change.
-        final latencies = <int>[];
+        final latencies = <int>[], edits = <int>[];
         final r = Random(7);
         for (var k = 0; k < 15; k++) {
+          final edit = Stopwatch()..start();
           final snap = store.read();
-          final next = copyJson(snap.data);
+          final next = snap.data;
           final (o, orderJobs) = syntheticLocalOrder(r, DateTime.utc(2026, 11, 27, 12));
           final nid = next['nextId'] as int;
           o['id'] = nid;
@@ -74,9 +74,12 @@ void main() {
           final w = Stopwatch()..start();
           expect(store.replace(next, snap.revision).ok, true);
           w.stop();
+          edit.stop();
           latencies.add(w.elapsedMicroseconds);
+          edits.add(edit.elapsedMicroseconds);
         }
         latencies.sort();
+        edits.sort();
         store.dispose();
 
         final db = sqlite3.open(file);
@@ -126,6 +129,8 @@ void main() {
           'gzipBackupBytes': gz,
           'writeLatencyMsP50': _pct(latencies, .5),
           'writeLatencyMsP95': _pct(latencies, .95),
+          'editLatencyMsP50': _pct(edits, .5),
+          'editLatencyMsP95': _pct(edits, .95),
           'writeSamples': latencies.length,
         };
         results.add(row);
