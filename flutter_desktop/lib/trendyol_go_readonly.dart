@@ -85,6 +85,28 @@ Iterable<Json> mutableTgoOrders(Json state) {
 /// Only fully delivered, non-test packages count as completed sales.
 bool tgoCountsAsSale(Json o) =>
     o['testPackage'] != true && o['status'] == 'Delivered';
+/// Ingredient lists may hold names or objects with a name.
+List<String> tgoIngredientNames(Object? raw) => [
+  for (final item in raw is List ? raw : const [])
+    if ((item is Map ? '${item['name'] ?? ''}' : '$item').trim().isNotEmpty)
+      (item is Map ? '${item['name']}' : '$item').trim(),
+];
+
+/// One modifier product with its nested choices, removals and extras.
+String tgoModifierText(Map m) {
+  final nested = [
+    for (final n in asMaps(m['modifierProducts'])) tgoModifierText(n),
+  ];
+  final removed = tgoIngredientNames(m['removedIngredients']);
+  final extras = tgoIngredientNames(m['extraIngredients']);
+  return [
+    '${m['name'] ?? ''}'.trim() +
+        (nested.isEmpty ? '' : ' (${nested.join(', ')})'),
+    if (removed.isNotEmpty) 'Çıkar: ${removed.join(', ')}',
+    if (extras.isNotEmpty) 'Ekstra: ${extras.join(', ')}',
+  ].join(' · ');
+}
+
 Json normalizeTgoPackage(Json p) {
   final id = '${p['id'] ?? ''}',
       number = '${p['orderNumber'] ?? p['orderId'] ?? ''}';
@@ -101,9 +123,13 @@ Json normalizeTgoPackage(Json p) {
       'name': '${l['name'] ?? ''}',
       'qty': qty,
       'unitPriceCents': tgoCents(l['unitSellingPrice'] ?? l['price']),
+      // Chosen sub-products, each with its own removals/extras and nested
+      // choices, e.g. "Patates (Büyük) · Çıkar: Ketçap".
       'options': [
-        for (final m in asMaps(l['modifierProducts'])) '${m['name'] ?? ''}',
+        for (final m in asMaps(l['modifierProducts'])) tgoModifierText(m),
       ],
+      'removed': tgoIngredientNames(l['removedIngredients']),
+      'extras': tgoIngredientNames(l['extraIngredients']),
     });
   }
   final payment = p['payment'] is Map
@@ -194,34 +220,38 @@ String tgoOrderKey(Json order) {
   return '${order['supplierId']}:${order['storeId']}:${packageId.isNotEmpty ? packageId : order['orderNumber']}';
 }
 
-String tgoKitchenTiming(Object? settings) {
-  if (settings is! Map) return 'manual';
-  return switch (settings['tgoKitchenTiming']) {
-    'arrival' => 'arrival',
-    'accepted' => 'accepted',
-    'manual' => 'manual',
-    _ => settings['tgoAutoKitchen'] == true ? 'arrival' : 'manual',
-  };
-}
+/// Trendyol kitchen tickets print once, when the order is accepted
+/// (Created → Picking, from the POS, a phone or the partner panel), under
+/// the same printer and auto-print rules as Masa / Gel-Al tickets.
+/// [settings] is kept for callers; older manual/arrival choices are retired.
+String tgoKitchenTiming(Object? settings) => 'accepted';
 
 bool tgoKitchenActive(Json order) =>
     order['testPackage'] != true &&
     const ['Created', 'Picking', 'Invoiced'].contains(order['status']);
 
+/// Same layout as the Masa / Gel-Al kitchen ticket (see receiptText), plus
+/// the platform name and the platform order number.
 String tgoKitchenTicket(Json order) {
   final note = '${order['customerNote'] ?? ''}'.trim();
+  final code = '${order['orderCode'] ?? ''}'.trim();
+  final type = order['pickup'] == true ? 'Gel-Al' : 'Paket Servis';
   return [
-    'TRENDYOL GO / MUTFAK',
-    'Sipariş: ${order['orderNumber']}',
-    if ('${order['orderCode'] ?? ''}'.isNotEmpty) 'Kod: ${order['orderCode']}',
-    istanbulStamp(order['createdAt']),
-    order['pickup'] == true ? 'Gel-Al' : 'Paket Servis',
-    '------------------------',
-    for (final line in asMaps(order['lines'])) ...[
-      '${line['qty']} × ${line['name']}',
-      if (line['options'] case final List options when options.isNotEmpty)
-        '  ${options.join(', ')}',
-    ],
+    'NOHUT FALAFEL · MUTFAK',
+    'MALİ FİŞ DEĞİLDİR',
+    '#${displayOrderNumber(order)} · Trendyol Go · $type',
+    'Platform no: ${order['orderNumber']}${code.isEmpty ? '' : ' · Kod: $code'}',
+    'Trendyol Go · ${istanbulStamp(order['createdAt'])}',
+    for (final line in asMaps(order['lines']))
+      [
+        '${line['qty']} × ${line['name']}',
+        for (final option in line['options'] is List ? line['options'] as List : const [])
+          '+ $option',
+        if (line['removed'] is List && (line['removed'] as List).isNotEmpty)
+          'Çıkar: ${(line['removed'] as List).join(', ')}',
+        if (line['extras'] is List && (line['extras'] as List).isNotEmpty)
+          'Ekstra: ${(line['extras'] as List).join(', ')}',
+      ].join('\n'),
     if (note.isNotEmpty) 'Not: $note',
   ].join('\n');
 }
@@ -760,8 +790,12 @@ class TrendyolGoReadonly extends ChangeNotifier {
                 prior?['status'] == 'Created' &&
                 o['status'] == 'Picking' &&
                 tgoKitchenActive(o) &&
-                onIstanbulDay(o['createdAt'], istanbulDay(end)))
+                onIstanbulDay(o['createdAt'], istanbulDay(end))) ...{
               'kitchenPrintState': 'Bekliyor',
+              'kitchenQueuedAt': end.toUtc().toIso8601String(),
+            },
+            if (prior?['kitchenQueuedAt'] is String)
+              'kitchenQueuedAt': prior!['kitchenQueuedAt'],
           };
         }
         newOrders = [
@@ -772,11 +806,6 @@ class TrendyolGoReadonly extends ChangeNotifier {
                   onIstanbulDay(entry.value['createdAt'], istanbulDay(end)))
                 entry.value,
         ];
-        if (kitchenTiming == 'arrival') {
-          for (final order in newOrders) {
-            order['kitchenPrintState'] = 'Bekliyor';
-          }
-        }
         next['trendyolGoOrders'] = merged.values.toList();
         assignDailyNumbers(next);
         next['tgoSyncInfo'] = {

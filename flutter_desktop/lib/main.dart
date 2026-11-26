@@ -212,7 +212,12 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     );
     onlineAlarm.setAudioEnabled(settings['onlineOrderSound'] != false);
     inpos = InposPayments(store, widget.inposGateway ?? UnavailableInpos());
-    lan = PosLanServer(store, googleProvider: () => google);
+    lan = PosLanServer(
+      store,
+      googleProvider: () => google,
+      platformWritable: () => tgo.canWrite && !tgo.writing,
+      platformAction: _staffPlatformAction,
+    );
     receiptPrinter = ReceiptPrinter(store);
     qrSync = QrMenuAutoSync(store);
     tgo = TrendyolGoReadonly(
@@ -2799,6 +2804,39 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     _onlineView++;
   });
 
+  /// Kabul Et / Hazır from a staff phone. The phone never talks to Trendyol;
+  /// the laptop validates the worker, finds the package and calls the same
+  /// integration as the POS buttons (which re-checks the live status first).
+  Future<Map<String, dynamic>> _staffPlatformAction(
+      Map<String, dynamic> request) async {
+    final data = store.read().data;
+    final staffId = request['staffId'];
+    final worker = asMaps(data['employees'])
+        .where((e) => e['id'] == staffId && e['active'] != false)
+        .firstOrNull;
+    if (worker == null) throw const FormatException('Çalışan seçin.');
+    final action = '${request['action']}';
+    if (!const ['accept', 'ready'].contains(action)) {
+      throw const FormatException('Desteklenmeyen işlem.');
+    }
+    final packageId = '${request['packageId'] ?? ''}';
+    final order = tgoOrders(data)
+        .where((o) => '${o['packageId']}' == packageId && packageId.isNotEmpty)
+        .firstOrNull;
+    if (order == null) throw const FormatException('Sipariş bulunamadı.');
+    final minutes = request['preparationMinutes'];
+    final verified = await tgo.updateOrder(
+      order,
+      action,
+      preparationMinutes: minutes is int ? minutes : null,
+    );
+    return {
+      'ok': true,
+      'verified': verified,
+      'by': worker['name'],
+    };
+  }
+
   Widget _online(Json db) => OnlineOrders(
     key: ValueKey(_onlineView),
     orders: tgoOrders(db),
@@ -2806,14 +2844,23 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     businessDay: businessDay,
     initialSource: onlinePlatform,
     demo: () => _platformDemo(db),
-    onPrint: (order) {
+    // Only a ticket whose earlier send is uncertain can be sent again; the
+    // operator checks the printer first (same rule as the Masa print queue).
+    onReprint: (order) async {
+      if (!await confirmAction(
+        context,
+        'Mutfak fişini tekrar yazdır?',
+        'Önce yazıcıyı kontrol edin. Fiş zaten çıktıysa tekrar yazdırmayın.',
+        confirm: 'Kontrol Ettim · Yazdır',
+      )) return;
       final key = tgoOrderKey(order);
       _edit((data) {
         for (final current in mutableTgoOrders(data)) {
           if (tgoOrderKey(current) == key &&
-              current['kitchenPrintState'] == null &&
+              current['kitchenPrintState'] == 'Kontrol gerekli' &&
               tgoKitchenActive(current)) {
             current['kitchenPrintState'] = 'Bekliyor';
+            current['kitchenQueuedAt'] = DateTime.now().toUtc().toIso8601String();
           }
         }
       });

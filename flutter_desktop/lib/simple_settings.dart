@@ -747,36 +747,11 @@ class _SimpleSettingsState extends State<SimpleSettings> {
             ),
           ),
           const SizedBox(height: 12),
-          section(
-            'Mutfak Fişi',
-            'Uber Eats Trendyol Go siparişleri için otomatik baskı zamanını seçin.',
-            [
-              DropdownButtonFormField<String>(
-                initialValue: tgoKitchenTiming(settings),
-                decoration: const InputDecoration(
-                  labelText: 'Mutfak fişi zamanı',
-                ),
-                items: const [
-                  DropdownMenuItem(value: 'manual', child: Text('Elle yazdır')),
-                  DropdownMenuItem(
-                    value: 'arrival',
-                    child: Text('Sipariş gelince'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'accepted',
-                    child: Text('Kabul edildiği görülünce'),
-                  ),
-                ],
-                onChanged: (value) {
-                  if (value == null) return;
-                  widget.edit((s) {
-                    final cfg = s['settings'] as Map;
-                    cfg['tgoKitchenTiming'] = value;
-                    cfg['tgoAutoKitchen'] = value == 'arrival';
-                  });
-                },
-              ),
-            ],
+          const SizedBox(height: 4),
+          const ListTile(
+            leading: Icon(Icons.receipt_long_outlined),
+            title: Text('Trendyol Go mutfak fişi'),
+            subtitle: Text('Sipariş kabul edildiğinde, Masa / Gel-Al fişiyle aynı yazıcıdan ve aynı formatta otomatik yazdırılır (Otomatik Masa / Gel-Al Fişi açıkken).'),
           ),
         ],
         if (tab == 'Güvenlik')

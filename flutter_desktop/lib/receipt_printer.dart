@@ -60,8 +60,19 @@ class ReceiptPrinter {
       final settings = next['settings'] as Map? ?? {};
       final printer = '${settings['printerName'] ?? ''}'.trim();
       if (printer.isEmpty) return;
+      final paymentOnly = settings['receiptPolicy'] == 'onPayment';
+      // Trendyol kitchen tickets follow the same rules as Masa / Gel-Al:
+      // one printer, printed only while automatic kitchen tickets are on,
+      // and never for tickets queued before automatic printing was enabled.
+      final kitchenOn = !paymentOnly && settings['autoPrint'] == true;
       for (final order in mutableTgoOrders(next)) {
         if (order['kitchenPrintState'] != 'Bekliyor') continue;
+        if (!kitchenOn) break;
+        final queuedAt = '${order['kitchenQueuedAt'] ?? ''}';
+        if (settings['autoPrintEnabledAt'] != null &&
+            queuedAt.compareTo('${settings['autoPrintEnabledAt']}') < 0) {
+          continue;
+        }
         if (!tgoKitchenActive(order)) {
           order['kitchenPrintState'] = 'Atlandı';
           store.replace(next, snap.revision);
@@ -71,9 +82,7 @@ class ReceiptPrinter {
         if (!store.replace(next, snap.revision).ok) return;
         var outcome = 'Kuyruğa gönderildi';
         try {
-          await transport(tgoKitchenTicket(order),
-             (settings['kitchenPrinterName'] ?? '').toString().trim().isNotEmpty
-               ? settings['kitchenPrinterName'].toString().trim() : printer);
+          await transport(tgoKitchenTicket(order), printer);
         } catch (_) {
           outcome = 'Kontrol gerekli';
         }
@@ -89,7 +98,6 @@ class ReceiptPrinter {
         store.replace(updated, current.revision);
         return;
       }
-      final paymentOnly = settings['receiptPolicy'] == 'onPayment';
       if (!paymentOnly && settings['autoPrint'] != true) return;
       Map? job;
       for (final candidate in (next['printJobs'] as List).cast<Map>()) {

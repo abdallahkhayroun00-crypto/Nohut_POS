@@ -29,7 +29,7 @@ class OnlineOrders extends StatefulWidget {
     required this.integration,
     required this.businessDay,
     required this.orders,
-    required this.onPrint,
+    required this.onReprint,
     required this.initialSource,
     required this.demo,
   });
@@ -37,7 +37,7 @@ class OnlineOrders extends StatefulWidget {
   final TrendyolGoReadonly integration;
   final String businessDay, initialSource;
   final List<Json> orders;
-  final ValueChanged<Json> onPrint;
+  final ValueChanged<Json> onReprint;
   final Widget Function() demo;
 
   @override
@@ -480,7 +480,7 @@ class _OnlineOrdersState extends State<OnlineOrders> {
                 card: (order) => TgoOrderCard(
                   order: order,
                   now: now,
-                  onKitchenPrint: () => widget.onPrint(order),
+                  onReprint: () => widget.onReprint(order),
                   canWrite: integration.canWrite && !integration.writing,
                   onAction: _applyAction,
                 ),
