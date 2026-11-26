@@ -98,7 +98,6 @@ class _PrinterManagementPanelState extends State<PrinterManagementPanel>{
   @override Widget build(BuildContext context){
     final cfg=widget.state['settings'] as Map? ?? {};
     final mainPrinter=(cfg['printerName']??'').toString();
-    final kitchenPrinter=(cfg['kitchenPrinterName']??'').toString();
     List<DropdownMenuItem<String>> entries(String chosen)=>[
       if(chosen.isNotEmpty&&!printers.any((p)=>p.name==chosen))
         DropdownMenuItem(value:chosen,child:Text(chosen+' · bulunamadı')),
@@ -112,7 +111,8 @@ class _PrinterManagementPanelState extends State<PrinterManagementPanel>{
         Text('Yazıcı Yönetimi · Windows',
           style:Theme.of(context).textTheme.titleLarge),
         const SizedBox(height:8),
-        const Text('Yüklü yazıcıları seçin; kasa ve mutfak ayrıdır. '
+        const Text('Tüm fişler (Masa, Gel-Al, Trendyol Go mutfak fişi ve '
+          'ödeme fişi) bu yazıcıdan çıkar. '
           'Spooler durumu kağıdın gerçekten çıktığını garanti etmez.'),
         const SizedBox(height:10),
         if(busy)const LinearProgressIndicator(),
@@ -122,22 +122,13 @@ class _PrinterManagementPanelState extends State<PrinterManagementPanel>{
           key:ValueKey('printer-main-'+mainPrinter+'-'+printers.length.toString()),
           initialValue:mainPrinter.isEmpty?null:mainPrinter,
           isExpanded:true,hint:const Text('Yazıcı seçin'),
-          decoration:const InputDecoration(labelText:'Kasa Fiş Yazıcısı'),
+          decoration:const InputDecoration(labelText:'Fiş Yazıcısı'),
           items:entries(mainPrinter),
           onChanged:busy?null:(v){if(v!=null)_select('printerName',v);},
         ),
-        const SizedBox(height:12),
-        DropdownButtonFormField<String>(
-          key:ValueKey('printer-kitchen-'+kitchenPrinter+'-'+printers.length.toString()),
-          initialValue:kitchenPrinter.isEmpty?null:kitchenPrinter,
-          isExpanded:true,hint:const Text('İsteğe bağlı mutfak yazıcısı'),
-          decoration:const InputDecoration(labelText:'Mutfak Yazıcısı'),
-          items:entries(kitchenPrinter),
-          onChanged:busy?null:(v){if(v!=null)_select('kitchenPrinterName',v);},
-        ),
         const SizedBox(height:10),
         for(final p in printers)
-          if(p.name==mainPrinter||p.name==kitchenPrinter)
+          if(p.name==mainPrinter)
             ListTile(dense:true,
               title:Text(p.name),
               subtitle:Text('Sürücü: '+p.driver+' · Port: '+p.port+
@@ -158,12 +149,7 @@ class _PrinterManagementPanelState extends State<PrinterManagementPanel>{
             label:const Text('Windows Yazıcı Özellikleri')),
           FilledButton.icon(onPressed:busy?null:()=>_test(mainPrinter),
             icon:const Icon(Icons.receipt_outlined),
-            label:const Text('Kasa Test Fişi')),
-          OutlinedButton.icon(
-            onPressed:busy||kitchenPrinter.isEmpty?null:
-              ()=>_test(kitchenPrinter,kitchen:true),
-            icon:const Icon(Icons.soup_kitchen_outlined),
-            label:const Text('Mutfak Testi')),
+            label:const Text('Test Fişi')),
         ]),
         const SizedBox(height:8),
         const Text('Kağıt, ESC/POS, logo, hizalama ve yazdırma geçmişi '

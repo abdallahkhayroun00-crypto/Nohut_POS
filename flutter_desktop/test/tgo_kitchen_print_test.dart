@@ -1,55 +1,156 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:nohut_falafel_desktop/pos_logic.dart';
 import 'package:nohut_falafel_desktop/pos_store.dart';
 import 'package:nohut_falafel_desktop/receipt_printer.dart';
 import 'package:nohut_falafel_desktop/trendyol_go_readonly.dart';
 
-void main() {
-  test('kitchen tickets print once and skip canceled and test orders', () async {
-    final dir = Directory.systemTemp.createTempSync('nohut-tgo');
-    final store = PosStore(databaseFile: '${dir.path}/db');
-    final tickets = <String>[];
-    final printer = ReceiptPrinter(store, transport: (text, _) async {
-      tickets.add(text);
-    });
-    addTearDown(() {
-      printer.dispose();
-      store.dispose();
-      dir.deleteSync(recursive: true);
-    });
-    final state = emptyPosState();
-    state['settings'] = {'printerName': 'Test', 'receiptPolicy': 'onPayment'};
-    final order = normalizeTgoPackage({
-      'id': 'test-id',
-      'orderNumber': '101',
-      'packageStatus': 'Created',
-      'isCourierNearby': true,
-      'estimatedPickupTimeMin': 1700000000000,
-      'lines': [
+Json package({
+  String number = '101',
+  String status = 'Picking',
+}) => normalizeTgoPackage({
+  'id': 'pkg-$number',
+  'orderNumber': number,
+  'orderCode': '4D5AC',
+  'packageStatus': status,
+  'packageCreationDate': 1763503200000,
+  'storePickupSelected': false,
+  'isCourierNearby': true,
+  'estimatedPickupTimeMin': 1700000000000,
+  'customerNote': 'Soğansız',
+  'lines': [
+    {
+      'name': 'Falafel Menü',
+      'items': [
+        {'isCancelled': false},
+        {'isCancelled': false},
+      ],
+      'removedIngredients': [
+        {'name': 'Domates'},
+      ],
+      'extraIngredients': ['Acı sos'],
+      'modifierProducts': [
+        {'name': 'Humus'},
         {
-          'name': 'Falafel',
-          'modifierProducts': [{'name': 'Humus'}],
+          'name': 'Patates (Büyük)',
+          'removedIngredients': ['Ketçap'],
+          'modifierProducts': [
+            {'name': 'Baharatlı'},
+          ],
         },
       ],
-      'customerNote': 'Soğansız',
+    },
+  ],
+});
+
+void main() {
+  late Directory dir;
+  late PosStore store;
+  late ReceiptPrinter printer;
+  late List<(String, String)> sent;
+
+  setUp(() {
+    dir = Directory.systemTemp.createTempSync('nohut-tgo');
+    store = PosStore(databaseFile: '${dir.path}/db');
+    sent = [];
+    printer = ReceiptPrinter(store, transport: (text, name) async {
+      sent.add((text, name));
     });
-    expect(order['courierNearby'], true);
-    expect(order['courierEtaFrom'], '2023-11-14T22:13:20.000Z');
-    state['trendyolGoOrders'] = [
-      {...order, 'kitchenPrintState': 'Bekliyor'},
-      {...order, 'orderNumber': '102', 'status': 'Cancelled', 'kitchenPrintState': 'Bekliyor'},
-      {...order, 'orderNumber': '103', 'testPackage': true, 'kitchenPrintState': 'Bekliyor'},
-    ];
+  });
+  tearDown(() {
+    printer.dispose();
+    store.dispose();
+    dir.deleteSync(recursive: true);
+  });
+
+  Future<void> run(Map<String, dynamic> settings, List<Json> orders) async {
+    final state = emptyPosState();
+    state['settings'] = settings;
+    state['trendyolGoOrders'] = orders;
     expect(store.replace(state, store.read().revision).ok, true);
-    for (var attempt = 0; attempt < 4; attempt++) {
+    for (var attempt = 0; attempt < 5; attempt++) {
       await printer.pump();
     }
-    expect(tickets, hasLength(1));
-    expect(tickets.single, allOf(contains('101'), contains('Falafel'), contains('Humus'), contains('Soğansız')));
+  }
+
+  test('normalizes removed and extra ingredients and nested choices', () {
+    final line = package()['lines'][0] as Map;
+    expect(line['qty'], 2);
+    expect(line['removed'], ['Domates']);
+    expect(line['extras'], ['Acı sos']);
+    expect(line['options'], [
+      'Humus',
+      'Patates (Büyük) (Baharatlı) · Çıkar: Ketçap',
+    ]);
+  });
+
+  test('ticket uses the Masa layout plus platform name and number', () {
+    final text = tgoKitchenTicket({...package(), 'dailyNumber': 17});
+    final lines = text.split('\n');
+    expect(lines[0], 'NOHUT FALAFEL · MUTFAK');
+    expect(lines[1], 'MALİ FİŞ DEĞİLDİR');
+    expect(lines[2], '#0017 · Trendyol Go · Paket Servis');
+    expect(lines[3], 'Platform no: 101 · Kod: 4D5AC');
+    expect(text, contains('2 × Falafel Menü'));
+    expect(text, contains('+ Humus'));
+    expect(text, contains('+ Patates (Büyük) (Baharatlı) · Çıkar: Ketçap'));
+    expect(text, contains('Çıkar: Domates'));
+    expect(text, contains('Ekstra: Acı sos'));
+    expect(text, contains('Not: Soğansız'));
+  });
+
+  test('prints once on the main printer and skips cancelled and test orders',
+      () async {
+    await run({
+      'printerName': 'XP-237B',
+      'kitchenPrinterName': 'Eski mutfak',
+      'autoPrint': true,
+    }, [
+      {...package(), 'kitchenPrintState': 'Bekliyor'},
+      {...package(number: '102', status: 'Cancelled'),
+        'kitchenPrintState': 'Bekliyor'},
+      {...package(number: '103'), 'testPackage': true,
+        'kitchenPrintState': 'Bekliyor'},
+    ]);
+    expect(sent, hasLength(1));
+    expect(sent.single.$2, 'XP-237B');
+    expect(sent.single.$1, allOf(contains('101'), contains('Trendyol Go')));
     expect(
       tgoOrders(store.read().data).map((order) => order['kitchenPrintState']),
       ['Kuyruğa gönderildi', 'Atlandı', 'Atlandı'],
     );
+  });
+
+  test('follows the Masa auto-print switch and payment-only policy', () async {
+    await run({'printerName': 'XP-237B', 'autoPrint': false},
+        [{...package(), 'kitchenPrintState': 'Bekliyor'}]);
+    expect(sent, isEmpty);
+    await run({'printerName': 'XP-237B', 'receiptPolicy': 'onPayment'},
+        [{...package(), 'kitchenPrintState': 'Bekliyor'}]);
+    expect(sent, isEmpty);
+    expect(tgoOrders(store.read().data).single['kitchenPrintState'],
+        'Bekliyor');
+  });
+
+  test('does not print tickets queued before auto-print was enabled',
+      () async {
+    await run({
+      'printerName': 'XP-237B',
+      'autoPrint': true,
+      'autoPrintEnabledAt': '2026-11-26T12:00:00.000Z',
+    }, [
+      {...package(), 'kitchenPrintState': 'Bekliyor',
+        'kitchenQueuedAt': '2026-11-26T11:00:00.000Z'},
+      {...package(number: '104'), 'kitchenPrintState': 'Bekliyor',
+        'kitchenQueuedAt': '2026-11-26T12:30:00.000Z'},
+    ]);
+    expect(sent, hasLength(1));
+    expect(sent.single.$1, contains('104'));
+  });
+
+  test('kitchen timing is always on acceptance', () {
+    expect(tgoKitchenTiming(null), 'accepted');
+    expect(tgoKitchenTiming({'tgoKitchenTiming': 'arrival'}), 'accepted');
   });
 }

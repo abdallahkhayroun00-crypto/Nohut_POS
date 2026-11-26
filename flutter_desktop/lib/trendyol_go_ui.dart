@@ -255,7 +255,7 @@ class TgoOrderCard extends StatelessWidget {
   const TgoOrderCard({
     super.key,
     required this.order,
-    this.onKitchenPrint,
+    this.onReprint,
     this.onAction,
     this.canWrite = false,
     this.now,
@@ -263,7 +263,8 @@ class TgoOrderCard extends StatelessWidget {
   final Json order;
   /// Clock for the waiting badge; defaults to DateTime.now().
   final DateTime? now;
-  final VoidCallback? onKitchenPrint;
+  /// Re-queues a ticket whose earlier send needs checking.
+  final VoidCallback? onReprint;
   final void Function(Json order, String action)? onAction;
   final bool canWrite;
 
@@ -444,6 +445,22 @@ class TgoOrderCard extends StatelessWidget {
                               options.join(', '),
                               style: theme.textTheme.bodySmall,
                             ),
+                          if (line['removed'] case final List removed
+                              when removed.isNotEmpty)
+                            Text(
+                              'Çıkar: ${removed.join(', ')}',
+                              style: const TextStyle(fontSize: 12.5,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xffB3261E)),
+                            ),
+                          if (line['extras'] case final List extras
+                              when extras.isNotEmpty)
+                            Text(
+                              'Ekstra: ${extras.join(', ')}',
+                              style: const TextStyle(fontSize: 12.5,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xff2E7D4F)),
+                            ),
                         ],
                       ),
                     ),
@@ -539,18 +556,40 @@ class TgoOrderCard extends StatelessWidget {
             if (printState != null)
               Padding(
                 padding: const EdgeInsets.only(top: 6),
-                child: Text(
-                  'Mutfak fişi · $printState',
-                  style: theme.textTheme.bodySmall,
+                child: Row(
+                  children: [
+                    Icon(
+                      printState == 'Kontrol gerekli'
+                          ? Icons.warning_amber_rounded
+                          : Icons.print_outlined,
+                      size: 15,
+                      color: printState == 'Kontrol gerekli'
+                          ? const Color(0xffB3261E) : NohutBrand.muted,
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        'Mutfak fişi · $printState',
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    ),
+                    if (printState == 'Kontrol gerekli' && onReprint != null)
+                      TextButton.icon(
+                        style: TextButton.styleFrom(
+                          visualDensity: VisualDensity.compact),
+                        onPressed: onReprint,
+                        icon: const Icon(Icons.refresh, size: 16),
+                        label: const Text('Fişi Tekrar Yazdır'),
+                      ),
+                  ],
                 ),
               )
-            else if (onKitchenPrint != null && tgoKitchenActive(order))
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton.icon(
-                  onPressed: onKitchenPrint,
-                  icon: const Icon(Icons.print_outlined),
-                  label: const Text('Mutfak Fişi Yazdır'),
+            else if (tgoKitchenActive(order) && status == 'Created')
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(
+                  'Mutfak fişi Kabul Et ile otomatik yazdırılır.',
+                  style: theme.textTheme.bodySmall,
                 ),
               ),
             // Secondary information: timing, courier progress, customer.
