@@ -147,6 +147,10 @@ dialog{background:var(--card);border-color:var(--line);border-radius:22px;box-sh
 #cart-validation:not(:empty){background:var(--amber);border:1px solid #EED9A6;color:#6E4614;border-radius:12px;padding:10px 12px;margin:8px 0;font-weight:600;font-size:15px}
 #review-price-changes{background:var(--amber);border-color:var(--amber-line);color:#6E4614;font-weight:800;margin-top:6px}
 #customer summary{font-weight:700;color:var(--green)}
+.platform-actions{display:grid;gap:6px;margin-top:10px}
+.platform-actions button{min-height:48px;font-size:17px}
+.line-removed{color:#B3261E;font-weight:700;font-size:14px}
+.line-extra{color:#2E7D4F;font-weight:700;font-size:14px}
 @media(max-width:550px){
   .cart-line-fields{grid-template-columns:1fr}
   header{padding:8px 10px}
@@ -357,6 +361,33 @@ function total(){persistDraft();let sum=0;for(const[key,r]of cart){const p=cartP
 const openTrendyolStatuses=new Set(['created','picking','invoiced','shipped']);
 const trendyolStatusNames={created:'Yeni',picking:'Hazırlanıyor',invoiced:'Hazır',shipped:'Yolda'};
 function trendyolStatusText(status){return trendyolStatusNames[String(status??'').trim().toLowerCase()]||String(status??'')}
+function trendyolActions(o){
+  const status=String(o.status??'').trim().toLowerCase(),id=esc(o.packageId||'');
+  if(!state?.tgoCanWrite||!o.packageId)return '<p class="muted">Kabul Et / Hazır şu an laptopta kapalı. Trendyol Go Partner Panelini kullanın.</p>';
+  if(status==='created')return '<div class="platform-actions"><button class="primary" data-tgo-action="accept" data-package="'+id+'" data-prep="'+esc(o.preparationMinutes||20)+'">Kabul Et</button><p class="muted">Kabul edilince mutfak fişi otomatik yazdırılır.</p></div>';
+  if(status==='picking')return '<div class="platform-actions"><button class="primary" data-tgo-action="ready" data-package="'+id+'">Hazır</button>'+(o.kitchenPrintState?'<p class="muted">Mutfak fişi · '+esc(o.kitchenPrintState)+'</p>':'')+'</div>';
+  return '<p class="muted">Kurye teslim alacak. İşlem gerekmiyor.</p>';
+}
+async function trendyolAction(button){
+  if(busy||pending)return;
+  if(!online||!$('staff').value){notice('Bağlantıyı ve çalışan seçimini kontrol edin');return}
+  const action=button.dataset.tgoAction,body={requestId:Date.now().toString(36),staffId:Number($('staff').value),packageId:button.dataset.package,action};
+  if(action==='accept'){
+    const answer=prompt('Hazırlama süresi (dakika, 1-120)',button.dataset.prep||'20');
+    if(answer===null)return;
+    const minutes=Number(String(answer).trim());
+    if(!Number.isInteger(minutes)||minutes<1||minutes>120){notice('Hazırlama süresi 1-120 dakika arasında olmalı.');return}
+    body.preparationMinutes=minutes;
+  }else if(!confirm('Sipariş hazır olarak bildirilsin mi?'))return;
+  busy=true;button.disabled=true;notice('Trendyol Go’ya gönderiliyor…');controls();
+  try{
+    const r=await request('/api/staff/platform',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)},30000);
+    const b=await r.json().catch(()=>({}));
+    if(!r.ok)notice(b.message||'Trendyol Go işlemi tamamlanamadı.');
+    else notice(b.verified?'✓ Trendyol Go '+(action==='accept'?'kabul edildi':'hazır bildirildi')+'.':'İşlem gönderildi; durum henüz doğrulanmadı. Partner Panelini kontrol edin.');
+  }catch{notice('Yanıt alınamadı. Tekrar göndermeden önce siparişin durumunu yenileyip kontrol edin.')}
+  finally{busy=false;await refresh();renderOrders()}
+}
 function clockText(stamp){const d=new Date(stamp);return Number.isNaN(d.getTime())?String(stamp??''):d.toLocaleString('tr-TR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}
 let knownTrendyolOrderNumbers=null;
 function renderOrders(){
@@ -384,14 +415,16 @@ function renderOrders(){
     html:'<article class="order platform-order"><div class="row spread"><strong class="order-number">#'+
       number(o)+' · Trendyol Go</strong><span class="badge">'+esc(trendyolStatusText(o.status))+
       '</span></div><p class="muted">Trendyol sipariş no: '+esc(o.orderNumber||'')+
-      ' · Salt okunur · '+esc(clockText(o.createdAt))+(o.pickup?' · Platform Gel-Al':' · Paket')+'</p>'+
+      ' · '+esc(clockText(o.createdAt))+(o.pickup?' · Platform Gel-Al':' · Paket')+'</p>'+
       (o.lines||[]).map(l=>'<div class="detail-line"><div class="grow"><strong>'+
         esc(l.qty)+' × '+esc(l.name||'')+'</strong><p class="muted">'+
-        esc((l.options||[]).join(', '))+'</p></div><b>'+money(l.unitPriceCents||0)+'</b></div>').join('')+
+        esc((l.options||[]).join(', '))+'</p>'+
+        ((l.removed||[]).length?'<p class="line-removed">Çıkar: '+esc(l.removed.join(', '))+'</p>':'')+
+        ((l.extras||[]).length?'<p class="line-extra">Ekstra: '+esc(l.extras.join(', '))+'</p>':'')+'</div><b>'+money(l.unitPriceCents||0)+'</b></div>').join('')+
       (o.customerNote?'<p class="muted">Not: '+esc(o.customerNote)+'</p>':'')+
       '<div class="row spread"><span>'+esc(o.paymentType||'')+
       '</span><strong>Platform toplamı: '+money(o.totalCents||0)+'</strong></div>'+
-      '<p class="muted">İşlem için Trendyol Go Partner Panelini kullanın.</p></article>',
+      trendyolActions(o)+'</article>',
   }));
   const cards=[...localCards,...remoteCards]
     .sort((a,b)=>b.day.localeCompare(a.day)||b.number-a.number);
@@ -436,6 +469,7 @@ function updateSourceFields(){
 $('source').onchange=()=>{switchDraft($('source').value,$('table').value);updateSourceFields()};
 $('table').onchange=()=>switchDraft('Masa',$('table').value)
 ;$('search').oninput=renderMenu;$('order-filter').onchange=renderOrders;
+$('orders').addEventListener('click',e=>{const t=e.target.closest('[data-tgo-action]');if(t)trendyolAction(t)});
 $('orders').onclick=e=>{const b=e.target.closest('[data-open]');if(b){focusedOrder=Number(b.dataset.open);setView('detail')}};
 $('order-detail').onclick=e=>{const b=e.target.closest('button');if(!b||busy||pending)return;const o=order(focusedOrder);if(!o)return;if(b.dataset.existingAdd!=null){switchDraft(o.source,o.table,o.id);setView('menu');controls()}if(b.dataset.editLine!=null){const l=keyedLines(o).find(l=>l.key===b.dataset.editLine);custom(l.productId,l)}if(b.dataset.removeLine!=null){const l=keyedLines(o).find(l=>l.key===b.dataset.removeLine);if(confirm(l.name+' kaldırılsın mı?'))action('editLine',{key:l.key,qty:0,note:l.note||'',removed:l.removed||[]})}if(b.id==='advance-status')action('status',{status:'Teslim Edildi'});if(b.id==='close-order'&&confirm('Ödenmiş hesap kapatılsın mı?'))action('close');if(b.id==='delete-order'&&confirm('#'+number(o)+' · Toplam '+money(o.totalCents)+' · Tahsilat '+money(o.paidCents)+'\nSipariş ve tahsilatlar kalıcı silinsin mi?')){action('delete',{confirmed:true});return}if(b.id==='split-order'){openSplit();return}if(b.id==='pay-order'||b.id==='pay-products'||b.dataset.payGuest){payingGuest=b.dataset.payGuest?Number(b.dataset.payGuest):null;$('payment-form').reset();$('pay-amount').value=((payingGuest?o.guestChecks.find(g=>g.id===payingGuest).balanceCents:orderDue(o))/100).toFixed(2);$('pay-received').value=((payingGuest?o.guestChecks.find(g=>g.id===payingGuest).balanceCents:orderDue(o))/100).toFixed(2);$('payment-due').textContent='Kalan '+money(payingGuest?o.guestChecks.find(g=>g.id===payingGuest).balanceCents:orderDue(o));$('payment-error').textContent='';setupProductPayment(o,b.id==='pay-products');paymentFields();$('payment-dialog').showModal()}if(b.id==='move-order'){$('move-table').innerHTML=Array.from({length:5},(_,i)=>i+1).filter(n=>n!==o.table&&!openOrders().some(x=>x.table===n)).map(n=>`<option value="${n}">Masa ${n} · Boş</option>`).join('');$('move-error').textContent='';$('move-dialog').showModal()}};
 function openSplit(){const o=order(focusedOrder);$('allocation-guest').innerHTML=(o.guestChecks||[]).map(g=>`<option value="${g.id}">${esc(g.name)}</option>`).join('');$('allocation-line').innerHTML=keyedLines(o).map(l=>`<option value="${l.key}">${l.qty} × ${esc(l.name)}</option>`).join('');$('split-error').textContent='';$('split-dialog').showModal()}

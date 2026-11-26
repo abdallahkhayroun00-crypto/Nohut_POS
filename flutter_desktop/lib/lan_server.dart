@@ -17,9 +17,15 @@ import 'google_business.dart';
 
 /// Native Flutter Windows HTTP server for employee phones. No Python process.
 class PosLanServer extends ChangeNotifier {
-  PosLanServer(this.store, {this.port = 8787, String? staffHtml, this.googleProvider})
+  PosLanServer(this.store, {this.port = 8787, String? staffHtml, this.googleProvider,
+      this.platformAction, this.platformWritable})
     : _staffHtml = staffHtml;
   final PosStore store;
+  /// Runs a staff phone's Trendyol Go Kabul Et / Hazır through the laptop's
+  /// own integration (same validation and platform pre-check as the POS).
+  final Future<Map<String, dynamic>> Function(Map<String, dynamic> request)?
+      platformAction;
+  final bool Function()? platformWritable;
   final GoogleBusiness Function()? googleProvider;
   late final MobilePairing pairing = MobilePairing(store);
   late final FinanceSyncServer financeSync = FinanceSyncServer(store, staffProjection: _staffState, googleProvider: googleProvider);
@@ -229,6 +235,9 @@ class PosLanServer extends ChangeNotifier {
                 'customerNote',
                 'pickup',
                 'testPackage',
+                'packageId',
+                'preparationMinutes',
+                'kitchenPrintState',
               ])
                 key: o[key],
               'lines': [
@@ -239,6 +248,8 @@ class PosLanServer extends ChangeNotifier {
                       'qty',
                       'unitPriceCents',
                       'options',
+                      'removed',
+                      'extras',
                     ])
                       key: l[key],
                   },
@@ -364,7 +375,10 @@ class PosLanServer extends ChangeNotifier {
       final current = store.read();
       _json(request.response, 200, {
         'revision': current.revision,
-        'state': _staffState(current.data),
+        'state': {
+          ..._staffState(current.data),
+          'tgoCanWrite': platformWritable?.call() ?? false,
+        },
       });
       return;
     }
@@ -373,7 +387,10 @@ class PosLanServer extends ChangeNotifier {
       _json(request.response, 200, {
         'online': true,
         'revision': current.revision,
-        'state': _staffState(current.data),
+        'state': {
+          ..._staffState(current.data),
+          'tgoCanWrite': platformWritable?.call() ?? false,
+        },
         'ip': selectedIp,
         'port': port,
         'staffUrl': staffUrl,
@@ -457,6 +474,41 @@ class PosLanServer extends ChangeNotifier {
       return;
     }
 
+    if (request.method == 'POST' && resource == '/api/staff/platform') {
+      final origin = request.headers.value('origin');
+      if (origin != null &&
+          Uri.tryParse(origin)?.authority != request.headers.value('host')) {
+        _json(request.response, 403, {'error': 'origin'});
+        return;
+      }
+      final chunks = <int>[];
+      await for (final part in request) {
+        chunks.addAll(part);
+        if (chunks.length > 16 * 1024) {
+          _json(request.response, 413, {'error': 'payload_size'});
+          return;
+        }
+      }
+      final handler = platformAction;
+      if (handler == null) {
+        _json(request.response, 503, {'error': 'unavailable',
+          'message': 'Trendyol Go işlemleri bu cihazda kapalı.'});
+        return;
+      }
+      try {
+        final incoming = jsonDecode(utf8.decode(chunks));
+        if (incoming is! Map) throw const FormatException('Geçersiz istek');
+        final result = await handler(Map<String, dynamic>.from(incoming));
+        _json(request.response, 200, result);
+      } on FormatException catch (e) {
+        _json(request.response, 422, {'error': 'invalid_action',
+          'message': e.message});
+      } catch (_) {
+        _json(request.response, 502, {'error': 'platform_failed',
+          'message': 'Trendyol Go işlemi tamamlanamadı. Partner Paneli’ni kontrol edin.'});
+      }
+      return;
+    }
     if (request.method == 'POST' &&
         ['/api/staff/orders', '/api/staff/actions'].contains(resource)) {
       // Reject browser requests from unrelated origins (prototype has no login).
