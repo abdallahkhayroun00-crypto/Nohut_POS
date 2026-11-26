@@ -26,9 +26,14 @@ The database lives at `%APPDATA%\NohutFalafel\nohut-pos.sqlite3` and can be over
 
 | Table | Key | Content | Class | Sync policy (proposed) | Status |
 |---|---|---|---|---|---|
-| `state_snapshot` | `id=1` (single row) | `revision` INTEGER, `payload` TEXT (the whole business state as JSON, §2), `updated_at` | all classes of §2 | Never uploaded as a blob. It is projected per entity through the registry (spec §2.2). | VERIFIED_EXISTING |
+| `state_snapshot` | `id=1` (single row) | `revision` INTEGER (fences every write), `payload` TEXT, `updated_at`. **Since Phase 1B the payload holds only the small core** (settings, menu, finance, …); the growing collections live in the `pos_*` tables below. | all classes of §2 | Never uploaded as a blob. It is projected per entity through the registry (spec §2.2). | VERIFIED_EXISTING |
 | `command_receipts` | `request_id` | Idempotency receipt: the full request `payload` JSON and the `result` JSON. Written by `PosStore.command` (staff phone orders/actions, finance sync). | INTERNAL, **PERSONAL_PII** (a Gel-Al phone order payload contains `customer.phone`) | Keep request identity, hash and outcome. Cloud copy redacted (spec §19.6.5). | VERIFIED_EXISTING |
 | `deleted_requests` | `request_id` | Opaque IDs of commands that belonged to an order removed by `deleteOrder`. | INTERNAL | Anti-replay identity; must survive restore. | VERIFIED_EXISTING |
+| `pos_meta` | `key` | `storage_version` (2), `migrated_at`, `present:<stateKey>` markers | INTERNAL | Local | VERIFIED_EXISTING (Phase 1B) |
+| `pos_orders` | `row_key` = order id | One row per order: `seq`, `json` (the full order aggregate), `source`, `created_at`, `closed` | FINANCIAL, PERSONAL_PII | `orders` + children | VERIFIED_EXISTING (Phase 1B) |
+| `pos_print_jobs` | `orderId:batchId:kind` | One row per print job: `seq`, `json`, `order_id`, `state` | INTERNAL, PERSONAL_PII (name + time only) | `receipt_snapshots`, `print_jobs` | VERIFIED_EXISTING (Phase 1B) |
+| `pos_platform_orders` | supplier:store:packageId | One row per Trendyol Go package: `seq`, `json`, `status`, `created_at` | FINANCIAL, TRANSIENT_API | `platform_order_records` | VERIFIED_EXISTING (Phase 1B) |
+| `pos_deleted_orders` | order id | One row per soft-deleted order: `seq`, `json`, `deleted_at` | FINANCIAL, PERSONAL_PII | tombstones | VERIFIED_EXISTING (Phase 1B) |
 | `backup_history` | `backup_id` | Backup runs: time, revision, sizes, SHA-256, destination, status, verification, reason, error | INTERNAL, DEVICE_LOCAL | Local history; never pruned | VERIFIED_EXISTING (Phase 1) |
 | `sync_outbox`, `sync_state` | — | — | — | Spec §4.4 | PROPOSED_V5 |
 

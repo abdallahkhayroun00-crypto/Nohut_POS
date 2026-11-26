@@ -1,7 +1,6 @@
 // Phase 1B / owner decision 2: audited soft deletion. Nothing is erased;
 // reports behave exactly as before (the order leaves `orders`), the archive
 // keeps the full record, related rows and the audit, idempotency holds.
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';

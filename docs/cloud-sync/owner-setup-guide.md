@@ -63,7 +63,11 @@ Give this repository's automation read access to `nohutfalafel/qr-menu`, or appr
 
 ## 6. First installation at the restaurant (no terminal, no SQL)
 
-1. Before installing, close the old program. The new version opens the existing database in place; its format is unchanged by Phase 1.
+1. Before installing, close the old program.
+   - On first start the new version detects the existing database and makes a full safety copy next to it (`nohut-pos.sqlite3.pre-normalization-<time>.sqlite3`, never deleted automatically).
+   - It then moves the data into per-entity tables in **one transaction** and checks that the rebuilt data equals the original exactly.
+   - If anything does not match, nothing is changed and the program keeps working in the old format.
+   - **Do not reinstall an older version afterwards.** Older versions cannot read the new format; the safety copy is the way back.
 2. Install `Nohut-POS-Setup-vX.exe` and open the program.
 3. Go to **Ayarlar → Yedekleme ve Geri Yükleme → Kurtarma Anahtarı Oluştur**. Write the key on paper and keep it safe. **Without it, backups cannot be opened.**
 4. Choose a **mirror folder** (a USB stick or a Google Drive / OneDrive folder), press **Şimdi Yedekle**, then press **Doğrula** on the new backup.

@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as paths;
 import 'package:sqlite3/sqlite3.dart';
 
+import 'entity_storage.dart';
 import 'pos_logic.dart';
 import 'operations.dart';
 
@@ -102,6 +103,8 @@ class PosStore extends ChangeNotifier {
         error_message TEXT
       )
     ''');
+    _normalized = isNormalized(_db);
+    if (!_normalized) _normalize();
     final old = read();
     final migrated = copyJson(old.data);
     assignDailyNumbers(migrated);
@@ -112,6 +115,81 @@ class PosStore extends ChangeNotifier {
 
   late final String filePath;
   late final Database _db;
+
+  /// Phase 1B: true when the database uses per-entity tables.
+  bool _normalized = false;
+  bool get normalized => _normalized;
+
+  /// Set when the one-time migration could not be verified; the database
+  /// then stays in the legacy format, fully usable, and the UI says so.
+  String? migrationError;
+
+  /// Path of the plain safety copy taken just before migrating a database
+  /// that already held orders (kept; never deleted automatically).
+  String? preMigrationCopy;
+
+  /// One-time, verified, transactional move of a legacy database to the
+  /// per-entity tables. A database that already holds business data gets a
+  /// consistent safety copy first. Any failure rolls back completely.
+  void _normalize() {
+    try {
+      final legacy = jsonDecode(
+        _db.select('SELECT payload FROM state_snapshot WHERE id=1')
+            .single['payload'] as String,
+      ) as Map;
+      final hasHistory = (legacy['orders'] as List? ?? const []).isNotEmpty ||
+          (legacy['trendyolGoOrders'] as List? ?? const []).isNotEmpty;
+      if (hasHistory) {
+        final stamp = DateTime.now().toUtc().toIso8601String()
+            .substring(0, 19).replaceAll(':', '');
+        final copy = '$filePath.pre-normalization-$stamp.sqlite3';
+        if (!File(copy).existsSync()) backup(copy);
+        preMigrationCopy = copy;
+      }
+      _db.execute('BEGIN IMMEDIATE');
+      try {
+        migrateLegacyToNormalized(_db);
+        _db.execute('COMMIT');
+        _normalized = true;
+      } catch (_) {
+        _db.execute('ROLLBACK');
+        rethrow;
+      }
+    } catch (e) {
+      migrationError = '$e';
+      _normalized = false;
+    }
+  }
+
+  Map<String, dynamic> _loadState() => _normalized
+      ? loadNormalizedState(_db)
+      : Map<String, dynamic>.from(
+          jsonDecode(
+            _db.select('SELECT payload FROM state_snapshot WHERE id=1')
+                .single['payload'] as String,
+          ) as Map,
+        );
+
+  /// Writes [next] as revision [revision] inside the caller's transaction
+  /// and returns the state to cache after COMMIT.
+  Map<String, dynamic> _commitState(
+    Map<String, dynamic> next,
+    int revision,
+    String stamp,
+  ) {
+    if (!_normalized) {
+      _writeSnapshot(next, revision, stamp);
+      return copyJson(next);
+    }
+    // The diff needs the exact previous committed state.
+    if (_cache == null || _cacheRevision != revision - 1) {
+      _cache = _loadState();
+      _cacheRevision = revision - 1;
+    }
+    final (cached, _) = writeNormalizedState(
+      _db, _cache, next, revision: revision, updatedAt: stamp);
+    return cached;
+  }
 
   // Phase 1B step 1: the last committed state stays decoded in memory and
   // is reused while (revision, updated_at) in SQLite is unchanged, so other
@@ -129,12 +207,7 @@ class PosStore extends ChangeNotifier {
     if (_cache == null ||
         _cacheRevision != revision ||
         _cacheUpdatedAt != updatedAt) {
-      final row = _db
-          .select('SELECT payload FROM state_snapshot WHERE id=1')
-          .single;
-      _cache = Map<String, dynamic>.from(
-        jsonDecode(row['payload'] as String) as Map,
-      );
+      _cache = _loadState();
       _cacheRevision = revision;
       _cacheUpdatedAt = updatedAt;
     }
@@ -358,13 +431,13 @@ class PosStore extends ChangeNotifier {
       final revision = current.revision + 1;
       result['revision'] = revision;
       final stamp = DateTime.now().toUtc().toIso8601String();
-      _writeSnapshot(next, revision, stamp);
+      final cached = _commitState(next, revision, stamp);
       _db.execute(
         'INSERT INTO command_receipts(request_id,payload,result) VALUES(?,?,?)',
         [requestId, encoded, jsonEncode(result)],
       );
       _db.execute('COMMIT');
-      _remember(copyJson(next), revision, stamp);
+      _remember(cached, revision, stamp);
     } catch (_) {
       _db.execute('ROLLBACK');
       rethrow;
@@ -460,7 +533,7 @@ class PosStore extends ChangeNotifier {
       validate(state);
       debugWriteObserver?.call(state);
       final stamp = utcNow();
-      _writeSnapshot(state, revision + 1, stamp);
+      final cached = _commitState(state, revision + 1, stamp);
       // Receipts stay (idempotency history); their IDs are fenced so a
       // replay is refused with a clear message instead of re-creating.
       for (final id in [...linked, requestId]) {
@@ -470,7 +543,7 @@ class PosStore extends ChangeNotifier {
         );
       }
       _db.execute('COMMIT');
-      _remember(copyJson(state), revision + 1, stamp);
+      _remember(cached, revision + 1, stamp);
       notifyListeners();
       return {'ok': true, 'revision': revision + 1};
     } catch (_) {
@@ -531,10 +604,10 @@ class PosStore extends ChangeNotifier {
         return WriteResult(false, read);
       }
       final stamp = DateTime.now().toUtc().toIso8601String();
-      _writeSnapshot(next, revision + 1, stamp);
+      // The caller keeps [next]; the cache holds a private copy.
+      final cached = _commitState(next, revision + 1, stamp);
       _db.execute('COMMIT');
-      // The caller keeps [next]; cache a private copy of what was stored.
-      _remember(copyJson(next), revision + 1, stamp);
+      _remember(cached, revision + 1, stamp);
       notifyListeners();
       return WriteResult(true, read);
     } catch (_) {

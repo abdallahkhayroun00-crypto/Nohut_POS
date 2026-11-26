@@ -21,9 +21,13 @@ jobs:
   personel:
     uses: ./.github/workflows/flutter-personel-android.yml
     secrets: inherit
+    with:
+      require_signing: true
   yonetici:
     uses: ./.github/workflows/flutter-yonetim-android.yml
     secrets: inherit
+    with:
+      require_signing: true
 
   publish:
     needs: [windows, personel, yonetici]

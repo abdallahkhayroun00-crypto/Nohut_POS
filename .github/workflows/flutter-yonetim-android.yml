@@ -20,6 +20,11 @@ on:
       - '.github/workflows/flutter-yonetim-android.yml'
   workflow_dispatch:
   workflow_call:
+    inputs:
+      require_signing:
+        description: Fail unless the permanent release signing key is configured
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -68,6 +73,19 @@ jobs:
           assert old in s
           p.write_text(s.replace(old,'applicationId = "com.nohutfalafel.nohut_yonetim"'))
           PY
+      - name: Refuse temporary signing for releases
+        if: ${{ inputs.require_signing && env.ANDROID_KEYSTORE_BASE64 == '' }}
+        run: |
+          echo "::error::Release APKs must be signed with the permanent key. Add ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS and ANDROID_KEY_PASSWORD (docs/cloud-sync/owner-setup-guide.md)."
+          exit 1
+      - name: Cache Gradle downloads (avoids Maven rate limits)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('flutter_personel/pubspec.yaml', 'flutter_personel/tool/configure_android.py') }}
+          restore-keys: gradle-${{ runner.os }}-
       - name: Permanent release signing key (when configured)
         # Without a fixed key each build is signed differently and installed
         # apps cannot be updated in place. The key lives only in GitHub
@@ -91,7 +109,14 @@ jobs:
         run: flutter test --reporter expanded
       - name: Build native release APK
         working-directory: flutter_personel
-        run: flutter build apk --release --target lib/manager_main.dart
+        # Maven Central can answer HTTP 429; retry with growing backoff.
+        run: |
+          for attempt in 1 2 3; do
+            if flutter build apk --release --target lib/manager_main.dart; then exit 0; fi
+            echo "Build attempt $attempt failed; retrying after $((attempt * 60)) s"
+            sleep $((attempt * 60))
+          done
+          exit 1
       - name: Upload installable Android APK
         uses: actions/upload-artifact@v4
         with:

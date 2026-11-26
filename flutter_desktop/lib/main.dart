@@ -292,6 +292,20 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     if (widget.startServer && defaultTargetPlatform == TargetPlatform.windows) {
       backups.startAutomatic();
     }
+    final migrationNotice = store.migrationError != null
+        ? 'Veri taşıma yapılmadı, eski biçim korunuyor: ${store.migrationError}'
+        : store.preMigrationCopy != null
+        ? 'Veriler yeni tablolara taşındı ve birebir doğrulandı. '
+          'Güvenlik kopyası: ${store.preMigrationCopy}. Şimdi Ayarlar → '
+          'Yedekleme bölümünden şifreli yedek alın.'
+        : null;
+    if (migrationNotice != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _notify(migrationNotice, error: store.migrationError != null);
+        }
+      });
+    }
     if (restoreOutcome?.message.isNotEmpty == true) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
