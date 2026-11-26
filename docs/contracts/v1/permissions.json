@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "spec": "NOHUT POS 2.0 Master Specification V5.1 §20.3",
+  "status": "PROPOSED_V5 — catalogue only; enforcement is implemented in Phase 3",
+  "unknownOperation": "deny",
+  "sensitivity": {
+    "normal": "grant check only",
+    "elevated": "grant check + confirmation dialog with before/after + audit",
+    "ownerOnly": "verified owner identity + MFA step-up + typed confirmation + audit; not delegable; server rejects any other identity even with a stored grant"
+  },
+  "applications": ["nohut_personel", "nohut_yonetici"],
+  "platforms": ["android_apk", "iphone_pwa"],
+  "sharedSections": ["menu", "sync", "backup"],
+  "operations": [
+    {"id": "menu.view", "section": "menu", "sensitivity": "normal", "defaults": ["Personel", "Müdür", "Yönetici", "Muhasebe"]},
+    {"id": "menu.product.edit", "section": "menu", "sensitivity": "elevated", "defaults": ["Müdür", "Yönetici"]},
+    {"id": "menu.price.edit", "section": "menu", "sensitivity": "elevated", "defaults": ["Yönetici"]},
+    {"id": "menu.category.edit", "section": "menu", "sensitivity": "elevated", "defaults": ["Müdür", "Yönetici"]},
+    {"id": "menu.campaign.edit", "section": "menu", "sensitivity": "elevated", "defaults": ["Yönetici"]},
+    {"id": "menu.stock.toggle", "section": "menu", "sensitivity": "normal", "defaults": ["Personel", "Müdür", "Yönetici"]},
+    {"id": "menu.qr.publish", "section": "menu", "sensitivity": "elevated", "defaults": ["Yönetici"]},
+    {"id": "sync.view", "section": "sync", "sensitivity": "normal", "defaults": ["Müdür", "Yönetici"]},
+    {"id": "sync.manual", "section": "sync", "sensitivity": "normal", "defaults": ["Müdür", "Yönetici"]},
+    {"id": "sync.retry", "section": "sync", "sensitivity": "normal", "defaults": ["Müdür", "Yönetici"]},
+    {"id": "sync.auto.configure", "section": "sync", "sensitivity": "elevated", "defaults": ["Yönetici"]},
+    {"id": "sync.initial.start", "section": "sync", "sensitivity": "ownerOnly", "defaults": []},
+    {"id": "sync.cloud.configure", "section": "sync", "sensitivity": "ownerOnly", "defaults": []},
+    {"id": "sync.full_resync", "section": "sync", "sensitivity": "ownerOnly", "defaults": []},
+    {"id": "backup.view", "section": "backup", "sensitivity": "normal", "defaults": ["Müdür", "Yönetici"]},
+    {"id": "backup.manual", "section": "backup", "sensitivity": "normal", "defaults": ["Müdür", "Yönetici"]},
+    {"id": "backup.auto.configure", "section": "backup", "sensitivity": "elevated", "defaults": ["Yönetici"]},
+    {"id": "backup.verify", "section": "backup", "sensitivity": "normal", "defaults": ["Müdür", "Yönetici"]},
+    {"id": "backup.restore", "section": "backup", "sensitivity": "ownerOnly", "defaults": [], "extra": "Windows-local confirmation"},
+    {"id": "backup.delete", "section": "backup", "sensitivity": "ownerOnly", "defaults": [], "extra": "retention policy required; no silent deletion"},
+    {"id": "permissions.update", "section": "admin", "sensitivity": "ownerOnly", "defaults": []}
+  ]
+}

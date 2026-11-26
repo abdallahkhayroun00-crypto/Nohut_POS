@@ -288,6 +288,10 @@ Json newLocalOrder({
   int? table,
   String pickupChannel = 'Tezgahtan',
   String cashier = 'Kasa (PC)',
+  int? staffId,
+  // Gel-Al name / phone / promised time (and saved-customer id). Applied
+  // BEFORE the first Sipariş Fişi snapshot so the first ticket shows them.
+  Map? customer,
 }) {
   if (!['Masa', 'Gel-Al'].contains(source)) {
     throw const FormatException('Use platform integration for delivery');
@@ -316,11 +320,22 @@ Json newLocalOrder({
     'closed': false,
     'serviceStatus': 'Hazırlanıyor',
     'pickupChannel': source == 'Gel-Al' ? pickupChannel : null,
-    'customer': <String, dynamic>{'name': '', 'phone': '', 'time': ''},
+    'customer': <String, dynamic>{
+      'name': '',
+      'phone': '',
+      'time': '',
+      if (source == 'Gel-Al' && customer != null)
+        for (final entry in customer.entries)
+          if (['id', 'name', 'phone', 'time'].contains(entry.key))
+            '${entry.key}': entry.value is String
+                ? (entry.value as String).trim()
+                : entry.value,
+    },
     'batches': [
       <String, dynamic>{
         'id': 1,
         'staff': cashier,
+        'staffId': ?staffId,
         'time': nowTime(),
         'createdAt': created,
         'lines': productLines,

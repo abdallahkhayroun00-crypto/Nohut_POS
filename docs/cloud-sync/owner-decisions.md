@@ -1,0 +1,16 @@
+# Owner Decisions — 2026-11-27 (binding)
+
+These decisions answer the Phase 0 report. They are mirrored in Master Spec V5.1 §21.
+
+| # | Topic | Decision | Where implemented / planned |
+|---|---|---|---|
+| 1 | Local database normalization | Do it **after** the verified encrypted backup and restore (Phase 1) and **before** production cloud sync. Replace the whole-state JSON rewrite progressively with per-entity transactional tables. Remove the 50 000-order validation ceiling safely and do **not** replace it with another arbitrary history limit. Benchmark 1k / 10k / 50k / 100k orders before and after; measure p50/p95 latency, SQLite size, PostgreSQL size and sync payload size. | New **Phase 1B** (spec §21.1). Baseline at 1k/10k/50k in `storage-benchmark.md`. 100k needs the ceiling removed first, so it is measured in Phase 1B. |
+| 2 | Order deletion | Audited **soft deletion** for legitimate business records. Preserve financial history, command idempotency, cancellation reasons and sync tombstones. Deleted and cancelled orders must be handled correctly in every report. Legally required personal-data erasure is a separate flow. | Phase 1B (spec §21.2). Today `PosStore.deleteOrder` deletes physically (`data-inventory.md` §1). |
+| 3 | Trendyol customer data | No CRM. **Stop collecting e-mail.** Name, phone and address only when operationally necessary, via the authorized API. Propose a minimal retention policy for owner approval and KVKK review. Preserve all commercial and financial history. Check every nested record, cache, print snapshot and log for PII replication. | E-mail collection stopped and the UI line removed in PR-01. PII scan test added. Retention proposal in `platform-data-policy.md` §7 (**awaiting approval, not implemented**). |
+| 4 | Gel-Al customers | Preserve the local customer directory and Açık Hesaplar. Contact details stay **local** for now. Sync permitted non-sensitive commercial and financial records. Do not expand the directory or delete records automatically. | Cloud allowlist (`lib/sync_field_registry.dart`) excludes `customers` and `orders[].customer.{name,phone,time}`. It keeps only the pseudonymous `customer.id` so account balances reconcile. Tested. |
+| 5 | QR menu | Complete the audit when repository access is available, with focus on `cms-live.js`, `cms-pos-live.js`, `menu.js`, `cms/menu-prices.json`, `cms/pos-managed-menu.json` and `cms/pos-managed-status.json`. | **BLOCKED**: session access to `nohutfalafel/qr-menu` was refused. |
+| 6 | Sync registry | The regex drift guard is not enough. Add runtime persistence validation, nested-field coverage, typed serializers and explicit cloud field allowlists. | PR-01: nested registry (`lib/sync_field_paths.g.dart`, 628 declared paths), runtime validation on **every write in the test suite**, an explicit cloud allowlist with a "never projected" list, and `projectForCloud`. Typed per-table serializers: PR-04/05. |
+| 7 | Applications | Keep all V5.1 requirements: two Flutter APKs, two iPhone PWAs, three shared sections, per-operation permissions. | Spec §20, `docs/contracts/v1/permissions.json`. |
+| 8 | PR #31 | All CI checks green and final results reported before merging. Phase 1 starts after an authorized merge. | — |
+
+Standing constraints: 0 TL recurring cost; no Nohut AI.

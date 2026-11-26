@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nohut_falafel_desktop/trendyol_go_readonly.dart';
 
@@ -80,7 +81,9 @@ void main() {
     });
     expect(order['customerName'], 'A K');
     expect(order['customerPhone'], '0850 000 0000');
-    expect(order['customerEmail'], 'masked@example.com');
+    // Owner decision V5.1 §19.4: e-mail is never collected, in any field.
+    expect(order.containsKey('customerEmail'), false);
+    expect(jsonEncode(order), isNot(contains('masked@example.com')));
     expect(order['deliveryAddress'], contains('Sokak 5'));
     expect(order['appName'], 'TrendyolGo');
     expect(order['preparationMinutes'], 12);

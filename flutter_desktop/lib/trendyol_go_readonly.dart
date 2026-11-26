@@ -170,8 +170,9 @@ Json normalizeTgoPackage(Json p) {
             clean(item['packageItemId']),
     ],
     if (customerName.isNotEmpty) 'customerName': customerName,
-    if (clean(customer['email']).isNotEmpty)
-      'customerEmail': clean(customer['email']),
+    // Owner decision (V5.1 §19.4): customer e-mail is never collected; the
+    // restaurant has no operational use for it. Already stored values are
+    // left untouched pending the approved retention clean-up.
     if (clean(address['phone']).isNotEmpty)
       'customerPhone': clean(address['phone']),
     if (addressText.isNotEmpty) 'deliveryAddress': addressText,

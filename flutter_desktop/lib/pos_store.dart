@@ -37,6 +37,12 @@ Map<String, dynamic> emptyPosState() => {
 };
 
 class PosStore extends ChangeNotifier {
+  /// Test/diagnostic hook: sees every state about to be committed (after
+  /// validation). `null` in production. Used by the persistence field audit
+  /// (spec V5.1 §4.4 runtime validation); it must never mutate the state.
+  @visibleForTesting
+  static void Function(Map<String, dynamic> state)? debugWriteObserver;
+
   PosStore({String? databaseFile}) {
     final defaultFolder =
         Platform.environment['APPDATA'] ??
@@ -282,6 +288,7 @@ class PosStore extends ChangeNotifier {
       final current = read(), next = copyJson(read().data);
       result = change(next);
       validate(next);
+      debugWriteObserver?.call(next);
       final revision = current.revision + 1;
       result['revision'] = revision;
       _db.execute(
@@ -360,6 +367,7 @@ class PosStore extends ChangeNotifier {
         }
       }
       validate(state);
+      debugWriteObserver?.call(state);
       _db.execute(
         'UPDATE state_snapshot SET revision=?,payload=?,updated_at=? WHERE id=1',
         [revision + 1, jsonEncode(state), utcNow()],
@@ -388,6 +396,7 @@ class PosStore extends ChangeNotifier {
 
   WriteResult replace(Map<String, dynamic> next, int expectedRevision) {
     validate(next);
+    debugWriteObserver?.call(next);
     _db.execute('BEGIN IMMEDIATE');
     try {
       final current = read();
