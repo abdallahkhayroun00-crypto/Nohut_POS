@@ -130,8 +130,6 @@ void main() {
       await tester.ensureVisible(find.text('Nakit / Kart'));
       await tester.tap(find.text('Nakit / Kart'));
       await tester.pumpAndSettle();
-      await tester.tap(find.byType(DropdownButtonFormField<String>).last);
-      await tester.pumpAndSettle();
       await tester.tap(find.text('Kart').last);
       await tester.pumpAndSettle();
       await tester.tap(find.text('Ödemeyi Gözden Geçir'));

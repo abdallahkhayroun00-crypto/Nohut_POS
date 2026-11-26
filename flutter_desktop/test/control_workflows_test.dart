@@ -150,7 +150,7 @@ void main() {
       await enter(t, 'Alınan nakit (₺)', '1');
       await tap(t, 'Ödemeyi Gözden Geçir');
       expect(find.text('Alınan nakit tutarı yetersiz.'), findsOneWidget);
-      await choice(t, 'Kart');
+      await tap(t, 'Kart');
       expect(find.byKey(const ValueKey('payment-received')), findsNothing);
       await tap(t, 'Vazgeç');
       expect(find.byType(PaymentEntryDialog), findsNothing);
