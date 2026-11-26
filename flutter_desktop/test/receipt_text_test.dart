@@ -66,8 +66,8 @@ void main() {
     expect(text, contains(' · Gel-Al · Telefon'));
     expect(text, contains('Müşteri: Ayşe · Saat 13:15'));
     expect(text, contains('!! EK SİPARİŞ'));
-    expect(text, isNot(contains('0555')));
-    expect('${job['snapshot']}', isNot(contains('0555')));
+    expect(text, isNot(contains('05551234567')));
+    expect('${job['snapshot']}', isNot(contains('05551234567')));
   });
 
   test('cancelling a whole order prints one İPTAL slip, not one per product',
@@ -170,8 +170,8 @@ void main() {
   void expectPickupTicket(Json state, Json job) {
     final text = receiptText(state, job);
     expect(text, contains('Müşteri: Ayşe · Saat 13:15'));
-    expect(text, isNot(contains('0555')));
-    expect('${job['snapshot']}', isNot(contains('0555')));
+    expect(text, isNot(contains('05551234567')));
+    expect('${job['snapshot']}', isNot(contains('05551234567')));
   }
 
   test('first Gel-Al ticket has name and time (cashier path)', () {

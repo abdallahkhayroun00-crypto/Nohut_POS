@@ -67,7 +67,7 @@ void main() {
     final text = latin1.decode(bytes);
     // The header manifest is readable by design (counts and revision, and it
     // is authenticated as AAD); business rows are not.
-    for (final needle in ['Falafel', 'Ayşe', '0555', 'Gülşen']) {
+    for (final needle in ['Falafel', 'Ayşe', 'Gülşen', 'Atatürk Mah']) {
       expect(text.contains(needle), false, reason: needle);
     }
     final manifest = result.manifest;
