@@ -1,4 +1,3 @@
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 
@@ -30,6 +29,7 @@ class SimpleSettings extends StatefulWidget {
     this.onTestOnlineSound,
     this.staffPanel,
     this.wifiPanel,
+    this.backupPanel,
   });
   final Json state;
   final EditState edit;
@@ -38,7 +38,7 @@ class SimpleSettings extends StatefulWidget {
   final TrendyolGoReadonly tgoIntegration;
   final VoidCallback onOpenGoogle;
   final ValueChanged<String>? onTestOnlineSound;
-  final Widget? staffPanel, wifiPanel;
+  final Widget? staffPanel, wifiPanel, backupPanel;
   @override
   State<SimpleSettings> createState() => _SimpleSettingsState();
 }
@@ -93,7 +93,7 @@ class _SimpleSettingsState extends State<SimpleSettings> {
         ('Menü', Icons.menu_book_outlined,
           settings['qrAutoSync'] != false ? 'QR eşitleme açık' : 'QR eşitleme kapalı'),
         ('Güvenlik', Icons.shield_outlined, 'Erişim durumu'),
-        ('Yedekleme', Icons.backup_outlined, 'SQLite ve dosyalar'),
+        ('Yedekleme', Icons.backup_outlined, 'Şifreli yedek ve geri yükleme'),
       ];
       return Wrap(spacing: 12, runSpacing: 12, children: [
         for (final entry in entries)
@@ -788,41 +788,17 @@ class _SimpleSettingsState extends State<SimpleSettings> {
               const ListTile(
                 leading: Icon(Icons.backup_outlined),
                 title: Text('Veri yedekleri'),
-                subtitle: Text('Yedekleme sekmesinden SQLite yedeği oluşturun ve geri yükleme işlemini güvenli ortamda test edin.'),
+                subtitle: Text('Yedekleme sekmesinden şifreli yedek alın, doğrulayın ve gerekirse geri yükleyin.'),
               ),
             ],
           ),
         if (tab == 'Yedekleme')
           section(
-            'Verilerini koru',
-            'Sipariş geçmişi bu bilgisayarda saklanır.',
+            'Yedekleme ve Geri Yükleme',
+            'Şifreli yedek (AES-256) · kurtarma anahtarı sizde · hiçbir yedek otomatik silinmez.',
             [
-              FilledButton.icon(
-                icon: const Icon(Icons.save_alt),
-                label: const Text('SQLite Yedeği Oluştur'),
-                onPressed: () async {
-                  final v = await askFields(context, 'SQLite Yedekle', [
-                    (
-                      'Yeni yedek dosya yolu',
-                      '${Directory.current.path}/nohut-${DateTime.now().millisecondsSinceEpoch}.sqlite3',
-                    ),
-                  ]);
-                  if (v != null) {
-                    try {
-                      widget.store.backup(v[0]);
-                      if (context.mounted)
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Yedek kaydedildi')),
-                        );
-                    } catch (e) {
-                      if (context.mounted)
-                        ScaffoldMessenger.of(
-                          context,
-                        ).showSnackBar(SnackBar(content: Text('$e')));
-                    }
-                  }
-                },
-              ),
+              if (widget.backupPanel != null) widget.backupPanel!
+              else const Text('Yedekleme bu ekranda kullanılamıyor.'),
               ExpansionTile(
                 title: const Text('Veritabanı konumu'),
                 children: [SelectableText(widget.store.filePath)],

@@ -36,6 +36,7 @@ import 'dart:convert';
 import 'dart:math' show min;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
@@ -48,6 +49,9 @@ import 'campaign_menu.dart';
 import 'pos_store.dart';
 import 'operations.dart';
 import 'operations_ui.dart';
+import 'backup_container.dart';
+import 'backup_service.dart';
+import 'backup_ui.dart';
 import 'platform_ui.dart';
 import 'platform_workflows.dart';
 
@@ -144,6 +148,9 @@ class ManagerDesktop extends StatefulWidget {
 
 class _ManagerDesktopState extends State<ManagerDesktop> {
   late final PosStore store;
+  late final BackupService backups;
+  late final RestoreManager restorer;
+  RestoreOutcome? restoreOutcome;
   late final InposPayments inpos;
   bool terminalBusy = false;
   late final ReceiptPrinter receiptPrinter;
@@ -197,7 +204,17 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
   @override
   void initState() {
     super.initState();
-    store = PosStore(databaseFile: widget.databaseFile);
+    // A restore staged by the owner is applied BEFORE the database opens
+    // (spec V5.1 §12.1); failures roll back and keep the current data.
+    final databasePath = PosStore.resolvePath(widget.databaseFile);
+    restorer = RestoreManager(databasePath);
+    restoreOutcome = restorer.applyPending();
+    store = PosStore(databaseFile: databasePath);
+    backups = BackupService(
+      store,
+      keyStore: DpapiRecoveryKeyStore(databasePath),
+      appVersion: '0.6.7',
+    );
     marketApi = MarketPriceClient();
     final initial = store.read(), migrated = copyJson(initial.data);
     final settings =
@@ -272,6 +289,16 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     );
     store.addListener(_staffActivity);
     if (widget.startServer) _scheduleMarketPopup();
+    if (widget.startServer && defaultTargetPlatform == TargetPlatform.windows) {
+      backups.startAutomatic();
+    }
+    if (restoreOutcome?.message.isNotEmpty == true) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _notify(restoreOutcome!.message, error: !restoreOutcome!.applied);
+        }
+      });
+    }
     // Migration completes before the print worker can inspect old jobs.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // Menu initialization precedes staff order acceptance.
@@ -382,6 +409,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     _midnightTimer?.cancel();
     _marketPriceTimer?.cancel();
     _serviceTimer?.cancel();
+    backups.dispose();
     marketApi.close();
     tgo.dispose();
     onlineAlarm.dispose();
@@ -3485,6 +3513,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     onOpenGoogle: () => setState(() => page = 'google'),
     staffPanel: _staff(db),
     wifiPanel: _wifi(db),
+    backupPanel: BackupPanel(service: backups, restore: restorer),
   );
 
   Widget _notice(String text) => Container(

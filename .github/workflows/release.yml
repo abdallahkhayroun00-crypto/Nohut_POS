@@ -1,0 +1,55 @@
+name: Publish Nohut release (Setup.exe + 2 APKs)
+
+# Push a tag like v2.0.0 (or run manually) to build the Windows installer and
+# both Android apps through the same CI workflows, then publish them as one
+# GitHub Release. Contains no business data or secrets.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag (e.g. v2.0.0)
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    uses: ./.github/workflows/flutter-desktop-windows.yml
+  personel:
+    uses: ./.github/workflows/flutter-personel-android.yml
+    secrets: inherit
+  yonetici:
+    uses: ./.github/workflows/flutter-yonetim-android.yml
+    secrets: inherit
+
+  publish:
+    needs: [windows, personel, yonetici]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Name the files and write checksums
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          cp artifacts/NohutFalafel-Windows-Setup/NohutFalafelPOS-Setup.exe "out/Nohut-POS-Setup-$TAG.exe"
+          cp artifacts/Nohut-Personel-Android-APK/app-release.apk "out/Nohut-Personel-$TAG.apk"
+          cp artifacts/Nohut-Yonetim-Android-APK/app-release.apk "out/Nohut-Yonetici-$TAG.apk"
+          (cd out && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt)
+      - name: Publish GitHub Release
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" out/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Nohut POS $TAG" \
+            --notes "Nohut POS Windows Setup, Nohut Personel APK and Nohut Yönetici APK built by CI from $GITHUB_SHA. Verify with SHA256SUMS.txt."

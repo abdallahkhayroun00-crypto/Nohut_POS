@@ -2,6 +2,7 @@ name: Build Nohut Yönetim Android APK
 
 on:
   push:
+    branches: ['**']
     paths:
       - 'flutter_personel/**'
       - 'packages/nohut_core/**'
@@ -18,6 +19,7 @@ on:
       - 'flutter_desktop/lib/lan_server.dart'
       - '.github/workflows/flutter-yonetim-android.yml'
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
@@ -29,6 +31,11 @@ concurrency:
 jobs:
   android-apk:
     runs-on: ubuntu-latest
+    env:
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
     timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
@@ -61,6 +68,18 @@ jobs:
           assert old in s
           p.write_text(s.replace(old,'applicationId = "com.nohutfalafel.nohut_yonetim"'))
           PY
+      - name: Permanent release signing key (when configured)
+        # Without a fixed key each build is signed differently and installed
+        # apps cannot be updated in place. The key lives only in GitHub
+        # Secrets (owner action); it is never committed.
+        if: ${{ env.ANDROID_KEYSTORE_BASE64 != '' }}
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        working-directory: flutter_personel
+        run: |
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/nohut-release.jks"
+          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/nohut-release.jks" >> "$GITHUB_ENV"
+          python3 tool/configure_android.py --signing
       - name: Install Flutter packages
         working-directory: flutter_personel
         run: flutter pub get

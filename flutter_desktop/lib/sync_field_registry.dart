@@ -77,8 +77,10 @@ const cloudAllowedFieldPaths = <String>{
   'orders[].closedAt', 'orders[].cancelled', 'orders[].cancelledAt',
   'orders[].cancelReason', 'orders[].tableReleased', 'orders[].serviceStatus',
   'orders[].serviceStartedAt', 'orders[].readyAt', 'orders[].deliveredAt',
-  // Pseudonymous link for Açık Hesaplar balances; contact data stays local.
-  'orders[].customer', 'orders[].customer.id',
+  // Pseudonymous link for Açık Hesaplar balances, plus the promised pickup
+  // time (owner decision 2026-11-27: operational, visible to authorized
+  // staff on Windows/Android/iPhone). Name and phone stay local.
+  'orders[].customer', 'orders[].customer.id', 'orders[].customer.time',
   'orders[].batches', 'orders[].batches[].id', 'orders[].batches[].staff',
   'orders[].batches[].staffId', 'orders[].batches[].time',
   'orders[].batches[].createdAt', 'orders[].batches[].lines',
@@ -161,7 +163,6 @@ const cloudAllowedFieldPaths = <String>{
 const neverProjectedFieldPaths = <String>{
   'orders[].customer.name',
   'orders[].customer.phone',
-  'orders[].customer.time',
   'orders[].customerLinkHistory',
   'customers',
   'customers[].name',

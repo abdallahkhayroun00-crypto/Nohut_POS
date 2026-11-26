@@ -108,7 +108,15 @@ void main() {
     final linked = out.where((o) => o['customer'] is Map &&
         (o['customer'] as Map)['id'] != null);
     expect(linked, isNotEmpty);
-    expect(linked.first['customer'], {'id': isA<int>()});
+    expect((linked.first['customer'] as Map).keys.toSet(),
+        everyElement(isIn(['id', 'time'])));
+    // Pickup time reaches authorized staff devices; name/phone never do.
+    final timed = asMaps(s['orders']).where((o) => o['source'] == 'Gel-Al' &&
+        '${(o['customer'] as Map?)?['time'] ?? ''}'.isNotEmpty).toList();
+    expect(timed, isNotEmpty);
+    final projectedTimed = out.firstWhere((o) => o['id'] == timed.first['id']);
+    expect((projectedTimed['customer'] as Map)['time'],
+        (timed.first['customer'] as Map)['time']);
   });
 
   test('PII replication scan: snapshots, audits and notices carry no contact '

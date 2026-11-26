@@ -7,6 +7,7 @@ on:
       - 'packages/nohut_core/**'
       - '.github/workflows/flutter-desktop-windows.yml'
   push:
+    branches: ['**']
     paths:
       - 'flutter_desktop/**'
       - 'packages/nohut_core/**'
@@ -16,6 +17,7 @@ on:
       - 'nohut-menu/**'
       - '.github/workflows/flutter-desktop-windows.yml'
   workflow_dispatch:
+  workflow_call:
 
 env:
   FLUTTER_SUPPRESS_ANALYTICS: 'true'
