@@ -8,9 +8,15 @@ import 'receipt_layout.dart';
 
 /// The same artwork is submitted to the physical printer.
 class ReceiptPreview extends StatefulWidget {
-  const ReceiptPreview({super.key, required this.order, this.settings});
-  final Json order;
+  const ReceiptPreview({super.key, this.order, this.text, this.settings})
+    : assert(order != null || text != null);
+  final Json? order;
+
+  /// Any slip text (Sipariş Fişi, Trendyol, Toplu Hesap); defaults to the
+  /// order's Hesap Özeti.
+  final String? text;
   final Map? settings;
+  String get slip => text ?? billText(order!);
   @override
   State<ReceiptPreview> createState() => _ReceiptPreviewState();
 }
@@ -26,14 +32,11 @@ class _ReceiptPreviewState extends State<ReceiptPreview> {
   }
 
   void _load() {
-    signature = jsonEncode([widget.order, widget.settings]);
+    signature = jsonEncode([widget.order, widget.text, widget.settings]);
     try {
       ReceiptDimensions(widget.settings);
       configurationError = null;
-      artwork = renderReceipt(
-        billText(widget.order),
-        settings: widget.settings,
-      );
+      artwork = renderReceipt(widget.slip, settings: widget.settings);
     } on FormatException catch (e) {
       configurationError = e.message;
     }
@@ -42,7 +45,9 @@ class _ReceiptPreviewState extends State<ReceiptPreview> {
   @override
   void didUpdateWidget(covariant ReceiptPreview oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (signature != jsonEncode([widget.order, widget.settings])) _load();
+    if (signature != jsonEncode([widget.order, widget.text, widget.settings])) {
+      _load();
+    }
   }
 
   @override
@@ -55,7 +60,7 @@ class _ReceiptPreviewState extends State<ReceiptPreview> {
     final cfg = ReceiptDimensions(widget.settings);
     final left = (cfg.paper - cfg.width) / 2 + cfg.offset;
     return Semantics(
-      label: 'HESAP ÖZETİ\n${billText(widget.order)}\nAfiyet olsun!',
+      label: '${receiptTitle(widget.slip)}\n${widget.slip}\nAfiyet olsun!',
       image: true,
       child: Container(
         width: cfg.paper * 5,

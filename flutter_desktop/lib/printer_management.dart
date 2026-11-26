@@ -73,7 +73,7 @@ class _PrinterManagementPanelState extends State<PrinterManagementPanel>{
     final cfg=state.putIfAbsent('settings',()=> <String,dynamic>{}) as Map;
     cfg[field]=name;
   });
-  Future<void> _test(String printer,{bool kitchen=false})async{
+  Future<void> _test(String printer)async{
     if(printer.trim().isEmpty){setState(()=>message='Önce yazıcı seçin.');return;}
     if(printer.toLowerCase().contains('pdf')||printer.toLowerCase().contains('xps')){
       setState(()=>message='PDF/XPS fiziksel fiş yazıcısı değildir.');return;
@@ -86,7 +86,7 @@ class _PrinterManagementPanelState extends State<PrinterManagementPanel>{
     try{
       await windowsPrint('NOHUT FALAFEL · TEST FİŞİ\n'
         'Türkçe: ğ ı İ ş ç ö ü\nSOL |-------------| SAĞ\n'
-        'Bu bir sipariş değildir.\n'+(kitchen?'MUTFAK':'KASA'),
+        'Bu bir sipariş değildir.',
         printer,settings:widget.state['settings'] as Map?);
       if(mounted)setState(()=>message='Test kuyruğa gönderildi; gerçek çıktıyı kontrol edin.');
     }on FormatException catch(e){
@@ -111,8 +111,8 @@ class _PrinterManagementPanelState extends State<PrinterManagementPanel>{
         Text('Yazıcı Yönetimi · Windows',
           style:Theme.of(context).textTheme.titleLarge),
         const SizedBox(height:8),
-        const Text('Tüm fişler (Masa, Gel-Al, Trendyol Go mutfak fişi ve '
-          'ödeme fişi) bu yazıcıdan çıkar. '
+        const Text('Tüm fişler (Masa, Gel-Al ve Trendyol Go sipariş fişi, '
+          'hesap özeti) bu yazıcıdan çıkar. '
           'Spooler durumu kağıdın gerçekten çıktığını garanti etmez.'),
         const SizedBox(height:10),
         if(busy)const LinearProgressIndicator(),

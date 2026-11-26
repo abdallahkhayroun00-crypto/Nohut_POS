@@ -165,30 +165,43 @@ void changeGuest(Json o, int id, String name, {bool remove = false}) {
   }
 }
 
-String billText(Json o) => [
-  'NOHUT FALAFEL · HESAP ÖZETİ',
-  'MALİ FİŞ DEĞİLDİR',
-  '#${displayOrderNumber(o)} · ${o['source']} · ${o['table'] ?? ''}',
-  istanbulStamp(o['createdAt']),
-  for (final l in checkLines(o)) ...[
-    '${l.line['qty']} × ${l.line['name']} · ${formatTry(l.total)}',
-    for (final component in asMaps(l.line['components']))
-      '  ' +
-          component['name'].toString() +
-          ' · ' +
-          campaignComponentDetails(component),
-    if ('${l.line['note'] ?? ''}'.isNotEmpty) 'Not: ${l.line['note']}',
-    if ((l.line['removed'] as List? ?? []).isNotEmpty)
-      'Çıkar: ${(l.line['removed'] as List).join(', ')}',
-    if ((l.line['adjustmentCents'] as int? ?? 0) != 0)
-      'Adet farkı: ${formatTry(l.line['adjustmentCents'] as int)}',
-  ],
-  'Toplam ${formatTry(orderTotalCents(o))}',
-  'Net tahsilat ${formatTry(orderPaidCents(o))}',
-  'Kalan ${formatTry(orderDueCents(o))}',
-  for (final p in asMaps(o['payments']))
-    '${p['method']} · ${formatTry(paymentNetCents(p))} · ${p['guestName'] ?? ''}',
-].join('\n');
+String billText(Json o) {
+  final total = orderTotalCents(o),
+      paid = orderPaidCents(o),
+      due = orderDueCents(o);
+  final customer = receiptCustomer(o);
+  final payments = [
+    for (final p in asMaps(o['payments']))
+      if (paymentNetCents(p) > 0) p,
+  ];
+  return [
+    'NOHUT FALAFEL · HESAP ÖZETİ',
+    'MALİ FİŞ DEĞİLDİR',
+    '#${displayOrderNumber(o)} · ${receiptService(o)}',
+    ?customer,
+    receiptStamp(o['createdAt']),
+    for (final l in checkLines(o)) ...[
+      '${l.line['qty']} × ${l.line['name']} · ${formatTry(l.total)}',
+      if ((l.line['qty'] as int? ?? 1) > 1)
+        '  ${l.line['qty']} × ${formatTry(cents(l.line['price']))}',
+      ...receiptLineDetails(l.line),
+    ],
+    'Toplam ${formatTry(total)}',
+    if (paid > 0) 'Ödenen ${formatTry(paid)}',
+    if (due > 0) 'Kalan ${formatTry(due)}',
+    if (due <= 0 && paid > 0 && o['cancelled'] != true) '!! ÖDENDİ',
+    if (payments.isNotEmpty) '---',
+    for (final p in payments) ...[
+      '${p['method']}${'${p['guestName'] ?? ''}'.trim().isEmpty ? '' : ' · ${p['guestName']}'} '
+          '${formatTry(paymentNetCents(p))}',
+      if (p['method'] == 'Nakit' &&
+          p['received'] != null &&
+          cents(p['received']) > cents(p['amount']))
+        '  Alınan ${formatTry(cents(p['received']))} · '
+            'Para üstü ${formatTry(cents(p['received']) - cents(p['amount']))}',
+    ],
+  ].join('\n');
+}
 
 void assignExistingPayment(Json o, int index, int guestId, int amount) {
   requireLocal(o);
@@ -332,8 +345,23 @@ void cancelLocalOrder(Json state, int id, String reason) {
     throw const FormatException('İptal nedeni gerekli');
   }
   resetGuests(o);
+  final batchesBefore = (o['batches'] as List).length,
+      jobsBefore = (state['printJobs'] as List).length;
   for (final l in checkLines(o)) {
     cancelProduct(state, id, l.key, l.line['qty'] as int, reason);
+  }
+  // One İPTAL slip for the whole order instead of one slip per product.
+  final batches = o['batches'] as List;
+  if (batches.length - batchesBefore > 1) {
+    final added = batches.sublist(batchesBefore).cast<Map>();
+    final merged = added.first;
+    merged['lines'] = [for (final b in added) ...(b['lines'] as List)];
+    batches.removeRange(batchesBefore + 1, batches.length);
+    final jobs = state['printJobs'] as List;
+    if (jobs.length > jobsBefore) {
+      jobs.removeRange(jobsBefore, jobs.length);
+      queueLocalKitchen(state, o, merged);
+    }
   }
   o['closed'] = true;
   o['cancelled'] = true;
@@ -623,6 +651,53 @@ void saveEmployee(Json state, int? id, String name, String role, bool active) {
   }
 }
 
+/// "Masa 3", "Gel-Al · Telefon" or the platform name, for both slips.
+String receiptService(Map o) {
+  if (o['source'] == 'Masa') return 'Masa ${o['table'] ?? '?'}';
+  if (o['source'] == 'Gel-Al') {
+    final channel = '${o['pickupChannel'] ?? ''}';
+    return channel.isEmpty ? 'Gel-Al' : 'Gel-Al · $channel';
+  }
+  return '${o['source'] ?? 'Sipariş'}';
+}
+
+/// Pickup customer name / promised time, when the cashier entered them.
+String? receiptCustomer(Map o) {
+  final customer = o['customer'];
+  if (o['source'] != 'Gel-Al' || customer is! Map) return null;
+  final name = '${customer['name'] ?? ''}'.trim(),
+      time = '${customer['time'] ?? ''}'.trim();
+  if (name.isEmpty && time.isEmpty) return null;
+  return [
+    if (name.isNotEmpty) 'Müşteri: $name',
+    if (time.isNotEmpty) 'Saat $time',
+  ].join(' · ');
+}
+
+/// Detail rows printed under an item, indented so a menu component is never
+/// read as a separate product.
+List<String> receiptLineDetails(Map l) {
+  final removed = [
+    for (final r in (l['removed'] as List? ?? [])) '$r'.trim(),
+  ].where((r) => r.isNotEmpty).toList();
+  final note = '${l['note'] ?? ''}'.trim();
+  return [
+    for (final c in asMaps(l['components']))
+      '  › ${[
+        '${c['name']}',
+        if (campaignComponentDetails(c).isNotEmpty)
+          campaignComponentDetails(c),
+      ].join(' · ')}',
+    if (removed.isNotEmpty) '  Çıkar: ${removed.join(', ')}',
+    if (note.isNotEmpty)
+      l['correction'] == true
+          ? '  Neden: ${note.replaceFirst(RegExp(r'^Neden:?\s*'), '')}'
+          : '  Not: $note',
+    if ((l['adjustmentCents'] as int? ?? 0) != 0)
+      '  Adet farkı: ${formatTry(l['adjustmentCents'] as int)}',
+  ];
+}
+
 String receiptText(Json state, Json job) {
   final snapshot = job['snapshot'];
   final o = snapshot is Map && snapshot['order'] is Map
@@ -634,25 +709,38 @@ String receiptText(Json state, Json job) {
       : asMaps(
           o['batches'],
         ).where((b) => b['id'] == job['batchId']).firstOrNull;
-  if (batch == null) throw const FormatException('Mutfak partisi bulunamadı');
-  return [
-    'NOHUT FALAFEL · MUTFAK',
-    'MALİ FİŞ DEĞİLDİR',
-    '#${displayOrderNumber(o)} · ${o['source']} · ${o['table'] == null ? 'Gel-Al / Platform' : 'Masa ${o['table']}'}',
-    'Parti ${batch['id']} · ${batch['staff']} · ${istanbulStamp(batch['createdAt'] ?? o['createdAt'])}',
+  if (batch == null) throw const FormatException('Sipariş partisi bulunamadı');
+  final lines = [
     for (final l in asMaps(batch['lines']))
-      if (l['voided'] != true || l['correction'] == true)
-        '${l['qty']} × ${l['name'] ?? l['productKey']}\n'
-                '${(l['removed'] as List? ?? []).isEmpty ? '' : 'Çıkar: ${(l['removed'] as List).join(', ')}\n'}'
-                '${l['note'] ?? ''}\n' +
-            asMaps(l['components'])
-                .map(
-                  (c) =>
-                      c['name'].toString() +
-                      ' · ' +
-                      campaignComponentDetails(c),
-                )
-                .join('\n'),
+      if (l['voided'] != true || l['correction'] == true) l,
+  ];
+  final correction =
+      lines.isNotEmpty && lines.every((l) => l['correction'] == true);
+  int lineTotal(Map l) => cents(l['price']) * (l['qty'] as int? ?? 0);
+  final total = lines
+      .where((l) => l['correction'] != true)
+      .fold<int>(0, (n, l) => n + lineTotal(l));
+  final customer = receiptCustomer(o);
+  return [
+    'NOHUT FALAFEL · SİPARİŞ FİŞİ',
+    'MALİ FİŞ DEĞİLDİR',
+    '#${displayOrderNumber(o)} · ${receiptService(o)}',
+    ?customer,
+    '${batch['staff']} · ${receiptStamp(batch['createdAt'] ?? o['createdAt'])}',
+    if (correction)
+      '!! İPTAL'
+    else if ((batch['id'] as int? ?? 1) > 1)
+      '!! EK SİPARİŞ',
+    for (final l in lines) ...[
+      l['correction'] == true
+          ? '${l['qty']} × ${l['name'] ?? l['productKey']}'
+          : '${l['qty']} × ${l['name'] ?? l['productKey']} · '
+                '${formatTry(lineTotal(l))}',
+      if (l['correction'] != true && (l['qty'] as int? ?? 1) > 1)
+        '  ${l['qty']} × ${formatTry(cents(l['price']))}',
+      ...receiptLineDetails(l),
+    ],
+    if (!correction) 'Toplam ${formatTry(total)}',
   ].join('\n');
 }
 

@@ -750,7 +750,7 @@ class _SimpleSettingsState extends State<SimpleSettings> {
           const SizedBox(height: 4),
           const ListTile(
             leading: Icon(Icons.receipt_long_outlined),
-            title: Text('Trendyol Go mutfak fişi'),
+            title: Text('Trendyol Go sipariş fişi'),
             subtitle: Text('Sipariş kabul edildiğinde, Masa / Gel-Al fişiyle aynı yazıcıdan ve aynı formatta otomatik yazdırılır (Otomatik Masa / Gel-Al Fişi açıkken).'),
           ),
         ],

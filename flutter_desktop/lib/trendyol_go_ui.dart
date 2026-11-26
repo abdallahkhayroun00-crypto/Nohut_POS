@@ -569,7 +569,7 @@ class TgoOrderCard extends StatelessWidget {
                     const SizedBox(width: 4),
                     Expanded(
                       child: Text(
-                        'Mutfak fişi · $printState',
+                        'Sipariş fişi · $printState',
                         style: theme.textTheme.bodySmall,
                       ),
                     ),
@@ -588,7 +588,7 @@ class TgoOrderCard extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(top: 6),
                 child: Text(
-                  'Mutfak fişi Kabul Et ile otomatik yazdırılır.',
+                  'Sipariş fişi Kabul Et ile otomatik yazdırılır.',
                   style: theme.textTheme.bodySmall,
                 ),
               ),

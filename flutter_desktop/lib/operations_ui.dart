@@ -1348,17 +1348,11 @@ class PrinterPanel extends StatelessWidget {
                       showDialog<void>(
                         context: context,
                         builder: (ctx) => AlertDialog(
-                          title: const Text('Mutfak Önizleme'),
+                          title: const Text('Fiş Önizleme'),
                           content: SingleChildScrollView(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Image.asset(
-                                  'assets/printing/nohut-receipt-logo.png',
-                                  width: 70,
-                                ),
-                                SelectableText(text),
-                              ],
+                            child: ReceiptPreview(
+                              text: text,
+                              settings: state['settings'] as Map?,
                             ),
                           ),
                           actions: [
@@ -1383,7 +1377,7 @@ class PrinterPanel extends StatelessWidget {
                       if (!await confirmAction(
                         context,
                         'Yeniden Yazdırmayı Onayla',
-                        'Sipariş #${displayOrderNumber(mutableOrder(state, j['orderId'] as int) ?? {'id': j['orderId']})} · Parti ${j['batchId']}\nDurum: ${j['state']}\nÖnce yazıcı çıktısını kontrol edin. Bu işlem aynı mutfak fişini tekrar basabilir.',
+                        'Sipariş #${displayOrderNumber(mutableOrder(state, j['orderId'] as int) ?? {'id': j['orderId']})} · Parti ${j['batchId']}\nDurum: ${j['state']}\nÖnce yazıcı çıktısını kontrol edin. Bu işlem aynı sipariş fişini tekrar basabilir.',
                         confirm: 'Kontrol Ettim · Yeniden Yazdır',
                       ))
                         return;

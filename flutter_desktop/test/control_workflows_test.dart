@@ -288,7 +288,7 @@ void main() {
         (s, edit) => PrinterPanel(state: s, edit: edit),
       );
       await tap(t, 'Önizle');
-      expect(find.text('Mutfak Önizleme'), findsOneWidget);
+      expect(find.text('Fiş Önizleme'), findsOneWidget);
       await tap(t, 'Kapat');
       await tap(t, 'Kontrol Ettim · Yeniden Kuyruğa Al');
       await tap(t, 'Vazgeç');

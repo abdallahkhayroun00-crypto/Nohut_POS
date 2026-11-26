@@ -55,6 +55,21 @@ List<String> receiptBody(String text) => text.split('\n').where((line) {
       normal.trim() != 'AFIYET OLSUN!';
 }).toList();
 
+/// The slip title comes from the first line ("NOHUT FALAFEL · MUTFAK").
+String receiptTitle(String text) {
+  final first = text.split('\n').first.trim();
+  const prefix = 'NOHUT FALAFEL · ';
+  if (first.startsWith(prefix) && first.length > prefix.length) {
+    return first.substring(prefix.length);
+  }
+  return 'HESAP ÖZETİ';
+}
+
+final _priced = RegExp(r'^(\d+) × (.*?) · (-?[\d.,]+ ₺)$');
+final _plainItem = RegExp(r'^(\d+) × (.+)$');
+final _total = RegExp(r'^(Toplam|Net tahsilat|Ödenen|Kalan) (-?[\d.,]+ ₺)$');
+final _amountRow = RegExp(r'^(.*\S) (-?[\d.,]+ ₺)$');
+
 String? _cachedKey;
 Future<ReceiptArtwork>? _cachedArtwork;
 Future<ReceiptArtwork> renderReceipt(String text, {Map? settings}) {
@@ -141,6 +156,86 @@ Future<ReceiptArtwork> _renderReceipt(String text, {Map? settings}) async {
     y += 13;
   }
 
+  final ink = Paint()..color = Colors.black;
+  TextPainter rich(
+    List<(String, bool)> parts,
+    double width, {
+    double size = 22,
+    TextAlign align = TextAlign.left,
+    Color color = Colors.black,
+    bool heading = false,
+  }) => TextPainter(
+    text: TextSpan(
+      style: TextStyle(
+        color: color,
+        fontFamily: heading ? NohutBrand.headingFont : NohutBrand.bodyFont,
+        fontSize: size,
+        height: 1.16,
+      ),
+      children: [
+        for (final (value, bold) in parts)
+          TextSpan(
+            text: value,
+            style: TextStyle(
+              fontWeight: bold ? FontWeight.w700 : FontWeight.w400,
+            ),
+          ),
+      ],
+    ),
+    textDirection: TextDirection.ltr,
+    textAlign: align,
+  )..layout(minWidth: width, maxWidth: width);
+  double put(TextPainter p, double x) {
+    p.paint(drawing, Offset(x, y));
+    final h = p.height;
+    p.dispose();
+    return h;
+  }
+
+  void dashed() {
+    y += 6;
+    for (var x = 0.0; x < w; x += 12) {
+      drawing.drawRect(Rect.fromLTWH(x, y, 6, 2), ink);
+    }
+    y += 14;
+  }
+
+  // Black band with white text (İPTAL / EK SİPARİŞ) or an outlined stamp
+  // (ÖDENDİ): both survive the 1-bit ESC/POS threshold.
+  void banner(String value) {
+    final filled = value != 'ÖDENDİ';
+    final p = rich(
+      [(value, true)],
+      w - 24,
+      size: 28,
+      align: TextAlign.center,
+      color: filled ? Colors.white : Colors.black,
+    );
+    final box = Rect.fromLTWH(0, y + 4, w, p.height + 16);
+    if (filled) {
+      drawing.drawRRect(
+        RRect.fromRectAndRadius(box, const Radius.circular(6)), ink);
+    } else {
+      drawing.drawRRect(
+        RRect.fromRectAndRadius(box.deflate(1.5), const Radius.circular(6)),
+        Paint()
+          ..color = Colors.black
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 3,
+      );
+    }
+    p.paint(drawing, Offset(12, y + 12));
+    p.dispose();
+    y = box.bottom + 10;
+  }
+
+  // "Çıkar: Domates" → bold label, regular value.
+  List<(String, bool)> labelled(String value) {
+    final m = RegExp(r'^(Çıkar|Ekstra|Not|Neden|NOT):\s*(.*)$').firstMatch(value);
+    if (m == null) return [(value, false)];
+    return [('${m[1]}: ', true), (m[2]!, m[1] == 'Çıkar')];
+  }
+
   final logoSize = cfg.logo * 8;
   drawing.drawImageRect(
     logo,
@@ -149,53 +244,125 @@ Future<ReceiptArtwork> _renderReceipt(String text, {Map? settings}) async {
     Paint()..filterQuality = FilterQuality.high,
   );
   y += logoSize + 14;
-  line(
-    text.contains('MUTFAK') ? 'MUTFAK' : 'HESAP ÖZETİ',
-    size: 29,
-    heading: true,
-    align: TextAlign.center,
-  );
+  line(receiptTitle(text), size: 29, heading: true, align: TextAlign.center);
   rule();
+  var header = true, first = true;
   for (final raw in receiptBody(text)) {
     if (raw.trim().isEmpty) continue;
-    final item = RegExp(r'^(\d+) × (.*?) · ([\d.,]+ ₺)$').firstMatch(raw);
-    final total = RegExp(r'^(Toplam|Net tahsilat|Kalan) ([\d.,]+ ₺)$')
-        .firstMatch(raw);
-    if (item != null) {
-      final qty = painter(item[1]!, 30, bold: true),
-          name = painter(item[2]!, w - 150, bold: true),
-          price = painter(item[3]!, 112, size: 22, align: TextAlign.right);
+    final priced = _priced.firstMatch(raw),
+        total = _total.firstMatch(raw),
+        amount = _amountRow.firstMatch(raw),
+        plainItem = _plainItem.firstMatch(raw);
+    final detail = raw.startsWith('  ');
+    if (header &&
+        (priced != null ||
+            total != null ||
+            amount != null ||
+            plainItem != null ||
+            detail ||
+            raw == '---' ||
+            raw.startsWith('Not:'))) {
+      header = false;
+      rule();
+    }
+    if (header) {
+      if (raw.startsWith('!! ')) {
+        banner(raw.substring(3));
+      } else if (first && raw.startsWith('#')) {
+        final split = raw.indexOf(' · ');
+        final number = split < 0 ? raw : raw.substring(0, split);
+        y += put(
+          rich([(number, false)], w, size: 54, heading: true,
+              align: TextAlign.center),
+          0,
+        );
+        if (split >= 0) {
+          y += put(
+            rich([(raw.substring(split + 3), true)], w, size: 30,
+                align: TextAlign.center),
+            0,
+          ) + 6;
+        }
+      } else {
+        y += put(rich([(raw, false)], w, size: 21, align: TextAlign.center),
+            0) + 4;
+      }
+      first = false;
+      continue;
+    }
+    first = false;
+    if (raw.startsWith('!! ')) {
+      banner(raw.substring(3));
+    } else if (raw == '---') {
+      dashed();
+    } else if (priced != null) {
+      y += 6;
+      final qty = rich([('${priced[1]}×', true)], 44, size: 25),
+          name = rich([(priced[2]!, true)], w - 44 - 120, size: 25),
+          price = rich([(priced[3]!, false)], 116, size: 22,
+              align: TextAlign.right);
       final h = math.max(qty.height, math.max(name.height, price.height));
-      qty.paint(drawing, Offset(0, y));
-      name.paint(drawing, Offset(34, y));
-      price.paint(drawing, Offset(w - 112, y));
-      y += h + 13;
-      qty.dispose();
-      name.dispose();
-      price.dispose();
+      put(qty, 0);
+      put(name, 44);
+      put(price, w - 116);
+      y += h + 4;
+    } else if (plainItem != null && !detail) {
+      y += 6;
+      final qty = rich([('${plainItem[1]}×', true)], 44, size: 25),
+          name = rich([(plainItem[2]!, true)], w - 44, size: 25);
+      final h = math.max(qty.height, name.height);
+      put(qty, 0);
+      put(name, 44);
+      y += h + 4;
+    } else if (detail) {
+      final value = raw.trim();
+      final unit = RegExp(r'^\d+ × -?[\d.,]+ ₺$').hasMatch(value);
+      y += put(
+        rich(labelled(value), w - 44, size: unit ? 19 : 22),
+        44,
+      ) + 3;
+    } else if (raw.startsWith('Not:')) {
+      y += 8;
+      final p = rich(labelled('NOT: ${raw.substring(4).trim()}'), w - 20,
+          size: 24);
+      final box = Rect.fromLTWH(0, y, w, p.height + 16);
+      drawing.drawRRect(
+        RRect.fromRectAndRadius(box.deflate(1), const Radius.circular(6)),
+        Paint()
+          ..color = Colors.black
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2,
+      );
+      p.paint(drawing, Offset(10, y + 8));
+      p.dispose();
+      y = box.bottom + 8;
     } else if (total != null) {
       final isTotal = total[1] == 'Toplam';
       if (isTotal) rule();
-      final label = total[1] == 'Toplam'
-          ? 'TOPLAM'
-          : total[1] == 'Net tahsilat'
-          ? 'Ödenen'
-          : 'Kalan';
-      final l = painter(label, w * .44, size: isTotal ? 30 : 23, bold: isTotal),
-          r = painter(
-            total[2]!,
-            w * .56,
-            size: isTotal ? 30 : 23,
-            bold: isTotal,
-            align: TextAlign.right,
-          );
-      l.paint(drawing, Offset(0, y));
-      r.paint(drawing, Offset(w * .44, y));
-      y += math.max(l.height, r.height) + 9;
-      l.dispose();
-      r.dispose();
+      final label = switch (total[1]) {
+        'Toplam' => 'TOPLAM',
+        'Net tahsilat' => 'Ödenen',
+        final other => other!,
+      };
+      final strong = isTotal || total[1] == 'Kalan';
+      final size = isTotal ? 32.0 : strong ? 26.0 : 23.0;
+      final l = rich([(label, strong)], w * .44, size: size),
+          r = rich([(total[2]!, strong)], w * .56, size: size,
+              align: TextAlign.right);
+      final h = math.max(l.height, r.height);
+      put(l, 0);
+      put(r, w * .44);
+      y += h + 8;
+    } else if (amount != null) {
+      final l = rich([(amount[1]!, false)], w - 130, size: 22),
+          r = rich([(amount[2]!, true)], 126, size: 22,
+              align: TextAlign.right);
+      final h = math.max(l.height, r.height);
+      put(l, 0);
+      put(r, w - 126);
+      y += h + 6;
     } else {
-      line(raw, size: raw.startsWith('  ') ? 21 : 23);
+      y += put(rich(labelled(raw), w, size: 21), 0) + 5;
     }
     if (y > 15000)
       throw const FormatException('Fiş çok uzun; daha kısa hesap dökümü seçin');

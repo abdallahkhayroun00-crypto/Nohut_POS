@@ -115,3 +115,13 @@ String istanbulStamp(Object? value) {
       .substring(0, 16)
       .replaceAll('T', ' ');
 }
+
+/// Day-first Istanbul time for paper (26.11.2026 12:41).
+String receiptStamp(Object? value) {
+  final stamp = istanbulStamp(value);
+  final match = RegExp(r'^(\d{4})-(\d{2})-(\d{2}) (\d{2}:\d{2})$')
+      .firstMatch(stamp);
+  return match == null
+      ? stamp
+      : '${match[3]}.${match[2]}.${match[1]} ${match[4]}';
+}

@@ -364,8 +364,8 @@ function trendyolStatusText(status){return trendyolStatusNames[String(status??''
 function trendyolActions(o){
   const status=String(o.status??'').trim().toLowerCase(),id=esc(o.packageId||'');
   if(!state?.tgoCanWrite||!o.packageId)return '<p class="muted">Kabul Et / Hazır şu an laptopta kapalı. Trendyol Go Partner Panelini kullanın.</p>';
-  if(status==='created')return '<div class="platform-actions"><button class="primary" data-tgo-action="accept" data-package="'+id+'" data-prep="'+esc(o.preparationMinutes||20)+'">Kabul Et</button><p class="muted">Kabul edilince mutfak fişi otomatik yazdırılır.</p></div>';
-  if(status==='picking')return '<div class="platform-actions"><button class="primary" data-tgo-action="ready" data-package="'+id+'">Hazır</button>'+(o.kitchenPrintState?'<p class="muted">Mutfak fişi · '+esc(o.kitchenPrintState)+'</p>':'')+'</div>';
+  if(status==='created')return '<div class="platform-actions"><button class="primary" data-tgo-action="accept" data-package="'+id+'" data-prep="'+esc(o.preparationMinutes||20)+'">Kabul Et</button><p class="muted">Kabul edilince sipariş fişi otomatik yazdırılır.</p></div>';
+  if(status==='picking')return '<div class="platform-actions"><button class="primary" data-tgo-action="ready" data-package="'+id+'">Hazır</button>'+(o.kitchenPrintState?'<p class="muted">Sipariş fişi · '+esc(o.kitchenPrintState)+'</p>':'')+'</div>';
   return '<p class="muted">Kurye teslim alacak. İşlem gerekmiyor.</p>';
 }
 async function trendyolAction(button){

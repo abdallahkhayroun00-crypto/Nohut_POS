@@ -2849,7 +2849,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     onReprint: (order) async {
       if (!await confirmAction(
         context,
-        'Mutfak fişini tekrar yazdır?',
+        'Sipariş fişini tekrar yazdır?',
         'Önce yazıcıyı kontrol edin. Fiş zaten çıktıysa tekrar yazdırmayın.',
         confirm: 'Kontrol Ettim · Yazdır',
       )) return;
