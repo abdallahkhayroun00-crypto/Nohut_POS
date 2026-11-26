@@ -1528,10 +1528,10 @@ class _FinancePanelState extends State<FinancePanel> {
   Widget _fixed() {
     final fixed = financeRows(widget.state, 'monthlyFixed');
     final payments = financeRows(widget.state, 'fixedPayments');
-    final due = fixed.where((f) =>
-      f['active'] == true &&
-      (f['startMonth'] as String).compareTo(month) <= 0).toList();
-    final total = due.fold<int>(0, (v, f) => v + (f['amountCents'] as int));
+    final dueRows = fixedDueRows(widget.state, month);
+    final dueIds = {for (final (f, _) in dueRows) f['id']};
+    final amountFor = {for (final (f, a) in dueRows) f['id']: a};
+    final total = dueRows.fold<int>(0, (v, r) => v + r.$2);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1541,45 +1541,93 @@ class _FinancePanelState extends State<FinancePanel> {
             icon: const Icon(Icons.add),
             label: const Text('Sabit Gider Ekle'))),
         _notice('Kira, SGK, Muhasebe gibi aylık tutarlar otomatik '
-          'tahakkuk eder. Ödendi işareti sadece takip içindir; '
-          'kasa bakiyesine işlem göndermez.'),
+          'tahakkuk eder. Tutar değişikliği bu aydan itibaren geçerlidir; '
+          'pasif yapılan gider geçmiş aylardan silinmez. Ödendi işareti '
+          'sadece takip içindir; kasa bakiyesine işlem göndermez.'),
         const SizedBox(height: 10),
-        _metric('Bu ay tahakkuk eden', formatTry(total),
-          Icons.calendar_month_outlined),
+        Builder(builder: (context) {
+          bool isPaid(Map f) => payments.any((r) =>
+              r['templateId'] == f['id'] && r['month'] == month);
+          final paidTotal = dueRows.where((r) => isPaid(r.$1))
+              .fold<int>(0, (v, r) => v + r.$2);
+          return EvenGrid(minTileWidth: 200, spacing: 8, children: [
+            _metric('Bu ay tahakkuk eden', formatTry(total),
+              Icons.calendar_month_outlined),
+            _metric('Ödenen', formatTry(paidTotal), Icons.check_circle_outline),
+            _metric('Kalan', formatTry(total - paidTotal),
+              Icons.pending_actions_outlined, important: total > paidTotal),
+          ]);
+        }),
+        const SizedBox(height: 8),
         for (final f in fixed)
-          Card(child: ListTile(
-            title: Text((f['name'] ?? '').toString()),
-            subtitle: Text(
-              f['category'].toString() + ' · ' +
-              'Her ayın ' + f['dueDay'].toString() + '. günü' +
-              ' · Başlangıç: ' + f['startMonth'].toString() +
-              (f['active'] == false ? ' · Pasif' : '')),
-            trailing: Wrap(
-              crossAxisAlignment: WrapCrossAlignment.center,
-              spacing: 8,
-              children: [
-                Text(formatTry(f['amountCents'] as int),
-                  style: const TextStyle(fontWeight: FontWeight.w800)),
-                if (f['active'] == true &&
-                    (f['startMonth'] as String).compareTo(month) <= 0)
-                  TextButton(
-                    onPressed: () {
-                      final paid = payments.any((r) =>
-                        r['templateId'] == f['id'] && r['month'] == month);
-                      widget.edit((s) => markMonthlyFixedPaid(
-                        s, f['id'] as int, month, !paid));
-                    },
-                    child: Text(payments.any((r) =>
-                      r['templateId'] == f['id'] && r['month'] == month) ?
-                      'Ödendi ✓' : 'Ödendi İşaretle'),
-                  ),
+          Builder(builder: (context) {
+            final due = dueIds.contains(f['id']);
+            final paid = payments.any((r) =>
+                r['templateId'] == f['id'] && r['month'] == month);
+            final today = istanbulDay(DateTime.now().toUtc());
+            final late = due && !paid && (month.compareTo(today.substring(0, 7)) < 0 ||
+                (month == today.substring(0, 7) &&
+                  int.parse(today.substring(8)) > (f['dueDay'] as int? ?? 1)));
+            final (label, color) = !due
+                ? (f['active'] == false ? 'Pasif' : 'Bu ay yok', NohutBrand.muted)
+                : paid ? ('Ödendi', const Color(0xff2E7D4F))
+                : late ? ('Gecikti', const Color(0xffB3261E))
+                : ('Bekliyor', const Color(0xffB7791F));
+            return Card(child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
+              child: Row(children: [
+                Container(
+                  width: 40, height: 40,
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(10)),
+                  child: Icon(paid ? Icons.check : Icons.event_note_outlined,
+                    color: color, size: 20),
+                ),
+                const SizedBox(width: 12),
+                Expanded(child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text((f['name'] ?? '').toString(), style: const TextStyle(
+                      fontWeight: FontWeight.w800, fontSize: 15)),
+                    Text(
+                      '${f['category']} · Her ayın ${f['dueDay']}. günü · '
+                      'Başlangıç: ${financeMonthLabel('${f['startMonth']}')}',
+                      style: const TextStyle(fontSize: 12.5,
+                        color: NohutBrand.muted)),
+                  ],
+                )),
+                Text(formatTry(amountFor[f['id']] ?? f['amountCents'] as int),
+                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+                const SizedBox(width: 12),
+                Container(
+                  width: 82,
+                  alignment: Alignment.center,
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12)),
+                  child: Text(label, style: TextStyle(color: color,
+                    fontWeight: FontWeight.w800, fontSize: 12)),
+                ),
+                const SizedBox(width: 6),
+                SizedBox(
+                  width: 130,
+                  child: due
+                      ? TextButton(
+                          onPressed: () => widget.edit((s) =>
+                            markMonthlyFixedPaid(s, f['id'] as int, month, !paid)),
+                          child: Text(paid ? 'Geri Al' : 'Ödendi İşaretle'),
+                        )
+                      : const SizedBox.shrink(),
+                ),
                 IconButton(
                   tooltip: 'Sabit gider düzenle',
                   onPressed: () => _fixedForm(f),
                   icon: const Icon(Icons.edit_outlined)),
-              ],
-            ),
-          )),
+              ]),
+            ));
+          }),
       ],
     );
   }
@@ -1904,32 +1952,58 @@ class _FinancePanelState extends State<FinancePanel> {
         ],
       ),
       const SizedBox(height: 14),
-      Card(child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Row(children: [
-          IconButton(icon: const Icon(Icons.chevron_left),
-            tooltip: 'Önceki ay',
-            onPressed: () => _shiftMonth(-1)),
-          Expanded(child: Text(month,
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 19,
-              color: NohutBrand.green, fontWeight: FontWeight.w800))),
-          IconButton(icon: const Icon(Icons.chevron_right),
-            tooltip: 'Sonraki ay',
-            onPressed: () => _shiftMonth(1)),
-        ]),
-      )),
-      const SizedBox(height: 12),
-      Wrap(
-        spacing: 8, runSpacing: 8,
-        children: [
-          for (final name in const [
-            'Genel Bakış', 'Günlük Malzeme',
-            'Haftalık Maaşlar', 'Sabit Giderler', 'Diğer Giderler',
-          ])
-            ChoiceChip(label: Text(name), selected: tab == name,
-              onSelected: (_) => setState(() => tab = name)),
-        ],
+      Container(
+        padding: const EdgeInsets.fromLTRB(8, 8, 14, 8),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xffE1E7E3)),
+        ),
+        child: Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            Row(mainAxisSize: MainAxisSize.min, children: [
+              IconButton(icon: const Icon(Icons.chevron_left),
+                tooltip: 'Önceki ay',
+                onPressed: () => _shiftMonth(-1)),
+              SizedBox(
+                width: 150,
+                child: Text(financeMonthLabel(month),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 19,
+                    color: NohutBrand.green, fontWeight: FontWeight.w800)),
+              ),
+              IconButton(icon: const Icon(Icons.chevron_right),
+                tooltip: 'Sonraki ay',
+                onPressed: () => _shiftMonth(1)),
+              if (month != istanbulDay(DateTime.now().toUtc()).substring(0, 7))
+                TextButton(
+                  onPressed: () => setState(() {
+                    final today = istanbulDay(DateTime.now().toUtc());
+                    month = today.substring(0, 7);
+                    day = today;
+                  }),
+                  child: const Text('Bu Ay'),
+                ),
+            ]),
+            Wrap(
+              spacing: 6, runSpacing: 6,
+              children: [
+                for (final name in const [
+                  'Genel Bakış', 'Günlük Malzeme',
+                  'Haftalık Maaşlar', 'Sabit Giderler', 'Diğer Giderler',
+                ])
+                  ChoiceChip(label: Text(name), selected: tab == name,
+                    showCheckmark: false,
+                    visualDensity: VisualDensity.compact,
+                    onSelected: (_) => setState(() => tab = name)),
+              ],
+            ),
+          ],
+        ),
       ),
       const SizedBox(height: 12),
       if (tab == 'Genel Bakış') _overview(),
