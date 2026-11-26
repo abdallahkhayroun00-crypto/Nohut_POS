@@ -105,7 +105,8 @@ header select{background:#fff;color:var(--green);border:0;min-height:40px;font-w
 .quantity{background:var(--soft);border-radius:12px;padding:3px;gap:6px}
 .quantity button{background:#fff;border:0;width:40px;min-height:40px;border-radius:10px;font-weight:800}
 .quantity b{min-width:22px;text-align:center;font-size:18px}
-.cart-line [data-line-status]{margin:0;color:var(--green);font-size:18px;font-weight:800}
+.cart-line [data-line-status]{margin:0;color:var(--green);font-size:18px;font-weight:800;text-align:right}
+.cart-line [data-line-status][data-warn=true]{color:#B3261E;font-size:14px;font-weight:700}
 .cart-line-fields{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
 .cart-line-fields label{margin:0;font-size:12px}
 .cart-line-fields input{min-height:38px;margin-top:3px;font-size:15px}
@@ -140,9 +141,18 @@ dialog{background:var(--card);border-color:var(--line);border-radius:22px;box-sh
 #cash-change{background:#E8F4EC;color:#1E5A37;border-radius:12px;padding:10px 12px}
 #cash-shortcuts button{min-height:38px;border-radius:20px;font-size:14px}
 #ingredient-chips button{border-radius:20px;min-height:38px}
+#connection[data-state=off]{color:#FFB4A8;font-weight:700}
+#connection[data-state=ok]::first-letter{color:#7FD29A}
+#retry:not([hidden]){display:block;width:calc(100% - 20px);margin:8px 10px;background:var(--green);border-color:var(--green);color:#fff;font-weight:800;min-height:48px}
+#cart-validation:not(:empty){background:var(--amber);border:1px solid #EED9A6;color:#6E4614;border-radius:12px;padding:10px 12px;margin:8px 0;font-weight:600;font-size:15px}
+#review-price-changes{background:var(--amber);border-color:var(--amber-line);color:#6E4614;font-weight:800;margin-top:6px}
+#customer summary{font-weight:700;color:var(--green)}
 @media(max-width:550px){
   .cart-line-fields{grid-template-columns:1fr}
   header{padding:8px 10px}
+}
+@media(max-width:360px){
+  header h1{font-size:16px}
 }
 </style></head><body data-view="tables">
 <header><div class="row"><img class="brand-logo" src="/assets/nohut-logo.webp" width="44" height="44" alt="Nohut Falafel"><div class="grow"><h1>Nohut Falafel</h1><div id="connection" role="status">Laptopa bağlanılıyor…</div></div><label><span class="sr-only">Çalışan</span><select id="staff" aria-label="Çalışan"><option value="">Adınızı seçin</option></select></label><button id="reload" class="ghost" aria-label="Bağlantıyı Yenile">↻</button></div></header>
@@ -343,8 +353,11 @@ $('internal-item-form').onsubmit=event=>{
     renderCart();total();$('internal-item').close();
   }catch(error){$('internal-item-error').textContent=error.message}
 };
-function total(){persistDraft();let sum=0;for(const[key,r]of cart){const p=cartProduct(r);sum+=(Math.round((p?.price||0)*100)+(r.adjustmentCents||0)+componentExtra(r))*r.qty;const warning=document.querySelector(`[data-line-status="${key}"]`);if(warning)warning.textContent=!p||p.price==null?'Ürün satış dışı. Kaldırın.':money((Math.round(p.price*100)+(r.adjustmentCents||0)+componentExtra(r))*r.qty)}const count=[...cart.values()].reduce((n,r)=>n+r.qty,0);$('total').textContent='Toplam '+money(sum);$('cart-count').textContent=count;$('dock-caption').textContent='Sipariş sepeti · '+count+' ürün';$('dock-total').textContent=money(sum);updateProductCounts();controls()}
+function total(){persistDraft();let sum=0;for(const[key,r]of cart){const p=cartProduct(r);sum+=(Math.round((p?.price||0)*100)+(r.adjustmentCents||0)+componentExtra(r))*r.qty;const warning=document.querySelector(`[data-line-status="${key}"]`);if(warning)warning.dataset.warn=String(!p||p.price==null);if(warning)warning.textContent=!p||p.price==null?'Ürün satış dışı. Kaldırın.':money((Math.round(p.price*100)+(r.adjustmentCents||0)+componentExtra(r))*r.qty)}const count=[...cart.values()].reduce((n,r)=>n+r.qty,0);$('total').textContent='Toplam '+money(sum);$('cart-count').textContent=count;$('dock-caption').textContent='Sipariş sepeti · '+count+' ürün';$('dock-total').textContent=money(sum);updateProductCounts();controls()}
 const openTrendyolStatuses=new Set(['created','picking','invoiced','shipped']);
+const trendyolStatusNames={created:'Yeni',picking:'Hazırlanıyor',invoiced:'Hazır',shipped:'Yolda'};
+function trendyolStatusText(status){return trendyolStatusNames[String(status??'').trim().toLowerCase()]||String(status??'')}
+function clockText(stamp){const d=new Date(stamp);return Number.isNaN(d.getTime())?String(stamp??''):d.toLocaleString('tr-TR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}
 let knownTrendyolOrderNumbers=null;
 function renderOrders(){
   const platform=(state?.trendyolGoOrders||[]).filter(o=>
@@ -369,9 +382,9 @@ function renderOrders(){
   const remoteCards=remote.map(o=>({
     day:o.numberDay||'',number:o.dailyNumber||0,
     html:'<article class="order platform-order"><div class="row spread"><strong class="order-number">#'+
-      number(o)+' · Trendyol Go</strong><span class="badge">'+esc(o.status||'')+
+      number(o)+' · Trendyol Go</strong><span class="badge">'+esc(trendyolStatusText(o.status))+
       '</span></div><p class="muted">Trendyol sipariş no: '+esc(o.orderNumber||'')+
-      ' · Salt okunur · '+esc(o.createdAt||'')+(o.pickup?' · Platform Gel-Al':' · Paket')+'</p>'+
+      ' · Salt okunur · '+esc(clockText(o.createdAt))+(o.pickup?' · Platform Gel-Al':' · Paket')+'</p>'+
       (o.lines||[]).map(l=>'<div class="detail-line"><div class="grow"><strong>'+
         esc(l.qty)+' × '+esc(l.name||'')+'</strong><p class="muted">'+
         esc((l.options||[]).join(', '))+'</p></div><b>'+money(l.unitPriceCents||0)+'</b></div>').join('')+
@@ -401,7 +414,7 @@ function basePayload(){return{requestId:Date.now().toString(36)+'_'+Math.random(
 function startRequest(url,payload){if(busy||pending)return;if(!online||!$('staff').value){notice('Bağlantıyı ve çalışan seçimini kontrol edin');return}pending={url,payload:{...basePayload(),...payload}};sessionStorage.setItem('nohut-pending',JSON.stringify(pending));send()}
 function action(name,fields={}){startRequest('/api/staff/actions',{action:name,orderId:focusedOrder,...fields})}
 async function request(url,options,timeout){const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeout);try{return await fetch(url,{...options,signal:controller.signal})}finally{clearTimeout(timer)}}
-async function refresh(){if(busy||refreshing)return false;refreshing=true;try{const r=await request('/api/bootstrap',{cache:'no-store'},10000);if(!r.ok)throw Error();const b=await r.json();state=b.state;revision=b.revision;online=true;render();$('connection').textContent='● Laptop bağlı · '+new Date().toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'});return true}catch{online=false;$('connection').textContent='● Bağlantı yok · Sepet korunuyor';controls();return false}finally{refreshing=false}}
+async function refresh(){if(busy||refreshing)return false;refreshing=true;try{const r=await request('/api/bootstrap',{cache:'no-store'},10000);if(!r.ok)throw Error();const b=await r.json();state=b.state;revision=b.revision;online=true;render();$('connection').dataset.state='ok';$('connection').textContent='● Laptop bağlı · '+new Date().toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'});return true}catch{online=false;$('connection').dataset.state='off';$('connection').textContent='● Bağlantı yok · Sepet korunuyor';controls();return false}finally{refreshing=false}}
 async function send(){if(!pending||busy)return;busy=true;notice('Kaydediliyor…');controls();const current=pending;let receiptPrompt=null;try{const r=await request(current.url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(current.payload)},15000);const b=await r.json();if(r.status===409){pending=null;sessionStorage.removeItem('nohut-pending');notice('Başka cihaz değişiklik yaptı. Sepet korundu. Güncel hesabı kontrol edip yeniden kaydedin.');closeActionDialogs();return}if(!r.ok){pending=null;sessionStorage.removeItem('nohut-pending');requestError(b.message||'İstek reddedildi.');return}pending=null;sessionStorage.removeItem('nohut-pending');if(current.url==='/api/staff/orders'){cart.clear();persistDraft();targetOrder=null;draftDestination=currentDraftDestination();renderCart();updateSourceFields();setView('orders')}for(const id of ['customize','payment-dialog','move-dialog','split-dialog'])if($(id).open)$(id).close();notice('✓ Sipariş #'+(b.orderNumber??b.orderId)+' kaydedildi.');revision=b.revision;if(current.payload.action==='payProducts')receiptPrompt=current.payload;}catch{online=false;closeActionDialogs();notice('Onay alınamadı. Aynı isteği yeniden deneyin; çift işlem oluşturulmaz.')}finally{busy=false;controls();if(!pending)await refresh()}
   if(receiptPrompt&&confirm('Fiş yazdırılsın mı?')){
     startRequest('/api/staff/actions',{action:'printProductPayment',orderId:receiptPrompt.orderId,paymentId:receiptPrompt.requestId,staffId:receiptPrompt.staffId});
