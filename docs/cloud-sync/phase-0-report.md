@@ -21,6 +21,8 @@ Spec: NOHUT POS 2.0 Master Specification V5.1 (`NOHUT_POS_2.0_MASTER_SPEC_v5.1.m
 |---|---|---|
 | §4.1 / §18.2 inventory | `docs/cloud-sync/data-inventory.md` | Code inspection (method in the file) |
 | §4.4 drift guard | `flutter_desktop/lib/sync_registry.dart` + `test/sync_registry_drift_test.dart` | **Executed test**, 5 tests pass |
+| Owner decision 6: stronger registry | `lib/sync_field_registry.dart`, `lib/sync_field_paths.g.dart`, `test/flutter_test_config.dart` (runtime validation of every write), `test/sync_field_registry_test.dart` | **Executed tests**: 5 pass. Covers all writers, guard rejection, allowlist ⟂ PII, projection keeps money, PII scan. |
+| Owner decision 3: no e-mail | `normalizeTgoPackage`, `trendyol_go_ui.dart` | **Executed test**: `trendyol_go_readonly_test.dart` |
 | §11.1 first Gel-Al receipt | `newLocalOrder(customer:, staffId:)`; callers in `main.dart` and `staff_commands.dart` | **Executed tests** in `test/receipt_text_test.dart`: cashier path, LAN/phone path, additions, no phone |
 | §19.9 storage benchmark | `docs/cloud-sync/storage-benchmark.md` + `test/benchmark/storage_benchmark_test.dart` | **Executed** on 1k/10k/50k synthetic orders |
 | §19.9 platform policy | `docs/cloud-sync/platform-data-policy.md` | Code inspection |
@@ -33,7 +35,7 @@ Tooling: Flutter 3.50.1, Linux x86_64.
 | Command | Result |
 |---|---|
 | `cd flutter_desktop && flutter analyze --no-fatal-infos` | 0 errors, 0 warnings (557 infos, pre-existing style lints) |
-| `cd flutter_desktop && flutter test` | **264 passed**, 3 skipped (2 pre-existing + the opt-in benchmark) |
+| `cd flutter_desktop && flutter test` | **269 passed**, 3 skipped (2 pre-existing + the opt-in benchmark). Every committed state is validated against the nested field registry. |
 | `cd flutter_personel && flutter analyze` | 0 errors, 0 warnings (11 infos) |
 | `cd flutter_personel && flutter test` | **15 passed** |
 | `cd packages/nohut_core && flutter analyze` | No issues found (the package has no own `test/`; it is exercised by both apps' tests) |
@@ -46,7 +48,8 @@ Tooling: Flutter 3.50.1, Linux x86_64.
    - XP-237B print of the first Gel-Al ticket;
    - measuring the production database size on the restaurant PC.
 
-## 5. Decisions needed from the owner before Phase 1/2
+## 5. Owner decisions
+Decided on 2026-11-27: see `owner-decisions.md` and spec §21. The questions as originally raised were:
 
 1. **Write latency (storage-benchmark finding 1):** about 1.7 s per save at 10 000 orders and about 7.9 s at 50 000. Recommendation: bring forward the local per-entity tables (spec §2.2 allows this) together with PR-04.
 2. **`deleteOrder` physically deletes history and command receipts** (`data-inventory.md` §1). Replace it with tombstones?

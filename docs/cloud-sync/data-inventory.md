@@ -90,6 +90,8 @@ Fields:
 - **Line:** `{productId, productKey, name, price (TL, decimal), qty, removed[], note, components[] (campaign), campaignId, basePrice, adjustmentCents, customItem, voided, originalQty, correction}`.
 - **Line identity:** today a line is addressed as `"<batchId>:<index>"` (`checkLines`). That is an index, not a stable ID. PR-04 must assign stable line IDs once at migration (spec §4.4).
 - The price is frozen on the line, so historical totals do not depend on today's menu. This is already correct.
+- **Duplication finding:** depending on the entry path, a line can carry a **copy of the whole catalog product**: `category`, `active`, `description{tr,en,ar}`, `startsAt`, `endsAt` and catalog `id`. Campaign components carry multilingual `description` too. The same copy is repeated in every print snapshot. These fields are not needed to reproduce the sale, so they are excluded from the cloud allowlist. Phase 1B stores a product-version reference instead (spec §19.6.1).
+- **Full nested field list:** `flutter_desktop/lib/sync_field_paths.g.dart` (628 declared paths). It comes from runtime observation of every write in the test suite plus code reading, and every write in CI is validated against it.
 
 ### 3.3 Payments, refunds and guest checks
 - **Payment:** `{createdAt, method (Nakit/Kart/Platform), amount (TL decimal), received, change, time, by, guestCheckId?, guestAllocations[], refunds[{amount, reason, createdAt}], reversed, combinedPaymentId?}`. No payment ID exists today; payments are addressed by list index. PR-04 must assign stable IDs.

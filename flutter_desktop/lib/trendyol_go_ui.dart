@@ -282,7 +282,6 @@ class TgoOrderCard extends StatelessWidget {
     final note = '${order['customerNote'] ?? ''}'.trim();
     final customer = '${order['customerName'] ?? ''}'.trim();
     final contact = '${order['customerPhone'] ?? ''}'.trim();
-    final email = '${order['customerEmail'] ?? ''}'.trim();
     final address = '${order['deliveryAddress'] ?? ''}'.trim();
     final duration = order['preparationMinutes'];
     final deliveryEta = '${order['deliveryEta'] ?? ''}'.trim();
@@ -666,7 +665,7 @@ class TgoOrderCard extends StatelessWidget {
                 ),
               ),
             ],
-            if (customer.isNotEmpty || contact.isNotEmpty || email.isNotEmpty || address.isNotEmpty)
+            if (customer.isNotEmpty || contact.isNotEmpty || address.isNotEmpty)
               Container(
                 padding: const EdgeInsets.all(10),
                 margin: const EdgeInsets.only(top: 10),
@@ -683,7 +682,6 @@ class TgoOrderCard extends StatelessWidget {
                         color: NohutBrand.green, fontWeight: FontWeight.w800)),
                       if (customer.isNotEmpty) SelectableText('Müşteri: $customer'),
                       if (contact.isNotEmpty) SelectableText('Telefon: $contact'),
-                      if (email.isNotEmpty) SelectableText('E-posta: $email'),
                       if (address.isNotEmpty) SelectableText('Adres: $address'),
                     ],
                   ),

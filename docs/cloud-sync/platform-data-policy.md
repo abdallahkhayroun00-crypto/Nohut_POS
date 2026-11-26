@@ -25,7 +25,7 @@ Ingestion is `normalizeTgoPackage` in `flutter_desktop/lib/trendyol_go_readonly.
 | `customerNote` | customer note | INTERNAL (may contain PII) | durable | **Durable**, because it describes preparation. Not truncated. Contact details typed into the note are not parsed out automatically. |
 | `customerName` | `customer.firstName/lastName` | PERSONAL_PII | **durable in `trendyolGoOrders`** | `TRANSIENT_API`: used for the active order screen and the Sipariş Fişi (the owner asked for the name on the ticket). Clear it after an owner-approved TTL once the order is final. Never sent to the cloud projection. |
 | `customerPhone` | `address.phone` | PERSONAL_PII | **durable** | `TRANSIENT_API`: not needed for pickup-by-courier fulfillment. Proposal: stop storing it, or clear it at order final state. Never printed (already true). |
-| `customerEmail` | `customer.email` | PERSONAL_PII | **durable** | `NOT_COLLECTED`: the restaurant has no use for it. Proposal: stop collecting it. |
+| `customerEmail` | `customer.email` | PERSONAL_PII | **No longer collected** (owner decision, PR-01). Older stored values remain until the approved clean-up. | `NOT_COLLECTED`. |
 | `deliveryAddress` | `address.*` | PERSONAL_PII | **durable** | `TRANSIENT_API`: courier deliveries mask it anyway. Proposal: clear it at final state. |
 | `appName` | `userInformation.appName` | INTERNAL | durable | Durable (channel analytics). |
 | `kitchenPrintState`, `kitchenQueuedAt`, `dailyNumber`, `numberDay` | local | INTERNAL | durable | Durable. |
@@ -79,6 +79,21 @@ The iPhone PWA does not exist yet. When it is built in Phase 4–5, it must use 
 ## 6. Open decisions for the owner
 
 1. TTL for `customerName`, `customerPhone` and `deliveryAddress` on Trendyol orders after the final state (proposal: clear once the order is Delivered or Cancelled + N days). Requires legal review.
-2. Stop collecting `customerEmail` (proposal: yes).
+2. ~~Stop collecting `customerEmail`~~ **Decided and implemented in PR-01.**
 3. Cloud projection of `customers[]` and Gel-Al phone (proposal: owner/manager-only RLS, or keep local-only).
 4. What to do with the existing stored platform PII in current databases (proposal: a one-time local clean-up after the decision, never a silent deletion).
+
+## 7. Proposed minimal retention policy (for owner approval and KVKK review; NOT implemented)
+
+| Data | Kept while | Then | Never |
+|---|---|---|---|
+| Trendyol `customerName` | The order is active (`Created` / `Picking` / `Invoiced` / `Shipped`), and for **7 days** after the final state, to handle claims, missing items and courier issues. | Cleared locally (field removed, `contactClearedAt` recorded). The order, its items, money, status history and receipt remain. | Projected to the cloud, copied to another record, or linked across orders. |
+| Trendyol `customerPhone`, `deliveryAddress` | The order is active only (needed only if the restaurant must contact the customer or courier). | Cleared at the final state + **24 h**. | Printed, projected, or logged. |
+| Trendyol `customerEmail` | — | Not collected. | — |
+| Trendyol review reviewer names (`tgoReviewCache`) | Cache lifetime (refreshed from the API). | Replaced on refresh. Bounded to the last N pages. | Projected or linked to orders. |
+| Gel-Al `customer.phone` on an order | Until the order is closed and fully paid. If it is linked to a saved customer, the saved customer keeps it under the existing feature. | Proposal: clear on the order N days after close. Owner decides N. | Printed or projected. |
+| Saved Gel-Al customers (`customers`) | Unchanged existing feature. | Only on an owner-approved data-subject request, or an owner decision. | Expanded or auto-deleted. |
+| Command receipts with a Gel-Al phone | Needed for idempotency (request identity + outcome). | Proposal: redact the phone inside the stored payload after the order closes; keep the request ID, hash and outcome. | Projected. |
+
+The day counts are proposals only. Legal review must confirm them against accounting, consumer-dispute and platform-contract obligations. The clean-up job will be idempotent, audited, covered by the backup, and will never touch financial facts.
+

@@ -488,6 +488,7 @@ Work on isolated feature branches with small, reviewable PRs (<600 LOC where fea
 |---|---|---|---|
 | **Phase 0: Audit & Baseline** | `PR-01`: Complete `docs/cloud-sync/data-inventory.md` and V5 size/PII baseline, reconcile PR #27 (first Gel-Al receipt regression and verified fix required) + open PRs, add Sync Registry drift test | No schema change; pure docs + tests + PR #27 regression fix | Baseline `flutter analyze` & `flutter test` green; first Gel-Al receipt verified on all local paths |
 | **Phase 1: Encrypted Backup & Restore** | `PR-02`: `BackupContainer` (VACUUM INTO + gzip + AES-256-GCM + Recovery Key)<br>`PR-03`: `BackupStorageAdapter` (Local/USB + owner cloud adapter) & `Yedekleme ve Geri Yükleme` UI | Zero impact on live POS writes; feature-flagged | Synthetic DB encrypted, tampered-file rejected, wrong-key rejected, and **restored on a second clean Windows machine/profile** with no automatic historic print replay |
+| **Phase 1B: Local Normalization & Soft Deletion (owner decision 2026-11-27, §21)** | `PR-03b`: per-entity local SQLite tables behind a unified repository (orders, batches, lines, payments, refunds, print jobs, platform orders, finance rows), additive reversible migration from `state_snapshot`, dual-read compare, then single-writer switch; stable IDs for lines and payments; catalog fields no longer copied into every line/snapshot<br>`PR-03c`: remove the 50 000-order ceiling (no replacement limit) + audited soft deletion with tombstones | Depends on Phase 1 verified backup/restore (pre-migration encrypted backup mandatory); rollback = keep reading `state_snapshot` (never dropped until parity proven) | Exact report/financial parity (0.00 TL) against the JSON source for all fixtures; benchmarks 1k/10k/50k/100k before/after (p50/p95 write latency, SQLite size, backup size, projected sync payload); soft-deleted and cancelled orders correct in every report |
 | **Phase 2: Outbox, Cloud Schema & First Sync** | `PR-04`: Local `sync_outbox` + `sync_state` migration & diff-on-commit writer<br>`PR-05`: Supabase SQL migrations + V5 normalized/versioned dictionary projection + RLS + reconciliation RPCs<br>`PR-06`: 18-step First-Sync Wizard + Incremental `SyncWorker` + `Bulut & Senkronizasyon` UI | Depends on Phase 1 backup and scoped technical agent/bootstrap auth (implemented before any cloud data transfer); rollback = disable transport flag; retain all pending outbox records and migration history, never drop populated data | Synthetic full first sync passes interrupt/crash/resume, concurrent-order, V5 lossless canonical business projection/PII allowlist, measured storage benchmark and **0.00 TL financial-total reconciliation** tests |
 | **Phase 3: Unified Auth & RBAC** | `PR-07`: Supabase Edge Function username login + `device_sessions` + RLS policies + Owner MFA<br>`PR-08`: Windows `Personel Yönetimi` UI + counter PIN switch + offline verifier cache | Depends on Phase 2 schema and bootstrap identity; rollback = keep local auth flag | Direct API forgery, forged `staffId`, revoked device, disabled user, and cross-staff payroll access all return `403` |
 | **Phase 4: Read-Only Mobile & PWA Pilot** | `PR-09`: Upgrade `flutter_personel` (both entrypoints: Personel `lib/main.dart`, Yönetici `lib/manager_main.dart`) with unified auth + Supabase read transport + read-only `Menü & Kampanya`, `Bulut & Senkronizasyon`, `Yedekleme & Geri Yükleme` status screens from one shared module<br>`PR-10`: Lightweight TS/Vite iPhone PWAs — two separate URLs/manifests (`Nohut Personel`, `Nohut Yönetici`) from one shared codebase — deployed to Cloudflare Pages (read-only pilot) | Depends on Phase 3 auth | Physical Android APK + physical iPhone Safari Add-to-Home-Screen verified; staleness badges & logout cache-clear verified |
@@ -784,4 +785,28 @@ Sensitive-action rules:
 6. Sync/backup status screens show identical values in both apps for the same `as_of`; stale data shows a staleness badge; Windows-off disables writes.
 7. Audit log records actor, device, operation ID, before → after, request ID for every elevated and owner-only action; no secrets/PII in the log.
 8. No business logic duplication check: section logic lives in shared modules (Dart package / shared TS module); CI fails if section commands are implemented outside the shared modules (lint/import rule).
+
+---
+
+## 21. Owner Decisions 2026-11-27 (Binding)
+
+Full table: `docs/cloud-sync/owner-decisions.md`.
+
+### 21.1 Local normalization before cloud sync
+Order of work: Phase 1 (encrypted backup + restore verified) → **Phase 1B (local per-entity transactional tables)** → Phase 2 (outbox, cloud schema, first sync). The Phase 0 benchmark measured p50 write latency of 150 ms / 1.7 s / 7.9 s at 1k / 10k / 50k orders caused by whole-state JSON rewrites; this is the trigger allowed by §2.2. Migration is progressive and reversible: the JSON snapshot remains readable until parity is proven. The 50 000-order validation ceiling in `PosStore.validate` is removed in Phase 1B and **not** replaced by any other history limit; protections against runaway memory move to per-entity streaming/pagination, not to a cap on history. Benchmarks at 1k/10k/50k/100k before and after: p50/p95 write latency, SQLite file and backup size, PostgreSQL size (Phase 2, on the compact schema) and sync payload bytes per change.
+
+### 21.2 Soft deletion
+Legitimate business records are never physically deleted by normal operations. `Sil` becomes an audited soft delete (actor, time, reason, request ID) that keeps financial history, cancellation reasons, command receipts/idempotency and emits a sync tombstone. Every report must define and test how soft-deleted and cancelled orders are counted (default: excluded from sales, visible in İptaller/audit). Legally required personal-data erasure (KVKK data-subject requests) is a separate, owner-approved flow that redacts personal fields while keeping the commercial facts.
+
+### 21.3 Delivery-platform customer data
+No CRM. E-mail is not collected (implemented in PR-01). Name, phone and address are used only when operationally necessary through the authorized API; the retention policy proposal in `platform-data-policy.md` §7 requires owner approval and KVKK review before implementation. All commercial and financial history is preserved. Nested records, caches, print snapshots and logs are scanned for PII replication by automated tests.
+
+### 21.4 Gel-Al customers
+The existing local customer directory and Açık Hesaplar are preserved unchanged. Personal contact details stay local; the cloud projection contains only commercial/financial records and the pseudonymous customer ID. No expansion of the directory and no automatic deletion.
+
+### 21.5 Sync registry
+Schema guarantees are layered: (1) top-level drift guard; (2) nested field registry; (3) runtime validation of every committed state in the test suite and fail-closed cloud projection in production (an undeclared field is never uploaded, local operation is never blocked); (4) explicit cloud field allowlist plus a "never projected" list; (5) typed per-table serializers with stable IDs and integer kuruş (PR-04/05).
+
+### 21.6 QR menu audit
+Pending repository access; focus files: `cms-live.js`, `cms-pos-live.js`, `menu.js`, `cms/menu-prices.json`, `cms/pos-managed-menu.json`, `cms/pos-managed-status.json`.
 
