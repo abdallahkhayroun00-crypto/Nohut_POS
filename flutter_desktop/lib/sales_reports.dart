@@ -325,9 +325,9 @@ class _SalesReportsState extends State<SalesReports> {
             ),
           ),
         ),
-        Wrap(
+        EvenGrid(
+          minTileWidth: 190,
           spacing: 10,
-          runSpacing: 10,
           children: [
             metric(
               'Yerel net tahsilat',

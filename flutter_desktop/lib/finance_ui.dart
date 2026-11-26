@@ -1809,8 +1809,9 @@ class _FinancePanelState extends State<FinancePanel> {
         if (widget.onlineWarning != null)
           _notice(widget.onlineWarning!),
         const SizedBox(height: 8),
-        Wrap(
-          spacing: 4, runSpacing: 4,
+        EvenGrid(
+          minTileWidth: 200,
+          spacing: 8,
           children: [
             _metric('Yerel Tahsilat (Masa / Gel-Al)',
               formatTry(report.localReceiptsCents), Icons.payments_outlined),
