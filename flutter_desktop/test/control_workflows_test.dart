@@ -394,15 +394,10 @@ void main() {
         key.currentState!.data['settings']['autoPrintEnabledAt'],
         isNot('2000-01-01T00:00:00Z'),
       );
-      await tap(t, 'Tutarlı SQLite Yedeği Oluştur');
-      await enter(t, 'Yeni yedek dosya yolu', '${dir.path}/backup.sqlite3');
-      await tap(t, 'Kaydet');
-      final backup = PosStore(databaseFile: '${dir.path}/backup.sqlite3');
-      try {
-        expect(backup.read().data, store.read().data);
-      } finally {
-        backup.dispose();
-      }
+      // Unencrypted SQLite copies are gone (spec V5.1 §12.1); backups are
+      // encrypted in Ayarlar → Yedekleme ve Geri Yükleme.
+      expect(find.text('Tutarlı SQLite Yedeği Oluştur'), findsNothing);
+      expect(find.textContaining('Yedekleme ve Geri Yükleme'), findsOneWidget);
       expect(t.takeException(), isNull);
     },
   );

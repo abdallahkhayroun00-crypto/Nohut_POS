@@ -1560,36 +1560,9 @@ class _SettingsPanelState extends State<SettingsPanel> {
         },
         child: const Text('Yazıcı Ayarı'),
       ),
-      OutlinedButton(
-        onPressed: () async {
-          final v = await askFields(context, 'SQLite Yedekle', [
-            (
-              'Yeni yedek dosya yolu',
-              path.join(
-                Directory.current.path,
-                'nohut-backup-${DateTime.now().millisecondsSinceEpoch}.sqlite3',
-              ),
-            ),
-          ]);
-          if (v != null) {
-            try {
-              store.backup(v[0]);
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Yedek kaydedildi: ${v[0]}')),
-                );
-              }
-            } catch (e) {
-              if (context.mounted) {
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(SnackBar(content: Text('$e')));
-              }
-            }
-          }
-        },
-        child: const Text('Tutarlı SQLite Yedeği Oluştur'),
-      ),
+      // Unencrypted SQLite copies were replaced by encrypted backups
+      // (spec V5.1 §12.1): Ayarlar → Yedekleme ve Geri Yükleme.
+      const Text('Yedekleme: Ayarlar → Yedekleme ve Geri Yükleme (şifreli).'),
     ],
   );
 }

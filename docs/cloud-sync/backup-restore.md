@@ -51,10 +51,42 @@ The Phase 1 gate requires a physical restore on a **second clean Windows machine
 
 Cloud epochs and anti-replay across restore belong to Phase 2: command receipts and `deleted_requests` are restored with the database.
 
-## PR-03 (next)
+## PR-03: destinations, history, automatic backup, screen
 
-- Backup destinations: local folder (always) plus an optional mirror folder (USB, NAS, or a Google Drive / OneDrive *synced* folder; 0 TL, no OAuth). Each copy is verified.
-- `backup_history`.
-- Daily automatic backup, with the key stored under DPAPI on this PC only.
-- The `Yedekleme ve Geri Yükleme` screen.
-- The old unencrypted `.sqlite3` backup buttons replaced.
+Code: `lib/backup_service.dart`, `lib/backup_ui.dart`, the `backup_history` table in `PosStore`, and wiring in `main.dart`. Tests: `test/backup_service_test.dart`, `test/backup_ui_test.dart`.
+
+**Ayarlar → Yedekleme ve Geri Yükleme (Windows):**
+- Status tiles show the last backup, the Recovery Key on this PC, automatic backup state and the number of backups.
+- **Kurtarma Anahtarı Oluştur:**
+  1. The key is shown once.
+  2. The owner retypes the last group to confirm.
+  3. The key is stored with DPAPI for automatic backups.
+
+  **Var Olan Anahtarı Gir** is for a new PC.
+- **Şimdi Yedekle** writes to the primary folder (default: `Yedekler` next to the database).
+- The optional **ayna klasörü** (USB, NAS, or a Google Drive / OneDrive *synced* folder; 0 TL, no OAuth) gets a copy that is SHA-256-compared before it counts.
+- **Otomatik Yedekleme:** once every 24 h while the program is open, checked every 30 minutes.
+- **Doğrula** decrypts a backup and runs the integrity check.
+- **Geri Yükle (owner only):**
+  1. Enter the Recovery Key, type `GERİ YÜKLE` and the name of the person approving.
+  2. Confirm the dialog that shows date, revision and order count.
+  3. The restore is staged and applied on restart. A staged restore can be cancelled.
+- Backup history comes from `backup_history`.
+- Nothing is ever deleted automatically.
+
+**Safety notes:**
+- The old unencrypted "SQLite Yedeği" buttons were removed (spec §12.1).
+- The application applies a staged restore at startup, **before** opening the database, and shows the outcome.
+
+**Tested:**
+| Case | Result |
+|---|---|
+| No key | Nothing written, failure logged |
+| Primary + verified mirror | Mirror bytes identical; mirror copy decrypts |
+| Broken mirror | Primary kept, status `ok_mirror_failed` |
+| Automatic backup | Runs once per 24 h and only when enabled |
+| Second run while one is running | Refused (single flight) |
+| History | Kept across runs |
+| UI | Disabled without a key; lists, verifies and restores with a key |
+
+**Owner-only rule:** per-user permission checks (`backup.restore` is owner-only) arrive with Phase 3 accounts. Until then the Recovery Key plus typed confirmation is the gate.

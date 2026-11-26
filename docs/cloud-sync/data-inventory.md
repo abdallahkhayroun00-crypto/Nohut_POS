@@ -29,7 +29,8 @@ The database lives at `%APPDATA%\NohutFalafel\nohut-pos.sqlite3` and can be over
 | `state_snapshot` | `id=1` (single row) | `revision` INTEGER, `payload` TEXT (the whole business state as JSON, §2), `updated_at` | all classes of §2 | Never uploaded as a blob. It is projected per entity through the registry (spec §2.2). | VERIFIED_EXISTING |
 | `command_receipts` | `request_id` | Idempotency receipt: the full request `payload` JSON and the `result` JSON. Written by `PosStore.command` (staff phone orders/actions, finance sync). | INTERNAL, **PERSONAL_PII** (a Gel-Al phone order payload contains `customer.phone`) | Keep request identity, hash and outcome. Cloud copy redacted (spec §19.6.5). | VERIFIED_EXISTING |
 | `deleted_requests` | `request_id` | Opaque IDs of commands that belonged to an order removed by `deleteOrder`. | INTERNAL | Anti-replay identity; must survive restore. | VERIFIED_EXISTING |
-| `sync_outbox`, `sync_state`, `backup_history` | — | — | — | Spec §4.4 | PROPOSED_V5 |
+| `backup_history` | `backup_id` | Backup runs: time, revision, sizes, SHA-256, destination, status, verification, reason, error | INTERNAL, DEVICE_LOCAL | Local history; never pruned | VERIFIED_EXISTING (Phase 1) |
+| `sync_outbox`, `sync_state` | — | — | — | Spec §4.4 | PROPOSED_V5 |
 
 **History-loss finding (P1 for Phase 2):** `PosStore.deleteOrder` physically removes the order, its print jobs, staff notices and terminal attempts. It also deletes the matching `command_receipts`; only the request IDs remain in `deleted_requests`. This conflicts with the V5 "lossless business history" rule, which calls for tombstones rather than physical delete. It is not changed in Phase 0, and needs an owner decision plus a tombstone design in PR-04.
 

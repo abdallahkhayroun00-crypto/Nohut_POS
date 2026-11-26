@@ -2,7 +2,30 @@
 
 The source stays a native Flutter application, never an embedded website.
 """
+import sys
 from pathlib import Path
+
+if "--signing" in sys.argv:
+    # Release signing from environment variables set by the workflow.
+    gradle = Path("android/app/build.gradle.kts")
+    source = gradle.read_text()
+    if "create(\"release\")" not in source:
+        block = (
+            "    signingConfigs {\n"
+            "        create(\"release\") {\n"
+            "            storeFile = file(System.getenv(\"ANDROID_KEYSTORE_PATH\"))\n"
+            "            storePassword = System.getenv(\"ANDROID_KEYSTORE_PASSWORD\")\n"
+            "            keyAlias = System.getenv(\"ANDROID_KEY_ALIAS\")\n"
+            "            keyPassword = System.getenv(\"ANDROID_KEY_PASSWORD\")\n"
+            "        }\n"
+            "    }\n\n"
+        )
+        source = source.replace("    buildTypes {", block + "    buildTypes {", 1)
+        source = source.replace('signingConfig = signingConfigs.getByName("debug")',
+                                'signingConfig = signingConfigs.getByName("release")')
+        gradle.write_text(source)
+    print("Configured permanent release signing")
+    raise SystemExit(0)
 
 android = Path("android")
 manifest = android / "app/src/main/AndroidManifest.xml"

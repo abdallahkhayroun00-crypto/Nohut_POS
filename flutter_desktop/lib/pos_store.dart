@@ -43,16 +43,22 @@ class PosStore extends ChangeNotifier {
   @visibleForTesting
   static void Function(Map<String, dynamic> state)? debugWriteObserver;
 
-  PosStore({String? databaseFile}) {
+  /// The database path the store will open (used to apply a staged
+  /// restore before the database is opened).
+  static String resolvePath(String? databaseFile) {
+    if (databaseFile != null) return databaseFile;
+    final env = Platform.environment['NOHUT_POS_DATABASE'];
+    if (env != null) return env;
     final defaultFolder =
         Platform.environment['APPDATA'] ??
         paths.join(Directory.current.path, 'local-data');
     final folder = Directory(paths.join(defaultFolder, 'NohutFalafel'));
     folder.createSync(recursive: true);
-    filePath =
-        databaseFile ??
-        Platform.environment['NOHUT_POS_DATABASE'] ??
-        paths.join(folder.path, 'nohut-pos.sqlite3');
+    return paths.join(folder.path, 'nohut-pos.sqlite3');
+  }
+
+  PosStore({String? databaseFile}) {
+    filePath = resolvePath(databaseFile);
     final target = Directory(paths.dirname(filePath));
     target.createSync(recursive: true);
     _db = sqlite3.open(filePath);
@@ -77,6 +83,22 @@ class PosStore extends ChangeNotifier {
     _db.execute(
       'CREATE TABLE IF NOT EXISTS deleted_requests (request_id TEXT PRIMARY KEY)',
     );
+    // Spec V5.1 §4.4: local backup history (additive; never pruned).
+    _db.execute('''
+      CREATE TABLE IF NOT EXISTS backup_history(
+        backup_id TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL,
+        revision INTEGER NOT NULL,
+        file_size_bytes INTEGER NOT NULL,
+        compressed_bytes INTEGER NOT NULL,
+        sha256 TEXT NOT NULL,
+        destination TEXT NOT NULL,
+        status TEXT NOT NULL,
+        verified_at TEXT,
+        reason TEXT,
+        error_message TEXT
+      )
+    ''');
     final old = read();
     final migrated = copyJson(old.data);
     assignDailyNumbers(migrated);
@@ -384,6 +406,38 @@ class PosStore extends ChangeNotifier {
       rethrow;
     }
   }
+
+  void recordBackupHistory({
+    required String backupId,
+    required String createdAt,
+    required int revision,
+    required int fileSizeBytes,
+    required int compressedBytes,
+    required String sha256,
+    required String destination,
+    required String status,
+    String? verifiedAt,
+    String? reason,
+    String? error,
+  }) {
+    _db.execute(
+      'INSERT OR REPLACE INTO backup_history(backup_id,created_at,revision,'
+      'file_size_bytes,compressed_bytes,sha256,destination,status,'
+      'verified_at,reason,error_message) VALUES(?,?,?,?,?,?,?,?,?,?,?)',
+      [backupId, createdAt, revision, fileSizeBytes, compressedBytes, sha256,
+        destination, status, verifiedAt, reason, error],
+    );
+    notifyListeners();
+  }
+
+  /// Newest first.
+  List<Map<String, Object?>> backupHistory({int limit = 200}) => [
+    for (final row in _db.select(
+      'SELECT * FROM backup_history ORDER BY created_at DESC LIMIT ?',
+      [limit],
+    ))
+      {for (final key in row.keys) key: row[key]},
+  ];
 
   /// VACUUM INTO creates one consistent database even while WAL is active.
   void backup(String destination) {
