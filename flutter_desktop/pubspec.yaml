@@ -12,6 +12,7 @@ dependencies:
   flutter:
     sdk: flutter
   crypto: ^3.0.7
+  cryptography: ^2.7.0
   ffi: ^2.2.0
   sqlite3: ^3.7.1
   qr_flutter: ^4.1.0
