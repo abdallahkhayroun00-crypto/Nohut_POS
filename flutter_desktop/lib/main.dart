@@ -867,8 +867,8 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       context: context,
       builder: (ctx) => Dialog(
         child: SizedBox(
-          width: 900,
-          height: MediaQuery.sizeOf(ctx).height * .88,
+          width: 1040,
+          height: MediaQuery.sizeOf(ctx).height * .9,
           child: Column(
             children: [
               Padding(
@@ -1986,252 +1986,314 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
   Widget _orderDetail(Json o) {
     final id = o['id'] as int;
     final closed = o['closed'] == true;
+    final local = o['source'] == 'Masa' || o['source'] == 'Gel-Al';
     final total = orderTotalCents(o), paid = orderPaidCents(o);
+    final due = orderDueCents(o);
     final split = asMaps(o['guestChecks']);
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(19),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
+    final customerName = o['customer'] is Map
+        ? '${(o['customer'] as Map)['name'] ?? ''}'.trim() : '';
+    final title = o['table'] != null
+        ? 'Masa ${o['table']}'
+        : '${o['source']}${customerName.isEmpty ? '' : ' · $customerName'}';
+    final statusText = closed
+        ? 'Kapalı'
+        : o['source'] == 'Gel-Al' && o['deliveredAt'] != null
+            ? 'Teslim Edildi'
+            : 'Açık';
+    const border = Color(0xffE1E7E3);
+    // No fill by default: the dialog is white, and ListTiles inside need
+    // their Material ancestor to stay visible.
+    BoxDecoration panel([Color? color]) => BoxDecoration(
+      color: color,
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: border),
+    );
+
+    Widget wide(Widget button) => SizedBox(width: double.infinity, child: button);
+
+    final items = Container(
+      padding: const EdgeInsets.all(16),
+      decoration: panel(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(children: [
+            const Text('Ürünler', style: TextStyle(
+              fontSize: 16, fontWeight: FontWeight.w800)),
+            const SizedBox(width: 8),
+            Text('${itemCount(o)} adet', style: const TextStyle(
+              color: NohutBrand.muted, fontSize: 12.5)),
+          ]),
+          const SizedBox(height: 8),
+          for (final line in activeLines(o))
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 34,
+                    padding: const EdgeInsets.symmetric(vertical: 3),
+                    decoration: BoxDecoration(
+                      color: const Color(0xffEEF3EF),
+                      borderRadius: BorderRadius.circular(7),
+                    ),
+                    child: Text('${line['qty']}×',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontWeight: FontWeight.w800,
+                        color: NohutBrand.green)),
+                  ),
+                  const SizedBox(width: 11),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${line['name'] ?? line['productKey'] ?? 'Ürün'}',
+                          style: const TextStyle(fontWeight: FontWeight.w600,
+                            fontSize: 14.5),
+                        ),
+                        if ('${line['note'] ?? ''}'.isNotEmpty)
+                          Text('Not: ${line['note']}', style: const TextStyle(
+                            fontSize: 12.5, color: Color(0xff8A6516))),
+                        if ((line['removed'] as List? ?? []).isNotEmpty)
+                          Text(
+                            'Çıkar: ${(line['removed'] as List).join(', ')}',
+                            style: const TextStyle(fontSize: 12.5,
+                              color: NohutBrand.muted),
+                          ),
+                      ],
+                    ),
+                  ),
+                  Text(
+                    formatTry(
+                      cents(line['price']) *
+                          ((line['qty'] as num?)?.toInt() ?? 0),
+                    ),
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ],
+              ),
+            ),
+          if (split.isNotEmpty) ...[
+            const Divider(height: 24),
+            const Text(
+              'Kişi Hesapları',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+            ),
+            for (final guest in split)
+              Builder(
+                builder: (context) {
+                  final allocated = asMaps(guest['allocations'])
+                      .fold<int>(0, (sum, a) => sum + (a['cents'] as int));
+                  final rest = guestBalance(
+                    o,
+                    guest['id'] as int,
+                  ).clamp(0, allocated).toInt();
+                  return ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: CircleAvatar(
+                      radius: 16,
+                      backgroundColor: const Color(0xffEEF3EF),
+                      child: Icon(rest > 0 ? Icons.person_outline : Icons.check,
+                        size: 18, color: NohutBrand.green),
+                    ),
+                    title: Text(
+                      '${guest['name'] ?? 'Kişi'} · ${formatTry(allocated)}',
+                    ),
+                    subtitle: Text('Kalan ${formatTry(rest)}'),
+                    trailing: rest > 0 && !closed
+                        ? FilledButton(
+                            onPressed: () => _pay(
+                              o,
+                              guestId: guest['id'] as int,
+                              guestName: '${guest['name']}',
+                              maximumCents: rest,
+                            ),
+                            child: const Text('Öde'),
+                          )
+                        : const Icon(Icons.check_circle, color: emerald),
+                  );
+                },
+              ),
+          ],
+        ],
+      ),
+    );
+
+    final canSplitByProduct = due > 0 &&
+        checkLines(o).any((line) => line.total > allocatedTo(o, line.key));
+    final payment = Container(
+      padding: const EdgeInsets.all(16),
+      decoration: panel(const Color(0xffF4F6F2)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text('KALAN', style: TextStyle(fontSize: 11.5,
+            letterSpacing: 1.1, fontWeight: FontWeight.w800,
+            color: NohutBrand.muted)),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(formatTry(due), style: TextStyle(
+              fontSize: 34, fontWeight: FontWeight.w900,
+              color: due > 0 ? NohutBrand.ink : const Color(0xff2C6E86))),
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: total <= 0 ? 0 : (paid / total).clamp(0, 1).toDouble(),
+              minHeight: 7,
+              color: const Color(0xff2E7D4F),
+              backgroundColor: const Color(0xffDCE3DE),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(children: [
+            Expanded(child: Text('Toplam: ${formatTry(total)}',
+              style: const TextStyle(fontWeight: FontWeight.w700))),
+            Text('Alınan: ${formatTry(paid)}',
+              style: const TextStyle(color: NohutBrand.muted)),
+          ]),
+          if (o['terminalPending'] != null) ...[
+            const SizedBox(height: 12),
+            const Text(
+              'Terminal sonucu bekleniyor. Yeniden ödeme başlatmayın.',
+              style: TextStyle(color: Color(0xff8c352e),
+                fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 6),
+            OutlinedButton(
+              onPressed: !inpos.gateway.ready || terminalBusy
+                  ? null
+                  : () async {
+                      terminalBusy = true;
+                      try {
+                        final reply = await inpos.reconcile(
+                          '${o['terminalPending']}',
+                        );
+                        if (mounted) {
+                          _notify('inPOS: ${reply.status.name}');
+                          if (reply.status == TerminalStatus.approved)
+                            await _offerReceipt(id);
+                        }
+                      } catch (e) {
+                        if (mounted) _notify('$e', error: true);
+                      } finally {
+                        terminalBusy = false;
+                      }
+                    },
+              child: const Text('Terminal Sonucunu Sorgula'),
+            ),
+          ],
+          if (!closed && local) ...[
+            const SizedBox(height: 14),
+            if (split.isEmpty && due > 0)
+              wide(FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(50),
+                  textStyle: const TextStyle(fontFamily: NohutBrand.bodyFont,
+                    fontSize: 16, fontWeight: FontWeight.w800),
+                ),
+                onPressed: () => _pay(o),
+                icon: const Icon(Icons.payments),
+                label: const Text('Nakit / Kart'),
+              )),
+            if (o['source'] == 'Masa' && due == 0)
+              wide(FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(50),
+                  backgroundColor: const Color(0xff2C6E86),
+                ),
+                onPressed: () => _closeTable(o),
+                icon: const Icon(Icons.done_all),
+                label: const Text('Masayı Kapat'),
+              )),
+            if (canSplitByProduct || (split.isEmpty && paid == 0))
+              const SizedBox(height: 8),
+            Row(children: [
+              if (canSplitByProduct)
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Sipariş #${displayOrderNumber(o)} · ${o['source']}${o['table'] == null ? '' : ' · Masa ${o['table']}'}',
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '${o['numberDay'] ?? ''} · ${closed
-                            ? 'Kapalı'
-                            : o['source'] == 'Gel-Al' && o['deliveredAt'] != null
-                            ? 'Teslim Edildi'
-                            : 'Açık'}',
-                        style: const TextStyle(
-                          color: Color(0xff708273),
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
+                  child: OutlinedButton.icon(
+                    onPressed: () => _selectProductsToPay(o),
+                    icon: const Icon(Icons.checklist, size: 18),
+                    label: const Text('Ürün seçerek öde',
+                      maxLines: 1, overflow: TextOverflow.ellipsis),
                   ),
                 ),
-                if (o['source'] == 'Masa' || o['source'] == 'Gel-Al')
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: OutlinedButton.icon(
-                      key: ValueKey('prepay-print-' + id.toString()),
-                      onPressed: () => _printBillBeforePayment(o),
-                      icon: const Icon(Icons.print_outlined),
-                      label: const Text('Ön Fiş Yazdır'),
-                    ),
-                  ),
-                if (!closed &&
-                    (o['source'] == 'Masa' || o['source'] == 'Gel-Al'))
-                  OutlinedButton.icon(
-                    onPressed: () =>
-                        _composer(table: o['table'] as int?, addToOrder: id),
-                    icon: const Icon(Icons.add),
-                    label: const Text('Ek Sipariş'),
-                  ),
-              ],
-            ),
-            const Divider(height: 26),
-            for (final line in activeLines(o))
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 36,
-                      padding: const EdgeInsets.all(6),
+              if (canSplitByProduct && split.isEmpty && paid == 0)
+                const SizedBox(width: 8),
+              if (split.isEmpty && paid == 0)
+                Expanded(
+                  child: PopupMenuButton<int>(
+                    tooltip: 'Hesabı eşit böl',
+                    onSelected: (n) => _equalSplit(o, n),
+                    itemBuilder: (context) => [
+                      for (final n in [2, 3, 4, 5, 6, 7, 8, 9, 10])
+                        PopupMenuItem(
+                          value: n,
+                          child: Text('$n kişiye eşit böl'),
+                        ),
+                    ],
+                    child: Container(
+                      height: 40,
+                      alignment: Alignment.center,
                       decoration: BoxDecoration(
-                        color: cream,
-                        borderRadius: BorderRadius.circular(9),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: const Color(0xffBECFC5)),
                       ),
-                      child: Text(
-                        '${line['qty']}×',
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                    const SizedBox(width: 11),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text(
-                            '${line['name'] ?? line['productKey'] ?? 'Ürün'}',
-                            style: const TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                          if ('${line['note'] ?? ''}'.isNotEmpty)
-                            Text('Not: ${line['note']}'),
-                          if ((line['removed'] as List? ?? []).isNotEmpty)
-                            Text(
-                              'Çıkar: ${(line['removed'] as List).join(', ')}',
-                            ),
+                          Icon(Icons.call_split, size: 18, color: NohutBrand.green),
+                          SizedBox(width: 6),
+                          Flexible(child: Text('Hesabı Eşit Böl',
+                            maxLines: 1, overflow: TextOverflow.ellipsis,
+                            style: TextStyle(color: NohutBrand.green,
+                              fontWeight: FontWeight.w600))),
                         ],
                       ),
                     ),
-                    Text(
-                      formatTry(
-                        cents(line['price']) *
-                            ((line['qty'] as num?)?.toInt() ?? 0),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
-              ),
-            const Divider(height: 25),
+            ]),
+            const Divider(height: 26),
+            const Text('Diğer İşlemler', style: TextStyle(fontSize: 12,
+              fontWeight: FontWeight.w800, color: NohutBrand.muted)),
+            const SizedBox(height: 6),
             Wrap(
-              alignment: WrapAlignment.spaceBetween,
-              runSpacing: 10,
+              spacing: 8,
+              runSpacing: 8,
               children: [
-                Text(
-                  'Toplam: ${formatTry(total)}',
-                  style: const TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w800,
-                  ),
+                OutlinedButton.icon(
+                  onPressed: () => _editProducts(o),
+                  icon: const Icon(Icons.edit_outlined, size: 18),
+                  label: const Text('Ürünleri Düzenle'),
                 ),
-                Text(
-                  'Alınan: ${formatTry(paid)}',
-                  style: const TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w600,
+                if (o['source'] == 'Masa')
+                  OutlinedButton.icon(
+                    onPressed: () => _moveOrder(o),
+                    icon: const Icon(Icons.swap_horiz, size: 18),
+                    label: const Text('Masayı Taşı'),
                   ),
-                ),
-                Text(
-                  'Kalan: ${formatTry(orderDueCents(o))}',
-                  style: const TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w900,
-                    color: dark,
-                  ),
-                ),
               ],
             ),
-            if (o['terminalPending'] != null) ...[
-              const Text(
-                'Terminal sonucu bekleniyor. Yeniden ödeme başlatmayın.',
-              ),
-              OutlinedButton(
-                onPressed: !inpos.gateway.ready || terminalBusy
-                    ? null
-                    : () async {
-                        terminalBusy = true;
-                        try {
-                          final reply = await inpos.reconcile(
-                            '${o['terminalPending']}',
-                          );
-                          if (mounted) {
-                            _notify('inPOS: ${reply.status.name}');
-                            if (reply.status == TerminalStatus.approved)
-                              await _offerReceipt(id);
-                          }
-                        } catch (e) {
-                          if (mounted) _notify('$e', error: true);
-                        } finally {
-                          terminalBusy = false;
-                        }
-                      },
-                child: const Text('Terminal Sonucunu Sorgula'),
-              ),
-            ],
-            if (split.isNotEmpty) ...[
-              const Divider(height: 24),
-              const Text(
-                'Kişi Hesapları',
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
-              ),
-              for (final guest in split)
-                Builder(
-                  builder: (context) {
-                    final allocated = asMaps(guest['allocations'])
-                        .fold<int>(0, (sum, a) => sum + (a['cents'] as int));
-                    final rest = guestBalance(
-                      o,
-                      guest['id'] as int,
-                    ).clamp(0, allocated).toInt();
-                    return ListTile(
-                      title: Text(
-                        '${guest['name'] ?? 'Kişi'} · ${formatTry(allocated)}',
-                      ),
-                      subtitle: Text('Kalan ${formatTry(rest)}'),
-                      trailing: rest > 0 && !closed
-                          ? FilledButton(
-                              onPressed: () => _pay(
-                                o,
-                                guestId: guest['id'] as int,
-                                guestName: '${guest['name']}',
-                                maximumCents: rest,
-                              ),
-                              child: const Text('Öde'),
-                            )
-                          : const Icon(Icons.check_circle, color: emerald),
-                    );
-                  },
-                ),
-            ],
-            const SizedBox(height: 17),
-            if (!closed && (o['source'] == 'Masa' || o['source'] == 'Gel-Al'))
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  if (split.isEmpty && orderDueCents(o) > 0)
-                    FilledButton.icon(
-                      onPressed: () => _pay(o),
-                      icon: const Icon(Icons.payments),
-                      label: const Text('Nakit / Kart'),
-                    ),
-                  if (orderDueCents(o) > 0 &&
-                      checkLines(o)
-                          .any((line) => line.total > allocatedTo(o, line.key)))
-                    OutlinedButton.icon(
-                      onPressed: () => _selectProductsToPay(o),
-                      icon: const Icon(Icons.checklist),
-                      label: const Text('Ürün seçerek öde'),
-                    ),
-                  if (split.isEmpty && orderPaidCents(o) == 0)
-                    PopupMenuButton<int>(
-                      onSelected: (n) => _equalSplit(o, n),
-                      itemBuilder: (context) => [
-                        for (final n in [2, 3, 4, 5, 6, 7, 8, 9, 10])
-                          PopupMenuItem(
-                            value: n,
-                            child: Text('$n kişiye eşit böl'),
-                          ),
-                      ],
-                      child: const Chip(label: Text('⚖ Hesabı Eşit Böl')),
-                    ),
-                  OutlinedButton.icon(
-                    onPressed: () => _editProducts(o),
-                    icon: const Icon(Icons.edit_outlined),
-                    label: const Text('Ürünleri Düzenle'),
-                  ),
-                  if (o['source'] == 'Masa')
-                    OutlinedButton.icon(
-                      onPressed: () => _moveOrder(o),
-                      icon: const Icon(Icons.swap_horiz),
-                      label: const Text('Masayı Taşı'),
-                    ),
-                  if (o['source'] == 'Masa' && orderDueCents(o) == 0)
-                    OutlinedButton.icon(
-                      onPressed: () => _closeTable(o),
-                      icon: const Icon(Icons.done_all),
-                      label: const Text('Masayı Kapat'),
-                    ),
-                ],
-              ),
-
-            if (!isPlatform(o))
-              OutlinedButton.icon(
+          ],
+          if (closed) ...[
+            const SizedBox(height: 12),
+            const Text(
+              'Bu hesap kapalı. Ek ürün ve yeni ödeme eklenemez.',
+              style: TextStyle(color: Colors.teal),
+            ),
+          ],
+          if (!isPlatform(o)) ...[
+            const SizedBox(height: 10),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                style: TextButton.styleFrom(
+                  foregroundColor: const Color(0xffB3261E)),
                 onPressed: () async {
                   if (await confirmAction(
                     context,
@@ -2252,27 +2314,121 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                     }
                   }
                 },
-                icon: const Icon(Icons.delete_forever),
+                icon: const Icon(Icons.delete_forever, size: 18),
                 label: const Text('Kalıcı Sil'),
               ),
-            OrderOperations(
-              printSettings: store.read().data['settings'] as Map?,
-              order: o,
-              edit: _edit,
-              printerName:
-                  '${store.read().data['settings']?['printerName'] ?? ''}',
             ),
-            if (closed)
-              const Padding(
-                padding: EdgeInsets.only(top: 12),
-                child: Text(
-                  'Bu hesap kapalı. Ek ürün ve yeni ödeme eklenemez.',
-                  style: TextStyle(color: Colors.teal),
+          ],
+        ],
+      ),
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
+          decoration: panel(),
+          child: Row(
+            children: [
+              Container(
+                width: 46, height: 46,
+                decoration: BoxDecoration(
+                  color: const Color(0xffFFF1D6),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(o['source'] == 'Masa'
+                    ? Icons.table_restaurant_outlined
+                    : Icons.shopping_bag_outlined,
+                  color: const Color(0xff6E4614)),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(children: [
+                      Flexible(
+                        child: Text(title, maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 20,
+                            fontWeight: FontWeight.w900)),
+                      ),
+                      const SizedBox(width: 8),
+                      StatusPill(closed
+                          ? localStatusStyle(o)
+                          : statusText == 'Teslim Edildi'
+                              ? ('Teslim Edildi', NohutBrand.green,
+                                  const Color(0xffe5ebdf))
+                              : localStatusStyle(o)),
+                    ]),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Sipariş #${displayOrderNumber(o)} · ${o['source']}${o['table'] == null ? '' : ' · Masa ${o['table']}'}',
+                      style: const TextStyle(color: NohutBrand.muted,
+                        fontSize: 12.5),
+                    ),
+                    Text(
+                      '${o['numberDay'] ?? ''} · $statusText · '
+                      '${istanbulStamp(o['createdAt']).substring(11)} açıldı'
+                      '${closed ? '' : ' · ${durationLabel(openMinutes(o, DateTime.now()))}'}'
+                      ' · ${orderOwnerName(o)}',
+                      style: const TextStyle(color: Color(0xff708273),
+                        fontSize: 12),
+                    ),
+                  ],
                 ),
               ),
-          ],
+              if (local)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: OutlinedButton.icon(
+                    key: ValueKey('prepay-print-$id'),
+                    onPressed: () => _printBillBeforePayment(o),
+                    icon: const Icon(Icons.print_outlined),
+                    label: const Text('Ön Fiş Yazdır'),
+                  ),
+                ),
+              if (!closed && local)
+                FilledButton.tonalIcon(
+                  onPressed: () =>
+                      _composer(table: o['table'] as int?, addToOrder: id),
+                  icon: const Icon(Icons.add),
+                  label: const Text('Ek Sipariş'),
+                ),
+            ],
+          ),
         ),
-      ),
+        const SizedBox(height: 12),
+        LayoutBuilder(builder: (context, box) {
+          if (box.maxWidth < 760) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [payment, const SizedBox(height: 12), items],
+            );
+          }
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: items),
+              const SizedBox(width: 12),
+              SizedBox(width: 340, child: payment),
+            ],
+          );
+        }),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(4),
+          decoration: panel(),
+          child: OrderOperations(
+            printSettings: store.read().data['settings'] as Map?,
+            order: o,
+            edit: _edit,
+            printerName:
+                '${store.read().data['settings']?['printerName'] ?? ''}',
+          ),
+        ),
+      ],
     );
   }
 
