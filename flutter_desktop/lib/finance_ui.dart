@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
+import 'package:nohut_core/report_period.dart';
 
 import 'brand.dart';
 import 'finance_logic.dart';
@@ -88,136 +89,73 @@ class _FinancePanelState extends State<FinancePanel> {
 
   Future<void> _exportPdfReport() async {
     if (_pdfBusy) return;
-    var kind = FinancePdfKind.monthly;
-    var selectedPeriod = month;
+    var selected = 'Bu Ay';
+    var range = ReportPeriod.preset(selected);
     String? error;
-    final request = await showDialog<FinancePdfRequest>(
+    final request = await showDialog<ReportPeriod>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialog) => AlertDialog(
-          title: const Text('PDF Raporu İndir'),
-          content: SizedBox(
-            width: 435,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Nohut Falafel · A4 yönetim raporları',
-                  style: TextStyle(color: NohutBrand.muted)),
-                const SizedBox(height: 15),
-                DropdownButtonFormField<FinancePdfKind>(
-                  key: ValueKey('finance-pdf-kind-' + kind.name),
-                  initialValue: kind,
-                  isExpanded: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Rapor Türü'),
-                  items: const [
-                    DropdownMenuItem(
-                      value: FinancePdfKind.monthly,
-                      child: Text('Aylık Finans Özeti')),
-                    DropdownMenuItem(
-                      value: FinancePdfKind.materials,
-                      child: Text('Günlük Malzeme Alım Raporu')),
-                    DropdownMenuItem(
-                      value: FinancePdfKind.payroll,
-                      child: Text('Haftalık Maaş & Sabit Giderler')),
-                  ],
-                  onChanged: (chosen) => setDialog(() {
-                    kind = chosen ?? FinancePdfKind.monthly;
-                    selectedPeriod = switch (kind) {
-                      FinancePdfKind.monthly => month,
-                      FinancePdfKind.materials => day,
-                      FinancePdfKind.payroll => week,
-                    };
-                    error = null;
-                  }),
-                ),
+        builder: (context, redraw) => AlertDialog(
+          title: const Text('Tam Yönetim Raporu · Tek PDF'),
+          content: SizedBox(width: 460, child: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                const Text('Tüm finans, personel, masa, sipariş, ürün, online satış, '
+                  'malzeme ve kasa bilgileri tek A4 PDF dosyasında.'),
                 const SizedBox(height: 12),
-                TextFormField(
-                  key: ValueKey('finance-pdf-period-' + kind.name),
-                  initialValue: selectedPeriod,
-                  onChanged: (next) {
-                    selectedPeriod = next.trim();
-                    setDialog(() => error = null);
-                  },
-                  decoration: InputDecoration(
-                    labelText: switch (kind) {
-                      FinancePdfKind.monthly => 'Ay (YYYY-MM)',
-                      FinancePdfKind.materials => 'Gün (YYYY-MM-DD)',
-                      FinancePdfKind.payroll => 'Hafta başlangıcı · Pazartesi',
-                    },
-                    helperText: kind == FinancePdfKind.payroll
-                      ? 'YYYY-MM-DD · pazartesi tarihi' : null,
-                  ),
-                ),
-                const SizedBox(height: 9),
-                if (kind == FinancePdfKind.payroll)
-                  const Text(
-                    'Bu rapor personel ücretlerini içerir. '
-                    'PDF dosyasını yalnızca yetkili yöneticiyle paylaşın.',
-                    style: TextStyle(
-                      color: Color(0xffa25b39), fontSize: 12)),
-                if (error != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 9),
-                    child: Text(error!,
-                      style: const TextStyle(color: Colors.red)),
-                  ),
-              ],
-            ),
-          ),
+                DropdownButtonFormField<String>(key: ValueKey('report-preset-' + selected), initialValue: selected,
+                  decoration: const InputDecoration(labelText: 'Rapor dönemi'),
+                  isExpanded: true,
+                  items: [for (final p in ReportPeriod.presets)
+                    DropdownMenuItem(value: p, child: Text(p))],
+                  onChanged: (v) => redraw(() {
+                    selected = v ?? 'Bu Ay';
+                    if (selected != 'Özel Tarih') range = ReportPeriod.preset(selected);
+                    error = null;
+                  })),
+                const SizedBox(height: 12),
+                for (final start in [true, false])
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.calendar_today_outlined),
+                    label: Text((start ? 'Başlangıç: ' : 'Bitiş: ') +
+                      (start ? range.from : range.to)),
+                    onPressed: () async {
+                      final d = await showDatePicker(context: context,
+                        initialDate: ReportPeriod.parse(start ? range.from : range.to),
+                        firstDate: DateTime(2000), lastDate: ReportPeriod.today());
+                      if (d != null && context.mounted) redraw(() {
+                        selected = 'Özel Tarih';
+                        range = ReportPeriod(start ? ReportPeriod.day(d) : range.from,
+                          start ? range.to : ReportPeriod.day(d));
+                        error = null;
+                      });
+                    }),
+                const Text('Yöneticiye özel: personel maaşları ve işletme bilgileri içerir. '
+                  'Kısmi ay giderleri ve manuel aylık gelirler ayrı gösterilir.',
+                  style: TextStyle(color: Color(0xffa25b39), fontSize: 12)),
+                if (error != null) Text(error!, style: const TextStyle(color: Colors.red)),
+              ]))),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
+            TextButton(onPressed: () => Navigator.pop(dialogContext),
               child: const Text('Vazgeç')),
-            FilledButton.icon(
-              key: const ValueKey('finance-pdf-create'),
+            FilledButton.icon(key: const ValueKey('finance-pdf-create'),
               icon: const Icon(Icons.picture_as_pdf_outlined),
-              label: const Text('PDF Oluştur'),
+              label: const Text('Tek PDF Oluştur'),
               onPressed: () {
                 try {
-                  final next = FinancePdfRequest(
-                    kind: kind,
-                    month: kind == FinancePdfKind.monthly
-                      ? selectedPeriod : month,
-                    day: kind == FinancePdfKind.materials
-                      ? selectedPeriod : day,
-                    weekStart: kind == FinancePdfKind.payroll
-                      ? selectedPeriod : week,
-                  );
-                  next.validate();
-                  Navigator.pop(dialogContext, next);
+                  range.validate();
+                  Navigator.pop(dialogContext, range);
                 } on FormatException catch (e) {
-                  setDialog(() => error = e.message);
+                  redraw(() => error = e.message);
                 }
-              },
-            ),
+              }),
           ],
-        ),
-      ),
+        )),
     );
     if (request == null || !mounted) return;
-    if (request.kind == FinancePdfKind.payroll) {
-      final approved = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Özel maaş raporu'),
-          content: const Text(
-            'Bu PDF çalışan isimleri, hak edişleri ve avanslarını '
-            'içerir. Dosyayı güvenli bir konuma kaydedin.'),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Vazgeç')),
-            FilledButton(onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Devam Et')),
-          ],
-        ),
-      );
-      if (approved != true || !mounted) return;
-    }
     try {
       final location = await getSaveLocation(
-        suggestedName: request.suggestedName,
+        suggestedName: request.fileName,
         acceptedTypeGroups: const [
           XTypeGroup(label: 'PDF', extensions: ['pdf']),
         ],
@@ -248,7 +186,7 @@ class _FinancePanelState extends State<FinancePanel> {
         if (overwrite != true || !mounted) return;
       }
       setState(() => _pdfBusy = true);
-      final pdfBytes = await generateFinancePdf(widget.state, request);
+      final pdfBytes = await generateManagementPdf(widget.state, request);
       await output.writeAsBytes(pdfBytes, flush: true);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -1102,7 +1040,7 @@ class _FinancePanelState extends State<FinancePanel> {
         int? total;
         try {
           total = quickMaterialTotalCents(
-            amounts.map((c) => _price(c.text)).toList());
+            amounts.map((c) => parseExpenseCents(c.text)).toList());
         } on FormatException {
           // Incomplete input is not a zero-value expense.
         }
@@ -1205,7 +1143,7 @@ class _FinancePanelState extends State<FinancePanel> {
               key: const ValueKey('finance-quick-save'),
               onPressed: () {
                 try {
-                  final values = amounts.map((c) => _price(c.text)).toList();
+                  final values = amounts.map((c) => parseExpenseCents(c.text)).toList();
                   quickMaterialTotalCents(values);
                   final ok = widget.edit((db) => saveQuickMaterialPurchase(
                     db, id: existing?['id'] as int?, date: selectedDay,

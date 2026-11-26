@@ -4,12 +4,14 @@ on:
   push:
     paths:
       - 'flutter_personel/**'
+      - 'packages/nohut_core/**'
       - 'flutter_desktop/lib/mobile_pairing.dart'
       - 'flutter_desktop/lib/lan_server.dart'
       - '.github/workflows/flutter-personel-android.yml'
   pull_request:
     paths:
       - 'flutter_personel/**'
+      - 'packages/nohut_core/**'
       - 'flutter_desktop/lib/mobile_pairing.dart'
       - 'flutter_desktop/lib/lan_server.dart'
       - '.github/workflows/flutter-personel-android.yml'

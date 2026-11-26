@@ -4,10 +4,12 @@ on:
   pull_request:
     paths:
       - 'flutter_desktop/**'
+      - 'packages/nohut_core/**'
       - '.github/workflows/flutter-desktop-windows.yml'
   push:
     paths:
       - 'flutter_desktop/**'
+      - 'packages/nohut_core/**'
       - 'pos-demo/index.html'
       - 'pos-demo/split-bill.html'
       - 'pos-demo/vendor/**'

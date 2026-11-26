@@ -1,0 +1,9 @@
+name: nohut_core
+description: Shared platform-independent business rules for Nohut POS.
+publish_to: none
+version: 0.1.0
+environment:
+  sdk: '>=3.10.0 <4.0.0'
+
+dependencies:
+  cryptography: ^2.7.0

@@ -8,6 +8,8 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 
+import 'expense_drafts.dart';
+
 typedef Json = Map<String, dynamic>;
 
 List<Json> rows(Object? value) {
@@ -178,6 +180,7 @@ class NohutApi {
   }
 
   Future<void> forget() async {
+    if (serverId != null) await ExpenseDraftStore.forServer(serverId!).disconnect();
     for (final key in ['lanUrl', 'deviceToken', 'serverId', 'employeeId']) {
       await _storage.delete(key: key);
     }
@@ -290,6 +293,12 @@ class PersonelController extends ChangeNotifier {
       state = next;
       online = true;
       error = null;
+      final restaurant = api.serverId;
+      if (restaurant != null && api.host != null) {
+        final finance = ExpenseDraftStore.forServer(restaurant);
+        finance.host = api.host;
+        unawaited(finance.sync());
+      }
     } catch (e) {
       online = false;
       error = '$e';
@@ -319,6 +328,12 @@ class PersonelController extends ChangeNotifier {
       seen.addAll(rows(state['staffNotices']).map((e) => '${e['id']}'));
       online = true;
       error = null;
+      final restaurant = api.serverId;
+      if (restaurant != null && api.host != null) {
+        final finance = ExpenseDraftStore.forServer(restaurant);
+        finance.host = api.host;
+        unawaited(finance.sync());
+      }
     } catch (e) {
       error = '$e';
       online = false;
