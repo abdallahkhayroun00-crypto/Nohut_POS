@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
@@ -6,6 +7,7 @@ import 'brand.dart';
 import 'pos_logic.dart';
 import 'pos_store.dart';
 import 'operations_ui.dart';
+import 'operations.dart';
 import 'online_orders.dart';
 import 'qr_menu_sync.dart';
 import 'qr_menu_preview.dart';
@@ -103,6 +105,63 @@ class _SimpleSettingsState extends State<SimpleSettings> {
     },
   );
 
+  // Real printer hard margins can clip the first characters even when the
+  // raster preview is centered. Keep 4 mm free on the right as we shift the
+  // printable artwork inward; never silently change Windows driver settings.
+  void _applyLeftClipFix(Map settings) {
+    final cfg = ReceiptDimensions(settings);
+    final currentLeft = (cfg.paper - cfg.width) / 2 + cfg.offset;
+    final targetLeft = math.max(8.0, currentLeft);
+    final nextWidth = math.min(cfg.width, cfg.paper - targetLeft - 4.0);
+    if (nextWidth < 30) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Kağıtta yeterli alan yok. Gelişmiş hizalamayı kullanın.'),
+      ));
+      return;
+    }
+    final nextOffset = targetLeft - (cfg.paper - nextWidth) / 2;
+    try {
+      ReceiptDimensions({
+        ...settings,
+        'printableWidthMm': nextWidth,
+        'receiptOffsetMm': nextOffset,
+      });
+    } on FormatException catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
+      return;
+    }
+    widget.edit((state) {
+      final cfg = state['settings'] as Map;
+      cfg['printableWidthMm'] = nextWidth;
+      cfg['receiptOffsetMm'] = nextOffset;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      content: Text('Fiş sağa kaydırıldı. Hizalama Testi ile gerçek kağıdı kontrol edin.'),
+    ));
+  }
+
+  Json _previewSampleOrder() => <String, dynamic>{
+    'id': 1,
+    'dailyNumber': 1,
+    'source': 'Masa',
+    'table': 3,
+    'createdAt': '2026-11-18T09:00:00Z',
+    'batches': [
+      {
+        'id': 1,
+        'lines': [
+          {'name': 'Falafel Dürüm', 'qty': 1, 'price': 140},
+          {'name': 'Ek Lavaş', 'qty': 1, 'price': 10},
+        ],
+      },
+    ],
+    'payments': [
+      {'method': 'Nakit', 'amount': 150},
+    ],
+  };
+
   Widget printerLayout(Map settings, Widget controls) {
     final preview = section(
       'Fiş Önizleme',
@@ -110,25 +169,7 @@ class _SimpleSettingsState extends State<SimpleSettings> {
       [
         ReceiptPreview(
           settings: settings,
-          order: {
-            'id': 1,
-            'dailyNumber': 1,
-            'source': 'Masa',
-            'table': 3,
-            'createdAt': '2026-11-18T09:00:00Z',
-            'batches': [
-              {
-                'id': 1,
-                'lines': [
-                  {'name': 'Falafel Dürüm', 'qty': 1, 'price': 140},
-                  {'name': 'Ek Lavaş', 'qty': 1, 'price': 10},
-                ],
-              },
-            ],
-            'payments': [
-              {'method': 'Nakit', 'amount': 150},
-            ],
-          },
+          order: _previewSampleOrder(),
         ),
       ],
     );
@@ -574,6 +615,34 @@ class _SimpleSettingsState extends State<SimpleSettings> {
                     '${settings['paperWidthMm'] ?? 56} mm kağıt · ${settings['printableWidthMm'] ?? 48} mm baskı · Aynı fiş tasarımı',
                   ),
                 ),
+                if ((settings['receiptTransport'] ?? 'windows') == 'windows')
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Sol tarafta 2–3 harf kesiliyor mu? Fişi güvenli '
+                          'şekilde sağa kaydırın; sağ kenarda da boşluk bırakılır.',
+                          style: const TextStyle(
+                            color: NohutBrand.muted, fontSize: 12),
+                        ),
+                        const SizedBox(height: 7),
+                        OutlinedButton.icon(
+                          key: const ValueKey('receipt-left-clipping-fix'),
+                          onPressed: () => _applyLeftClipFix(settings),
+                          icon: const Icon(Icons.align_horizontal_left),
+                          label: const Text('Sol Kesilmeyi Düzelt · Sağa Kaydır'),
+                        ),
+                        const Text(
+                          'Bu ayar fiş genişliğini gerektiğinde azaltır. '
+                          'Önizleme güncellenir; gerçek yazıcıda Hizalama Testi yapın.',
+                          style: TextStyle(
+                            color: NohutBrand.muted, fontSize: 11),
+                        ),
+                      ],
+                    ),
+                  ),
                 DropdownButtonFormField<String>(
                   key: ValueKey(
                     'receipt-transport-${settings['receiptTransport'] ?? 'windows'}',
@@ -600,6 +669,45 @@ class _SimpleSettingsState extends State<SimpleSettings> {
                         if (v == 'escpos') cfg['receiptOffsetMm'] = 0;
                       });
                   },
+                ),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  key: const ValueKey('windows-print-dialog'),
+                  icon: const Icon(Icons.preview_outlined),
+                  label: const Text('Windows Yazdırma Penceresi (Ctrl+P)'),
+                  onPressed: Platform.isWindows &&
+                      (settings['receiptTransport'] ?? 'windows') == 'windows'
+                      ? () async {
+                          try {
+                            final printed = await windowsPrintWithDialog(
+                              billText(_previewSampleOrder()),
+                              (settings['printerName'] ?? '').toString(),
+                              settings: settings,
+                            );
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text(printed
+                                ? 'Windows yazdırma işlemi tamamlandı. '
+                                  'Kağıt çıktısını kontrol edin.'
+                                : 'Yazdırma iptal edildi; fiş gönderilmedi.')),
+                            );
+                          } catch (e) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text(
+                                  'Windows yazdırma penceresi açılamadı: $e')),
+                              );
+                            }
+                          }
+                        }
+                      : null,
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'Windows penceresinde yazıcıyı seçin; gerçek fiş görselini '
+                  'önizleyip Yazdır ile onaylayın. ESC/POS ham fiş modunda '
+                  'Windows penceresi kullanılamaz. Bu yalnızca örnek fiştir.',
+                  style: TextStyle(color: NohutBrand.muted, fontSize: 12),
                 ),
                 const SizedBox(height: 12),
                 const Text(

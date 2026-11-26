@@ -29,6 +29,7 @@ import 'receipt_preview.dart';
 import 'qr_menu_sync.dart';
 
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math' show min;
 
 import 'package:flutter/material.dart';
@@ -1337,16 +1338,18 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
 
   /// Customer-facing NON-fiscal bill preview available before payment.
   /// Unlike queuePaymentReceipt, it never writes a print job or a payment.
+  /// A prepayment account summary never changes payments or the order.
+  /// The native Windows preview is optional; silent printing remains available.
   Future<void> _printBillBeforePayment(Json order) async {
     if (isPlatform(order) ||
         !['Masa', 'Gel-Al'].contains(order['source'])) return;
     final settings = store.read().data['settings'] as Map?;
     final selectedPrinter =
         (settings?['printerName'] ?? '').toString().trim();
-    final ok = await showDialog<bool>(
+    final action = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Ödeme Öncesi Hesap Fişi · #'+
+        title: Text('Ödeme Öncesi Hesap Fişi · #' +
           displayOrderNumber(order).toString()),
         content: SizedBox(
           width: 330,
@@ -1363,22 +1366,50 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
+            onPressed: () => Navigator.pop(ctx),
             child: const Text('Vazgeç')),
+          if (Platform.isWindows &&
+              (settings?['receiptTransport'] ?? 'windows') == 'windows')
+            OutlinedButton.icon(
+              key: const ValueKey('prepay-native-print-dialog'),
+              onPressed: () => Navigator.pop(ctx, 'dialog'),
+              icon: const Icon(Icons.preview_outlined, size: 18),
+              label: const Text('Windows (Ctrl+P)')),
           FilledButton.icon(
             onPressed: selectedPrinter.isEmpty ? null :
-                () => Navigator.pop(ctx, true),
+                () => Navigator.pop(ctx, 'direct'),
             icon: const Icon(Icons.print_outlined, size: 18),
-            label: const Text('Ön Fiş Yazdır')),
+            label: const Text('Doğrudan Yazdır')),
         ],
       ),
     );
-    if (ok != true || !mounted) return;
+    if (action == null || !mounted) return;
+    // Printing must use the same order the customer just previewed.
+    // Prevent a changed order from silently generating an obsolete bill.
+    final current = mutableOrder(store.read().data, order['id'] as int);
+    if (current == null || jsonEncode(current) != jsonEncode(order)) {
+      _notify('Sipariş değişti; yeni hesap özetini açıp kontrol edin.',
+        error: true);
+      return;
+    }
     try {
-      await windowsPrint(billText(order), selectedPrinter, settings: settings);
-      _notify('Hesap özeti yazıcıya gönderildi. Ödeme kaydedilmedi.');
+      if (action == 'dialog') {
+        final printed = await windowsPrintWithDialog(
+          billText(order), selectedPrinter, settings: settings);
+        if (mounted) {
+          _notify(printed
+            ? 'Windows yazdırma tamamlandı. Gerçek çıktıyı kontrol edin; '
+              'ödeme kaydedilmedi.'
+            : 'Yazdırma iptal edildi; ödeme kaydedilmedi.');
+        }
+      } else {
+        await windowsPrint(billText(order), selectedPrinter,
+          settings: settings);
+        if (mounted) _notify('Hesap özeti yazıcıya gönderildi. '
+          'Ödeme kaydedilmedi.');
+      }
     } catch (e) {
-      _notify('Ön fiş yazdırılamadı: $e', error: true);
+      if (mounted) _notify('Ön fiş yazdırılamadı: $e', error: true);
     }
   }
 
