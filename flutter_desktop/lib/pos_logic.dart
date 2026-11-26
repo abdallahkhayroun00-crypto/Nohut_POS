@@ -244,8 +244,15 @@ void queueLocalKitchen(Json state, Json order, Map batch) {
           'source',
           'table',
           'createdAt',
+          'pickupChannel',
         ])
           key: order[key],
+        // Name and promised time only: the phone number never goes on paper.
+        if (order['customer'] is Map)
+          'customer': {
+            'name': (order['customer'] as Map)['name'],
+            'time': (order['customer'] as Map)['time'],
+          },
       },
       'batch': batch,
     }),

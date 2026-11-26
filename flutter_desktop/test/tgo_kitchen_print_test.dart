@@ -88,12 +88,12 @@ void main() {
   test('ticket uses the Masa layout plus platform name and number', () {
     final text = tgoKitchenTicket({...package(), 'dailyNumber': 17});
     final lines = text.split('\n');
-    expect(lines[0], 'NOHUT FALAFEL · MUTFAK');
+    expect(lines[0], 'NOHUT FALAFEL · SİPARİŞ FİŞİ');
     expect(lines[1], 'MALİ FİŞ DEĞİLDİR');
     expect(lines[2], '#0017 · Trendyol Go · Paket Servis');
     expect(lines[3], 'Platform no: 101 · Kod: 4D5AC');
     expect(text, contains('2 × Falafel Menü'));
-    expect(text, contains('+ Humus'));
+    expect(text, contains('  + Humus'));
     expect(text, contains('+ Patates (Büyük) (Baharatlı) · Çıkar: Ketçap'));
     expect(text, contains('Çıkar: Domates'));
     expect(text, contains('Ekstra: Acı sos'));

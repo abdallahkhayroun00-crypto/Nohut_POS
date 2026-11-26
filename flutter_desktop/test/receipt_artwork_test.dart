@@ -92,4 +92,26 @@ void main() {
     final payload = escPosReceipt(art);
     expect(payload.length, greaterThan(art.width * art.height ~/ 8));
   });
+  test('order slip draws banners, note box and totals within the paper',
+      () async {
+    final body = FontLoader(NohutBrand.bodyFont)
+      ..addFont(rootBundle.load('assets/brand/fonts/Barlow-Regular.ttf'))
+      ..addFont(rootBundle.load('assets/brand/fonts/Barlow-Bold.ttf'));
+    final heading = FontLoader(NohutBrand.headingFont)
+      ..addFont(rootBundle.load('assets/brand/fonts/BreeSerif-Regular.ttf'));
+    await Future.wait([body.load(), heading.load()]);
+    const text = 'NOHUT FALAFEL · SİPARİŞ FİŞİ\nMALİ FİŞ DEĞİLDİR\n'
+        '#0017 · Trendyol Go · Paket Servis\nPlatform no: 1094 · Kod: 4D5AC\n'
+        '26.11.2026 12:40\n!! EK SİPARİŞ\n'
+        '2 × Falafel Menü · 420,00 ₺\n  2 × 210,00 ₺\n  + Humus\n'
+        '  Çıkar: Domates\n  Ekstra: Acı sos\n1 × İPTAL: Ayran\n'
+        '  Neden: Bitti\nNot: Zili çalmayın\nToplam 420,00 ₺\n!! ÖDENDİ\n'
+        '---\nKart 420,00 ₺\nÖdeme: Kart';
+    expect(receiptTitle(text), 'SİPARİŞ FİŞİ');
+    final art = await renderReceipt(text).timeout(const Duration(seconds: 30));
+    expect(art.width, 384);
+    expect(art.height, greaterThan(900));
+    expect(art.rgba.sublist(art.rgba.length - 384 * 24 * 4), everyElement(255));
+    expect(escPosReceipt(art).length, greaterThan(art.width * art.height ~/ 8));
+  });
 }

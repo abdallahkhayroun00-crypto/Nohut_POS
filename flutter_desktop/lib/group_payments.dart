@@ -157,19 +157,20 @@ String recordCombinedPickupPayment(
   final lines = <String>[
     'NOHUT FALAFEL · TOPLU HESAP ÖZETİ',
     'MALİ FİŞ DEĞİLDİR',
-    istanbulStamp(DateTime.now().toUtc().toIso8601String()),
-    '-------------------------------',
+    '${orders.length} sipariş birlikte ödendi',
+    receiptStamp(DateTime.now().toUtc().toIso8601String()),
     for (var i = 0; i < orders.length; i++)
-      '#' + displayOrderNumber(orders[i]).toString() +
-      ' · ' + formatTry(charged[i]) + ' tahsilat',
-    '-------------------------------',
-    'Tahsilat ' + formatTry(total),
-    if (requiredCash > 0) 'Nakit ' + formatTry(requiredCash),
-    if (total - requiredCash > 0)
-      'Kart ' + formatTry(total - requiredCash),
+      '#${displayOrderNumber(orders[i])} · ${receiptService(orders[i])} '
+          '${formatTry(charged[i])}',
+    'Toplam ${formatTry(total)}',
+    '!! ÖDENDİ',
+    '---',
+    if (requiredCash > 0) 'Nakit ${formatTry(requiredCash)}',
     if (receivedCents != null && receivedCents > requiredCash)
-      'Para üstü ' + formatTry(receivedCents - requiredCash),
-    'İşlem: ' + ref,
+      '  Alınan ${formatTry(receivedCents)} · '
+          'Para üstü ${formatTry(receivedCents - requiredCash)}',
+    if (total - requiredCash > 0) 'Kart ${formatTry(total - requiredCash)}',
+    'İşlem: $ref',
   ];
   return lines.join('\n');
 }

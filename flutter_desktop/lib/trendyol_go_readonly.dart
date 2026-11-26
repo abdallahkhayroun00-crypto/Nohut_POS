@@ -236,23 +236,45 @@ String tgoKitchenTicket(Json order) {
   final note = '${order['customerNote'] ?? ''}'.trim();
   final code = '${order['orderCode'] ?? ''}'.trim();
   final type = order['pickup'] == true ? 'Gel-Al' : 'Paket Servis';
+  final lines = asMaps(order['lines']);
+  List<String> named(Object? value) => [
+    for (final v in value is List ? value : const []) '$v'.trim(),
+  ].where((v) => v.isNotEmpty).toList();
+  int unit(Map l) => l['unitPriceCents'] as int? ?? 0;
+  final sum = lines.fold<int>(
+    0, (n, l) => n + unit(l) * (l['qty'] as int? ?? 0));
+  final total = order['totalCents'] is int && order['totalCents'] as int > 0
+      ? order['totalCents'] as int
+      : sum;
+  final customer = '${order['customerName'] ?? ''}'.trim();
   return [
-    'NOHUT FALAFEL · MUTFAK',
+    'NOHUT FALAFEL · SİPARİŞ FİŞİ',
     'MALİ FİŞ DEĞİLDİR',
     '#${displayOrderNumber(order)} · Trendyol Go · $type',
     'Platform no: ${order['orderNumber']}${code.isEmpty ? '' : ' · Kod: $code'}',
-    'Trendyol Go · ${istanbulStamp(order['createdAt'])}',
-    for (final line in asMaps(order['lines']))
-      [
-        '${line['qty']} × ${line['name']}',
-        for (final option in line['options'] is List ? line['options'] as List : const [])
-          '+ $option',
-        if (line['removed'] is List && (line['removed'] as List).isNotEmpty)
-          'Çıkar: ${(line['removed'] as List).join(', ')}',
-        if (line['extras'] is List && (line['extras'] as List).isNotEmpty)
-          'Ekstra: ${(line['extras'] as List).join(', ')}',
-      ].join('\n'),
+    if (customer.isNotEmpty) 'Müşteri: $customer',
+    receiptStamp(order['createdAt']),
+    for (final line in lines) ...[
+      unit(line) > 0
+          ? '${line['qty']} × ${line['name']} · '
+                '${formatTry(unit(line) * (line['qty'] as int? ?? 0))}'
+          : '${line['qty']} × ${line['name']}',
+      if (unit(line) > 0 && (line['qty'] as int? ?? 1) > 1)
+        '  ${line['qty']} × ${formatTry(unit(line))}',
+      for (final option in named(line['options'])) '  + $option',
+      if (named(line['removed']).isNotEmpty)
+        '  Çıkar: ${named(line['removed']).join(', ')}',
+      if (named(line['extras']).isNotEmpty)
+        '  Ekstra: ${named(line['extras']).join(', ')}',
+    ],
     if (note.isNotEmpty) 'Not: $note',
+    if (total > 0) 'Toplam ${formatTry(total)}',
+    if ('${order['paymentType'] ?? ''}'.isNotEmpty)
+      'Ödeme: ${switch ('${order['paymentType']}') {
+        'PAY_WITH_CARD' => 'Kart',
+        'PAY_WITH_CASH' => 'Nakit',
+        final other => other.replaceAll('_', ' '),
+      }}',
   ].join('\n');
 }
 
