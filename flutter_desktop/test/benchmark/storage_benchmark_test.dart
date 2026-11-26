@@ -26,6 +26,9 @@ double _pct(List<int> sorted, double p) =>
 void main() {
   final enabled = Platform.environment['NOHUT_BENCH'] == '1';
   test('storage benchmark (synthetic, measured)', () async {
+    // Measure the program, not the test-suite field validator
+    // (test/flutter_test_config.dart walks every field on every write).
+    PosStore.debugWriteObserver = null;
     final sizes = (Platform.environment['NOHUT_BENCH_SIZES'] ?? '1000,10000,50000')
         .split(',').map(int.parse).toList();
     final results = <Map<String, Object?>>[];
