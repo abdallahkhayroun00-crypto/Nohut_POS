@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'brand.dart';
 import 'pos_logic.dart';
 
 const floorDefaults = <int, Rect>{
@@ -60,8 +61,11 @@ class RestaurantFloorPlan extends StatelessWidget {
     required this.editing,
     required this.onMove,
     this.selected,
+    this.now,
   });
   final Json state;
+  /// Clock for "open for N minutes"; defaults to DateTime.now().
+  final DateTime? now;
   final ValueChanged<int> onTable;
   final Map<int, Rect> positions;
   final bool editing;
@@ -79,7 +83,7 @@ class RestaurantFloorPlan extends StatelessWidget {
       color: const Color(0xfffefefb),
       elevation: 0,
       child: Padding(
-        padding: const EdgeInsets.all(19),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -90,22 +94,24 @@ class RestaurantFloorPlan extends StatelessWidget {
                 const Expanded(
                   child: Text(
                     'Restoran Yerleşimi',
-                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
+                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
                   ),
                 ),
-                _legend('Boş ${5 - occupied}', const Color(0xff85ad91)),
+                _legend('Boş ${5 - occupied}', const Color(0xff7FB08F)),
                 const SizedBox(width: 12),
-                _legend('Dolu $occupied', const Color(0xffdfaf58)),
+                _legend('Dolu $occupied', const Color(0xffD9A24E)),
+                const SizedBox(width: 12),
+                _legend('Ödendi', const Color(0xff5E9CB0)),
               ],
             ),
-            const SizedBox(height: 10),
-            Text(
-              editing
-                  ? '✥ Sürükle · Yeni konumları kaydet veya iptal et.'
-                  : 'KAPI ve sandalyelerle gerçek restoran düzeni · 5 masa. Boş masaya dokunarak sipariş aç.',
-              style: const TextStyle(color: Color(0xff718275), fontSize: 12),
-            ),
-            const SizedBox(height: 15),
+            if (editing) ...[
+              const SizedBox(height: 8),
+              const Text(
+                '✥ Sürükle · Yeni konumları kaydet veya iptal et.',
+                style: TextStyle(color: Color(0xff718275), fontSize: 12),
+              ),
+            ],
+            const SizedBox(height: 12),
             LayoutBuilder(
               builder: (context, constraints) {
                 if (!editing && constraints.maxWidth < 740) {
@@ -221,8 +227,17 @@ class RestaurantFloorPlan extends StatelessWidget {
     final r = positions[n] ?? floorDefaults[n]!;
     final order = activeTable(state, n);
     final busy = order != null;
-    final color = busy ? const Color(0xffffe5b2) : const Color(0xffeaf3e7);
-    final accent = busy ? const Color(0xffb78643) : const Color(0xff679e7a);
+    final paid = busy && orderDueCents(order) == 0;
+    final (fill, accent, ink) = !busy
+        ? (const Color(0xffF1F7F2), const Color(0xff7FB08F), const Color(0xff23553a))
+        : paid
+            ? (const Color(0xffE3F1F5), const Color(0xff5E9CB0), const Color(0xff1F5566))
+            : (const Color(0xffFFF1D6), const Color(0xffD9A24E), const Color(0xff6E4614));
+    final small = n == 5;
+    // Only large tables have room for the status pill and item/staff line.
+    final roomy = r.height * height >= 85 && r.width * width >= 200;
+    final minutes = busy ? _minutes(order) : 0;
+    final status = !busy ? 'Boş' : paid ? 'Ödendi · Masa açık' : 'Dolu';
     return Positioned(
       left: r.left * width,
       top: r.top * height,
@@ -238,69 +253,97 @@ class RestaurantFloorPlan extends StatelessWidget {
             : null,
         child: Tooltip(
           message: busy
-              ? 'Masa $n · ${orderDueCents(order) == 0 ? 'Ödendi · Masa açık' : 'Dolu'} · Kalan ${formatTry(orderDueCents(order))}'
+              ? 'Masa $n · $status · Kalan ${formatTry(orderDueCents(order))}'
               : 'Masa $n · Boş · Yeni sipariş',
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: color,
-              borderRadius: BorderRadius.circular(n == 5 ? 8 : 14),
-              border: Border.all(
-                color: selected == n && !editing
-                    ? const Color(0xff27673f)
-                    : accent,
-                width: selected == n ? 3 : 2,
-              ),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x210c4229),
-                  blurRadius: 14,
-                  offset: Offset(0, 7),
+          child: MouseRegion(
+            cursor: editing ? SystemMouseCursors.move : SystemMouseCursors.click,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: fill,
+                borderRadius: BorderRadius.circular(small ? 10 : 16),
+                border: Border.all(
+                  color: selected == n && !editing ? NohutBrand.green : accent,
+                  width: selected == n ? 3 : 1.6,
                 ),
-              ],
-            ),
-            child: Center(
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Padding(
-                  padding: const EdgeInsets.all(5),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        'Masa $n',
-                        style: TextStyle(
-                          color: busy
-                              ? const Color(0xff794d20)
-                              : const Color(0xff23553a),
-                          fontWeight: FontWeight.w900,
-                          fontSize: n == 5 ? 13 : 17,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        busy
-                            ? '${orderDueCents(order) == 0 ? 'Ödendi · Masa açık' : 'Dolu'}'
-                            : '○ Boş',
-                        style: TextStyle(
-                          fontSize: n == 5 ? 10 : 12,
-                          color: busy
-                              ? const Color(0xff8a5c23)
-                              : const Color(0xff3c7d56),
-                        ),
-                      ),
-                      ...[
-                        const SizedBox(height: 4),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x1A0c4229),
+                    blurRadius: 12,
+                    offset: Offset(0, 5),
+                  ),
+                ],
+              ),
+              child: Center(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
                         Text(
-                          busy
-                              ? formatTry(orderDueCents(order))
-                              : 'Yeni Sipariş',
-                          style: const TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
+                          'Masa $n',
+                          style: TextStyle(
+                            color: ink,
+                            fontWeight: FontWeight.w900,
+                            fontSize: small ? 14 : 18,
                           ),
                         ),
+                        const SizedBox(height: 4),
+                        if (!busy)
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.add_circle_outline,
+                                size: small ? 12 : 14, color: accent),
+                              const SizedBox(width: 4),
+                              Text('Boş · Yeni Sipariş', style: TextStyle(
+                                fontSize: small ? 10 : 12,
+                                fontWeight: FontWeight.w600, color: ink)),
+                            ],
+                          )
+                        else ...[
+                          if (roomy) Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: accent.withValues(alpha: 0.18),
+                              borderRadius: BorderRadius.circular(10)),
+                            child: Text(status, style: TextStyle(
+                              fontSize: small ? 9.5 : 11,
+                              fontWeight: FontWeight.w700, color: ink)),
+                          ),
+                          SizedBox(height: roomy ? 5 : 0),
+                          Text(
+                            formatTry(orderDueCents(order)),
+                            style: TextStyle(
+                              fontSize: small ? 13 : 17,
+                              fontWeight: FontWeight.w900,
+                              color: ink,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.timer_outlined,
+                                size: small ? 10 : 12,
+                                color: minutes >= 90
+                                    ? const Color(0xffB3261E) : ink),
+                              const SizedBox(width: 3),
+                              Text(
+                                '${minutes < 60 ? '$minutes dk' : '${minutes ~/ 60} sa ${minutes % 60} dk'}'
+                                '${roomy ? ' · ${_items(order)} ürün · ${orderOwnerName(order)}' : ''}',
+                                style: TextStyle(
+                                  fontSize: small ? 9.5 : 11.5,
+                                  color: minutes >= 90
+                                      ? const Color(0xffB3261E) : ink),
+                              ),
+                            ],
+                          ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
                 ),
               ),
@@ -310,6 +353,17 @@ class RestaurantFloorPlan extends StatelessWidget {
       ),
     );
   }
+
+  int _minutes(Json order) {
+    final created = DateTime.tryParse('${order['createdAt']}');
+    if (created == null) return 0;
+    final m = (now ?? DateTime.now()).toUtc()
+        .difference(created.toUtc()).inMinutes;
+    return m < 0 ? 0 : m;
+  }
+
+  int _items(Json order) => activeLines(order).fold<int>(
+    0, (sum, l) => sum + (l['qty'] is num ? (l['qty'] as num).toInt() : 0));
 }
 
 class _FloorPainter extends CustomPainter {

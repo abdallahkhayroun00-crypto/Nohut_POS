@@ -13,6 +13,7 @@ import 'trendyol_go_ui.dart';
 import 'sales_reports.dart';
 import 'overview_metrics.dart';
 import 'overview_panel.dart';
+import 'tables_panel.dart';
 import 'finance_ui.dart';
 import 'order_alerts.dart';
 import 'staff_order_popup.dart';
@@ -1675,20 +1676,58 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Align(
-              alignment: Alignment.centerLeft,
-              child: SegmentedButton<String>(
-                segments: const [
-                  ButtonSegment(value: 'plan', label: Text('Masa Planı')),
-                  ButtonSegment(value: 'list', label: Text('Liste')),
-                  ButtonSegment(value: 'pickup', label: Text('Gel-Al')),
-                ],
-                selected: {localView},
-                onSelectionChanged: (value) => setState(() {
-                  localView = value.single;
-                  orderFilter = 'Tümü';
-                }),
-              ),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment(value: 'plan',
+                      icon: Icon(Icons.grid_view_outlined, size: 18),
+                      label: Text('Masa Planı')),
+                    ButtonSegment(value: 'list',
+                      icon: Icon(Icons.list_alt_outlined, size: 18),
+                      label: Text('Liste')),
+                    ButtonSegment(value: 'pickup',
+                      icon: Icon(Icons.shopping_bag_outlined, size: 18),
+                      label: Text('Gel-Al')),
+                  ],
+                  selected: {localView},
+                  onSelectionChanged: (value) => setState(() {
+                    localView = value.single;
+                    orderFilter = 'Tümü';
+                  }),
+                ),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    if (localView == 'plan' && !floorEditing)
+                      OutlinedButton.icon(
+                        onPressed: () => setState(() {
+                          floorEditing = true;
+                          draftFloor = {...positionsFromJson(db['floorPositions'])};
+                        }),
+                        icon: const Icon(Icons.open_with),
+                        label: const Text('Yerleşimi Düzenle'),
+                      ),
+                    if (localView == 'plan')
+                      FilledButton.icon(
+                        onPressed: () => _composer(),
+                        icon: const Icon(Icons.add),
+                        label: const Text('Masa Siparişi'),
+                      )
+                    else
+                      FilledButton.icon(
+                        onPressed: () => _composer(pickup: localView == 'pickup'),
+                        icon: const Icon(Icons.add),
+                        label: const Text('Sipariş Al'),
+                      ),
+                  ],
+                ),
+              ],
             ),
             const SizedBox(height: 16),
             if (localView == 'plan') _tables(db) else _orders(db),
@@ -1864,26 +1903,10 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _sectionTitle(
-          'Masa Yönetimi',
-          '5 masa · KAPI ve sandalyeler · Masa hesabı ve ödeme yalnızca PC üzerinde.',
-          action: FilledButton.icon(
-            onPressed: () => _composer(),
-            icon: const Icon(Icons.add),
-            label: const Text('Masa Siparişi'),
-          ),
-        ),
+        TablesSummaryStrip(state: db, now: DateTime.now()),
+        const SizedBox(height: 14),
         Row(
           children: [
-            if (!floorEditing)
-              OutlinedButton.icon(
-                onPressed: () => setState(() {
-                  floorEditing = true;
-                  draftFloor = {...positionsFromJson(db['floorPositions'])};
-                }),
-                icon: const Icon(Icons.open_with),
-                label: const Text('Yerleşimi Düzenle'),
-              ),
             if (floorEditing) ...[
               OutlinedButton(
                 onPressed: () =>
@@ -1916,8 +1939,9 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
             ],
           ],
         ),
-        const SizedBox(height: 15),
-        RestaurantFloorPlan(
+        if (floorEditing) const SizedBox(height: 12),
+        LayoutBuilder(builder: (context, box) {
+          final plan = RestaurantFloorPlan(
           state: db,
           positions: positions,
           editing: floorEditing,
@@ -1937,7 +1961,26 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
             };
             if (validFloorPlacement(next)) draftFloor = next;
           }),
-        ),
+          );
+          if (floorEditing || box.maxWidth < 1150) return plan;
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(flex: 3, child: plan),
+              const SizedBox(width: 12),
+              SizedBox(
+                width: min(420, box.maxWidth * 0.34),
+                child: OpenOrdersPanel(
+                  state: db,
+                  now: DateTime.now(),
+                  onOpenTable: _onTable,
+                  onOpenOrder: (o) => _showOrder(o['id'] as int),
+                  onPrintBill: _printBillBeforePayment,
+                ),
+              ),
+            ],
+          );
+        }),
         const SizedBox(height: 17),
         if (order != null && order['source'] == 'Masa')
           OutlinedButton(
@@ -1945,16 +1988,19 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
             child: Text('Masa ${order['table']} · Hesabı Aç'),
           ),
         if (order == null)
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(17),
-              child: Text(
-                floorEditing
-                    ? 'Masaları sürükleyin. Numaralar, hesaplar ve 5 masa değişmez.'
-                    : 'Boş masaya tıklayın: yeni sipariş. Dolu masaya tıklayın: hesap, ek sipariş ve ödeme.',
-                style: const TextStyle(color: Color(0xff647a67)),
+          Row(
+            children: [
+              const Icon(Icons.info_outline, size: 16, color: Color(0xff647a67)),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  floorEditing
+                      ? 'Masaları sürükleyin. Numaralar, hesaplar ve 5 masa değişmez.'
+                      : 'Boş masaya tıklayın: yeni sipariş. Dolu masaya tıklayın: hesap, ek sipariş ve ödeme.',
+                  style: const TextStyle(color: Color(0xff647a67), fontSize: 12.5),
+                ),
               ),
-            ),
+            ],
           ),
       ],
     );
@@ -2321,9 +2367,6 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
         : orderTotalCents(order);
     String remaining(Json order) =>
         isRemote(order) ? '—' : formatTry(orderDueCents(order));
-    String orderStamp(Json order) => isRemote(order)
-        ? '${order['numberDay']} · #${order['orderNumber']} · ${order['status']}'
-        : '${order['numberDay'] ?? ''} · ${order['created'] ?? ''}';
     void openOrder(Json order) {
       if (isRemote(order)) {
         _showTrendyolOrders();
@@ -2332,49 +2375,103 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       }
     }
 
+    String clock(Json order) {
+      final at = DateTime.tryParse('${order['createdAt']}');
+      if (at == null) return '${order['created'] ?? ''}';
+      final local = istanbulStamp(order['createdAt']);
+      return local.startsWith(businessDay) ? local.substring(11) : local;
+    }
+    (String, Color, Color) statusOf(Json o) =>
+        isRemote(o) ? tgoStatusStyle('${o['status'] ?? ''}') : localStatusStyle(o);
+    String itemsOf(Json o) => isRemote(o)
+        ? asMaps(o['lines']).map((l) => '${l['qty']}× ${l['name']}').join(', ')
+        : itemsSummary(o, limit: 4);
+    IconData iconOf(Json o) => switch ('${o['source']}') {
+      'Masa' => Icons.table_restaurant_outlined,
+      'Gel-Al' => Icons.shopping_bag_outlined,
+      _ => Icons.delivery_dining_outlined,
+    };
+    final sumTotal = combined.fold<int>(0, (n, o) => n + total(o));
+    final sumDue = combined.where((o) => !isRemote(o))
+        .fold<int>(0, (n, o) => n + orderDueCents(o));
+    const muted = TextStyle(color: NohutBrand.muted, fontSize: 12);
+    const head = TextStyle(color: NohutBrand.muted, fontSize: 12,
+      fontWeight: FontWeight.w700);
+
+    Widget chip(String label, bool selected, VoidCallback onTap) => ChoiceChip(
+      label: Text(label),
+      selected: selected,
+      showCheckmark: false,
+      visualDensity: VisualDensity.compact,
+      onSelected: (_) => onTap(),
+    );
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _sectionTitle(
-          'Siparişler',
-          'Varsayılan: Bugün ($businessDay). Geçmiş siparişler tarih filtresiyle açılır.',
-          action: FilledButton.icon(
-            onPressed: () => _composer(pickup: localView == 'pickup'),
-            icon: const Icon(Icons.add),
-            label: const Text('Sipariş Al'),
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xffE1E7E3)),
           ),
-        ),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    SizedBox(
-                      width: 350,
-                      child: TextField(
-                        decoration: const InputDecoration(
-                          hintText: 'Sipariş, masa, müşteri veya ürün ara',
-                          prefixIcon: Icon(Icons.search),
-                        ),
-                        onChanged: (v) => setState(() => orderSearch = v),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Wrap(
+                spacing: 8,
+                runSpacing: 10,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  SizedBox(
+                    width: 320,
+                    child: TextField(
+                      decoration: const InputDecoration(
+                        isDense: true,
+                        hintText: 'Sipariş, masa, müşteri veya ürün ara',
+                        prefixIcon: Icon(Icons.search, size: 20),
                       ),
+                      onChanged: (v) => setState(() => orderSearch = v),
                     ),
-                    for (final status in [
-                      '', 'Kalan', 'Ödendi',
-                      if (localView == 'pickup') 'Teslim Edildi',
-                      'Kapalı',
-                    ])
-                      ChoiceChip(
-                        label: Text(status.isEmpty ? 'Tümü' : status),
-                        selected: orderStatus == status,
-                        onSelected: (_) => setState(() => orderStatus = status),
-                      ),
+                  ),
+                  const SizedBox(width: 4),
+                  for (final status in [
+                    '', 'Kalan', 'Ödendi',
+                    if (localView == 'pickup') 'Teslim Edildi',
+                    'Kapalı',
+                  ])
+                    chip(status.isEmpty ? 'Tümü' : status, orderStatus == status,
+                      () => setState(() => orderStatus = status)),
+                  Container(width: 1, height: 24,
+                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                    color: const Color(0xffD5DED8)),
+                  for (final filter in [
+                    'Tümü', 'Masa', 'Gel-Al',
+                    if (localView != 'pickup') 'Trendyol Go',
+                  ])
+                    chip(filter == 'Tümü' ? 'Tüm kaynaklar' : filter,
+                      orderFilter == filter,
+                      () => setState(() {
+                        orderFilter = filter;
+                        selectedOrder = null;
+                      })),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text.rich(TextSpan(children: [
+                      TextSpan(text: '${combined.length} kayıt',
+                        style: const TextStyle(fontWeight: FontWeight.w800)),
+                      TextSpan(text: ' · Toplam ${formatTry(sumTotal)}'
+                        ' · Kalan ${formatTry(sumDue)}'
+                        '${orderFrom.isEmpty && orderTo.isEmpty ? ' · Tüm tarihler' : ' · $orderFrom – $orderTo'}',
+                        style: const TextStyle(color: NohutBrand.muted)),
+                    ])),
+                  ),
+                  if (orderFrom.isNotEmpty || orderTo.isNotEmpty)
                     TextButton.icon(
                       onPressed: () => setState(() {
                         orderFrom = ''; orderTo = '';
@@ -2382,159 +2479,175 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                       icon: const Icon(Icons.event_available_outlined, size: 17),
                       label: const Text('Tüm Tarihler'),
                     ),
-                    OutlinedButton(
-                              onPressed: () async {
-                                final v = await askFields(context, 'Sipariş Filtreleri', [
-                                  ('Sipariş / masa / müşteri / ürün ara', orderSearch),
-                                  (
-                                    'Durum: boş / Kalan / Ödendi / Kapalı / İptal / Hazır / Hazırlanıyor / Teslim Edildi',
-                                    orderStatus,
-                                  ),
-                                  ('Siparişi alan personel', orderStaff),
-                                  ('Başlangıç YYYY-MM-DD', orderFrom),
-                                  ('Bitiş YYYY-MM-DD', orderTo),
-                                ]);
-                                if (v != null && mounted) {
-                                  if (v.skip(3).any((d) => d.isNotEmpty && !validBusinessDate(d)) ||
-                                      v[3].isNotEmpty &&
-                                          v[4].isNotEmpty &&
-                                          v[3].compareTo(v[4]) > 0) {
-                                    _notify('Tarih aralığı geçersiz', error: true);
-                                    return;
-                                  }
-                                  setState(() {
-                                    orderSearch = v[0];
-                                    orderStatus = v[1];
-                                    orderStaff = v[2];
-                                    orderFrom = v[3];
-                                    orderTo = v[4];
-                                    selectedOrder = null;
-                                  });
-                                }
-                              },
-                              child: const Text('Gelişmiş Filtreler'),
-                            ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                const Divider(),
-                Wrap(
-                  spacing: 7,
-                  runSpacing: 7,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    for (final filter in [
-                      'Tümü', 'Masa', 'Gel-Al',
-                      if (localView != 'pickup') 'Trendyol Go',
-                    ])
-                      ChoiceChip(
-                        label: Text(filter),
-                        selected: orderFilter == filter,
-                        onSelected: (_) => setState(() {
-                          orderFilter = filter;
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.tune, size: 17),
+                    onPressed: () async {
+                      final v = await askFields(context, 'Sipariş Filtreleri', [
+                        ('Sipariş / masa / müşteri / ürün ara', orderSearch),
+                        (
+                          'Durum: boş / Kalan / Ödendi / Kapalı / İptal / Hazır / Hazırlanıyor / Teslim Edildi',
+                          orderStatus,
+                        ),
+                        ('Siparişi alan personel', orderStaff),
+                        ('Başlangıç YYYY-MM-DD', orderFrom),
+                        ('Bitiş YYYY-MM-DD', orderTo),
+                      ]);
+                      if (v != null && mounted) {
+                        if (v.skip(3).any((d) => d.isNotEmpty && !validBusinessDate(d)) ||
+                            v[3].isNotEmpty &&
+                                v[4].isNotEmpty &&
+                                v[3].compareTo(v[4]) > 0) {
+                          _notify('Tarih aralığı geçersiz', error: true);
+                          return;
+                        }
+                        setState(() {
+                          orderSearch = v[0];
+                          orderStatus = v[1];
+                          orderStaff = v[2];
+                          orderFrom = v[3];
+                          orderTo = v[4];
                           selectedOrder = null;
-                        }),
-                      ),
-                    const SizedBox(width: 8),
-                    Text('${combined.length} kayıt',
-                      style: const TextStyle(color: NohutBrand.muted,
-                          fontWeight: FontWeight.w700)),
-                  ],
-                ),
-              ],
-            ),
+                        });
+                      }
+                    },
+                    label: const Text('Gelişmiş Filtreler'),
+                  ),
+                ],
+              ),
+            ],
           ),
         ),
         const SizedBox(height: 12),
-
-        Card(
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xffE1E7E3)),
+          ),
+          clipBehavior: Clip.antiAlias,
           child: combined.isEmpty
-              ? const ListTile(title: Text('Sipariş bulunamadı'))
+              ? const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 40),
+                  child: Column(children: [
+                    Icon(Icons.inbox_outlined, size: 32, color: Color(0xffA9B3AD)),
+                    SizedBox(height: 6),
+                    Text('Sipariş bulunamadı',
+                      style: TextStyle(color: NohutBrand.muted)),
+                  ]),
+                )
               : LayoutBuilder(
                   builder: (context, constraints) {
-                    final compact = constraints.maxWidth < 690;
-                    if (compact) {
-                      return Column(
-                        children: [
-                          for (final o in combined)
-                            ListTile(
-                              title: Text(
-                                '#${displayOrderNumber(o)} · ${o['table'] == null ? o['source'] : "Masa ${o['table']}"}',
-                              ),
-                              subtitle: Text(orderStamp(o)),
-                              trailing: isRemote(o)
-                                ? Text(remaining(o))
-                                : Row(mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(remaining(o)),
-                                    IconButton(
-                                      key: ValueKey('orders-print-' +
-                                        o['id'].toString()),
-                                      tooltip: 'Ön Fiş Yazdır',
-                                      icon: const Icon(Icons.print_outlined),
-                                      onPressed: () =>
-                                        _printBillBeforePayment(o),
+                    final compact = constraints.maxWidth < 760;
+                    Widget printButton(Json o) => IconButton(
+                      visualDensity: VisualDensity.compact,
+                      key: ValueKey('orders-print-${o['id']}'),
+                      tooltip: 'Ön Fiş Yazdır',
+                      icon: const Icon(Icons.print_outlined, size: 19),
+                      onPressed: () => _printBillBeforePayment(o),
+                    );
+                    final rows = <Widget>[
+                      if (!compact)
+                        Container(
+                          color: const Color(0xffF4F6F2),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 10),
+                          child: const Row(children: [
+                            SizedBox(width: 70, child: Text('Sipariş', style: head)),
+                            SizedBox(width: 150, child: Text('Masa / Kaynak', style: head)),
+                            SizedBox(width: 120, child: Text('Saat', style: head)),
+                            Expanded(child: Text('Ürünler', style: head)),
+                            SizedBox(width: 100, child: Text('Toplam',
+                              textAlign: TextAlign.right, style: head)),
+                            SizedBox(width: 100, child: Text('Kalan',
+                              textAlign: TextAlign.right, style: head)),
+                            SizedBox(width: 16),
+                            SizedBox(width: 112, child: Text('Durum', style: head)),
+                            SizedBox(width: 172, child: Text('İşlem', style: head)),
+                          ]),
+                        ),
+                      for (final (i, o) in combined.indexed) ...[
+                        if (i > 0 || compact) const Divider(height: 1),
+                        InkWell(
+                          onTap: () => openOrder(o),
+                          child: Padding(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: 16, vertical: compact ? 10 : 8),
+                            child: compact
+                                ? Row(children: [
+                                    Icon(iconOf(o), size: 20, color: NohutBrand.green),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text('#${displayOrderNumber(o)} · ${o['table'] == null ? o['source'] : "Masa ${o['table']}"}',
+                                            style: const TextStyle(fontWeight: FontWeight.w800)),
+                                          Text(itemsOf(o), maxLines: 1,
+                                            overflow: TextOverflow.ellipsis),
+                                          Text(clock(o), style: muted),
+                                        ],
+                                      ),
                                     ),
-                                  ]),
-                              onTap: () => openOrder(o),
-                            ),
-                        ],
-                      );
-                    }
-                    return SizedBox(
-                      width: double.infinity,
-                      child: DataTable(
-                        columnSpacing: 14,
-                        horizontalMargin: 14,
-                        columns: const [
-                          DataColumn(label: Text('Sipariş')),
-                          DataColumn(label: Text('Masa / Kaynak')),
-                          DataColumn(label: Text('Zaman')),
-                          DataColumn(numeric: true, label: Text('Toplam')),
-                          DataColumn(numeric: true, label: Text('Kalan')),
-                          DataColumn(label: Text('İşlem')),
-                        ],
-                        rows: [
-                          for (final o in combined)
-                            DataRow(
-                              cells: [
-                                DataCell(Text('#${displayOrderNumber(o)}')),
-                                DataCell(
-                                  Text(
-                                    o['table'] == null
-                                        ? '${o['source']}'
-                                        : "Masa ${o['table']}",
-                                  ),
-                                ),
-                                DataCell(Text(orderStamp(o))),
-                                DataCell(Text(formatTry(total(o)))),
-                                DataCell(Text(remaining(o))),
-                                DataCell(
-                                  Wrap(spacing: 4, runSpacing: 3,
-                                    crossAxisAlignment:
-                                      WrapCrossAlignment.center,
-                                    children: [
-                                    TextButton(
-                                      onPressed: () => openOrder(o),
-                                      child: Text(isRemote(o)
-                                          ? 'Platform Siparişi'
-                                          : 'Hesabı Aç'),
+                                    Column(
+                                      crossAxisAlignment: CrossAxisAlignment.end,
+                                      children: [
+                                        Text(remaining(o), style: const TextStyle(
+                                          fontWeight: FontWeight.w800)),
+                                        const SizedBox(height: 3),
+                                        StatusPill(statusOf(o)),
+                                      ],
                                     ),
-                                    if (!isRemote(o))
-                                      IconButton(
-                                        key: ValueKey('orders-print-' +
-                                          o['id'].toString()),
-                                        tooltip: 'Ön Fiş Yazdır',
-                                        icon: const Icon(
-                                          Icons.print_outlined, size: 19),
-                                        onPressed: () =>
-                                          _printBillBeforePayment(o)),
+                                    if (!isRemote(o)) printButton(o),
+                                  ])
+                                : Row(children: [
+                                    SizedBox(width: 70, child: Text(
+                                      '#${displayOrderNumber(o)}',
+                                      style: const TextStyle(fontWeight: FontWeight.w800))),
+                                    SizedBox(width: 150, child: Row(children: [
+                                      Icon(iconOf(o), size: 18, color: NohutBrand.green),
+                                      const SizedBox(width: 8),
+                                      Flexible(child: Text(
+                                        o['table'] == null ? '${o['source']}' : 'Masa ${o['table']}',
+                                        maxLines: 1, overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(fontWeight: FontWeight.w600))),
+                                    ])),
+                                    SizedBox(width: 120, child: Text(clock(o), style: muted)),
+                                    Expanded(child: Text(itemsOf(o), maxLines: 1,
+                                      overflow: TextOverflow.ellipsis)),
+                                    SizedBox(width: 100, child: Text(formatTry(total(o)),
+                                      textAlign: TextAlign.right)),
+                                    SizedBox(width: 100, child: Text(remaining(o),
+                                      textAlign: TextAlign.right,
+                                      style: TextStyle(fontWeight: FontWeight.w800,
+                                        color: !isRemote(o) && orderDueCents(o) > 0
+                                            ? NohutBrand.ink : NohutBrand.muted))),
+                                    const SizedBox(width: 16),
+                                    SizedBox(width: 112, child: Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: StatusPill(statusOf(o)))),
+                                    SizedBox(width: 172, child: Row(children: [
+                                      Flexible(
+                                        child: TextButton(
+                                          style: TextButton.styleFrom(
+                                            visualDensity: VisualDensity.compact),
+                                          onPressed: () => openOrder(o),
+                                          child: Text(
+                                            isRemote(o)
+                                                ? 'Platform Siparişi' : 'Hesabı Aç',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis),
+                                        ),
+                                      ),
+                                      if (!isRemote(o)) printButton(o),
+                                    ])),
                                   ]),
-                                ),
-                              ],
-                            ),
-                        ],
-                      ),
+                          ),
+                        ),
+                      ],
+                    ];
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: rows,
                     );
                   },
                 ),
