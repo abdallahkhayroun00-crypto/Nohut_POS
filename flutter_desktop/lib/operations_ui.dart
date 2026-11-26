@@ -329,11 +329,35 @@ class OrderOperations extends StatelessWidget {
   Widget build(BuildContext context) {
     final o = order, id = o['id'] as int;
     if (isPlatform(o)) return const SizedBox.shrink();
-    return Column(
+    Widget section(IconData icon, String title, [String? note]) => Padding(
+      padding: const EdgeInsets.fromLTRB(4, 16, 4, 8),
+      child: Row(children: [
+        Icon(icon, size: 19, color: NohutBrand.green),
+        const SizedBox(width: 8),
+        Text(title, style: const TextStyle(fontSize: 15.5,
+          fontWeight: FontWeight.w800)),
+        if (note != null) ...[
+          const SizedBox(width: 8),
+          Flexible(child: Text(note, maxLines: 1, overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 12, color: NohutBrand.muted))),
+        ],
+      ]),
+    );
+    final compact = OutlinedButton.styleFrom(
+      visualDensity: VisualDensity.compact,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+    );
+    final guests = asMaps(o['guestChecks']);
+    final payments = asMaps(o['payments']);
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Divider(),
-        OutlinedButton(
+        Wrap(spacing: 8, runSpacing: 8, children: [
+        OutlinedButton.icon(
+          style: compact,
+          icon: const Icon(Icons.receipt_long_outlined, size: 18),
           onPressed: () => showDialog<void>(
             context: context,
             builder: (ctx) => AlertDialog(
@@ -349,10 +373,12 @@ class OrderOperations extends StatelessWidget {
               ],
             ),
           ),
-          child: const Text('Hesap Özeti Önizle'),
+          label: const Text('Hesap Özeti Önizle'),
         ),
         if (orderPaidCents(o) > 0)
-          OutlinedButton(
+          OutlinedButton.icon(
+            style: compact,
+            icon: const Icon(Icons.print_outlined, size: 18),
             onPressed: () async {
               try {
                 final printer = printerName;
@@ -369,14 +395,26 @@ class OrderOperations extends StatelessWidget {
                 }
               }
             },
-            child: const Text('Hesap Özeti Yazdır'),
+            label: const Text('Hesap Özeti Yazdır'),
           ),
-        if (o['closed'] != true)
-          for (final g in asMaps(o['guestChecks']))
-            Wrap(
-              spacing: 6,
+        ]),
+        if (o['closed'] != true && guests.isNotEmpty) ...[
+          section(Icons.group_outlined, 'Kişiler', '${guests.length} kişi'),
+          Wrap(spacing: 8, runSpacing: 8, children: [
+          for (final g in guests)
+            Container(
+              padding: const EdgeInsets.fromLTRB(12, 2, 4, 2),
+              decoration: BoxDecoration(
+                color: const Color(0xffF1F4F2),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                OutlinedButton(
+                const Icon(Icons.person_outline, size: 16, color: NohutBrand.green),
+                const SizedBox(width: 4),
+                TextButton(
+                  style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
                   onPressed: () async {
                     final v = await askFields(context, 'Kişi Adı', [
                       ('Ad', '${g['name']}'),
@@ -393,7 +431,9 @@ class OrderOperations extends StatelessWidget {
                   },
                   child: Text('${g['name']} Düzenle'),
                 ),
-                OutlinedButton(
+                TextButton(
+                  style: TextButton.styleFrom(visualDensity: VisualDensity.compact,
+                    foregroundColor: NohutBrand.muted),
                   onPressed: () => edit(
                     (s) => changeGuest(
                       mutableOrder(s, id)!,
@@ -406,22 +446,29 @@ class OrderOperations extends StatelessWidget {
                 ),
               ],
             ),
-        panelTitle('Ürünler / Kişi Payları / İadeler'),
+            ),
+          ]),
+        ],
+        section(Icons.list_alt_outlined, 'Ürünler / Kişi Payları / İadeler'),
         if (o['closed'] != true && o['cancelled'] != true) ...[
           Wrap(
             spacing: 8,
             runSpacing: 8,
             children: [
-              OutlinedButton(
+              OutlinedButton.icon(
+                style: compact,
+                icon: const Icon(Icons.person_add_alt, size: 18),
                 onPressed: () async {
                   final v = await askFields(context, 'Kişi Ekle', [('Ad', '')]);
                   if (v != null) {
                     edit((s) => addGuest(mutableOrder(s, id)!, v[0]));
                   }
                 },
-                child: const Text('Kişi Ekle'),
+                label: const Text('Kişi Ekle'),
               ),
-              OutlinedButton(
+              OutlinedButton.icon(
+                style: compact,
+                icon: const Icon(Icons.restart_alt, size: 18),
                 onPressed: () async {
                   if (await confirmAction(
                     context,
@@ -431,42 +478,80 @@ class OrderOperations extends StatelessWidget {
                     edit((s) => resetGuests(mutableOrder(s, id)!));
                   }
                 },
-                child: const Text('Kişi Paylarını Sıfırla'),
+                label: const Text('Kişi Paylarını Sıfırla'),
               ),
               if (o['source'] == 'Gel-Al' &&
                   o['deliveredAt'] == null &&
                   o['serviceStatus'] != 'Teslim Edildi')
-                OutlinedButton(
+                OutlinedButton.icon(
+                  style: compact,
+                  icon: const Icon(Icons.done, size: 18),
                   onPressed: () =>
                       edit((s) => markPickupDelivered(mutableOrder(s, id)!)),
-                  child: const Text('Teslim Edildi'),
+                  label: const Text('Teslim Edildi'),
                 ),
-              OutlinedButton(
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  foregroundColor: const Color(0xffB3261E),
+                  side: const BorderSide(color: Color(0xffE7B9B2)),
+                ),
+                icon: const Icon(Icons.block, size: 18),
                 onPressed: () async {
                   final v = await askFields(context, 'Siparişi İptal Et', [
                     ('Neden', ''),
                   ]);
                   if (v != null) edit((s) => cancelLocalOrder(s, id, v[0]));
                 },
-                child: const Text('Siparişi İptal Et'),
+                label: const Text('Siparişi İptal Et'),
               ),
             ],
           ),
+          const SizedBox(height: 10),
           for (final line in checkLines(o))
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(10),
+            Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.fromLTRB(12, 10, 8, 8),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xffE1E7E3)),
+              ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      '${line.line['qty']} × ${line.line['name']} · ${formatTry(line.total)} · Dağıtılmamış ${formatTry(line.total - allocatedTo(o, line.key))}',
-                    ),
-                    Text(
-                      'Çıkar: ${(line.line['removed'] as List? ?? []).join(', ')} · ${line.line['note'] ?? ''}',
-                    ),
+                    Row(children: [
+                      Text('${line.line['qty']}×', style: const TextStyle(
+                        fontWeight: FontWeight.w800, color: NohutBrand.green)),
+                      const SizedBox(width: 8),
+                      Expanded(child: Text('${line.line['name']}',
+                        style: const TextStyle(fontWeight: FontWeight.w700))),
+                      Text(formatTry(line.total), style: const TextStyle(
+                        fontWeight: FontWeight.w700)),
+                    ]),
+                    if (guests.isNotEmpty)
+                      Text(
+                        'Dağıtılmamış ${formatTry(line.total - allocatedTo(o, line.key))}',
+                        style: TextStyle(fontSize: 12,
+                          color: line.total > allocatedTo(o, line.key)
+                              ? const Color(0xff8A6516) : const Color(0xff2E7D4F)),
+                      ),
+                    if ((line.line['removed'] as List? ?? []).isNotEmpty ||
+                        '${line.line['note'] ?? ''}'.isNotEmpty)
+                      Text(
+                        [
+                          if ((line.line['removed'] as List? ?? []).isNotEmpty)
+                            'Çıkar: ${(line.line['removed'] as List).join(', ')}',
+                          if ('${line.line['note'] ?? ''}'.isNotEmpty)
+                            'Not: ${line.line['note']}',
+                        ].join(' · '),
+                        style: const TextStyle(fontSize: 12, color: NohutBrand.muted),
+                      ),
+                    const SizedBox(height: 4),
                     Wrap(
                       spacing: 6,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         if (asMaps(o['guestChecks']).isNotEmpty &&
                             line.total > allocatedTo(o, line.key))
@@ -527,10 +612,12 @@ class OrderOperations extends StatelessWidget {
                                 ),
                             ],
                             child: const Chip(
+                              visualDensity: VisualDensity.compact,
                               label: Text('Ürünü Kişiye Ata ▾'),
                             ),
                           ),
                         OutlinedButton(
+                          style: compact,
                           onPressed: () async {
                             final v = await askFields(context, 'Ürün İptali', [
                               ('Adet', '1'),
@@ -552,6 +639,7 @@ class OrderOperations extends StatelessWidget {
                         ),
                         for (final g in asMaps(o['guestChecks']))
                           OutlinedButton(
+                            style: compact,
                             onPressed: () async {
                               final existing = asMaps(g['allocations'])
                                   .where((a) => a['key'] == line.key)
@@ -586,9 +674,11 @@ class OrderOperations extends StatelessWidget {
                     ),
                   ],
                 ),
-              ),
             ),
         ],
+        if (payments.isNotEmpty)
+          section(Icons.payments_outlined, 'Tahsilatlar',
+            '${payments.length} kayıt'),
         for (var i = 0; i < asMaps(o['payments']).length; i++)
           if (asMaps(o['payments'])[i]['guestCheckId'] == null &&
               paymentNetCents(asMaps(o['payments'])[i]) > 0)
@@ -603,6 +693,7 @@ class OrderOperations extends StatelessWidget {
                           .where((a) => a['guestCheckId'] == g['id'])
                           .fold<int>(0, (n, a) => n + cents(a['amount']));
                       return OutlinedButton(
+                        style: compact,
                         onPressed: () async {
                           final v = await askFields(
                             context,
@@ -638,15 +729,26 @@ class OrderOperations extends StatelessWidget {
             builder: (context) {
               final p = asMaps(o['payments'])[i], index = i;
               return ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                leading: CircleAvatar(
+                  radius: 18,
+                  backgroundColor: const Color(0xffEEF3EF),
+                  child: Icon(
+                    p['method'] == 'Kart' ? Icons.credit_card : Icons.payments_outlined,
+                    size: 18, color: NohutBrand.green),
+                ),
                 title: Text(
                   '${p['method']} · Net ${formatTry(paymentNetCents(p))}',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
                 subtitle: Text(
-                  '${p['createdAt']} · ${p['guestName'] ?? p['by'] ?? ''}',
+                  '${istanbulStamp(p['createdAt'])} · ${p['guestName'] ?? p['by'] ?? ''}',
                 ),
                 trailing: paymentNetCents(p) <= 0
-                    ? const Text('İade edildi')
+                    ? const Text('İade edildi', style: TextStyle(
+                        color: Color(0xffB3261E), fontWeight: FontWeight.w700))
                     : OutlinedButton(
+                        style: compact,
                         onPressed: () async {
                           final v =
                               await askFields(context, 'Tahsilat İadesi', [
@@ -700,14 +802,19 @@ class OrderOperations extends StatelessWidget {
               );
             },
           ),
+        const SizedBox(height: 8),
         ExpansionTile(
-          title: const Text('İşlem Geçmişi'),
+          leading: const Icon(Icons.history, color: NohutBrand.green),
+          title: const Text('İşlem Geçmişi',
+            style: TextStyle(fontWeight: FontWeight.w700)),
+          subtitle: Text('${(o['events'] as List? ?? []).length} kayıt'),
           children: [
             for (final e in o['events'] as List? ?? [])
               ListTile(dense: true, title: Text('$e')),
           ],
         ),
       ],
+    ),
     );
   }
 }
