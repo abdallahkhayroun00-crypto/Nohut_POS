@@ -54,6 +54,28 @@ Json kitchenSink() {
   return s;
 }
 
+/// Every phone number actually stored anywhere in [s] (exact values, so a
+/// timestamp such as `…34.205554Z` can never look like a phone).
+Set<String> phonesIn(Json s) {
+  final out = <String>{};
+  void walk(Object? v, String key) {
+    if (v is Map) {
+      for (final e in v.entries) {
+        walk(e.value, '${e.key}');
+      }
+    } else if (v is List) {
+      for (final x in v) {
+        walk(x, key);
+      }
+    } else if (v is String && v.trim().length >= 7 &&
+        (key == 'phone' || key == 'customerPhone')) {
+      out.add(v.trim());
+    }
+  }
+  walk(s, '');
+  return out;
+}
+
 void main() {
   test('every field written by the real writers is declared', () {
     expect(unregisteredFieldPaths(kitchenSink()), isEmpty);
@@ -90,7 +112,9 @@ void main() {
     final projected = projectForCloud(s);
     final text = jsonEncode(projected);
     // No phone, address, customer or reviewer names in the projection.
-    for (final needle in ['0555', 'Atatürk Mah', 'Gülşen', 'Ayşe',
+    final phones = phonesIn(s);
+    expect(phones, isNotEmpty);
+    for (final needle in [...phones, 'Atatürk Mah', 'Gülşen', 'Ayşe',
         'Mehmet Yılmaz', 'Özge']) {
       expect(text, isNot(contains(needle)), reason: needle);
     }
@@ -122,15 +146,21 @@ void main() {
   test('PII replication scan: snapshots, audits and notices carry no contact '
       'data', () {
     final s = kitchenSink();
+    final phones = phonesIn(s);
+    expect(phones, isNotEmpty);
     for (final job in asMaps(s['printJobs'])) {
       final snap = jsonEncode(job['snapshot'] ?? {});
-      expect(snap, isNot(contains('0555')));
       expect(snap, isNot(contains('phone')));
-      expect('${job['text'] ?? ''}', isNot(contains('0555')));
+      for (final phone in phones) {
+        expect(snap, isNot(contains(phone)));
+        expect('${job['text'] ?? ''}', isNot(contains(phone)));
+      }
     }
     for (final key in ['staffNotices', 'tgoOperationAudit', 'combinedPayments',
         'terminalAttempts']) {
-      expect(jsonEncode(s[key] ?? []), isNot(contains('0555')), reason: key);
+      for (final phone in phones) {
+        expect(jsonEncode(s[key] ?? []), isNot(contains(phone)), reason: key);
+      }
     }
     for (final o in asMaps(s['trendyolGoOrders'])) {
       expect(o.containsKey('customerEmail'), false);

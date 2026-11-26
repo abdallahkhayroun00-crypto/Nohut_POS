@@ -54,6 +54,12 @@ const syncEntityRegistry = <String, SyncEntity>{
     cloudTarget: 'orders, order_batches, order_items, payments, order_events',
     policy: 'POS→Cloud; full history; Gel-Al phone protected, never printed',
   ),
+  'deletedOrders': SyncEntity(
+    classes: {DataClass.financial, DataClass.personalPii, DataClass.internal},
+    cloudTarget: 'orders (deleted_at tombstone) + audit_logs',
+    policy: 'Audited soft delete: full order + related rows + who/when/why; '
+        'excluded from reports exactly like before; never erased',
+  ),
   'nextId': SyncEntity(
     classes: {DataClass.internal},
     cloudTarget: null,

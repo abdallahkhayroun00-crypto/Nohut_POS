@@ -33,6 +33,7 @@ import 'package:cryptography/cryptography.dart';
 import 'package:path/path.dart' as paths;
 import 'package:sqlite3/sqlite3.dart';
 
+import 'entity_storage.dart';
 import 'pos_store.dart';
 
 const backupMagic = 'NOHUTBK1';
@@ -192,13 +193,16 @@ BackupManifest inspectDatabase(
     );
     if (snap.isEmpty) throw const BackupException('POS durumu bulunamadı.');
     final payload = jsonDecode(snap.single['payload'] as String) as Map;
+    final orderCount = isNormalized(db)
+        ? db.select('SELECT count(*) AS n FROM pos_orders').single['n'] as int
+        : (payload['orders'] as List? ?? const []).length;
     return BackupManifest(
       backupId: backupId,
       createdAt: DateTime.now().toUtc().toIso8601String(),
       revision: snap.single['revision'] as int,
       appVersion: appVersion,
       tableCounts: counts,
-      orderCount: (payload['orders'] as List? ?? const []).length,
+      orderCount: orderCount,
       bytesUncompressed: bytes.length,
       sha256Uncompressed: hash.sha256.convert(bytes).toString(),
     );
@@ -525,6 +529,8 @@ class RestoreManager {
           order['kitchenPrintState'] = 'Kontrol gerekli';
         }
       }
+      // Per-entity storage keeps queues in their own tables.
+      if (isNormalized(db)) suppressNormalizedReplay(db);
       final settings = state.putIfAbsent('settings', () => <String, dynamic>{})
           as Map;
       settings['autoPrintEnabledAt'] = now;

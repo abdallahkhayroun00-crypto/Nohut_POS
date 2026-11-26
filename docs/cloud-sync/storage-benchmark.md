@@ -90,3 +90,35 @@ PostgreSQL overhead (tuples, indexes, TOAST, MVCC) is not measured here. It will
 - Latency on the actual Windows laptop (only Linux was measured).
 - Network sync bytes per change (Phase 2).
 - Cloud storage per order on PostgreSQL (Phase 2).
+
+---
+
+## Phase 1B: before and after (measured)
+
+**Setup:**
+- Same machine, same fixture and seed, run back to back with nothing else running.
+- "Before" is `main` at `f89d7aa` (single-JSON storage). "After" is the PR #33 branch (per-entity tables).
+- The test-suite field validator (`flutter_test_config.dart`) is switched off inside the benchmark, so only the POS itself is measured.
+- *Save* = `PosStore.replace` of a state with one new order.
+- *Edit* = `read()` + change + save, which is what a cashier action costs.
+
+| Orders | Edit p50 before | Edit p50 after | Edit p95 after | Save p50 before | Save p50 after | SQLite file before | SQLite file after | `VACUUM INTO` before | after | gzip before | after |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1 000 | 177 ms | **30 ms** | 63 ms | 130 ms | **22 ms** | 3.6 MB | 2.4 MB | 1.9 MB | 2.4 MB | 0.12 MB | 0.21 MB |
+| 10 000 | 1 890 ms | **337 ms** | 414 ms | 1 447 ms | **194 ms** | 34.9 MB | 22.8 MB | 18.7 MB | 22.7 MB | 1.12 MB | 1.91 MB |
+| 50 000 | 9 139 ms | **1 811 ms** | 1 911 ms | 6 867 ms | **1 088 ms** | 174.5 MB | 114.2 MB | 93.3 MB | 113.8 MB | 5.55 MB | 9.51 MB |
+| 100 000 | refused (old 50 000 ceiling) | **3 502 ms** | 3 646 ms | refused | **1 898 ms** | — | 228.5 MB | — | 227.7 MB | — | 19.08 MB |
+
+### Reading the results honestly
+
+- **Speed:** an edit is about **5× faster** at 10k and 50k orders, and a save about 6–7× faster. 100 000 orders now work; before, the ceiling refused them.
+- **Live database file:** about 35 % smaller, because writes no longer leave a whole-payload free page behind on every save.
+- **Compact copy and backup are larger:**
+  - The `VACUUM INTO` copy is about 20 % larger: one row per entity plus indexes, against one large text value.
+  - The gzip backup is about 1.7× larger: per-row JSON compresses less well than one long string.
+  - Both are well within the free backup targets: 9.5 MB for 50 000 orders.
+- **Edits are still proportional to the number of orders.** At about 60 orders/day: about 0.34 s after 5–6 months and about 1.8 s after about 2.3 years. Three linear passes remain on every edit: the copy made for the caller, `validate()` over every order, and the row comparison.
+- **Next steps:** incremental validation of changed orders only, and a copy-on-read for unchanged rows. They are tracked for Phase 2 and must again be measured, not assumed.
+- **Not measured yet:**
+  - PostgreSQL size and sync payload size (Phase 2, on the cloud schema);
+  - the restaurant's Windows laptop.

@@ -26,13 +26,20 @@ The database lives at `%APPDATA%\NohutFalafel\nohut-pos.sqlite3` and can be over
 
 | Table | Key | Content | Class | Sync policy (proposed) | Status |
 |---|---|---|---|---|---|
-| `state_snapshot` | `id=1` (single row) | `revision` INTEGER, `payload` TEXT (the whole business state as JSON, §2), `updated_at` | all classes of §2 | Never uploaded as a blob. It is projected per entity through the registry (spec §2.2). | VERIFIED_EXISTING |
+| `state_snapshot` | `id=1` (single row) | `revision` INTEGER (fences every write), `payload` TEXT, `updated_at`. **Since Phase 1B the payload holds only the small core** (settings, menu, finance, …); the growing collections live in the `pos_*` tables below. | all classes of §2 | Never uploaded as a blob. It is projected per entity through the registry (spec §2.2). | VERIFIED_EXISTING |
 | `command_receipts` | `request_id` | Idempotency receipt: the full request `payload` JSON and the `result` JSON. Written by `PosStore.command` (staff phone orders/actions, finance sync). | INTERNAL, **PERSONAL_PII** (a Gel-Al phone order payload contains `customer.phone`) | Keep request identity, hash and outcome. Cloud copy redacted (spec §19.6.5). | VERIFIED_EXISTING |
 | `deleted_requests` | `request_id` | Opaque IDs of commands that belonged to an order removed by `deleteOrder`. | INTERNAL | Anti-replay identity; must survive restore. | VERIFIED_EXISTING |
+| `pos_meta` | `key` | `storage_version` (2), `migrated_at`, `present:<stateKey>` markers | INTERNAL | Local | VERIFIED_EXISTING (Phase 1B) |
+| `pos_orders` | `row_key` = order id | One row per order: `seq`, `json` (the full order aggregate), `source`, `created_at`, `closed` | FINANCIAL, PERSONAL_PII | `orders` + children | VERIFIED_EXISTING (Phase 1B) |
+| `pos_print_jobs` | `orderId:batchId:kind` | One row per print job: `seq`, `json`, `order_id`, `state` | INTERNAL, PERSONAL_PII (name + time only) | `receipt_snapshots`, `print_jobs` | VERIFIED_EXISTING (Phase 1B) |
+| `pos_platform_orders` | supplier:store:packageId | One row per Trendyol Go package: `seq`, `json`, `status`, `created_at` | FINANCIAL, TRANSIENT_API | `platform_order_records` | VERIFIED_EXISTING (Phase 1B) |
+| `pos_deleted_orders` | order id | One row per soft-deleted order: `seq`, `json`, `deleted_at` | FINANCIAL, PERSONAL_PII | tombstones | VERIFIED_EXISTING (Phase 1B) |
 | `backup_history` | `backup_id` | Backup runs: time, revision, sizes, SHA-256, destination, status, verification, reason, error | INTERNAL, DEVICE_LOCAL | Local history; never pruned | VERIFIED_EXISTING (Phase 1) |
 | `sync_outbox`, `sync_state` | — | — | — | Spec §4.4 | PROPOSED_V5 |
 
-**History-loss finding (P1 for Phase 2):** `PosStore.deleteOrder` physically removes the order, its print jobs, staff notices and terminal attempts. It also deletes the matching `command_receipts`; only the request IDs remain in `deleted_requests`. This conflicts with the V5 "lossless business history" rule, which calls for tombstones rather than physical delete. It is not changed in Phase 0, and needs an owner decision plus a tombstone design in PR-04.
+**History-loss finding (resolved in Phase 1B):** `PosStore.deleteOrder` physically removes the order, its print jobs, staff notices and terminal attempts. It also deletes the matching `command_receipts`; only the request IDs remain in `deleted_requests`. **Phase 1B change:** deletion is now an audited soft delete.
+- The order, its print jobs, staff notices and terminal attempts move unchanged into `deletedOrders`, together with `deletedAt`, `deletedBy`, `deletedByStaffId`, `reason` and `requestId`.
+- Command receipts are **kept**. Their IDs are also listed in `deleted_requests`, so a replay is refused.
 
 ---
 
@@ -44,6 +51,7 @@ Every key below is registered in `lib/sync_registry.dart`. CI fails if a new key
 |---|---|---|---|---|---|---|
 | `employees` | `emptyPosState`, finance/personnel UI | `{id:int, name, role, active}`. ID is stable and never reused. | PERSONAL_PII, INTERNAL | `employees` | POS→Cloud. Deactivate, never delete. Keep attribution. | VERIFIED_EXISTING |
 | `orders` | `newLocalOrder`, `addOrderBatch`, payments, cancellations, platform demo | Local Masa/Gel-Al orders and demo platform orders (detail in §3). ID `int` from `nextId`. | FINANCIAL, PERSONAL_PII, INTERNAL | `orders`, `order_batches`, `order_items`, `payments`, `order_events` | Full history. Phone protected and never printed. | VERIFIED_EXISTING |
+| `deletedOrders` | `PosStore.deleteOrder` (Phase 1B) | Soft-deleted orders, each `{orderId, deletedAt, deletedBy, deletedByStaffId, reason, requestId, revision, order, related{printJobs, staffNotices, terminalAttempts}}` | FINANCIAL, PERSONAL_PII, INTERNAL | `orders` (deleted_at tombstone) + `audit_logs` | Never erased. Excluded from reports exactly as before. The archived order follows the `orders[]` field rules. | VERIFIED_EXISTING (Phase 1B) |
 | `nextId` | `newLocalOrder` | Monotonic order ID sequence (starts at 1200). | INTERNAL | — | Single-writer authority, not replicated. | VERIFIED_EXISTING |
 | `printJobs` | `queueLocalKitchen`, `queuePaymentReceipt` | `{orderId, batchId, kind?, state, createdAt, attempts, error, spooledAt, snapshot{order{id,dailyNumber,numberDay,source,table,createdAt,pickupChannel,customer{name,time}}, batch}, text?}`. Key: (`orderId`, `batchId`). | INTERNAL, PERSONAL_PII (name/time only; phone excluded since this PR) | `receipt_snapshots`, `print_jobs` | Audit only. Never replayed on another machine or after restore. | VERIFIED_EXISTING |
 | `settings` | many | Business and device settings (§4). | INTERNAL, DEVICE_LOCAL | `restaurant_settings` (business keys only) | Printer/paper/device keys stay local. | VERIFIED_EXISTING |

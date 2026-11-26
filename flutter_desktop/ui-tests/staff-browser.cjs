@@ -38,7 +38,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
  try{for(const width of [320,390,768,1280]){
   state=structuredClone(fixture);revision=1;mode='ok';posts=[];receipts=new Map();prints=0;
   const ctx=await browser.newContext({viewport:{width,height:width===320?568:844}}),page=await ctx.newPage(),errors=[];
-  await page.route('http://pos.test/**',route);page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.accept());
+  await page.route('http://pos.test/**',route);page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.accept(d.type()==='prompt'?'Test silme nedeni':undefined));
   await page.goto('http://pos.test/');await page.locator('#staff option[value="1"]').waitFor({state:'attached'});await page.locator('#staff').selectOption('1');
   fs.mkdirSync(path.join(__dirname,'../build'),{recursive:true});
   await page.screenshot({path:path.join(__dirname,`../build/staff-brand-${width}.png`),fullPage:true});
@@ -82,7 +82,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
   await page.locator('#split-order').click();await page.locator('#equal-split').click();await page.waitForFunction(()=>!document.querySelector('#split-dialog').open);assert.equal(state.orders[0].guestChecks.length,2);
   await page.locator('[data-pay-guest="1"]').click();await page.locator('#pay-method').selectOption('Karışık');await page.locator('#mixed-cash').fill('50');await page.locator('#card-confirmed').check();await page.locator('#pay-print').selectOption('no');await page.locator('#payment-form button[type=submit]').click();await page.waitForFunction(()=>!document.querySelector('#payment-dialog').open);assert.equal(state.orders[0].guestChecks[0].balanceCents,0);assert.equal(posts.at(-1).cashCents,5000);
   await page.locator('[data-pay-guest="2"]').click();await page.locator('#pay-print').selectOption('no');await page.locator('#payment-form button[type=submit]').click();await page.waitForFunction(()=>!document.querySelector('#payment-dialog').open);assert.equal(state.orders[0].dueCents,0);assert.equal(prints,0);
-  mode='lost';await page.locator('#delete-order').click();await page.locator('#retry').waitFor({state:'visible'});mode='ok';await page.locator('#retry').click();await page.waitForFunction(()=>document.querySelector('#order-detail').textContent.includes('Hesap kapalı'));assert.equal(state.orders.length,0);
+  mode='lost';await page.locator('#delete-order').click();await page.locator('#retry').waitFor({state:'visible'});mode='ok';await page.locator('#retry').click();await page.waitForFunction(()=>document.querySelector('#order-detail').textContent.includes('Hesap kapalı'));assert.equal(state.orders.length,0);assert.equal(posts.filter(p=>p.action==='delete').at(-1).reason,'Test silme nedeni');
   console.log(`PASS modifiers, ingredient buttons, person split, mixed payment and deletion retry at ${width}px`);
   state.trendyolGoOrders=[
     {orderNumber:'OPEN-OLD',dailyNumber:2,numberDay:'2026-10-02',status:'Picking',lines:[]},

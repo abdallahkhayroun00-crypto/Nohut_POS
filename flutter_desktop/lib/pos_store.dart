@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as paths;
 import 'package:sqlite3/sqlite3.dart';
 
+import 'entity_storage.dart';
 import 'pos_logic.dart';
 import 'operations.dart';
 
@@ -20,9 +21,12 @@ class PosSnapshot {
 }
 
 class WriteResult {
-  const WriteResult(this.ok, this.snapshot);
+  WriteResult(this.ok, this._load);
   final bool ok;
-  final PosSnapshot snapshot;
+  final PosSnapshot Function() _load;
+
+  /// Read on demand (a full copy is costly on large histories).
+  PosSnapshot get snapshot => _load();
 }
 
 Map<String, dynamic> emptyPosState() => {
@@ -99,6 +103,8 @@ class PosStore extends ChangeNotifier {
         error_message TEXT
       )
     ''');
+    _normalized = isNormalized(_db);
+    if (!_normalized) _normalize();
     final old = read();
     final migrated = copyJson(old.data);
     assignDailyNumbers(migrated);
@@ -110,17 +116,120 @@ class PosStore extends ChangeNotifier {
   late final String filePath;
   late final Database _db;
 
+  /// Phase 1B: true when the database uses per-entity tables.
+  bool _normalized = false;
+  bool get normalized => _normalized;
+
+  /// Set when the one-time migration could not be verified; the database
+  /// then stays in the legacy format, fully usable, and the UI says so.
+  String? migrationError;
+
+  /// Path of the plain safety copy taken just before migrating a database
+  /// that already held orders (kept; never deleted automatically).
+  String? preMigrationCopy;
+
+  /// One-time, verified, transactional move of a legacy database to the
+  /// per-entity tables. A database that already holds business data gets a
+  /// consistent safety copy first. Any failure rolls back completely.
+  void _normalize() {
+    try {
+      final legacy = jsonDecode(
+        _db.select('SELECT payload FROM state_snapshot WHERE id=1')
+            .single['payload'] as String,
+      ) as Map;
+      final hasHistory = (legacy['orders'] as List? ?? const []).isNotEmpty ||
+          (legacy['trendyolGoOrders'] as List? ?? const []).isNotEmpty;
+      if (hasHistory) {
+        final stamp = DateTime.now().toUtc().toIso8601String()
+            .substring(0, 19).replaceAll(':', '');
+        final copy = '$filePath.pre-normalization-$stamp.sqlite3';
+        if (!File(copy).existsSync()) backup(copy);
+        preMigrationCopy = copy;
+      }
+      _db.execute('BEGIN IMMEDIATE');
+      try {
+        migrateLegacyToNormalized(_db);
+        _db.execute('COMMIT');
+        _normalized = true;
+      } catch (_) {
+        _db.execute('ROLLBACK');
+        rethrow;
+      }
+    } catch (e) {
+      migrationError = '$e';
+      _normalized = false;
+    }
+  }
+
+  Map<String, dynamic> _loadState() => _normalized
+      ? loadNormalizedState(_db)
+      : Map<String, dynamic>.from(
+          jsonDecode(
+            _db.select('SELECT payload FROM state_snapshot WHERE id=1')
+                .single['payload'] as String,
+          ) as Map,
+        );
+
+  /// Writes [next] as revision [revision] inside the caller's transaction
+  /// and returns the state to cache after COMMIT.
+  Map<String, dynamic> _commitState(
+    Map<String, dynamic> next,
+    int revision,
+    String stamp,
+  ) {
+    if (!_normalized) {
+      _writeSnapshot(next, revision, stamp);
+      return copyJson(next);
+    }
+    // The diff needs the exact previous committed state.
+    if (_cache == null || _cacheRevision != revision - 1) {
+      _cache = _loadState();
+      _cacheRevision = revision - 1;
+    }
+    final (cached, _) = writeNormalizedState(
+      _db, _cache, next, revision: revision, updatedAt: stamp);
+    return cached;
+  }
+
+  // Phase 1B step 1: the last committed state stays decoded in memory and
+  // is reused while (revision, updated_at) in SQLite is unchanged, so other
+  // connections' writes are always seen. Callers still get their own copy.
+  int? _cacheRevision;
+  String? _cacheUpdatedAt;
+  Map<String, dynamic>? _cache;
+
   PosSnapshot read() {
-    final row = _db
-        .select(
-          'SELECT revision,payload,updated_at FROM state_snapshot WHERE id=1',
-        )
+    final head = _db
+        .select('SELECT revision,updated_at FROM state_snapshot WHERE id=1')
         .single;
-    return PosSnapshot(
-      row['revision'] as int,
-      Map<String, dynamic>.from(jsonDecode(row['payload'] as String) as Map),
-      row['updated_at'] as String,
+    final revision = head['revision'] as int;
+    final updatedAt = head['updated_at'] as String;
+    if (_cache == null ||
+        _cacheRevision != revision ||
+        _cacheUpdatedAt != updatedAt) {
+      _cache = _loadState();
+      _cacheRevision = revision;
+      _cacheUpdatedAt = updatedAt;
+    }
+    return PosSnapshot(revision, copyJson(_cache!), updatedAt);
+  }
+
+  int _headRevision() =>
+      _db.select('SELECT revision FROM state_snapshot WHERE id=1').single['revision']
+          as int;
+
+  /// Writes the snapshot row; the caller holds the transaction.
+  void _writeSnapshot(Map<String, dynamic> next, int revision, String stamp) {
+    _db.execute(
+      'UPDATE state_snapshot SET revision=?,payload=?,updated_at=? WHERE id=1',
+      [revision, jsonEncode(next), stamp],
     );
+  }
+
+  void _remember(Map<String, dynamic> next, int revision, String stamp) {
+    _cache = next;
+    _cacheRevision = revision;
+    _cacheUpdatedAt = stamp;
   }
 
   static void validate(Map<String, dynamic> data) {
@@ -141,9 +250,10 @@ class PosStore extends ChangeNotifier {
         throw const FormatException('Invalid employee');
       }
     }
-    if (orders.length > 50000 || (data['printJobs'] as List).length > 100000) {
-      throw const FormatException('POS record limit reached');
-    }
+    // No ceiling on history (owner decision 2026-11-27, spec §21.1): the old
+    // 50 000-order / 100 000-print-job limit would have refused every write
+    // once the restaurant's history grew past it. Size is handled by the
+    // storage design and measured in docs/cloud-sync/storage-benchmark.md.
     final ids = <int>{};
     final tables = <int>{};
     final packages = <String>{};
@@ -264,6 +374,13 @@ class PosStore extends ChangeNotifier {
         }
       }
     }
+    for (final archived in asMaps(data['deletedOrders'])) {
+      final id = archived['orderId'];
+      if (id is! int || archived['order'] is! Map ||
+          (archived['order'] as Map)['id'] != id || !ids.add(id)) {
+        throw const FormatException('Invalid deleted order archive');
+      }
+    }
     if (ids.isNotEmpty &&
         (data['nextId'] as int) <= ids.reduce((a, b) => a > b ? a : b)) {
       throw const FormatException('Invalid nextId');
@@ -307,21 +424,20 @@ class PosStore extends ChangeNotifier {
         _db.execute('COMMIT');
         return result;
       }
-      final current = read(), next = copyJson(read().data);
+      final current = read(), next = current.data;
       result = change(next);
       validate(next);
       debugWriteObserver?.call(next);
       final revision = current.revision + 1;
       result['revision'] = revision;
-      _db.execute(
-        'UPDATE state_snapshot SET revision=?,payload=?,updated_at=? WHERE id=1',
-        [revision, jsonEncode(next), DateTime.now().toUtc().toIso8601String()],
-      );
+      final stamp = DateTime.now().toUtc().toIso8601String();
+      final cached = _commitState(next, revision, stamp);
       _db.execute(
         'INSERT INTO command_receipts(request_id,payload,result) VALUES(?,?,?)',
         [requestId, encoded, jsonEncode(result)],
       );
       _db.execute('COMMIT');
+      _remember(cached, revision, stamp);
     } catch (_) {
       _db.execute('ROLLBACK');
       rethrow;
@@ -330,17 +446,26 @@ class PosStore extends ChangeNotifier {
     return result;
   }
 
+  /// Audited SOFT deletion (owner decision 2026-11-27, spec §21.2).
+  ///
+  /// The order is not erased: it moves, unchanged, into `deletedOrders`
+  /// together with its print jobs, staff notices and terminal attempts and
+  /// an audit block (who, when, why, request ID). Every existing report and
+  /// screen reads `orders`, so totals behave exactly as before, while the
+  /// full record, its payments and its command receipts are preserved and
+  /// the archive entry is the sync tombstone. Command receipts are kept;
+  /// their request IDs are also listed in `deleted_requests` so a replay
+  /// returns a clear message and can never re-create the order.
   Json deleteOrder(
     int orderId,
     int revision,
     String requestId, {
     int? staffId,
+    String? reason,
+    String? actor,
   }) {
     if (!RegExp(r'^[A-Za-z0-9_-]{8,100}$').hasMatch(requestId))
       throw const FormatException('İstek kimliği geçersiz');
-    _db.execute(
-      'CREATE TABLE IF NOT EXISTS deleted_requests (request_id TEXT PRIMARY KEY)',
-    );
     _db.execute('BEGIN IMMEDIATE');
     try {
       if (_db.select(
@@ -353,7 +478,7 @@ class PosStore extends ChangeNotifier {
       final snap = read();
       if (snap.revision != revision)
         throw const FormatException('Kayıtlar değişti; yenileyin');
-      final state = copyJson(snap.data), order = mutableOrder(state, orderId);
+      final state = snap.data, order = mutableOrder(state, orderId);
       if (order == null) throw const FormatException('Sipariş yok');
       requireLocal(order);
       if (order['terminalPending'] != null ||
@@ -363,42 +488,62 @@ class PosStore extends ChangeNotifier {
         throw const FormatException(
           'Bekleyen ödeme / yazdırma sonucunu önce kontrol edin',
         );
-      if (staffId != null &&
-          !asMaps(
-            state['employees'],
-          ).any((e) => e['id'] == staffId && e['active'] == true))
-        throw const FormatException('Aktif personel seçin');
-      (state['orders'] as List).removeWhere((o) => o['id'] == orderId);
-      for (final key in ['printJobs', 'staffNotices', 'terminalAttempts']) {
-        if (state[key] is List)
-          (state[key] as List).removeWhere((r) => r['orderId'] == orderId);
+      Map? person;
+      if (staffId != null) {
+        person = asMaps(state['employees'])
+            .where((e) => e['id'] == staffId && e['active'] == true)
+            .firstOrNull;
+        if (person == null) throw const FormatException('Aktif personel seçin');
       }
+      final why = (reason ?? '').trim();
+      if (why.length > 500) throw const FormatException('Neden çok uzun');
+      final related = <String, dynamic>{};
+      for (final key in ['printJobs', 'staffNotices', 'terminalAttempts']) {
+        if (state[key] is! List) continue;
+        final list = state[key] as List;
+        related[key] = [
+          for (final r in list)
+            if (r is Map && r['orderId'] == orderId) r,
+        ];
+        list.removeWhere((r) => r is Map && r['orderId'] == orderId);
+      }
+      (state['orders'] as List).removeWhere((o) => o['id'] == orderId);
+      final now = utcNow();
+      (state.putIfAbsent('deletedOrders', () => <dynamic>[]) as List).add({
+        'orderId': orderId,
+        'deletedAt': now,
+        'deletedBy': '${person?['name'] ?? actor ?? 'Kasa (PC)'}',
+        'deletedByStaffId': ?staffId,
+        'reason': why.isEmpty ? 'Belirtilmedi' : why,
+        'requestId': requestId,
+        'revision': revision + 1,
+        'order': order,
+        'related': related,
+      });
+      final linked = <String>[];
       for (final r in _db.select(
         'SELECT request_id,payload,result FROM command_receipts',
       )) {
         final p = jsonDecode(r['payload'] as String) as Map,
             result = jsonDecode(r['result'] as String) as Map;
         if (p['orderId'] == orderId || result['orderId'] == orderId) {
-          _db.execute(
-            'INSERT OR IGNORE INTO deleted_requests(request_id) VALUES(?)',
-            [r['request_id']],
-          );
-          _db.execute('DELETE FROM command_receipts WHERE request_id=?', [
-            r['request_id'],
-          ]);
+          linked.add(r['request_id'] as String);
         }
       }
       validate(state);
       debugWriteObserver?.call(state);
-      _db.execute(
-        'UPDATE state_snapshot SET revision=?,payload=?,updated_at=? WHERE id=1',
-        [revision + 1, jsonEncode(state), utcNow()],
-      );
-      // Retain only an opaque retry key, never the deleted order contents/number.
-      _db.execute('INSERT INTO deleted_requests(request_id) VALUES(?)', [
-        requestId,
-      ]);
+      final stamp = utcNow();
+      final cached = _commitState(state, revision + 1, stamp);
+      // Receipts stay (idempotency history); their IDs are fenced so a
+      // replay is refused with a clear message instead of re-creating.
+      for (final id in [...linked, requestId]) {
+        _db.execute(
+          'INSERT OR IGNORE INTO deleted_requests(request_id) VALUES(?)',
+          [id],
+        );
+      }
       _db.execute('COMMIT');
+      _remember(cached, revision + 1, stamp);
       notifyListeners();
       return {'ok': true, 'revision': revision + 1};
     } catch (_) {
@@ -453,20 +598,18 @@ class PosStore extends ChangeNotifier {
     debugWriteObserver?.call(next);
     _db.execute('BEGIN IMMEDIATE');
     try {
-      final current = read();
-      if (current.revision != expectedRevision) {
+      final revision = _headRevision();
+      if (revision != expectedRevision) {
         _db.execute('ROLLBACK');
-        return WriteResult(false, current);
+        return WriteResult(false, read);
       }
       final stamp = DateTime.now().toUtc().toIso8601String();
-      _db.execute(
-        'UPDATE state_snapshot SET revision=?,payload=?,updated_at=? WHERE id=1',
-        [current.revision + 1, jsonEncode(next), stamp],
-      );
+      // The caller keeps [next]; the cache holds a private copy.
+      final cached = _commitState(next, revision + 1, stamp);
       _db.execute('COMMIT');
-      final stored = read();
+      _remember(cached, revision + 1, stamp);
       notifyListeners();
-      return WriteResult(true, stored);
+      return WriteResult(true, read);
     } catch (_) {
       _db.execute('ROLLBACK');
       rethrow;
