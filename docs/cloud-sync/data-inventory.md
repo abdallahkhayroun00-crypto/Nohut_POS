@@ -68,6 +68,7 @@ The database lives at `%APPDATA%\NohutFalafel\nohut-pos.sqlite3` and can be over
 | `pos_platform_orders` | supplier:store:packageId | One row per Trendyol Go package: `seq`, `json`, `status`, `created_at` | FINANCIAL, TRANSIENT_API | `platform_order_records` | VERIFIED_EXISTING (Phase 1B) |
 | `pos_deleted_orders` | order id | One row per soft-deleted order: `seq`, `json`, `deleted_at` | FINANCIAL, PERSONAL_PII | tombstones | VERIFIED_EXISTING (Phase 1B) |
 | `backup_history` | `backup_id` | Backup runs: time, revision, sizes, SHA-256, destination, status, verification, reason, error | INTERNAL, DEVICE_LOCAL | Local history; never pruned | VERIFIED_EXISTING (Phase 1) |
+| `auth_users`, `auth_devices`, `auth_sessions`, `auth_settings`, `auth_audit` | user_id / device_id / sha256(token) / key / id | Local individual accounts (`lib/local_accounts.dart`): username, role, linked employee id, per-user grants, PBKDF2 password/PIN verifiers, owner TOTP secret, trusted devices, session verifiers (token never stored), idle-lock and "Bireysel giriş zorunlu" settings, security audit. **Never in the state JSON, never projected to the cloud**; travels only inside the encrypted backup. | SECRET (verifiers, TOTP secret), DEVICE_LOCAL | Control plane (A2) maps users ↔ `nohut_private.app_users`; local verifiers are never uploaded | PROPOSED_V5 (A3/A4) |
 | `sync_outbox`, `sync_state` | — | — | — | Spec §4.4 | PROPOSED_V5 |
 
 **History-loss finding (resolved in Phase 1B):** `PosStore.deleteOrder` physically removes the order, its print jobs, staff notices and terminal attempts. It also deletes the matching `command_receipts`; only the request IDs remain in `deleted_requests`. **Phase 1B change:** deletion is now an audited soft delete.
@@ -108,6 +109,10 @@ Every key below is registered in `lib/sync_registry.dart`. CI fails if a new key
 | `tgoOperationAudit` | `trendyol_go_readonly.dart` | `{platform, packageId, orderNumber, action, result, at}`. | INTERNAL | `audit_logs` | Operational audit. | VERIFIED_EXISTING |
 | `tgoReviewStoreId` | `trendyol_go_ui.dart` | Store ID for reviews (not a secret). | INTERNAL | `restaurant_settings` | — | VERIFIED_EXISTING |
 | `tgoReviewCache` | `trendyol_go_ui.dart` | Cached reviews, including reviewer names. | TRANSIENT_API, PERSONAL_PII | — | Refreshable cache. No CRM. | VERIFIED_EXISTING |
+| `platformReviews` | `review_sync_service.dart`, `review_repository.dart` (table `pos_platform_reviews`) | Persistent review repository: platform, supplier, store, reviewId, rating, comment, product names, reply + moderation, firstSeen/lastVerified, read, notification state. No reviewer identity, no raw payloads. | INTERNAL | — (reviews read contract pending) | Kept; never deleted by sync. | PROPOSED_V5 |
+| `tgoReviewSync` | `review_sync_service.dart` | Review sync status, diagnostics and window checkpoints. | INTERNAL | — | Local cursor. | PROPOSED_V5 |
+| `tgoStoreIdentity` | `review_sync_service.dart`, `tgo_store_identity.dart` | Verified Trendyol store {supplierId, storeId, name, source, verifiedAt}; replaces the hard-coded fallback. | INTERNAL | `restaurant_settings` | — | PROPOSED_V5 |
+| `notifications` | `notification_center.dart` | Durable Windows notification history (eventId dedup, read state). No payroll or customer contact data. | INTERNAL | — (contract N1 pending) | Capped at 500; unread kept. | PROPOSED_V5 |
 | `mobileDevices` | `mobile_pairing.dart` | `{id, name, hash(token), createdAt, revoked}`. | SECRET (token verifier), DEVICE_LOCAL | — (control plane) | Never in the business projection. | VERIFIED_EXISTING |
 | `mobileServerId` | `mobile_pairing.dart` | This POS's LAN identity. | DEVICE_LOCAL | — | — | VERIFIED_EXISTING |
 

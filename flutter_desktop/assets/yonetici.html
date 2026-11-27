@@ -1,0 +1,119 @@
+<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#123e30"><title>Nohut · Yönetici</title><style>
+@font-face{font-family:Barlow;src:url('/assets/fonts/Barlow-Regular.ttf');font-display:swap}@font-face{font-family:Barlow;src:url('/assets/fonts/Barlow-SemiBold.ttf');font-weight:600;font-display:swap}@font-face{font-family:Barlow;src:url('/assets/fonts/Barlow-Bold.ttf');font-weight:700;font-display:swap}@font-face{font-family:Bree;src:url('/assets/fonts/BreeSerif-Regular.ttf');font-display:swap}
+:root{--green:#123e30;--gold:#a58336;--cream:#f6f2e7;--card:#fbf9f3;--muted:#60705f;--line:#d9ddcc;--warn:#775624;--warn-bg:#fff1d9;--bad:#8b3c30}
+*{box-sizing:border-box}html,body{margin:0;background:var(--cream);color:var(--green);font:16px/1.4 Barlow,Arial,sans-serif}
+button,input,select{font:inherit;color:inherit}button,select{touch-action:manipulation;cursor:pointer;-webkit-tap-highlight-color:transparent}
+button{min-height:44px;padding:9px 13px;border:1px solid #bbc7af;border-radius:11px;background:var(--card);font-weight:600}button:disabled{opacity:.45;cursor:not-allowed}
+.primary{background:var(--green);border-color:var(--green);color:#fff}.ghost{border-color:transparent;background:transparent}.danger{color:var(--bad);border-color:#dac1b6}
+input,select{min-height:44px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:#fff;width:100%}
+label{display:flex;flex-direction:column;gap:4px;font-size:14px;color:var(--muted)}
+h1,h2{font-family:Bree,Georgia,serif;font-weight:400;margin:0}h1{font-size:21px}h2{font-size:18px;margin:4px 0 10px}
+header{position:sticky;top:0;z-index:5;background:var(--green);color:#fff;padding:calc(10px + env(safe-area-inset-top)) 16px 10px;display:flex;align-items:center;gap:10px}
+header img{border-radius:10px;background:#fff}header .grow{flex:1;min-width:0}header small{display:block;opacity:.8;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+header button{color:#fff;border-color:#ffffff55;background:transparent;min-height:38px}
+main{padding:14px 16px calc(84px + env(safe-area-inset-bottom));max-width:980px;margin:0 auto}
+nav{position:fixed;left:0;right:0;bottom:0;z-index:5;display:flex;background:#fff;border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
+nav button{flex:1;border:0;border-radius:0;background:transparent;font-size:13px;padding:8px 2px;min-height:56px;color:var(--muted)}nav button[aria-selected=true]{color:var(--green);box-shadow:inset 0 3px 0 var(--gold)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:12px}
+.stat{background:#fff;border:1px solid var(--line);border-radius:13px;padding:12px}.stat small{color:var(--muted);font-size:13px}.stat strong{display:block;font-size:22px;font-variant-numeric:tabular-nums}
+.row{display:flex;gap:10px;align-items:center}.spread{justify-content:space-between}.wrap{flex-wrap:wrap}
+.list{list-style:none;margin:0;padding:0}.list li{display:flex;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)}.list li:last-child{border-bottom:0}
+.list .sub{color:var(--muted);font-size:13px}.num{font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right}
+.notice{background:var(--warn-bg);color:var(--warn);border:1px solid #f0dbb2;border-radius:12px;padding:12px;font-size:14px}
+.bars{display:flex;align-items:flex-end;gap:3px;height:110px;padding-top:6px}.bars div{flex:1;background:#9db9a5;border-radius:4px 4px 0 0;min-height:2px;position:relative}.bars div:hover{background:var(--green)}
+.bar-labels{display:flex;gap:3px;font-size:10px;color:var(--muted)}.bar-labels span{flex:1;text-align:center}
+.empty{color:var(--muted);font-size:14px;padding:6px 0}.voided{text-decoration:line-through;opacity:.6}
+#toast{position:fixed;left:16px;right:16px;bottom:calc(70px + env(safe-area-inset-bottom));z-index:9;background:var(--green);color:#fff;border-radius:12px;padding:12px;font-size:14px;text-align:center}#toast[hidden]{display:none}
+#auth-gate{position:fixed;inset:0;z-index:50;background:var(--cream);display:flex;align-items:center;justify-content:center;padding:16px}#auth-gate[hidden]{display:none}
+#auth-gate form{width:min(380px,100%);background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;display:flex;flex-direction:column;gap:10px}
+.error{color:#9b2c22;min-height:1.2em;margin:0;font-size:14px}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+[hidden]{display:none!important}
+</style></head><body>
+<div id="auth-gate"><form id="auth-form" autocomplete="on"><img src="/assets/nohut-logo.webp" width="44" height="44" alt=""><h2 id="auth-title">Yönetici girişi</h2><p id="auth-hint" class="muted"></p>
+<label id="auth-user-row">Kullanıcı adı<input id="auth-username" autocomplete="username" autocapitalize="none" maxlength="32"></label>
+<label id="auth-pass-row">Şifre<input id="auth-password" type="password" autocomplete="current-password" maxlength="128"></label>
+<label id="auth-pin-row" hidden>PIN<input id="auth-pin" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code"></label>
+<p id="auth-error" class="error" role="alert"></p>
+<button type="submit" class="primary" id="auth-submit">Giriş yap</button><button type="button" id="auth-alt" class="ghost" hidden>Şifre ile aç</button><button type="button" id="auth-skip" class="ghost" hidden>Şimdilik geç</button></form></div>
+<header><img src="/assets/nohut-logo.webp" width="38" height="38" alt="Nohut Falafel"><div class="grow"><h1>Yönetici</h1><small id="who" role="status">Bağlanılıyor…</small></div><button id="logout">Çıkış</button></header>
+<main>
+<section data-screen="ozet"><div class="row spread wrap"><h2>Günün özeti</h2><label class="row"><span class="sr-only">Gün</span><input type="date" id="day" style="width:auto"></label></div>
+<div id="money-note" class="notice" hidden></div><div class="grid" id="stats"></div>
+<div class="card"><h2>Saatlik siparişler</h2><div class="bars" id="hourly"></div><div class="bar-labels" id="hourly-labels"></div></div>
+<div class="card"><h2>Açık hesaplar</h2><ul class="list" id="open"></ul></div>
+<div class="card"><h2>Online siparişler</h2><ul class="list" id="online"></ul></div></section>
+<section data-screen="siparis" hidden><div class="card"><h2>Bugünün siparişleri</h2><ul class="list" id="orders"></ul></div></section>
+<section data-screen="personel" hidden><div class="card"><h2>Personel performansı</h2><p class="muted">Seçili gün · Masa ve Gel-Al siparişleri.</p><ul class="list" id="staff"></ul></div></section>
+<section data-screen="finans" hidden><div class="row spread wrap"><h2>Aylık finans</h2><label class="row"><span class="sr-only">Ay</span><input type="month" id="month" style="width:auto"></label></div>
+<div id="finance-locked" class="notice" hidden></div>
+<div id="finance-body" hidden><div class="grid" id="fin-stats"></div>
+<div class="card"><div class="row spread"><h2>Diğer giderler</h2><button id="add-expense" class="primary">+ Gider</button></div>
+<form id="expense-form" class="card" hidden><div class="grid"><label>Tarih<input type="date" id="ex-date" required></label><label>Kategori<select id="ex-cat"></select></label><label>Açıklama<input id="ex-name" maxlength="120" required></label><label>Tutar (₺)<input id="ex-amount" inputmode="decimal" required></label><label>Ödeme<select id="ex-method"></select></label></div><p class="error" id="ex-error"></p><div class="row"><button type="button" id="ex-cancel" class="ghost">Vazgeç</button><button class="primary" id="ex-save">Kaydet</button></div></form>
+<ul class="list" id="other"></ul></div>
+<div class="card"><h2>Platform gelirleri</h2><ul class="list" id="platforms"></ul></div>
+<div class="card" id="payroll-card"><h2>Haftalık bordro</h2><ul class="list" id="payroll"></ul></div>
+<div class="card"><h2>Rapor</h2><p class="muted">Seçili ayın yönetim raporu (PDF).</p><button id="report">PDF indir</button></div></div></section>
+<section data-screen="menu" hidden><div class="card"><h2>Menü</h2><ul class="list" id="menu"></ul></div></section>
+</main>
+<nav aria-label="Yönetici bölümleri"><button data-view="ozet" aria-selected="true">Özet</button><button data-view="siparis" aria-selected="false">Siparişler</button><button data-view="personel" aria-selected="false" id="nav-personel">Personel</button><button data-view="finans" aria-selected="false" id="nav-finans">Finans</button><button data-view="menu" aria-selected="false">Menü</button></nav>
+<div id="toast" role="status" hidden></div>
+<script>
+'use strict';
+const $=id=>document.getElementById(id);
+const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const tl=c=>(Number(c||0)/100).toLocaleString('tr-TR',{minimumFractionDigits:2,maximumFractionDigits:2})+' ₺';
+const time=s=>{const d=new Date(s);return isNaN(d)?'':d.toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'})};
+const localDay=()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')};
+const MESSAGES={forbidden:'Bu bölüm için yetkiniz yok.',https_required:'Finans verileri bu ağda henüz kapalı.',invalid_credentials:'Kullanıcı adı veya şifre hatalı.',locked_out:'Çok fazla hatalı deneme. 15 dakika sonra deneyin.',too_many_attempts:'Çok fazla hatalı deneme. Biraz sonra tekrar deneyin.',invalid_pin:'PIN hatalı.',password_required:'PIN devre dışı. Şifrenizle açın.',device_revoked:'Bu cihazın erişimi kaldırıldı.',device_mismatch:'Bu cihaz başka bir hesaba bağlı. Önce çıkış yapın.',inactive:'Hesap devre dışı.',weak_pin:'PIN 6 haneli olmalı ve kolay tahmin edilmemeli.',client_not_allowed:'Bu hesap Yönetici uygulamasını kullanamaz.',conflict:'Kayıt Windows üzerinde değişti. Yenileyin.'};
+const FIN_CATS=['Yol / Nakliye','Temizlik','Bakım / Onarım','Elektrik / Su / Doğalgaz','Diğer'],FIN_METHODS=['Nakit','Kart','Banka','Ödenmedi'];
+let session=null,view='ozet',authMode='login',lastActivity=0,monthData=null,toastTimer=0;
+function toast(t){$('toast').textContent=t;$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,3500)}
+async function call(method,path,body,timeout=15000){const c=new AbortController(),t=setTimeout(()=>c.abort(),timeout);try{const r=await fetch(path,{method,cache:'no-store',headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined,signal:c.signal});const b=await r.json().catch(()=>({}));if(r.status===401)authRequired(b.error);return[r.status,b]}finally{clearTimeout(t)}}
+function deviceId(){let id=null;try{id=localStorage.getItem('nohut-device-id')}catch{}if(!id||!/^[A-Za-z0-9_-]{16,64}$/.test(id)){const b=new Uint8Array(18);crypto.getRandomValues(b);id=btoa(String.fromCharCode(...b)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');try{localStorage.setItem('nohut-device-id',id)}catch{}}return id}
+const auth=(p,b)=>call('POST','/api/auth/'+p,{client:'yonetici',...b});
+function showAuth(mode,hint){authMode=mode;$('auth-gate').hidden=false;$('auth-error').textContent='';const login=mode==='login',pin=mode==='pin'||mode==='setpin';$('auth-user-row').hidden=!login;$('auth-pass-row').hidden=!(login||mode==='password');$('auth-pin-row').hidden=!pin;$('auth-alt').hidden=mode!=='pin';$('auth-skip').hidden=mode!=='setpin';$('auth-title').textContent=login?'Yönetici girişi':mode==='setpin'?'Bu cihaz için PIN belirleyin':'Oturum kilitli';$('auth-submit').textContent=login?'Giriş yap':mode==='setpin'?'PIN kaydet':'Kilidi aç';$('auth-hint').textContent=hint||'';$('auth-password').value='';$('auth-pin').value=''}
+function authRequired(code){session=null;if(!$('auth-gate').hidden&&authMode!=='login'&&code==='locked')return;if(code==='locked')showAuth('pin','Uzun süre işlem yapılmadı. PIN ile devam edin.');else if($('auth-gate').hidden||authMode!=='login')showAuth('login',code&&!['auth_required','unknown'].includes(code)?(MESSAGES[code]||'Oturum sona erdi. Tekrar giriş yapın.'):'')}
+$('auth-form').onsubmit=async e=>{e.preventDefault();$('auth-submit').disabled=true;try{let st,b;if(authMode==='login')[st,b]=await auth('login',{username:$('auth-username').value,password:$('auth-password').value,deviceId:deviceId(),label:(navigator.userAgent.match(/iPhone|iPad|Android|Windows|Mac/)||['Tarayıcı'])[0]});else if(authMode==='setpin'){[st,b]=await auth('pin',{pin:$('auth-pin').value});if(st===200){$('auth-gate').hidden=true;toast('✓ PIN kaydedildi.');return}}else[st,b]=await auth('unlock',authMode==='pin'?{pin:$('auth-pin').value}:{password:$('auth-password').value});
+if(st===200&&b.session){session=b.session;if(authMode==='login')showAuth('setpin','Kilit açıldığında şifre yerine 6 haneli PIN kullanılır.');else $('auth-gate').hidden=true;load();return}
+if(b.error==='password_required'){showAuth('password',MESSAGES.password_required);return}$('auth-error').textContent=b.message||MESSAGES[b.error]||'İşlem tamamlanamadı.'}catch{$('auth-error').textContent='Windows POS’a ulaşılamadı.'}finally{$('auth-submit').disabled=false}};
+$('auth-alt').onclick=()=>showAuth('password','');$('auth-skip').onclick=()=>{$('auth-gate').hidden=true};
+$('logout').onclick=async()=>{if(!confirm('Bu cihazda oturum kapatılsın mı?'))return;await auth('logout',{}).catch(()=>{});session=null;showAuth('login','')};
+document.addEventListener('pointerdown',()=>{const n=Date.now();if(!session||n-lastActivity<60000)return;lastActivity=n;auth('activity',{}).catch(()=>{})},{passive:true});
+const can=op=>!!session&&(session.isOwner||(session.grants||[]).includes(op));
+function setView(v){view=v;for(const s of document.querySelectorAll('[data-screen]'))s.hidden=s.dataset.screen!==v;for(const b of document.querySelectorAll('nav button'))b.setAttribute('aria-selected',String(b.dataset.view===v));if(v==='finans')loadMonth()}
+for(const b of document.querySelectorAll('nav button'))b.onclick=()=>setView(b.dataset.view);
+function list(id,items,render,empty){$(id).innerHTML=items.length?items.map(render).join(''):`<li class="empty">${empty}</li>`}
+function li(title,sub,right){return`<li><div><div>${title}</div>${sub?`<div class="sub">${sub}</div>`:''}</div><div class="num">${right??''}</div></li>`}
+async function load(poll){const day=$('day').value||localDay();const[st,b]=await call('GET','/api/yonetici/overview?day='+encodeURIComponent(day)+(poll?'&poll=1':''));if(st===403){$('who').textContent=MESSAGES[b.error]||'Erişim yok';return}if(st!==200){if(st!==401)$('who').textContent='Bağlantı yok · yeniden deneniyor';return}
+session=b.session;if(authMode!=='setpin')$('auth-gate').hidden=true;$('who').textContent=`${session.username} · ${session.isOwner?'İşletme sahibi':session.role} · ${time(new Date())}`;
+const v=b.view,money='cashCents'in v;$('nav-personel').hidden=!('staff'in v);$('nav-finans').hidden=!can('finance.view');
+$('money-note').hidden=money;$('money-note').textContent=b.financeAllowed?'Satış tutarlarını görme yetkiniz yok.':'Satış tutarları ve finans bu ağda kapalı. İşletme sahibi, yerel HTTPS bir iPhone’da doğrulandıktan sonra Windows › Ayarlar › Güvenlik’ten açabilir.';
+const open=v.openAccounts||[];
+$('stats').innerHTML=[['Sipariş',v.orderCount],...(money?[['Nakit',tl(v.cashCents)],['Kart',tl(v.cardCents)]]:[]),['Açık hesap',open.length+' · '+tl(open.reduce((n,o)=>n+(o.dueCents||0),0))],['Online',(v.online||[]).length]].map(([k,x])=>`<div class="stat"><small>${k}</small><strong>${esc(x)}</strong></div>`).join('');
+const counts=Array.isArray(v.hourly)?v.hourly:[];const first=Math.min(8,...counts.map((n,i)=>n?i:24)),hours=counts.map((n,h)=>[h,n]).slice(first);const max=Math.max(1,...hours.map(h=>Number(h[1])||0));
+$('hourly').innerHTML=hours.map(([h,n])=>`<div title="${esc(h)}:00 · ${esc(n)} sipariş" style="height:${(Number(n)||0)/max*100}%"></div>`).join('');$('hourly-labels').innerHTML=hours.map(([h])=>`<span>${h%3===0?esc(h):''}</span>`).join('');
+const orderTitle=o=>o.source==='Masa'?`Masa ${esc(o.table)} · #${esc(o.dailyNumber??o.id)}`:`${esc(o.source)} · #${esc(o.dailyNumber??o.id)}`;
+list('open',open,o=>li(orderTitle(o),`${time(o.createdAt)} · ${esc(o.owner||'')}`,'Kalan '+tl(o.dueCents)),'Açık hesap yok.');
+list('online',v.online||[],o=>li(`${esc(o.source)} · ${esc(o.orderNumber||('#'+(o.dailyNumber??o.id)))}`,`${time(o.createdAt)} · ${esc(o.status||o.serviceStatus||'')}`,tl(o.totalCents)),'Online sipariş yok.');
+list('orders',v.orders||[],o=>li(orderTitle(o),`${time(o.createdAt)} · ${esc(o.owner||'')}${o.cancelled?' · iptal':o.closed?' · kapandı':''}`,tl(o.totalCents)),'Bu gün sipariş yok.');
+list('staff',v.staff||[],p=>li(esc(p.name),`${esc(p.tableOrders)} masa · ${esc(p.pickupOrders)} gel-al · ${esc(p.items)} ürün`,tl(p.ownedCents)),'Kayıt yok.');
+list('menu',v.menu||[],p=>li(`${p.active===false?'<span class="voided">':''}${esc(p.name)}${p.active===false?'</span>':''}`,esc(p.category),p.price!=null?tl(Math.round(Number(p.price)*100)):''),'Menü boş.')}
+async function loadMonth(){const m=$('month').value;const[st,b]=await call('GET','/api/yonetici/month?month='+encodeURIComponent(m));$('finance-locked').hidden=st===200;$('finance-body').hidden=st!==200;if(st!==200){$('finance-locked').textContent=st===403?(b.error==='https_required'?'Finans verileri bu ağda kapalı. İşletme sahibi, yerel HTTPS bir iPhone’da doğrulandıktan sonra Windows › Ayarlar › Güvenlik’ten açabilir.':MESSAGES[b.error]||'Erişim yok.'):(b.message||'Finans yüklenemedi.');return}
+monthData=b;const v=b.view,s=v.summary;
+$('fin-stats').innerHTML=[['Mağaza tahsilatı',s.localReceiptsCents],['Online net',s.onlineKnownNetCents],['Malzeme',s.materialsCents],...('payrollCents'in s?[['Bordro',s.payrollCents]]:[]),['Sabit',s.fixedCents],['Diğer',s.otherCents],['Toplam gider',s.totalExpensesCents],['Tahmini sonuç',s.estimateCents]].map(([k,x])=>`<div class="stat"><small>${k}</small><strong>${tl(x)}</strong></div>`).join('');
+list('other',[...v.other].reverse(),r=>`<li><div><div class="${r.voided?'voided':''}">${esc(r.name)}</div><div class="sub">${esc(r.date)} · ${esc(r.category)} · ${esc(r.paymentMethod)}</div></div><div class="num">${tl(r.amountCents)}${!r.voided&&can('finance.edit')?`<br><button class="ghost danger" data-void="${esc(r.id)}" data-version="${esc(r.createdAt)}">İptal</button>`:''}</div></li>`,'Bu ay gider yok.');
+list('platforms',v.platforms||[],p=>li(esc(p.source),`Brüt ${tl(p.grossCents)} · kesinti ${tl(p.deductionCents)}`,tl(p.netCents)),'Platform geliri yok.');
+$('payroll-card').hidden=!v.weeklyPayroll;if(v.weeklyPayroll)list('payroll',v.weeklyPayroll,p=>li(esc(p.employeeName),`${esc(p.weekStart)} → ${esc(p.weekEnd)}${p.paid?' · ödendi':''}`,tl(p.payableCents)),'Bu ay bordro kaydı yok.');
+$('add-expense').hidden=!can('finance.edit');$('report').hidden=!can('reports.export')}
+const rid=()=>{const b=new Uint8Array(12);crypto.getRandomValues(b);return'y_'+Array.from(b,x=>x.toString(16).padStart(2,'0')).join('')};
+async function write(action,data){const[st,b]=await call('POST','/api/yonetici/write',{requestId:rid(),action,data});if(st===200&&b.ok!==false){await loadMonth();return null}return b.message||MESSAGES[b.error]||'Kaydedilemedi.'}
+$('other').onclick=async e=>{const btn=e.target.closest('[data-void]');if(!btn)return;const reason=prompt('İptal nedeni');if(!reason)return;btn.disabled=true;const err=await write('other_void',{id:Number(btn.dataset.void),reason,expectedVersion:btn.dataset.version});if(err)toast(err);else toast('✓ Gider iptal edildi.')};
+$('ex-cat').innerHTML=FIN_CATS.map(c=>`<option>${esc(c)}</option>`).join('');$('ex-method').innerHTML=FIN_METHODS.map(c=>`<option>${esc(c)}</option>`).join('');
+$('add-expense').onclick=()=>{$('expense-form').hidden=false;$('ex-date').value=localDay();$('ex-error').textContent=''};$('ex-cancel').onclick=()=>$('expense-form').hidden=true;
+$('expense-form').onsubmit=async e=>{e.preventDefault();const cents=Math.round(Number($('ex-amount').value.replace(/\./g,'').replace(',','.'))*100);if(!Number.isInteger(cents)||cents<=0){$('ex-error').textContent='Tutar geçersiz.';return}$('ex-save').disabled=true;const err=await write('other_create',{date:$('ex-date').value,category:$('ex-cat').value,name:$('ex-name').value.trim(),amountCents:cents,paymentMethod:$('ex-method').value});$('ex-save').disabled=false;if(err){$('ex-error').textContent=err;return}$('expense-form').hidden=true;$('ex-name').value='';$('ex-amount').value='';toast('✓ Gider kaydedildi.')};
+$('report').onclick=async()=>{const m=$('month').value;const[y,mo]=m.split('-').map(Number);const last=new Date(y,mo,0).getDate();$('report').disabled=true;try{const[st,b]=await call('POST','/api/yonetici/report',{from:m+'-01',to:m+'-'+String(last).padStart(2,'0')},60000);if(st!==200||!b.pdf){toast(b.message||MESSAGES[b.error]||'Rapor alınamadı.');return}const bin=atob(b.pdf),bytes=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);const url=URL.createObjectURL(new Blob([bytes],{type:'application/pdf'})),a=document.createElement('a');a.href=url;a.download=b.name||'rapor.pdf';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),10000)}finally{$('report').disabled=false}};
+$('day').value=localDay();$('month').value=localDay().slice(0,7);$('day').onchange=()=>load();$('month').onchange=loadMonth;
+$('auth-gate').hidden=true;load();setInterval(()=>{if($('auth-gate').hidden&&!document.hidden)load(true)},15000);
+</script></body></html>

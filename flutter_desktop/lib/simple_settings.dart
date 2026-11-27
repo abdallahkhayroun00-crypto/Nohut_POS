@@ -30,6 +30,7 @@ class SimpleSettings extends StatefulWidget {
     this.staffPanel,
     this.wifiPanel,
     this.backupPanel,
+    this.accountsPanel,
   });
   final Json state;
   final EditState edit;
@@ -38,7 +39,7 @@ class SimpleSettings extends StatefulWidget {
   final TrendyolGoReadonly tgoIntegration;
   final VoidCallback onOpenGoogle;
   final ValueChanged<String>? onTestOnlineSound;
-  final Widget? staffPanel, wifiPanel, backupPanel;
+  final Widget? staffPanel, wifiPanel, backupPanel, accountsPanel;
   @override
   State<SimpleSettings> createState() => _SimpleSettingsState();
 }
@@ -92,7 +93,7 @@ class _SimpleSettingsState extends State<SimpleSettings> {
           (settings['printerName'] ?? 'XP-237B').toString()),
         ('Menü', Icons.menu_book_outlined,
           settings['qrAutoSync'] != false ? 'QR eşitleme açık' : 'QR eşitleme kapalı'),
-        ('Güvenlik', Icons.shield_outlined, 'Erişim durumu'),
+        ('Güvenlik', Icons.shield_outlined, 'Kullanıcılar & Yetkiler'),
         ('Yedekleme', Icons.backup_outlined, 'Şifreli yedek ve geri yükleme'),
       ];
       return Wrap(spacing: 12, runSpacing: 12, children: [
@@ -762,21 +763,27 @@ class _SimpleSettingsState extends State<SimpleSettings> {
             subtitle: Text('Sipariş kabul edildiğinde, Masa / Gel-Al fişiyle aynı yazıcıdan ve aynı formatta otomatik yazdırılır (Otomatik Masa / Gel-Al Fişi açıkken).'),
           ),
         ],
+        if (tab == 'Güvenlik' && widget.accountsPanel != null)
+          section(
+            'Kullanıcılar & Yetkiler',
+            'Bireysel hesaplar, kişiye özel yetkiler, güvenilen cihazlar ve sahip için iki adımlı doğrulama.',
+            [widget.accountsPanel!],
+          ),
         if (tab == 'Güvenlik')
           section(
             'Güvenlik ve erişim',
-            'Bu panel mevcut bağlantı ve erişim durumunu gösterir; yeni bir oturum açma sistemi kurmaz.',
+            'Genel öneriler.',
             [
               const ListTile(
                 leading: Icon(Icons.admin_panel_settings_outlined),
                 title: Text('Yönetici bilgisayarını koruyun'),
-                subtitle: Text('Windows oturumunu yetkisiz kişilerden koruyun. Bu sürümde yönetici için ayrı POS şifresi bulunmuyor.'),
+                subtitle: Text('Windows oturumunu yetkisiz kişilerden koruyun. Kullanıcı hesapları ve yedekler bu bilgisayardadır.'),
               ),
               const Divider(),
               const ListTile(
                 leading: Icon(Icons.people_outline),
                 title: Text('Personel erişimi'),
-                subtitle: Text('Personel adı seçimi tek başına kimlik doğrulama değildir. Çalışan ağını misafir Wi-Fi ağından ayırın.'),
+                subtitle: Text('“Bireysel giriş zorunlu” kapalıyken ad seçimi kimlik doğrulama değildir. Çalışan ağını misafir Wi-Fi ağından ayırın.'),
               ),
               const Divider(),
               const ListTile(
