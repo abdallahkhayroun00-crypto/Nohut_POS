@@ -62,10 +62,10 @@ EVIDENCE:
 | N2 | Windows notification center (reuse sound, `online_order_alarm.dart`, `staffNotices`) | Claude | ⏳ | N1 | — |
 | N3 | Bildirimler in Android + local + cloud apps; LAN events + Supabase Realtime | Claude (cloud read RPCs: Codex) | ⏳ | N1, #39 | — |
 | N4 | FCM + `flutter_local_notifications` **evaluation only** (free; owner approval before any new project/credential) | Claude | ⏳ | N1 | — |
-| R1 | Trendyol review root-cause investigation (read-only, code + official docs) | Claude | ✅ docs; ⏳ one authorized live read-only check | — | `trendyol-review-investigation.md` |
-| R2 | `TgoStoreIdentityService` (official `/stores` discovery, remove `316490` fallback, diagnostics) | Claude | ⏳ | R1 | — |
-| R3 | `ReviewSyncService` + persistent review repository + checkpoints | Claude | ⏳ | R2 | — |
-| R4 | Review notifications (no storm, exactly once) + Yorum Merkezi (Windows, Yönetici) + reply state machine | Claude | ⏳ | R3, N1 | — |
+| R1 | Trendyol review root-cause investigation | Claude | ✅ verified live (read-only, 2026-11-27): no date filter + page 0 only; store `316490` is correct; no Uber Eats impact | — | `trendyol-review-investigation.md` §6 |
+| R2 | Store identity (official `/stores` discovery, `316490` fallback removed, diagnostics) | Claude | ✅ #42 | R1 | `tgo_store_identity.dart`, `test/review_sync_test.dart` |
+| R3 | `ReviewSyncService` (date windows, all pages, backoff, single flight) + `pos_platform_reviews` repository + Windows popup + rewritten review screen | Claude | ✅ #42 (Windows); owner-device check pending | R2 | `review_sync_service.dart`, `review_repository.dart` |
+| R4 | Yorum Merkezi in Yönetici, Google/other platforms, Android review notifications | Claude | ⏸ paused by owner 2026-11-27 (reviews deprioritized; Windows notifications + reply states already done in R3) | R3, N1 | — |
 | S1 | PR-05B typed sync, snapshot/first sync, reconciliation, read projections (incl. reviews/notifications projections when contracts exist) | ChatGPT Codex | 🔄 #39 | A1 | #39 |
 | S2 | Phase 5B command queue RPCs | ChatGPT Codex | 🔄 #39 | — | #39 |
 | P6 | Windows sales/top products/heatmap projections (Phase 6) | open | ⏳ | — | — |

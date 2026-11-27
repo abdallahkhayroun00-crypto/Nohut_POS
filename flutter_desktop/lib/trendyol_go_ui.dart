@@ -8,6 +8,9 @@ import 'pos_logic.dart';
 import 'order_reporting.dart';
 import 'compact_review_card.dart';
 import 'review_display.dart';
+import 'review_repository.dart';
+import 'review_sync_service.dart';
+import 'tgo_review_api.dart';
 import 'trendyol_go_readonly.dart';
 
 class TgoSettingsPanel extends StatefulWidget {
@@ -700,9 +703,11 @@ class FeedbackPanel extends StatefulWidget {
     required this.integration,
     required this.orders,
     required this.onOpenGoogle,
+    required this.reviewSync,
   });
 
   final TrendyolGoReadonly integration;
+  final ReviewSyncService reviewSync;
   final List<Json> orders;
   final VoidCallback onOpenGoogle;
 
@@ -740,8 +745,8 @@ class _FeedbackPanelState extends State<FeedbackPanel> {
         Offstage(
           offstage: source != _FeedbackSource.trendyol,
           child: TgoReviewsPanel(
-            orders: widget.orders,
             integration: widget.integration,
+            reviewSync: widget.reviewSync,
           ),
         ),
         if (source == _FeedbackSource.google)
@@ -837,490 +842,389 @@ class _ExternalReviewsCard extends StatelessWidget {
   }
 }
 
+/// Trendyol Go reviews from the persistent repository (spec §23.6).
+/// Data comes from [ReviewSyncService], which runs in the background on
+/// every screen; this widget only displays, filters and acts. No Store ID
+/// entry: the store is verified automatically (selector only when the
+/// supplier has several official stores).
 class TgoReviewsPanel extends StatefulWidget {
   const TgoReviewsPanel({
     super.key,
     required this.integration,
-    required this.orders,
+    required this.reviewSync,
   });
 
   final TrendyolGoReadonly integration;
-  final List<Json> orders;
+  final ReviewSyncService reviewSync;
 
   @override
   State<TgoReviewsPanel> createState() => _TgoReviewsPanelState();
 }
 
 class _TgoReviewsPanelState extends State<TgoReviewsPanel> {
-  final storeId = TextEditingController();
-  List<Json> reviews = [];
-  String error = '';
-  int page = 0;
-  bool loading = false, loaded = false, hasNextPage = false;
   int ratingFilter = 0;
-  bool newestFirst = true, answering = false;
-  bool starsOnly = false;
-  final Map<String, String> pendingReplies = {};
-  Timer? _refreshTimer;
-  DateTime? _lastSuccessful;
-  bool _autoAttempted = false;
-
-  void _integrationChanged() {
-    if (!mounted || _autoAttempted) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) => _autoLoad());
-  }
-
-  void _restoreCache() {
-    final c = widget.integration.credentials;
-    if (c == null || !c.valid) return;
-    final cache = widget.integration.store.read().data['tgoReviewCache'];
-    if (cache is! Map ||
-        cache['supplierId'] != c.supplierId ||
-        cache['storeId'] != storeId.text.trim() ||
-        cache['reviews'] is! List) return;
-    final cachedRows = (cache['reviews'] as List)
-        .whereType<Map>().map((e) => Json.from(e)).toList();
-    final pending = cache['pendingReplies'];
-    if (pending is Map) {
-      pendingReplies.addAll({
-        for (final entry in pending.entries)
-          if (entry.key is String && entry.value is String)
-            (entry.key as String): (entry.value as String),
-      });
-    }
-    setState(() {
-      reviews = cachedRows;
-      loaded = true;
-      page = 0;
-      hasNextPage = cache['hasNextPage'] == true;
-      _lastSuccessful = DateTime.tryParse('${cache['updatedAt'] ?? ''}');
-    });
-  }
-
-  void _autoLoad() {
-    if (!mounted || _autoAttempted || loading) return;
-    final credentials = widget.integration.credentials;
-    if (credentials?.valid != true ||
-        !RegExp(r'^[0-9]+$').hasMatch(storeId.text.trim())) return;
-    _autoAttempted = true;
-    _restoreCache();
-    unawaited(loadPage(0));
-  }
-
-  void _saveCache() {
-    final c = widget.integration.credentials;
-    if (c == null) return;
-    for (var i = 0; i < 3; i++) {
-      final snapshot = widget.integration.store.read();
-      final next = copyJson(snapshot.data);
-      next['tgoReviewStoreId'] = storeId.text.trim();
-      next['tgoReviewCache'] = {
-        'supplierId': c.supplierId,
-        'storeId': storeId.text.trim(),
-        'updatedAt': _lastSuccessful?.toUtc().toIso8601String(),
-        'reviews': reviews,
-        'hasNextPage': hasNextPage,
-        'pendingReplies': pendingReplies,
-      };
-      if (widget.integration.store.replace(next, snapshot.revision).ok) return;
-    }
-  }
-
-  void _saveStoreId(String id) {
-    if (!RegExp(r'^[0-9]{3,12}$').hasMatch(id)) return;
-    for (var i = 0; i < 3; i++) {
-      final snapshot = widget.integration.store.read();
-      if (snapshot.data['tgoReviewStoreId'] == id) return;
-      final next = copyJson(snapshot.data);
-      next['tgoReviewStoreId'] = id;
-      if (widget.integration.store.replace(next, snapshot.revision).ok) return;
-    }
-  }
+  bool newestFirst = true, unreadOnly = false;
+  bool? withText;
+  ReplyFilter replyFilter = ReplyFilter.any;
+  String search = '';
+  int visibleCount = 30;
+  final Set<String> busy = {};
 
   @override
   void initState() {
     super.initState();
-    final stores = widget.orders
-        .where(
-          (order) =>
-              order['supplierId'] == widget.integration.credentials?.supplierId,
-        )
-        .map((order) => '${order['storeId'] ?? ''}')
-        .where((id) => id.isNotEmpty)
-        .toSet();
-    final saved = '${widget.integration.store.read().data['tgoReviewStoreId'] ?? ''}';
-    storeId.text = RegExp(r'^[0-9]+$').hasMatch(saved)
-        ? saved
-        : stores.length == 1 ? stores.single : '316490';
-    widget.integration.addListener(_integrationChanged);
-    _refreshTimer = Timer.periodic(const Duration(minutes: 5), (_) {
-      if (mounted && _autoAttempted && !loading &&
-          widget.integration.credentials?.valid == true) {
-        unawaited(loadPage(page));
-      }
-    });
-    WidgetsBinding.instance.addPostFrameCallback((_) => _autoLoad());
+    widget.reviewSync.addListener(_changed);
   }
 
   @override
   void dispose() {
-    widget.integration.removeListener(_integrationChanged);
-    _refreshTimer?.cancel();
-    storeId.dispose();
+    widget.reviewSync.removeListener(_changed);
     super.dispose();
   }
 
-  Future<void> loadPage(int index) async {
-    if (loading) return;
-    setState(() {
-      loading = true;
-      error = '';
-    });
-    try {
-      final result = await widget.integration.readReviews(
-        storeId.text.trim(),
-        index,
-      );
-      if (!mounted) return;
-      setState(() {
-        reviews = result.reviews;
-        hasNextPage = result.hasNextPage;
-        page = index;
-        loaded = true;
-        _lastSuccessful = DateTime.now().toUtc();
-        // Only clear a local unverified submission after the platform GET
-        // actually includes an answer for that review.
-        for (final row in result.reviews) {
-          final comment = row['comment'];
-          if (comment is Map && comment['restaurantAnswer'] is Map) {
-            pendingReplies.remove(row['reviewId'].toString());
-          }
-        }
-      });
-      if (index == 0) {
-        try { _saveCache(); } catch (_) {
-          // Display the last fetched data even when local persistence fails.
-        }
-      }
-    } on FormatException catch (e) {
-      if (mounted) setState(() => error = e.message);
-    } catch (_) {
-      if (mounted)
-        setState(() => error = 'Yorumlar alınamadı. Bağlantıyı kontrol edin.');
-    } finally {
-      if (mounted) setState(() => loading = false);
-    }
+  void _changed() {
+    if (mounted) setState(() {});
   }
 
-  /// Real names are shown only when returned by the review API.
-  /// An order customer is not necessarily the reviewer, so label separately.
-  String? _orderCustomer(Json review) {
-    final orderNumber = '${review['orderParentId'] ?? ''}'.trim();
-    if (orderNumber.isEmpty) return null;
-    final matches = widget.orders.where((order) =>
-      order['testPackage'] != true &&
-      '${order['orderNumber'] ?? ''}' == orderNumber &&
-      '${order['storeId'] ?? ''}' == storeId.text.trim()).toList();
-    if (matches.length != 1) return null;
-    final name = '${matches.single['customerName'] ?? ''}'.trim();
-    return name.isEmpty ? null : name;
-  }
+  static const partnerPanel = 'https://partner.tgoyemek.com';
 
   Future<void> _reply(Json review) async {
-    final reviewId = '${review['reviewId'] ?? ''}';
-    if (reviewId.isEmpty || answering || loading ||
-        pendingReplies.containsKey(reviewId)) return;
-    final answer = await showDialog<String>(
+    final key = reviewKey(review);
+    if (busy.contains(key)) return;
+    final draft = await showDialog<String>(
       context: context,
       builder: (_) => const _TgoReplyDialog(),
     );
-    if (!mounted || answer == null) return;
-    setState(() { answering = true; error = ''; });
+    if (!mounted || draft == null) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Yanıt önizleme'),
+        content: SizedBox(width: 460, child: Text(draft)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false),
+              child: const Text('Düzenle / Vazgeç')),
+          FilledButton(onPressed: () => Navigator.pop(context, true),
+              child: const Text('Herkese açık gönder')),
+        ],
+      ),
+    );
+    if (!mounted || confirmed != true) return;
+    String nowIso() => DateTime.now().toUtc().toIso8601String();
+    setState(() => busy.add(key));
+    // Persist BEFORE the request: a crash mid-request leaves "sending",
+    // which is shown as an uncertain outcome and never re-sent automatically.
+    widget.reviewSync.updateReview(key, (row) => row['replyDraft'] = {
+      'text': draft, 'state': 'sending', 'updatedAt': nowIso()});
+    String state, message;
+    String? errorText;
     try {
       await widget.integration.answerReview(
-        storeId: storeId.text.trim(),
-        reviewId: reviewId,
-        text: answer,
+        storeId: '${review['storeId']}',
+        reviewId: '${review['reviewId']}',
+        text: draft,
       );
-      if (!mounted) return;
-      // API accepted the submission, but the reply is NOT claimed approved
-      // until the subsequent review GET supplies restaurantAnswer.
-      setState(() => pendingReplies[reviewId] = answer);
-      try { _saveCache(); } catch (_) {}
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text(
-          'Yanıt isteği gönderildi. Platform onayı kontrol ediliyor.',
-        )),
-      );
-      await loadPage(page);
+      state = 'submitted';
+      message = 'Yanıt gönderildi. Yayın, platform onayından sonra görünecek.';
     } on FormatException catch (e) {
-      if (mounted) setState(() => error = e.message);
+      // The platform answered with a definite refusal.
+      state = 'failed';
+      errorText = e.message;
+      message = e.message;
     } catch (_) {
-      if (mounted) {
-        setState(() => error = 'Yanıt gönderilemedi. Partner Paneli’nden kontrol edin.');
-      }
-    } finally {
-      if (mounted) setState(() => answering = false);
+      // Timeout / connection loss: outcome unknown. Never auto-resend.
+      state = 'unknown';
+      message = 'Yanıtın sonucu belirsiz. Tekrar göndermeden önce '
+          'Partner Paneli’nden kontrol edin; otomatik eşitleme de doğrulayacak.';
     }
+    widget.reviewSync.updateReview(key, (row) => row['replyDraft'] = {
+      'text': draft, 'state': state, 'updatedAt': nowIso(),
+      if (errorText != null) 'error': errorText});
+    if (!mounted) return;
+    setState(() => busy.remove(key));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    if (state == 'submitted') unawaited(widget.reviewSync.syncNow(manual: true));
+  }
+
+  Widget _diagnostics(Json st) {
+    final theme = Theme.of(context);
+    final state = '${st['state'] ?? ''}';
+    final latest = DateTime.tryParse('${st['latestReviewAt'] ?? ''}');
+    final lastOk = DateTime.tryParse('${st['lastSuccessAt'] ?? ''}');
+    final stale = latest != null &&
+        DateTime.now().toUtc().difference(latest) > const Duration(days: 21);
+    String label(String k) => switch (k) {
+      'ok' => 'Çalışıyor',
+      'migrated' => 'Uber Eats geçişi: yorum servisi kapalı',
+      'identity' => 'Şube doğrulanamadı',
+      'error' => 'Son eşitleme başarısız',
+      'disabled' => 'API bilgileri yok',
+      _ => 'Bekleniyor',
+    };
+    Widget row(String k, String v) => Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        SizedBox(width: 190, child: Text(k, style: const TextStyle(color: NohutBrand.muted))),
+        Expanded(child: SelectableText(v)),
+      ]),
+    );
+    final supplier = '${st['supplierId'] ?? ''}';
+    final masked = supplier.length > 2
+        ? '${'•' * (supplier.length - 2)}${supplier.substring(supplier.length - 2)}'
+        : supplier;
+    final warnings = (st['identityWarnings'] as List? ?? const []).map((e) => '$e');
+    final candidates = [
+      for (final c in (st['candidates'] as List? ?? const []))
+        if (c is Map) TgoStore(id: '${c['id']}', name: '${c['name'] ?? ''}'),
+    ];
+    return Card(
+      child: ExpansionTile(
+        initiallyExpanded: state != 'ok' || stale,
+        leading: Icon(state == 'ok' && !stale ? Icons.verified_outlined : Icons.warning_amber,
+            color: state == 'ok' && !stale ? NohutBrand.green : theme.colorScheme.error),
+        title: Text('Entegrasyon durumu · ${label(state)}'),
+        subtitle: Text(lastOk == null ? 'Henüz başarılı eşitleme yok'
+            : 'Son başarılı eşitleme: ${reviewDateText(lastOk.toIso8601String())}'),
+        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+        children: [
+          row('Satıcı ID', masked.isEmpty ? '—' : masked),
+          row('Doğrulanmış şube', '${st['storeId'] ?? '—'}'
+              '${'${st['storeName'] ?? ''}'.isEmpty ? '' : ' · ${st['storeName']}'}'),
+          row('Şube doğrulama', '${st['identityState'] ?? '—'} (liste: ${st['discovery'] ?? '—'})'),
+          row('Yorum API', '${st['apiAvailability'] ?? '—'}'),
+          row('Son deneme', reviewDateText(st['lastAttemptAt'])),
+          row('En yeni yorum', latest == null ? '—' : reviewDateText(st['latestReviewAt'])),
+          row('Alınan kayıt / sayfa', '${st['retrieved'] ?? 0} / ${st['pages'] ?? 0}'
+              '${st['pagesComplete'] == false ? ' (eksik: sayfa sınırı)' : ''}'),
+          row('Yeni / güncellenen', '${st['newReviews'] ?? 0} / ${st['updatedReviews'] ?? 0}'),
+          if ('${st['error'] ?? ''}'.isNotEmpty) row('Hata', '${st['error']}'),
+          for (final w in warnings) row('Uyarı', w),
+          if (stale)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text('Dikkat: en yeni yorum ${reviewRelativeAge(st['latestReviewAt'])} '
+                  'tarihli. Yeni yorum yoksa normaldir; şube veya API sorununu da gösterebilir.',
+                  style: TextStyle(color: theme.colorScheme.error)),
+            ),
+          if (state == 'migrated')
+            const Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: SelectableText('Restoranınız Uber Eats altyapısına geçtiği için Trendyol '
+                  'yorum servisi bu şube için kapatılmış (resmi doküman: 403 / 404). Yorumları '
+                  'Partner Paneli’nden görüntüleyin: $partnerPanel'),
+            ),
+          if (st['identityState'] == 'needsSelection' && candidates.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            const Text('Birden fazla resmi şube var. Yorumları alınacak şubeyi seçin:'),
+            Wrap(spacing: 8, children: [
+              for (final c in candidates)
+                OutlinedButton(
+                  onPressed: () => unawaited(widget.reviewSync.selectStore(c)),
+                  child: Text('${c.id}${c.name.isEmpty ? '' : ' · ${c.name}'}'
+                      '${st['suggestedStoreId'] == c.id ? ' (siparişlerle eşleşiyor)' : ''}'),
+                ),
+            ]),
+          ],
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: widget.reviewSync.running ? null
+                  : () => unawaited(widget.reviewSync.syncNow(manual: true)),
+              icon: const Icon(Icons.refresh),
+              label: const Text('Şimdi yenile'),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    int scoreOf(Json review) {
-      final raw = review['rating'];
-      final score = raw is Map ? raw['average'] : null;
-      return score is num ? score.round().clamp(1, 5).toInt() : 0;
-    }
-    final ratings = [for (var score = 5; score >= 1; score--)
-      reviews.where((review) => scoreOf(review) == score).length];
-    final rated = reviews.where((review) => scoreOf(review) > 0).toList();
-    final average = rated.isEmpty
-        ? null
-        : rated.fold<int>(0, (sum, review) => sum + scoreOf(review)) / rated.length;
-    final visible = sortReviewsByDate(
-      reviews.where((review) =>
-          (ratingFilter == 0 || scoreOf(review) == ratingFilter) &&
-          (!starsOnly || !reviewHasWrittenComment(review))),
-      newestFirst: newestFirst,
-    );
+    final data = widget.reviewSync.store.read().data;
+    final st = data[reviewSyncStateKey] is Map
+        ? Json.from(data[reviewSyncStateKey] as Map) : <String, dynamic>{};
+    final storeId = st['storeId'] == null ? null : '${st['storeId']}';
+    final all = [
+      for (final r in (data[reviewRowsStateKey] as List? ?? const []))
+        if (r is Map && r['platform'] == tgoPlatform &&
+            (storeId == null || r['storeId'] == storeId)) Json.from(r),
+    ];
+    final stats = reviewStats(all);
+    final visible = queryReviews(all, ReviewQuery(
+      stars: ratingFilter == 0 ? null : ratingFilter,
+      newestFirst: newestFirst, unreadOnly: unreadOnly, withText: withText,
+      reply: replyFilter, search: search,
+    ));
+    final shown = visible.take(visibleCount).toList();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Card(
           child: Padding(
             padding: const EdgeInsets.all(18),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    const Icon(Icons.star_outline, color: NohutBrand.green),
-                    const SizedBox(width: 10),
-                    Expanded(child: Text('Trendyol Go · Değerlendirmeler',
-                        style: Theme.of(context).textTheme.titleLarge)),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                const Text(
-                  'Müşteri adları yalnızca API sağlarsa görünür. '
-                  'Yanıtlar desteklenen restoranlarda, sizin onayınızla gönderilir.',
-                ),
-                const SizedBox(height: 14),
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 8,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    SizedBox(
-                      width: 210,
-                      child: TextField(
-                        controller: storeId,
-                        enabled: !loading,
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(
-                          labelText: 'Şube ID (Store ID)',
-                          prefixIcon: Icon(Icons.storefront_outlined),
-                        ),
-                        onChanged: (value) {
-                          setState(() {
-                            reviews = []; loaded = false; error = '';
-                            ratingFilter = 0; starsOnly = false;
-                          });
-                          _saveStoreId(value.trim());
-                        },
-                      ),
-                    ),
-                    IconButton.filledTonal(
-                      tooltip: 'Yenile',
-                      onPressed: loading ? null : () => loadPage(0),
-                      icon: const Icon(Icons.refresh),
-                    ),
-                    if (_lastSuccessful != null)
-                      Text(
-                        'Son güncelleme: ${_lastSuccessful!.toLocal().toString().split('.').first}',
-                        style: const TextStyle(color: NohutBrand.muted, fontSize: 11),
-                      ),
-                  ],
-                ),
-              ],
-            ),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                const Icon(Icons.star_outline, color: NohutBrand.green),
+                const SizedBox(width: 10),
+                Expanded(child: Text('Trendyol Go · Değerlendirmeler',
+                    style: Theme.of(context).textTheme.titleLarge)),
+                if (widget.reviewSync.running)
+                  const SizedBox(width: 18, height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2)),
+              ]),
+              const SizedBox(height: 6),
+              const Text('Yorumlar arka planda otomatik eşitlenir ve bu bilgisayarda saklanır. '
+                  'Yanıtlar yalnızca sizin onayınızla gönderilir.'),
+            ]),
           ),
         ),
-        if (loading) const LinearProgressIndicator(),
-        if (error.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.all(10),
-            child: Text(error, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+        const SizedBox(height: 8),
+        _diagnostics(st),
+        const SizedBox(height: 12),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Wrap(spacing: 28, runSpacing: 18,
+                crossAxisAlignment: WrapCrossAlignment.center, children: [
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(stats.average10 == null ? '—' : (stats.average10! / 10).toStringAsFixed(1),
+                    style: const TextStyle(color: NohutBrand.green,
+                        fontWeight: FontWeight.w800, fontSize: 35)),
+                const Text('★ ★ ★ ★ ★', style: TextStyle(color: NohutBrand.gold)),
+                Text('${stats.total} yorum · ${stats.unread} okunmamış',
+                    style: const TextStyle(fontSize: 12, color: NohutBrand.muted)),
+              ]),
+              SizedBox(width: 240, child: Column(children: [
+                for (var star = 5; star >= 1; star--)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 3),
+                    child: Row(children: [
+                      SizedBox(width: 35, child: Text('$star ★')),
+                      Expanded(child: LinearProgressIndicator(
+                        value: stats.total == 0 ? 0 : stats.distribution[star]! / stats.total,
+                        minHeight: 7, borderRadius: BorderRadius.circular(8),
+                        color: NohutBrand.gold, backgroundColor: const Color(0xffECEFE9))),
+                      SizedBox(width: 30, child: Text('${stats.distribution[star]}',
+                          textAlign: TextAlign.end)),
+                    ]),
+                  ),
+              ])),
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('Yanıt bekleyen: ${stats.waiting}'),
+                Text('Onay bekleyen: ${stats.pendingApproval}'),
+                Text('Yanıtlanan: ${stats.answered}'),
+                Text('Reddedilen yanıt: ${stats.rejected}'),
+              ]),
+              const Text('Özet bu bilgisayarda eşitlenmiş yorumlardan hesaplanır;\n'
+                  'platformun resmi genel puanı değildir.',
+                  style: TextStyle(color: NohutBrand.muted, fontSize: 12)),
+            ]),
           ),
-        if (loaded) ...[
-          const SizedBox(height: 12),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Wrap(
-                alignment: WrapAlignment.start,
-                spacing: 28,
-                runSpacing: 18,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(average == null ? '—' : average.toStringAsFixed(1),
-                          style: const TextStyle(color: NohutBrand.green,
-                              fontWeight: FontWeight.w800, fontSize: 35)),
-                      const Text('★ ★ ★ ★ ★', style: TextStyle(color: NohutBrand.gold)),
-                      Text('${reviews.length} yorum · Sayfa ${page + 1}',
-                          style: const TextStyle(fontSize: 12, color: NohutBrand.muted)),
-                    ],
-                  ),
-                  SizedBox(
-                    width: 240,
-                    child: Column(
-                      children: [
-                        for (var i = 0; i < 5; i++)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 3),
-                            child: Row(
-                              children: [
-                                SizedBox(width: 35, child: Text('${5-i} ★')),
-                                Expanded(
-                                  child: LinearProgressIndicator(
-                                    value: reviews.isEmpty ? 0 : ratings[i] / reviews.length,
-                                    minHeight: 7,
-                                    borderRadius: BorderRadius.circular(8),
-                                    color: NohutBrand.gold,
-                                    backgroundColor: const Color(0xffECEFE9),
-                                  ),
-                                ),
-                                SizedBox(width: 30,
-                                    child: Text('${ratings[i]}', textAlign: TextAlign.end)),
-                              ],
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                  const Text('Özet yalnızca yüklenen sayfaya aittir.',
-                    style: TextStyle(color: NohutBrand.muted, fontSize: 12)),
-                ],
-              ),
+        ),
+        const SizedBox(height: 12),
+        Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
+          for (final star in [0, 5, 4, 3, 2, 1])
+            ChoiceChip(
+              showCheckmark: false,
+              label: Text(star == 0 ? 'Tüm Yorumlar' : '$star ★'),
+              selected: ratingFilter == star,
+              onSelected: (_) => setState(() => ratingFilter = star),
             ),
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              for (final star in [0, 5, 4, 3, 2, 1])
-                ChoiceChip(
-                  showCheckmark: false,
-                  label: Text(
-                    star == 0 ? 'Tüm Yorumlar' : '$star ★',
-                    style: TextStyle(
-                      color: ratingFilter == star
-                          ? Colors.white : NohutBrand.ink,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  selectedColor: NohutBrand.green,
-                  backgroundColor: Colors.white,
-                  selected: ratingFilter == star,
-                  onSelected: (_) => setState(() => ratingFilter = star),
-                ),
-              FilterChip(
-                label: const Text('Sadece puan'),
-                selected: starsOnly,
-                showCheckmark: false,
-                selectedColor: NohutBrand.green,
-                labelStyle: TextStyle(
-                  color: starsOnly ? Colors.white : NohutBrand.ink,
-                  fontWeight: FontWeight.w600,
-                ),
-                onSelected: (v) => setState(() => starsOnly = v),
-              ),
-              const SizedBox(width: 8),
-              DropdownButton<bool>(
-                value: newestFirst,
-                items: const [
-                  DropdownMenuItem(
-                    value: true, child: Text('Yeni → Eski')),
-                  DropdownMenuItem(
-                    value: false, child: Text('Eski → Yeni')),
-                ],
-                onChanged: loading ? null : (value) =>
-                    setState(() => newestFirst = value ?? true),
-              ),
-              const Text('Sıralama: yüklenen sayfa',
-                style: TextStyle(color: NohutBrand.muted, fontSize: 11)),
+          FilterChip(label: const Text('Okunmamış'), selected: unreadOnly,
+              onSelected: (v) => setState(() => unreadOnly = v)),
+          FilterChip(label: const Text('Yazılı yorum'), selected: withText == true,
+              onSelected: (v) => setState(() => withText = v ? true : null)),
+          FilterChip(label: const Text('Sadece puan'), selected: withText == false,
+              onSelected: (v) => setState(() => withText = v ? false : null)),
+          DropdownButton<ReplyFilter>(
+            value: replyFilter,
+            items: const [
+              DropdownMenuItem(value: ReplyFilter.any, child: Text('Tüm yanıt durumları')),
+              DropdownMenuItem(value: ReplyFilter.waiting, child: Text('Yanıt bekleyen')),
+              DropdownMenuItem(value: ReplyFilter.pendingApproval, child: Text('Onay bekleyen')),
+              DropdownMenuItem(value: ReplyFilter.answered, child: Text('Yanıtlanan')),
+              DropdownMenuItem(value: ReplyFilter.rejected, child: Text('Reddedilen')),
             ],
+            onChanged: (v) => setState(() => replyFilter = v ?? ReplyFilter.any),
           ),
-          const SizedBox(height: 10),
-          if (visible.isEmpty)
-            const Card(child: ListTile(leading: Icon(Icons.inbox_outlined),
-                title: Text('Bu filtrede değerlendirme yok.'))),
-          for (final review in visible) _reviewTile(review),
-          if (page > 0 || hasNextPage)
-            Wrap(
-              spacing: 8,
-              children: [
-                TextButton(
-                  onPressed: loading || page == 0 ? null : () => loadPage(page - 1),
-                  child: const Text('Önceki'),
-                ),
-                TextButton(
-                  onPressed: loading || !hasNextPage
-                      ? null : () => loadPage(page + 1),
-                  child: const Text('Sonraki'),
-                ),
-              ],
+          DropdownButton<bool>(
+            value: newestFirst,
+            items: const [
+              DropdownMenuItem(value: true, child: Text('Yeni → Eski')),
+              DropdownMenuItem(value: false, child: Text('Eski → Yeni')),
+            ],
+            onChanged: (v) => setState(() => newestFirst = v ?? true),
+          ),
+          SizedBox(width: 220, child: TextField(
+            decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: 'Yorumlarda ara'),
+            onChanged: (v) => setState(() => search = v),
+          )),
+          if (stats.unread > 0)
+            TextButton(
+              onPressed: () => widget.reviewSync.markRead({for (final r in all) reviewKey(r)}),
+              child: const Text('Tümünü okundu işaretle'),
             ),
-        ],
+        ]),
+        const SizedBox(height: 10),
+        if (shown.isEmpty)
+          Card(child: ListTile(leading: const Icon(Icons.inbox_outlined),
+              title: Text(all.isEmpty ? 'Henüz eşitlenmiş yorum yok.' : 'Bu filtrede değerlendirme yok.'))),
+        for (final review in shown) _reviewTile(review),
+        if (visible.length > shown.length)
+          TextButton(
+            onPressed: () => setState(() => visibleCount += 30),
+            child: Text('Daha fazla göster (${visible.length - shown.length})'),
+          ),
       ],
     );
   }
 
   Widget _reviewTile(Json review) {
-    final rating = review['rating'];
-    final comment = review['comment'];
-    final score = rating is Map ? rating['average'] : null;
-    final text = comment is Map ? comment['text'] : null;
-    final answer = comment is Map && comment['restaurantAnswer'] is Map
-        ? comment['restaurantAnswer'] as Map : null;
-    final reviewId = (review['reviewId'] ?? '').toString();
-    final pending = pendingReplies[reviewId];
-    final customer = reviewCustomerName(review);
-    final orderCustomer = customer == null ? _orderCustomer(review) : null;
-    final orderNumber = (review['orderParentId'] ?? '').toString();
-    final rejected = answer?['rejectedReason'];
-    final reason = rejected is Map
-        ? (rejected['reason'] ?? '').toString() : null;
-    return CompactReviewCard(
-      key: ValueKey('tgo-review-' + reviewId),
+    final key = reviewKey(review);
+    final reply = review['reply'] is Map ? review['reply'] as Map : null;
+    final draft = review['replyDraft'] is Map ? review['replyDraft'] as Map : null;
+    final draftState = '${draft?['state'] ?? ''}';
+    final stars = reviewStars10(review);
+    final text = '${review['comment'] ?? ''}';
+    final uncertain = draftState == 'unknown' || draftState == 'sending';
+    final canReply = reply == null && text.trim().isNotEmpty &&
+        (draft == null || draftState == 'failed') && !busy.contains(key);
+    final card = CompactReviewCard(
+      key: ValueKey('tgo-review-$key'),
       platform: 'Trendyol Go',
-      score: score is num ? score : null,
-      customerName: customer,
-      dateLabel: reviewDateText(review['createdDate']) + ' · ' +
-          reviewRelativeAge(review['createdDate']),
-      comment: text is String ? text : null,
-      orderNumber: orderNumber.isEmpty ? null : orderNumber,
-      orderDate: review['orderCreatedDate'] == null
-          ? null : reviewDateText(review['orderCreatedDate']),
-      orderCustomer: orderCustomer,
-      products: reviewProductNames(review),
-      answerText: answer?['text'] is String
-          ? answer!['text'] as String : pending,
-      answerStatus: answer?['status']?.toString(),
-      rejectedReason: reason,
-      awaitingVerification: pending != null && answer == null,
-      replyBusy: answering || loading,
-      onReply: reviewId.isNotEmpty && answer == null && pending == null &&
-              text is String && text.trim().isNotEmpty
-          ? () => _reply(review) : null,
+      score: stars == null ? null : stars / 10,
+      dateLabel: '${reviewDateText(review['createdAt'])} · ${reviewRelativeAge(review['createdAt'])}',
+      comment: text.isEmpty ? null : text,
+      orderNumber: review['orderNumber'] == null ? null : '${review['orderNumber']}',
+      orderDate: review['orderCreatedAt'] == null ? null : reviewDateText(review['orderCreatedAt']),
+      products: [for (final p in (review['products'] as List? ?? const [])) '$p'],
+      answerText: reply?['text'] is String ? reply!['text'] as String
+          : draft?['text'] is String && draftState != 'failed' ? draft!['text'] as String : null,
+      answerStatus: reply?['status']?.toString(),
+      rejectedReason: reply?['rejectedReason']?.toString(),
+      awaitingVerification: reply == null && (draftState == 'submitted' || uncertain),
+      replyBusy: busy.contains(key),
+      onReply: canReply ? () => _reply(review) : null,
     );
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      card,
+      Row(children: [
+        if (review['read'] != true)
+          TextButton.icon(
+            onPressed: () => widget.reviewSync.markRead({key}),
+            icon: const Icon(Icons.mark_email_read_outlined, size: 18),
+            label: const Text('Okundu İşaretle'),
+          ),
+        if (uncertain)
+          const Expanded(child: Text('Yanıt sonucu belirsiz: otomatik tekrar gönderilmez. '
+              'Partner Paneli’nden kontrol edin.', style: TextStyle(color: NohutBrand.muted, fontSize: 12))),
+        if (draftState == 'failed')
+          Expanded(child: Text('Yanıt reddedildi: ${draft?['error'] ?? ''}',
+              style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 12))),
+      ]),
+    ]);
   }
-
 }
 
 

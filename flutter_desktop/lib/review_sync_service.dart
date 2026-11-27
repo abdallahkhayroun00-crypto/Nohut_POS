@@ -39,7 +39,7 @@ class ReviewSyncService extends ChangeNotifier {
     required this.apiFactory,
     DateTime Function()? clock,
     this.interval = const Duration(minutes: 5),
-    this.backfillDays = 365,
+    this.backfillDays = 1095,
     this.overlap = const Duration(days: 2),
     this.moderationEvery = 6,
     this.pageSize = 50,
@@ -329,10 +329,34 @@ class ReviewSyncService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Local change to one review row (reply workflow).
+  void updateReview(String key, void Function(Json row) change) {
+    _write((s) {
+      s[reviewRowsStateKey] = [
+        for (final r in (s[reviewRowsStateKey] as List? ?? const []))
+          if (r is Map)
+            reviewKey(r) == key ? (Json.from(r)..also(change)) : Json.from(r),
+      ];
+    });
+    notifyListeners();
+  }
+
+  /// Marks Windows popup delivery for notification events.
+  void markDelivered(Set<String> eventIds, String state) {
+    if (eventIds.isEmpty) return;
+    _write((s) => s[notificationsStateKey] = updateNotifications(
+        s[notificationsStateKey] as List?,
+        (e) => eventIds.contains(e['eventId']), (e) => e['windows'] = state));
+  }
+
   @override
   void dispose() {
     _disposed = true;
     _timer?.cancel();
     super.dispose();
   }
+}
+
+extension _Also on Json {
+  void also(void Function(Json) f) => f(this);
 }

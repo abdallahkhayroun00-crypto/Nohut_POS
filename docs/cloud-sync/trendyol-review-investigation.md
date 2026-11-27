@@ -1,6 +1,6 @@
 # Trendyol Go reviews — Milestone 1: read-only root-cause investigation
 
-**Owner:** Claude · **Date:** 2026-11-27 · **Spec:** §23.6 · **Status:** code + official documentation reviewed; **no live API call made** (none authorized yet).
+**Owner:** Claude · **Date:** 2026-11-27 · **Spec:** §23.6 · **Status:** root cause **confirmed** by the owner-authorized, read-only live diagnostic of 2026-11-27 15:52 (Istanbul), §6.
 
 Owner symptom: the newest review shown is ~200 days old, recent reviews are missing, no automatic notification, the screen must be opened manually.
 
@@ -64,3 +64,21 @@ Redacted output kept locally: store count, whether IDs match (yes/no), HTTP stat
 4. Notification events (§23.5) with first-import suppression; then Yorum Merkezi UI.
 
 Each step lands with synthetic tests listed in §23.6.12.
+
+## 6. Live read-only diagnostic — 2026-11-27 15:52 (owner-authorized, GET only)
+
+Run on the owner's PC with the existing DPAPI-protected credentials (`tgo-review-diagnostic.ps1`, output redacted: supplier ID masked, no keys, e-mail, review text or customer data; no replies sent).
+
+| Check | Result |
+|---|---|
+| Official store list (`/stores`) | HTTP 200, **1 store: `316490` "Nohut Falafel"**, belongs to the configured supplier, `OPEN`, `GO` |
+| Store IDs in the last 7 days of orders | 23 packages, **all `316490`** |
+| Uber Eats migration | **Not affected**: 0 packages with `uberPackageId`; review endpoint HTTP 200 |
+| Reviews, no dates, page 0 (size 20) | 296 reviews / 15 pages; **newest on page 0 = 2026-03-09**, oldest 2024-10-29; rows not in date order |
+| Reviews, no dates, last page | contains the **newest review 2026-11-19**; rows not in date order |
+| Reviews, `startDate`/`endDate` last 30 days | **6 reviews (2026-10-29 → 2026-11-19)** on one page, oldest first |
+| Reviews, last 7 days | 0 (correct: newest review is 2026-11-19) |
+
+**Root cause (verified): H1.** Without a date range the API returns reviews in no useful order, and the POS only ever read page 0, so the newest shown was 2026-03-09 (the owner saw "263 days ago"). The store ID `316490` is **correct** (H2 rejected as the cause, but the hard-coded fallback is still removed). Migration (H3) and credentials (H4) are not involved.
+
+**Fix (implemented, `review_sync_service.dart`):** date-windowed retrieval (30-day windows, bounded 3-year backfill, every page), local newest-first sorting over the whole persistent repository, background sync independent of the review screen, official store discovery instead of the fallback.
