@@ -1,0 +1,95 @@
+name: Android emulator screens (Personel + Yönetim)
+
+# Owner decision 2026-11-27: emulator tests and real APK screenshots run on
+# free GitHub-hosted Linux runners. Evidence is an emulator, never a phone.
+on:
+  push:
+    branches: ['**']
+    paths:
+      - 'flutter_personel/**'
+      - 'packages/nohut_core/**'
+      - '.github/workflows/flutter-android-emulator.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nohut-android-emulator-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  emulator:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enable KVM for the emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Cache Gradle downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-emu-${{ runner.os }}-${{ hashFiles('flutter_personel/pubspec.yaml', 'flutter_personel/tool/configure_android.py') }}
+          restore-keys: gradle-
+      - name: Generate native Android platform and branding
+        working-directory: flutter_personel
+        run: |
+          flutter create --platforms android --org com.nohutfalafel --project-name nohut_personel .
+          python3 -m pip install --quiet pillow
+          python3 tool/configure_android.py
+          python3 tool/brand_icon.py
+          flutter pub get
+      - name: Build Personel debug APK
+        working-directory: flutter_personel
+        run: |
+          flutter build apk --debug --target lib/main.dart
+          mkdir -p build/emulator
+          cp build/app/outputs/flutter-apk/app-debug.apk build/emulator/personel.apk
+      - name: Build Yönetim debug APK
+        working-directory: flutter_personel
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('android/app/src/main/AndroidManifest.xml')
+          p.write_text(p.read_text().replace('android:label="Nohut Personel"','android:label="Nohut Yönetim"'))
+          p=Path('android/app/build.gradle.kts')
+          s=p.read_text()
+          old='applicationId = "com.nohutfalafel.nohut_personel"'
+          assert old in s
+          p.write_text(s.replace(old,'applicationId = "com.nohutfalafel.nohut_yonetim"'))
+          PY
+          flutter build apk --debug --target lib/manager_main.dart
+          cp build/app/outputs/flutter-apk/app-debug.apk build/emulator/yonetim.apk
+      - name: Boot emulator, install both APKs, capture screens
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+          working-directory: flutter_personel
+          script: ./tool/emulator_screens.sh build/emulator/screens
+      - name: Upload emulator screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Android-emulator-screens
+          path: flutter_personel/build/emulator/screens
+          retention-days: 14
+          if-no-files-found: warn
