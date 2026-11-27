@@ -48,6 +48,8 @@ class SyncEvent {
     'entity_id': entityId,
     'op': op,
     'payload': jsonDecode(payloadJson),
+    // Preserve exact UTF-8 bytes for server-side verification of the hash.
+    'payload_json': payloadJson,
     'body_sha256': payloadSha256,
   };
 }
@@ -121,7 +123,20 @@ class SyncNetworkException implements Exception {
 List<SyncTransaction> groupPending(Database db, {int limitEvents = 500}) {
   final epoch = syncStateValue(db, 'authority_epoch');
   if (epoch == null) return const [];
+  if (limitEvents < 1) throw ArgumentError.value(limitEvents, 'limitEvents');
   final rows = pendingOutbox(db, limit: limitEvents);
+  // The limit is a soft batching target, never a transaction boundary.
+  // Read the rest of the last selected revision, if any, in sequence order.
+  if (rows.length == limitEvents) {
+    final last = rows.last;
+    for (final row in db.select(
+      'SELECT * FROM sync_outbox WHERE acked_at IS NULL '
+      'AND revision=? AND seq>? ORDER BY seq',
+      [last['revision'], last['seq']],
+    )) {
+      rows.add({for (final k in row.keys) k: row[k]});
+    }
+  }
   final groups = <int, List<SyncEvent>>{};
   final order = <int>[];
   for (final r in rows) {
@@ -140,11 +155,6 @@ List<SyncTransaction> groupPending(Database db, {int limitEvents = 500}) {
       payloadJson: r['payload_json'] as String,
       payloadSha256: r['payload_sha256'] as String,
     ));
-  }
-  // A group cut by the event limit is incomplete: never send half a commit.
-  if (rows.length == limitEvents && order.length > 1) {
-    final last = order.removeLast();
-    groups.remove(last);
   }
   return [
     for (final rev in order)
@@ -253,6 +263,13 @@ class SyncWorker {
             case IngestStatus.duplicate:
               // Duplicate = the server already committed this exact group
               // (e.g. the previous acknowledgement was lost).
+              final watermark = result.ackedThroughSeq;
+              if (watermark == null || watermark < tx.lastSeq) {
+                setSyncState(db, 'sync_stopped', '1');
+                setSyncState(db, 'last_sync_error',
+                    'conflict: invalid or missing server checkpoint');
+                return acked;
+              }
               ackOutboxThrough(db, tx.lastSeq, _clock().toIso8601String());
               acked += tx.events.length;
               _failures = 0;
