@@ -3,6 +3,20 @@
 part of 'sync_field_registry.dart';
 
 const knownStateFieldPaths = <String>{
+  'orders[].payments[].staffId',
+  'orders[].payments[].productPaymentId',
+  'orders[].syncEventIds',
+  'orders[].batches[].lines[].syncId',
+  'orders[].batches[].lines[].syncOriginalQty',
+  'orders[].payments[].syncId',
+  'orders[].payments[].refunds[].syncId',
+  'orders[].payments[].guestAllocations[].syncId',
+  'orders[].guestChecks[].syncId',
+  'orders[].guestChecks[].allocations[].syncId',
+  'orders[].lineEdits[].syncId',
+  'orders[].lineEdits[].before.syncId',
+  'orders[].lineEdits[].before.syncOriginalQty',
+  'orders[].voids[].syncId',
   'finance.materials[].referencePriceCents',
   'finance.materials[].history[].previousDiscountCents',
   'finance.materials[].history[].previousUnitPriceCents',

@@ -60,6 +60,19 @@ async function main(){
         if(req.url==='/test/lose-next-ingest-ack'){loseAck=true;res.end('{}');return;}
         if(req.url==='/test/inspect'){
           const result=(await db.query(`select (select count(*)::integer from nohut_private.expenses where restaurant_id=$1) as expenses,
+            (select count(*)::integer from nohut_private.orders where restaurant_id=$1) as orders,
+            (select count(*)::integer from nohut_private.order_items where restaurant_id=$1) as order_items,
+            (select count(*)::integer from nohut_private.guest_allocations where restaurant_id=$1 and deleted_at is null) as guest_allocations,
+            (select count(*)::integer from nohut_private.payments where restaurant_id=$1) as payments,
+            (select count(*)::integer from nohut_private.payment_refunds where restaurant_id=$1) as refunds,
+            (select count(*)::integer from nohut_private.order_line_edits where restaurant_id=$1) as line_edits,
+            (select count(*)::integer from nohut_private.orders where restaurant_id=$1 and deleted_at is not null) as deleted_orders,
+            (select count(*)::integer from nohut_private.deleted_order_audit where restaurant_id=$1) as deletion_audits,
+            (select sum(total_kurus)::text from nohut_private.orders where restaurant_id=$1) as order_total,
+            (select sum(paid_kurus)::text from nohut_private.orders where restaurant_id=$1) as order_paid,
+            (select sum(due_kurus)::text from nohut_private.orders where restaurant_id=$1) as order_due,
+            (select jsonb_agg(v.price_kurus::integer order by v.price_kurus) from nohut_private.product_versions v
+              join nohut_private.products p using(restaurant_id,product_id) where v.restaurant_id=$1 and p.source_kind='historical_sale') as historical_sale_prices,
             (select coalesce(sum(amount_kurus),0)::text from nohut_private.expenses where restaurant_id=$1) as expense_kurus,
             (select count(*)::integer from nohut_private.sync_transactions where restaurant_id=$1) as transactions,
             (select count(*)::integer from nohut_private.product_versions where restaurant_id=$1) as product_versions,

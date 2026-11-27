@@ -11,6 +11,7 @@ import 'entity_storage.dart';
 import 'sync_outbox.dart';
 import 'pos_logic.dart';
 import 'operations.dart';
+import 'order_sync_identity.dart';
 
 /// Compatible with the Python LAN prototype's state_snapshot schema.
 /// All order data lives on the restaurant laptop, not in GitHub Pages.
@@ -209,6 +210,10 @@ class PosStore extends ChangeNotifier {
     }
     // The same SQLite transaction covers domain rows and local events.
     // Recording remains disabled until the future owner-authorized wizard.
+    if(outboxEnabled(_db)){
+      prepareOrderSyncIdentities(_cache!,next);
+      debugWriteObserver?.call(next);
+    }
     final changes = outboxEnabled(_db)
         ? collectOutboxChanges(_cache!, next)
         : const <OutboxChange>[];
@@ -246,6 +251,14 @@ class PosStore extends ChangeNotifier {
   int _headRevision() =>
       _db.select('SELECT revision FROM state_snapshot WHERE id=1').single['revision']
           as int;
+
+  /// Owner-controlled first-sync preparation, before taking its pinned
+  /// snapshot. Only additive IDs change; business facts remain untouched.
+  void prepareCloudOrderIdentities(){
+    final snapshot=read(),next=snapshot.data;
+    prepareOrderSyncIdentities(next,next,force:true);
+    if(!replace(next,snapshot.revision).ok)throw const FormatException('POS changed during identity preparation');
+  }
 
   /// Writes the snapshot row; the caller holds the transaction.
   void _writeSnapshot(Map<String, dynamic> next, int revision, String stamp) {

@@ -30,7 +30,8 @@ String normalizeFieldPath(String path) => path
     .replaceFirstMapped(
       RegExp(r'^deletedOrders\[\]\.related\.(printJobs|staffNotices|terminalAttempts)(?=\[|$)'),
       (m) => m[1]!,
-    );
+    )
+    .replaceFirst(RegExp(r'^orders\[\]\.lineEdits\[\]\.before(?=\.|$)'), 'orders[].batches[].lines[]');
 
 bool _underOpaque(String path) {
   for (final root in opaqueStatePaths.keys) {
@@ -80,6 +81,13 @@ List<String> unregisteredFieldPaths(Map state) {
 /// Prefix semantics: listing `orders[].batches[].lines[].removed` allows
 /// that field; a parent is never implicitly allowed by a child.
 const cloudAllowedFieldPaths = <String>{
+  'orders[].platformCollection', 'orders[].payments[].staffId', 'orders[].payments[].productPaymentId',
+  'orders[].lineEdits', 'orders[].lineEdits[].syncId', 'orders[].lineEdits[].at',
+  'orders[].lineEdits[].by', 'orders[].lineEdits[].key', 'orders[].batches[].lines[]',
+  'orders[].batches[].lines[].syncId', 'orders[].batches[].lines[].syncOriginalQty',
+  'orders[].payments[].syncId', 'orders[].payments[].refunds[].syncId',
+  'orders[].payments[].guestAllocations[].syncId', 'orders[].guestChecks[].syncId',
+  'orders[].guestChecks[].allocations[].syncId', 'orders[].voids[].syncId',
   // Existing published catalog and cashier-only custom products. This is
   // replication only; unpublished QR drafts and publisher state stay local.
   'localMenu', 'localMenu[].id', 'localMenu[].qrStableId', 'localMenu[].name',

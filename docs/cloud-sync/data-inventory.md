@@ -20,6 +20,10 @@ Classes: `PUBLIC`, `INTERNAL`, `PERSONAL_PII`, `FINANCIAL`, `SECRET`, `DEVICE_LO
 
 ### PR #39 additions (in flight, 2026-11-27)
 
+Local orders now persist additive UUIDs for lines, payments, refunds, guests, allocations, audit events, line edits and voids in the same SQLite transaction as their changes. Batch and order source IDs map through `cloud_source_ids`. Original quantities and historical line-edit snapshots remain intact; reordering never assigns a new line identity. Explicit first-sync preparation backfills metadata before snapshot capture. These fields do not change commercial amounts or printing.
+
+The typed local-order projection includes Windows-calculated integer-kuruş totals, pseudonymous customer links/pickup time, historical sale definitions (never inferred catalog links), customizations/campaign components, split-check allocations, refunds and complete audited deletion. Cloud `order_events`, `order_line_edits`, `order_voids`, `guest_checks`, `guest_allocations`, `payment_guest_allocations` and `deleted_order_audit` are private FORCE-RLS tables. Financial omissions, altered immutable facts, mismatched manifests and archive-free deletions fail before ACK. Removed nonfinancial guest allocations retain tombstones and prior ledger versions. Customer name/phone and raw platform payloads stay local; existing audit-link text is scrubbed before outbox persistence. Platform orders deliberately remain unsupported until their dedicated projection is complete. Receipt/print synchronization and all other pending domains remain required; this local-order slice is not full sync.
+
 | Persisted table | Purpose and classification | Cloud policy |
 |---|---|---|
 | `remote_command_receipts` | Immutable envelope SHA-256 + committed result, written in the domain SQLite transaction (`INTERNAL`, `FINANCIAL`) | Scoped agent reports exact outcome; no raw credential or customer payload |

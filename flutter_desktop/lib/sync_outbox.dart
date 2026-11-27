@@ -21,6 +21,7 @@ import 'entity_storage.dart';
 import 'sync_field_registry.dart';
 import 'finance_sync_history.dart';
 import 'catalog_sync_history.dart';
+import 'pos_logic.dart' show orderTotalCents, orderPaidCents, orderDueCents;
 
 void createSyncTables(Database db) {
   db.execute('''
@@ -104,7 +105,29 @@ class OutboxChange {
 Object? projectRow(String stateKey, Object? row) {
   final projected = projectForCloud({stateKey: [row]});
   final list = projected[stateKey];
-  return list is List && list.isNotEmpty ? list.single : null;
+  if(list is! List||list.isEmpty)return null;
+  final result=list.single;
+  void enrich(Map original,Map projected){
+    final order=Map<String,dynamic>.from(original);
+    projected['_windowsTotals']={'total_kurus':orderTotalCents(order),
+      'paid_kurus':orderPaidCents(order),'due_kurus':orderDueCents(order)};
+    final events=original['events'],ids=original['syncEventIds'];
+    if(events is List){
+      projected['_audit']=[for(var i=0;i<events.length;i++){
+        'id':ids is List&&i<ids.length?ids[i]:null,
+        // Existing customer-directory links embed a local customer name.
+        // Retain the commercial action/time, never replicate that name.
+        'message':'${events[i]}'.startsWith('Müşteri kaydı ile eşleştirildi · ')
+          ? 'Müşteri bağlantısı değiştirildi · ${'${events[i]}'.split(' · ').last}'
+          : '${events[i]}'.replaceAll(RegExp(r'(?<![0-9])(?:\+?90)?0?5[0-9]{9}(?![0-9])'),'[yerel iletişim bilgisi]'),
+      }];
+    }
+  }
+  if(row is Map&&result is Map){
+    if(stateKey=='orders')enrich(row,result);
+    if(stateKey=='deletedOrders'&&row['order'] is Map&&result['order'] is Map)enrich(row['order'] as Map,result['order'] as Map);
+  }
+  return result;
 }
 
 /// Projects one core top-level value; null when the key is not syncable.
