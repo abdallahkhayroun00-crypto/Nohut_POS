@@ -365,9 +365,21 @@ Json setProductSale(PosStore store, Json payload) {
 /// Server side of the command queue (Supabase RPCs in production; a fake in
 /// tests). Claims are leased: an unacknowledged claim becomes claimable
 /// again, which is safe because execution is idempotent.
+class CommandClaim {
+  CommandClaim({required this.envelope, required this.generation, required this.leaseUntil});
+  final Map<String, dynamic> envelope;
+  final int generation;
+  final DateTime leaseUntil;
+  String get requestId => '${envelope['request_id']}';
+}
+
 abstract class CommandTransport {
-  Future<List<Map<String, dynamic>>> claim({required int max});
-  Future<void> complete(String requestId, Map<String, dynamic> result);
+  Future<List<CommandClaim>> claim({required int max});
+  /// Live server authorization, epoch and lease check immediately before work.
+  Future<bool> validate(CommandClaim claim);
+  Future<void> complete(CommandClaim claim, Map<String, dynamic> result);
+  /// Reports an already-durable result, including after lease/command expiry.
+  Future<void> reportReceipt(String requestId, String fingerprint, Map<String, dynamic> result);
 }
 
 /// Polls the transport, executes on Windows, reports after COMMIT.
@@ -391,11 +403,24 @@ class RemoteCommandWorker {
   Future<int> _run(int max) async {
     var done = 0;
     try {
+      for (final report in store.pendingRemoteReports()) {
+        await transport.reportReceipt(report['request_id'] as String,
+            report['envelope_sha256'] as String, report['result'] as Map<String, dynamic>);
+        store.acknowledgeRemoteReport(report['request_id'] as String, report['envelope_sha256'] as String);
+        done++;
+      }
       final batch = await transport.claim(max: max);
-      for (final envelope in batch) {
+      for (final claim in batch) {
+        if (claim.generation < 1 || !_clock().toUtc().isBefore(claim.leaseUntil) || !await transport.validate(claim)) {
+          continue;
+        }
+        // The validation request can itself use the remainder of a lease.
+        if (!_clock().toUtc().isBefore(claim.leaseUntil)) continue;
+        final envelope = claim.envelope;
         final result = await executeRemoteCommandAsync(store, envelope, platform: platform, now: _clock());
         // Local state is committed (or nothing changed) before reporting.
-        await transport.complete('${envelope['request_id']}', result.toJson());
+        await transport.complete(claim, result.toJson());
+        store.acknowledgeRemoteReport(claim.requestId, envelopeSha256(envelope));
         done++;
       }
       lastError = null;

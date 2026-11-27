@@ -91,6 +91,11 @@ class PosStore extends ChangeNotifier {
         result TEXT NOT NULL
       )
     ''');
+    _db.execute('''
+      CREATE TABLE IF NOT EXISTS remote_command_report_acks(
+        request_id TEXT PRIMARY KEY, envelope_sha256 TEXT NOT NULL
+      )
+    ''');
     _db.execute(
       'CREATE TABLE IF NOT EXISTS deleted_requests (request_id TEXT PRIMARY KEY)',
     );
@@ -446,6 +451,37 @@ class PosStore extends ChangeNotifier {
       [requestId, context.$2, jsonEncode(result)],
     );
   }
+
+  /// Durable business receipts/attempts not yet acknowledged by the cloud.
+  /// An interrupted provider call is reported as uncertain, never repeated.
+  List<Map<String, dynamic>> pendingRemoteReports({int limit = 100}) => [
+    for (final row in _db.select('''
+      SELECT r.request_id,r.envelope_sha256,r.result,'confirmed' AS state
+      FROM remote_command_receipts r
+      WHERE NOT EXISTS(SELECT 1 FROM remote_command_report_acks a
+        WHERE a.request_id=r.request_id AND a.envelope_sha256=r.envelope_sha256)
+      UNION ALL
+      SELECT p.request_id,p.payload_sha256 AS envelope_sha256,p.result,p.state
+      FROM platform_command_attempts p
+      WHERE NOT EXISTS(SELECT 1 FROM remote_command_report_acks a
+        WHERE a.request_id=p.request_id AND a.envelope_sha256=p.payload_sha256)
+      LIMIT ?
+    ''', [limit]))
+      {
+        'request_id': row['request_id'],
+        'envelope_sha256': row['envelope_sha256'],
+        'result': {
+          ...Map<String, dynamic>.from(jsonDecode(row['result'] as String) as Map),
+          'state': row['state'] == 'processing' ? 'reconciliation_required' : row['state'],
+          'code': row['state'] == 'confirmed' ? 'ok' : row['state'] == 'rejected' ? 'invalid_request' : 'reconciliation_required',
+        },
+      },
+  ];
+
+  void acknowledgeRemoteReport(String requestId, String envelopeSha256) => _db.execute(
+    'INSERT OR REPLACE INTO remote_command_report_acks(request_id,envelope_sha256) VALUES(?,?)',
+    [requestId, envelopeSha256],
+  );
 
   /// Executes a synchronous domain command while holding the SQLite writer lock.
   /// Retries reuse a persisted receipt; the same ID with another payload fails.

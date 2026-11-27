@@ -239,10 +239,18 @@ class _FakeTransport implements CommandTransport {
   bool failComplete = false;
 
   @override
-  Future<List<Map<String, dynamic>>> claim({required int max}) async => queue.take(max).toList();
+  Future<List<CommandClaim>> claim({required int max}) async => queue.take(max).map((e) => CommandClaim(
+      envelope: e, generation: 1, leaseUntil: t0.add(const Duration(minutes: 1)))).toList();
 
   @override
-  Future<void> complete(String requestId, Map<String, dynamic> result) async {
+  Future<bool> validate(CommandClaim claim) async => true;
+
+  @override
+  Future<void> complete(CommandClaim claim, Map<String, dynamic> result) =>
+      reportReceipt(claim.requestId, envelopeSha256(claim.envelope), result);
+
+  @override
+  Future<void> reportReceipt(String requestId, String fingerprint, Map<String, dynamic> result) async {
     if (failComplete) throw const SocketException('offline');
     queue.removeWhere((e) => e['request_id'] == requestId);
     completed.add(result);
