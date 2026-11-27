@@ -157,6 +157,19 @@ void main() {
     expect(t.takeException(), isNull);
   });
 
+  testWidgets('a reversal row shows the undo icon (Gemini QA-16)', (t) async {
+    t.view.physicalSize = const Size(412, 915) * 3;
+    t.view.devicePixelRatio = 3;
+    addTearDown(t.view.reset);
+    final reply = payrollReply(paid: 80000);
+    (reply['payments'] as List).add({'id': 'pr_pp_1', 'reverses': 'pp_1', 'employeeId': 7, 'paidOn': '2026-11-24',
+      'kind': 'Düzeltme', 'method': 'Nakit', 'amountCents': -80000});
+    await t.pumpWidget(MaterialApp(theme: NohutStyle.theme, home: OwnerPayrollPage(request: (_) async => reply)));
+    await t.pumpAndSettle();
+    await t.scrollUntilVisible(find.byIcon(Icons.undo), 200, scrollable: find.byType(Scrollable).first);
+    expect(find.byIcon(Icons.undo), findsOneWidget);
+  });
+
   test('parseTl: Turkish amounts to kuruş with integer math', () {
     expect(parseTl('800'), 80000);
     expect(parseTl('1.250,50'), 125050);

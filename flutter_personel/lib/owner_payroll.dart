@@ -174,7 +174,7 @@ class _OwnerPayrollPageState extends State<OwnerPayrollPage> {
             const NohutSection('Bu haftanın ödemeleri'),
             if (payments.isEmpty) const Card(child: NohutEmpty(icon: Icons.receipt_long_outlined, message: 'Kayıtlı ödeme yok.')),
             for (final p in payments) Card(child: ListTile(
-              leading: Icon(p['reversalOf'] != null ? Icons.undo : Icons.payments_outlined, color: nc.muted),
+              leading: Icon(p['reverses'] != null || p['kind'] == 'Düzeltme' ? Icons.undo : Icons.payments_outlined, color: nc.muted),
               title: Text(_name(p), style: const TextStyle(fontWeight: FontWeight.w600)),
               subtitle: Text([WorkFormat.day('${p['paidOn']}'), '${p['kind'] ?? 'Ödeme'}', '${p['method'] ?? ''}',
                 if ('${p['note'] ?? ''}'.isNotEmpty) '${p['note']}'].join(' · ')),
