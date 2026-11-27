@@ -1,5 +1,5 @@
 ﻿# Nohut QR Publisher • Windows local service
-# Requires Node.js 22+ and the existing GitHub App private key from Downloads.
+# Uses the bundled Node.js 22+ runtime; legacy portable builds may use system Node.
 # Generates a private random access code and stores it in Windows DPAPI for POS.
 # -NoPrompt: used by POS auto-start, the Startup shortcut and Setup. Never
 # opens the file picker; a missing key is reported in status.json instead.
@@ -58,6 +58,14 @@ foreach ($root in $fnmRoots) {
     $exe = Join-Path $versionDir.FullName 'installation\node.exe'
     if (Test-Path -LiteralPath $exe -PathType Leaf) { $nodeCandidates.Add($exe) }
   }
+}
+# Prefer the private runtime shipped with the application, regardless of
+# system-wide Node versions. An explicit path remains a test/repair seam.
+$bundledNode = Join-Path $PSScriptRoot 'runtime\node.exe'
+if ([string]::IsNullOrWhiteSpace($NodeExecutable) -and
+    (Test-Path -LiteralPath $bundledNode -PathType Leaf)) {
+  $nodeCandidates.Clear()
+  $nodeCandidates.Add($bundledNode)
 }
 $availableNodes = @()
 foreach ($candidate in ($nodeCandidates | Select-Object -Unique)) {
