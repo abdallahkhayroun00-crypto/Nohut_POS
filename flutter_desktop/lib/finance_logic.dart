@@ -855,7 +855,8 @@ FinanceMonthSummary financeMonthSummary(Json state, String month) {
   // the expense from being counted in two months.
   final payroll = financeRows(state, 'weeklyPayroll')
     .where((p) => (p['weekEnd'] as String? ?? '').startsWith(month))
-    .fold<int>(0, (sum, p) => sum + (p['grossCents'] as int));
+    .fold<int>(0, (sum, p) => sum + (p['grossCents'] as int)) +
+    ledgerPayrollCents(state, (day) => day.startsWith(month));
   final fixed = fixedDueRows(state, month)
     .fold<int>(0, (sum, row) => sum + row.$2);
   final other = financeRows(state, 'other')
@@ -869,3 +870,14 @@ FinanceMonthSummary financeMonthSummary(Json state, String month) {
     fixedCents: fixed, otherCents: other,
   );
 }
+
+/// V6.0 payroll ledger (`finance.payrollPayments`, lib/payroll.dart): net
+/// recorded payments of weeks whose Sunday matches [weekEndIn]. Weeks with a
+/// legacy weeklyPayroll row never get ledger payments, so nothing is
+/// counted twice.
+int ledgerPayrollCents(Json state, bool Function(String weekEnd) weekEndIn) =>
+    financeRows(state, 'payrollPayments').where((p) {
+      final start = DateTime.tryParse('${p['weekStart']}');
+      return start != null &&
+          weekEndIn(start.add(const Duration(days: 6)).toIso8601String().substring(0, 10));
+    }).fold<int>(0, (n, p) => n + ((p['amountCents'] as int?) ?? 0));

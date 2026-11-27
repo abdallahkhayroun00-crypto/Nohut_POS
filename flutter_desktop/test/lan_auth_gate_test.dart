@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:nohut_falafel_desktop/lan_auth_gate.dart';
 import 'package:nohut_falafel_desktop/lan_server.dart';
 import 'package:nohut_falafel_desktop/local_accounts.dart';
+import 'package:nohut_falafel_desktop/pos_logic.dart';
 import 'package:nohut_falafel_desktop/pos_store.dart';
 
 void main() {
@@ -41,11 +42,12 @@ void main() {
   });
 
   Future<(int, Map, String?)> call(String method, String path,
-      {Object? body, String? cookie, String? origin}) async {
+      {Object? body, String? cookie, String? origin, String? bearer}) async {
     final client = HttpClient();
     try {
       final req = await client.openUrl(method, Uri.parse('http://127.0.0.1:${server.port}$path'));
       if (cookie != null) req.headers.set(HttpHeaders.cookieHeader, cookie);
+      if (bearer != null) req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $bearer');
       if (origin != null) req.headers.set('origin', origin);
       if (body != null) {
         req.headers.contentType = ContentType.json;
@@ -114,13 +116,58 @@ void main() {
         body: {'username': 'sahip', 'password': 'owner-pass-1', 'deviceId': device});
     final ownerId = auth.users().firstWhere((u) => u['isOwner'] == true)['userId'] as String;
     expect(ownerId, isNotEmpty);
-    // Owner has no employee link: payload kept; a linked user is stamped.
+    // A linked user is always stamped with their own employee id.
     expect(LanAuthGate.withIdentity({'staffId': 3},
         const AuthContext(status: 'ok', employeeId: 7)), {'staffId': 7});
-    final (status, _, _) = await call('POST', '/api/staff/platform',
+    // No session (legacy shared panel, login not required): unchanged.
+    expect(LanAuthGate.withIdentity({'staffId': 3}, null), {'staffId': 3});
+    // Signed in but not linked to an employee (here the owner): the phone's
+    // staffId is never trusted, so the action is refused before it runs.
+    final (status, body, _) = await call('POST', '/api/staff/platform',
         cookie: cookieOf(setCookie), body: {'staffId': 3, 'packageId': 'p', 'action': 'accept'});
-    expect(status, 200);
-    expect(received.single['staffId'], 3);
+    expect(status, 422);
+    expect('${body['message']}', contains('personele bağlı değil'));
+    expect(received, isEmpty);
+  });
+
+  test('Android paired-device writes obey individual login and never trust staffId', () async {
+    final (ps, pb, _) = await call('POST', '/api/mobile/pair',
+        body: {'pin': server.pairing.pin, 'deviceName': 'Test Android'});
+    expect(ps, 200, reason: '$pb');
+    final token = pb['token'] as String;
+    final order = {'requestId': 'mobile-order-0001', 'expectedRevision': 0, 'staffId': 1,
+      'source': 'Masa', 'table': 1, 'lines': []};
+    // Legacy shared mode (owner has not required login): the domain decides.
+    final (legacy, _, _) = await call('POST', '/api/mobile/orders', bearer: token, body: order);
+    expect(legacy, isNot(401));
+    // With Bireysel giriş zorunlu, a paired device alone is not a person.
+    auth.setSetting('lan_login_required', '1');
+    final (noSession, nb, _) = await call('POST', '/api/mobile/orders', bearer: token, body: order);
+    expect(noSession, 401, reason: '$nb');
+    // A session that is not linked to an employee cannot pick one.
+    final (_, _, setCookie) = await call('POST', '/api/auth/login',
+        body: {'username': 'sahip', 'password': 'owner-pass-1', 'deviceId': device});
+    final (unlinked, ub, _) = await call('POST', '/api/mobile/orders', bearer: token,
+        cookie: cookieOf(setCookie), body: order);
+    expect(unlinked, 422);
+    expect('${ub['message']}', contains('personele bağlı değil'));
+    expect(asMaps(store.read().data['orders']), isEmpty);
+  });
+
+  test('Android bootstrap follows required login; staff session opens it', () async {
+    final (_, pb, _) = await call('POST', '/api/mobile/pair',
+        body: {'pin': server.pairing.pin, 'deviceName': 'Test Android'});
+    final token = pb['token'] as String;
+    final (open, _, _) = await call('GET', '/api/mobile/bootstrap', bearer: token);
+    expect(open, 200);
+    auth.setSetting('lan_login_required', '1');
+    final (closed, cb, _) = await call('GET', '/api/mobile/bootstrap', bearer: token);
+    expect(closed, 401);
+    expect(cb['error'], 'auth_required');
+    final (_, _, setCookie) = await call('POST', '/api/auth/login',
+        body: {'username': 'ayse', 'password': 'staff-pass-1', 'deviceId': device});
+    final (signed, sb, _) = await call('GET', '/api/mobile/bootstrap', bearer: token, cookie: cookieOf(setCookie));
+    expect(signed, 200, reason: '$sb');
   });
 
   test('cross-origin auth requests and repeated failures are refused', () async {
@@ -144,7 +191,7 @@ void main() {
     final login = await g.handle('POST', 'login',
         {'username': 'ayse', 'password': 'staff-pass-1', 'deviceId': device}, ip: '10.0.0.2');
     final token = login.setToken!;
-    expect((await g.handle('POST', 'pin', {'pin': '482915'}, token: token, ip: '10.0.0.2')).status, 200);
+    expect((await g.handle('POST', 'pin', {'pin': '48291'}, token: token, ip: '10.0.0.2')).status, 200);
     for (var i = 0; i < 40; i++) {
       now = now.add(const Duration(minutes: 1));
       g.guard(token: token, client: 'personel', operation: 'tables.view', touch: false);
@@ -152,9 +199,9 @@ void main() {
     final locked = g.guard(token: token, client: 'personel', operation: 'tables.view', touch: false);
     expect(locked.status, 401);
     expect(locked.error, 'locked');
-    final wrong = await g.handle('POST', 'unlock', {'pin': '000001'}, token: token, ip: '10.0.0.2');
+    final wrong = await g.handle('POST', 'unlock', {'pin': '00001'}, token: token, ip: '10.0.0.2');
     expect(wrong.body['error'], 'invalid_pin');
-    final unlocked = await g.handle('POST', 'unlock', {'pin': '482915'}, token: token, ip: '10.0.0.2');
+    final unlocked = await g.handle('POST', 'unlock', {'pin': '48291'}, token: token, ip: '10.0.0.2');
     expect(unlocked.status, 200);
     expect(g.guard(token: token, client: 'personel', operation: 'tables.view').allowed, true);
   });

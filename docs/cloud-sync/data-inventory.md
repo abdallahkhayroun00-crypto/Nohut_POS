@@ -89,7 +89,13 @@ Every key below is registered in `lib/sync_registry.dart`. CI fails if a new key
 | `nextId` | `newLocalOrder` | Monotonic order ID sequence (starts at 1200). | INTERNAL | — | Single-writer authority, not replicated. | VERIFIED_EXISTING |
 | `printJobs` | `queueLocalKitchen`, `queuePaymentReceipt` | `{orderId, batchId, kind?, state, createdAt, attempts, error, spooledAt, snapshot{order{id,dailyNumber,numberDay,source,table,createdAt,pickupChannel,customer{name,time}}, batch}, text?}`. Key: (`orderId`, `batchId`). | INTERNAL, PERSONAL_PII (name/time only; phone excluded since this PR) | `receipt_snapshots`, `print_jobs` | Audit only. Never replayed on another machine or after restore. | VERIFIED_EXISTING |
 | `settings` | many | Business and device settings (§4). | INTERNAL, DEVICE_LOCAL | `restaurant_settings` (business keys only) | Printer/paper/device keys stay local. | VERIFIED_EXISTING |
-| `shifts` | `shifts.dart` (Phase 5C) | `{id, employeeId, employeeName, start, end?, source, corrections[{at, byId, by, before, after, reason}]}` | PERSONAL_PII (employee name, hours), INTERNAL | `shifts` | Mesai Başlat/Bitir. Never deleted; corrections are appended, visible to the employee. | VERIFIED_EXISTING (Phase 5C) |
+| `shifts` | `shifts.dart` (Phase 5C) | `{id, employeeId, employeeName, start, end?, source ('pos'|'remote'|'manual'), breakMinutes?, note?, createdAt?, updatedAt?, voided?, voidedAt?, voidReason?, corrections[{at, byId, by, before, after, reason}]}` | PERSONAL_PII (employee name, hours), INTERNAL | `shifts` | Mesai Başlat/Bitir; V6.0 manual own entries (`workforce.dart`, source `manual`), voided not deleted. Never deleted; corrections are appended, visible to the employee. | VERIFIED_EXISTING (Phase 5C) |
+| `shiftPlans` | `workforce.dart` (V6.0 W1) | `{id, employeeId, employeeName, date, start, end, endsNextDay, dayOff, breakMinutes, note, cancelled, createdAt, createdBy, updatedAt, updatedBy, history[{at, by, byId, action, before}]}` | PERSONAL_PII (name, planned hours), INTERNAL | `shift_plans` | Vardiya: employee-managed future plan, no approval; cancelled not deleted; never becomes pay. | PROPOSED_V6 |
+| `timesheetWeeks` | `workforce.dart` (V6.1 W2) | `{id, employeeId, employeeName, weekStart, submittedAt, noWork, minutes, history[{at, minutes, noWork, entries[{id, start, end, breakMinutes}]}]}` | PERSONAL_PII, INTERNAL | `timesheet_weeks` | Weekly Mesai submission = communicated, not approved; every snapshot kept. | PROPOSED_V6 |
+| `employees[].payHistory` | `payroll.dart` (V6.0 W3) | `[{effectiveFrom, payType, rateCents, setAt, setBy}]` | FINANCIAL (wage), PERSONAL_PII | `employee_pay_rates` | Append-only effective-dated rates; hours use the rate of their day. | PROPOSED_V6 |
+| `employees[].payrollEligible` | `payroll.dart` (owner rule 2026-11-27) | bool; absent = eligible | INTERNAL | `employees.payroll_eligible` | `false` keeps a profile (default: the one linked to the owner account) out of payroll, Mesai duty and salary reminders. Set once by default; an explicit later choice is never overridden. | PROPOSED_V6 |
+| `finance.payrollPayments` | `payroll.dart` (V6.0 W3) | `[{id, employeeId, employeeName, weekStart, kind (Ödeme/Avans/Düzeltme), method (Nakit/Havale-EFT/Karma), cashCents, bankCents, amountCents, paidOn, note, createdAt, createdBy, reverses?}]` | FINANCIAL, PERSONAL_PII | `payroll_payments` | Immutable record of payments made outside the POS; corrections are reversal rows; status derived. Expense = net payments by week's Sunday month. | PROPOSED_V6 |
+| `finance.payrollReviews` | `payroll.dart` (V6.1 W4) | `[{employeeId, weekStart, state, note, at, by}]` | INTERNAL | `payroll_reviews` | Explicit "Ödenmedi" acknowledgement; no money moves. | PROPOSED_V6 |
 | `staffNotices` | `recordStaffNotice` | Rolling last 100 `{id, orderId, staff, action, table, at}`. | INTERNAL | `audit_logs` | Operational audit. | VERIFIED_EXISTING |
 | `floorPositions` | floor plan editor | Table rectangles by table number. | INTERNAL | `pos_tables` | Owner command. | VERIFIED_EXISTING |
 | `combinedPayments` | `group_payments.dart` | `{id(ref), accountKey, orderIds, amount, cash, card, received, method, createdAt}`. | FINANCIAL | `payments` (group link) | Append-only. | VERIFIED_EXISTING |
@@ -112,7 +118,7 @@ Every key below is registered in `lib/sync_registry.dart`. CI fails if a new key
 | `platformReviews` | `review_sync_service.dart`, `review_repository.dart` (table `pos_platform_reviews`) | Persistent review repository: platform, supplier, store, reviewId, rating, comment, product names, reply + moderation, firstSeen/lastVerified, read, notification state. No reviewer identity, no raw payloads. | INTERNAL | — (reviews read contract pending) | Kept; never deleted by sync. | PROPOSED_V5 |
 | `tgoReviewSync` | `review_sync_service.dart` | Review sync status, diagnostics and window checkpoints. | INTERNAL | — | Local cursor. | PROPOSED_V5 |
 | `tgoStoreIdentity` | `review_sync_service.dart`, `tgo_store_identity.dart` | Verified Trendyol store {supplierId, storeId, name, source, verifiedAt}; replaces the hard-coded fallback. | INTERNAL | `restaurant_settings` | — | PROPOSED_V5 |
-| `notifications` | `notification_center.dart` | Durable Windows notification history (eventId dedup, read state). No payroll or customer contact data. | INTERNAL | — (contract N1 pending) | Capped at 500; unread kept. | PROPOSED_V5 |
+| `notifications` | `notification_center.dart` | Durable Windows notification history (eventId dedup, read state). No payroll or customer contact data; `recipientEmployeeId` scopes personal reminders to one employee (generic text only). | INTERNAL | — (contract N1 pending) | Capped at 500; unread kept. | PROPOSED_V5 |
 | `mobileDevices` | `mobile_pairing.dart` | `{id, name, hash(token), createdAt, revoked}`. | SECRET (token verifier), DEVICE_LOCAL | — (control plane) | Never in the business projection. | VERIFIED_EXISTING |
 | `mobileServerId` | `mobile_pairing.dart` | This POS's LAN identity. | DEVICE_LOCAL | — | — | VERIFIED_EXISTING |
 
@@ -142,7 +148,7 @@ Fields:
 - **Full nested field list:** `flutter_desktop/lib/sync_field_paths.g.dart` (628 declared paths). It comes from runtime observation of every write in the test suite plus code reading, and every write in CI is validated against it.
 
 ### 3.3 Payments, refunds and guest checks
-- **Payment:** `{createdAt, method (Nakit/Kart/Platform), amount (TL decimal), received, change, time, by, guestCheckId?, guestAllocations[], refunds[{amount, reason, createdAt}], reversed, combinedPaymentId?}`. No payment ID exists today; payments are addressed by list index. PR-04 must assign stable IDs.
+- **Payment:** `{createdAt, method (Nakit/Kart/Platform), amount (TL decimal), received, change, time, by, staffId? (employee id of whoever collected it; set by staff `pay`/`payMixed`/`payProducts`, absent on Windows-cashier rows), productPaymentId? (request id of a staff product payment), productReceipt? (its non-fiscal summary text), guestCheckId?, guestAllocations[], refunds[{amount, reason, createdAt}], reversed, combinedPaymentId?}`. No payment ID exists today; payments are addressed by list index. PR-04 must assign stable IDs.
 - **Money storage:** stored as decimal TL `num` and converted with `cents()` everywhere. The cloud should use integer kuruş (spec §11.2).
 - **`guestChecks`:** `{id, name, allocations[{key, cents}]}`.
 
@@ -175,6 +181,7 @@ Fields:
 | Printing policy | `autoPrint`, `autoPrintEnabledAt`, `receiptPolicy` (legacy), `receiptPolicyVersion` | INTERNAL | business setting |
 | Platform | `platformDeductionRates`, `tgoKitchenTiming` (legacy), `storeId`, `supplierId`, `acceptFlow`, `open`, `connection`, `cursor`, `lastSync` | INTERNAL | business setting (credentials are NOT here; see §5) |
 | Alerts / QR | `onlineOrderSound`, `soundAlerts`, `qrAutoSync`, `migrated` | INTERNAL | business setting |
+| Gün Sonu Raporu (§24.7) | `dailyReport` {enabled, time, weekdays, dates} | INTERNAL | business setting (closing time per weekday / special date) |
 
 ---
 

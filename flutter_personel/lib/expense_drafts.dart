@@ -360,7 +360,7 @@ class _ExpenseDraftPageState extends State<ExpenseDraftPage> {
     if (busy || error != null || widget.store.syncing) return;
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (_) => _ExpenseDraftDialog(previous: previous),
+      builder: (_) => QuickExpenseDialog(previous: previous),
     );
     if (!mounted || result == null) return;
     try {
@@ -551,15 +551,20 @@ class _ExpenseDraftPageState extends State<ExpenseDraftPage> {
   );
 }
 
-class _ExpenseDraftDialog extends StatefulWidget {
-  const _ExpenseDraftDialog({this.previous});
+/// The single quick daily-expense form (§24.8: Alış Tarihi, Market/Tedarikçi,
+/// Tutar 1 + Tutar Ekle, Ödeme Yöntemi, Not, automatic Toplam). Used by the
+/// Personel draft list and by Yönetici › Finans › Giderler.
+class QuickExpenseDialog extends StatefulWidget {
+  const QuickExpenseDialog({super.key, this.previous, this.title, this.saveLabel = 'Cihaza Kaydet'});
   final Map<String, dynamic>? previous;
+  final String? title;
+  final String saveLabel;
 
   @override
-  State<_ExpenseDraftDialog> createState() => _ExpenseDraftDialogState();
+  State<QuickExpenseDialog> createState() => _QuickExpenseDialogState();
 }
 
-class _ExpenseDraftDialogState extends State<_ExpenseDraftDialog> {
+class _QuickExpenseDialogState extends State<QuickExpenseDialog> {
   late String store = (widget.previous?['storeBrand'] ?? 'BİM').toString();
   late String date = (widget.previous?['date'] ??
     _ExpenseDraftPageState._day(_ExpenseDraftPageState._today())).toString();
@@ -594,7 +599,7 @@ class _ExpenseDraftDialogState extends State<_ExpenseDraftDialog> {
       // Blank/incomplete fields are not treated as money.
     }
     return AlertDialog(
-      title: Text(widget.previous == null ? 'Gider Taslağı Ekle' : 'Taslağı Düzenle'),
+      title: Text(widget.title ?? (widget.previous == null ? 'Gider Taslağı Ekle' : 'Taslağı Düzenle')),
       content: SizedBox(width: 480, child: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -677,7 +682,7 @@ class _ExpenseDraftDialogState extends State<_ExpenseDraftDialog> {
           } on FormatException catch (e) {
             setState(() => error = e.message);
           }
-        }, child: const Text('Cihaza Kaydet')),
+        }, child: Text(widget.saveLabel)),
       ],
     );
   }

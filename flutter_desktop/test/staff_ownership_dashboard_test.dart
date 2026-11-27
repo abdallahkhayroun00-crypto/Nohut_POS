@@ -22,23 +22,23 @@ void main() {
       source: 'Masa',
       table: 1,
       productLines: [item('Falafel', 200)],
-      cashier: 'Abdallah',
+      cashier: 'Test Personel B',
     );
     (original['batches'] as List).first['staffId'] = 3;
     addOrderBatch(
       s,
       original['id'] as int,
       [item('Sembusek', 100)],
-      cashier: 'Mehmet',
+      cashier: 'Test Personel A',
       staffId: 2,
     );
 
-    expect(orderOwnerName(original), 'Abdallah');
+    expect(orderOwnerName(original), 'Test Personel B');
     expect(orderTotalCents(original), 30000);
-    expect(sales(s).map((entry) => entry.staff), ['Abdallah', 'Abdallah']);
+    expect(sales(s).map((entry) => entry.staff), ['Test Personel B', 'Test Personel B']);
     final summary = staffOrderSummaries(s, istanbulDay(DateTime.now()));
     expect(summary, hasLength(1));
-    expect(summary.single.name, 'Abdallah');
+    expect(summary.single.name, 'Test Personel B');
     expect(summary.single.orders, 1);
     expect(summary.single.additions, 1);
     expect(summary.single.totalCents, 30000);

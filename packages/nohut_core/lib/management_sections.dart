@@ -13,4 +13,7 @@ const managementSections = <(String, String)>[
   ('market-prices', 'Market Fiyat Takibi'),
   ('settings', 'Ayarlar'),
 ];
-const managementOwnerName = 'Ömer Yılmaz';
+/// Legacy only: installs paired before owner accounts existed identified the
+/// owner profile by this exact name. Never displayed; the owner's name always
+/// comes from the Windows employee profile linked to the owner account.
+const legacyManagementOwnerName = 'Ömer Yılmaz';

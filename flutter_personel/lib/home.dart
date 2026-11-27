@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
+import 'package:flutter/services.dart';
 
 import 'expense_drafts.dart';
 import 'models.dart';
 import 'pos_api.dart';
 import 'style.dart';
+import 'work_page.dart';
 
 class StaffHome extends StatefulWidget {
   const StaffHome({
@@ -11,10 +14,12 @@ class StaffHome extends StatefulWidget {
     required this.controller,
     required this.onUnpair,
     this.ownerMode = false,
+    this.ownerName,
   });
   final PersonelController controller;
   final VoidCallback onUnpair;
   final bool ownerMode;
+  final String? ownerName;
 
   @override
   State<StaffHome> createState() => _StaffHomeState();
@@ -143,10 +148,89 @@ class _StaffHomeState extends State<StaffHome> {
     removed.dispose();
   }
 
+  void _openWork() => Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => WorkPage(api: c.api)));
+
+  String _signedInLabel() {
+    final id = c.api.sessionEmployeeId;
+    final name = c.employees.where((e) => e['id'] == id).map((e) => '${e['name']}').firstOrNull;
+    return name ?? c.api.sessionUser ?? 'Hesabım';
+  }
+
+  /// Native sign-in sheet (username + password), or PIN unlock when the
+  /// session is only locked after idle time.
+  Future<void> _login() async {
+    final locked = c.api.sessionStatus == 'locked';
+    final user = TextEditingController(), pass = TextEditingController();
+    String? error;
+    var busy = false;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheet) => StatefulBuilder(builder: (sheet, set) => Padding(
+        padding: EdgeInsets.fromLTRB(20, 4, 20, 20 + MediaQuery.viewInsetsOf(sheet).bottom),
+        child: AutofillGroup(child: Column(mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Text(locked ? 'Kilidi Aç' : 'Giriş Yap', style: Theme.of(sheet).textTheme.headlineSmall),
+          const SizedBox(height: 4),
+          Text(locked ? 'Oturumunuz kilitlendi. 5 haneli PIN’inizi girin.'
+              : 'Windows › Kullanıcılar’da oluşturulan hesabınızla giriş yapın.',
+              style: Theme.of(sheet).textTheme.bodyMedium),
+          const SizedBox(height: 16),
+          if (!locked) TextField(controller: user, autofocus: true,
+            autofillHints: const [AutofillHints.username], textInputAction: TextInputAction.next,
+            decoration: const InputDecoration(labelText: 'Kullanıcı adı', prefixIcon: Icon(Icons.person_outline))),
+          if (!locked) const SizedBox(height: 12),
+          TextField(controller: pass, obscureText: true, autofocus: locked,
+            autofillHints: locked ? null : const [AutofillHints.password],
+            keyboardType: locked ? TextInputType.number : TextInputType.visiblePassword,
+            maxLength: locked ? 5 : null,
+            decoration: InputDecoration(labelText: locked ? 'PIN' : 'Şifre',
+              prefixIcon: const Icon(Icons.lock_outline))),
+          if (error != null) Padding(padding: const EdgeInsets.only(top: 8),
+            child: Text(error!, style: TextStyle(color: Theme.of(sheet).colorScheme.error))),
+          const SizedBox(height: 16),
+          FilledButton(onPressed: busy ? null : () async {
+            set(() { busy = true; error = null; });
+            try {
+              if (locked) {
+                await c.api.unlock(pin: pass.text.trim());
+              } else {
+                await c.api.login(user.text, pass.text);
+              }
+              HapticFeedback.lightImpact();
+              if (sheet.mounted) Navigator.pop(sheet);
+            } on FormatException catch (e) {
+              HapticFeedback.heavyImpact();
+              set(() { busy = false; error = e.message; });
+            } catch (_) {
+              set(() { busy = false; error = 'Laptop bağlantısı kurulamadı.'; });
+            }
+          }, child: busy ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2))
+              : Text(locked ? 'Kilidi Aç' : 'Giriş Yap')),
+        ])),
+      )),
+    );
+    user.dispose();
+    pass.dispose();
+    if (mounted) setState(() => _dirty());
+  }
+
+  /// Signed in: the session decides who you are. Legacy shared mode only:
+  /// the picker (the server ignores it whenever a session exists).
+  int? get _actingStaff => c.api.signedIn ? c.api.sessionEmployeeId : selectedStaff;
+
   Future<void> _send() async {
     if (sending || cart.isEmpty) return;
-    if (selectedStaff == null) {
-      _message('Önce personel adınızı seçin.');
+    if (c.api.loginRequired && !c.api.signedIn) {
+      _message('Sipariş için giriş yapın.');
+      unawaited(_login());
+      return;
+    }
+    if (_actingStaff == null) {
+      _message(c.api.signedIn ? 'Hesabınız bir personele bağlı değil. Windows › Kullanıcılar.'
+          : 'Önce giriş yapın veya personel adınızı seçin.');
       return;
     }
     if (!c.online) {
@@ -156,7 +240,7 @@ class _StaffHomeState extends State<StaffHome> {
     _pendingRequest ??= {
       'requestId': requestId(),
       'expectedRevision': c.revision,
-      'staffId': selectedStaff,
+      'staffId': _actingStaff,
       'source': source,
       'table': source == 'Masa' ? tableNumber : null,
       if (targetOrderId != null && source == 'Masa')
@@ -247,50 +331,66 @@ class _StaffHomeState extends State<StaffHome> {
   }
 
   Widget _tablePage(double width) {
-    final cols = width >= 1100 ? 5 : width >= 800 ? 4 :
-        width >= 560 ? 3 : width >= 290 ? 2 : 1;
-    return ListView(padding: const EdgeInsets.all(16), children: [
+    final cols = width >= 1100 ? 5 : width >= 800 ? 4 : width >= 330 ? 3 : 2;
+    final busy = [for (var n = 1; n <= 5; n++)
+      if (c.orders.any((o) => o['source'] == 'Masa' && o['table'] == n)) n];
+    final pickups = c.orders.where((o) => o['source'] == 'Gel-Al').length;
+    final nc = context.nohut, scheme = Theme.of(context).colorScheme;
+    return ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), children: [
       _heading('Masa Planı', 'Masayı seçerek sipariş oluşturun'),
-      const SizedBox(height: 16),
+      const SizedBox(height: 12),
+      NohutMetricGrid(minTileWidth: 140, children: [
+        NohutMetric(label: 'Dolu masa', value: '${busy.length} / 5', icon: Icons.table_restaurant_outlined),
+        NohutMetric(label: 'Açık Gel-Al', value: '$pickups', icon: Icons.takeout_dining_outlined),
+      ]),
+      const SizedBox(height: 14),
       GridView.count(
         crossAxisCount: cols,
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
-        mainAxisSpacing: 11,
-        crossAxisSpacing: 11,
-        mainAxisExtent: 136,
+        mainAxisSpacing: 10,
+        crossAxisSpacing: 10,
+        childAspectRatio: 1.02,
         children: [
           for (var n = 1; n <= 5; n++)
             Builder(builder: (context) {
               final o = c.orders.where((o) =>
                   o['source'] == 'Masa' && o['table'] == n).firstOrNull;
-              return Card(
-                color: o == null ? const Color(0xffe8f1e3)
-                    : const Color(0xffffe3ac),
+              final taken = o != null;
+              return Material(
+                color: taken ? scheme.secondaryContainer : nc.card,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18),
+                  side: BorderSide(color: taken ? scheme.secondary : nc.outline, width: taken ? 1.4 : 1)),
+                clipBehavior: Clip.antiAlias,
                 child: InkWell(
-                  borderRadius: BorderRadius.circular(16),
                   onTap: () => _chooseTable(n),
                   child: Padding(
-                    padding: const EdgeInsets.all(8),
-                    child: FittedBox(fit: BoxFit.scaleDown,
-                      child: Column(mainAxisSize: MainAxisSize.min,
-                        children: [
-                        const Icon(Icons.table_restaurant_outlined, size: 29),
-                        Text('Masa $n', style: const TextStyle(
-                          fontSize: 22, fontWeight: FontWeight.w800)),
-                        Text(o == null ? 'Boş · Yeni sipariş'
-                            : 'Dolu · ${money(orderTotal(o))}',
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(fontSize: 12)),
-                      ])),
+                    padding: const EdgeInsets.all(10),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Row(children: [
+                        Icon(Icons.table_restaurant_outlined, size: 20,
+                          color: taken ? scheme.onSecondaryContainer : nc.muted),
+                        const Spacer(),
+                        Container(width: 9, height: 9, decoration: BoxDecoration(shape: BoxShape.circle,
+                          color: taken ? scheme.secondary : nc.success)),
+                      ]),
+                      const Spacer(),
+                      FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft,
+                        child: Text('Masa $n', style: TextStyle(fontFamily: 'Bree', fontSize: 21,
+                          color: taken ? scheme.onSecondaryContainer : nc.heading))),
+                      Text(taken ? money(orderTotal(o)) : 'Boş',
+                        maxLines: 1, overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700,
+                          color: taken ? scheme.onSecondaryContainer : nc.muted)),
+                    ]),
                   ),
                 ),
               );
             }),
         ],
       ),
-      const SizedBox(height: 17),
-      OutlinedButton.icon(
+      const SizedBox(height: 14),
+      FilledButton.tonalIcon(
         onPressed: () => setState(() {
           source = 'Gel-Al';
           targetOrderId = null;
@@ -374,8 +474,8 @@ class _StaffHomeState extends State<StaffHome> {
                               fontWeight: FontWeight.w700, fontSize: 16)),
                           const SizedBox(height: 5),
                           Text(money(asCents(product['price'])),
-                            style: const TextStyle(
-                              color: NohutStyle.gold,
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.secondary,
                               fontWeight: FontWeight.w800)),
                         ],
                       )),
@@ -455,20 +555,11 @@ class _StaffHomeState extends State<StaffHome> {
           decoration: const InputDecoration(labelText: 'Teslim saati (isteğe bağlı)')),
       ],
       const SizedBox(height: 14),
-      if (cart.isEmpty) Card(child: Padding(
-        padding: const EdgeInsets.all(26),
-        child: Center(child: Column(children: [
-          const Icon(Icons.shopping_basket_outlined,
-            size: 38, color: NohutStyle.muted),
-          const Text('Sepet henüz boş'),
-          TextButton.icon(
-            onPressed: () => setState(() => tab = 1),
-            icon: const Icon(Icons.add),
-            label: const Text('Ürün Ekle')),
-        ])),
-      )),
+      if (cart.isEmpty) Card(child: NohutEmpty(
+        icon: Icons.shopping_basket_outlined, message: 'Sepet henüz boş',
+        action: 'Ürün Ekle', onAction: () => setState(() => tab = 1))),
       for (final line in cart)
-        Card(child: Padding(
+        Card(margin: const EdgeInsets.only(bottom: 8), child: Padding(
           padding: const EdgeInsets.all(12),
           child: Column(children: [
             Row(children: [
@@ -501,9 +592,9 @@ class _StaffHomeState extends State<StaffHome> {
       const Divider(height: 24),
       Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
         const Text('Toplam', style: TextStyle(fontSize: 21)),
-        Text(money(total), style: const TextStyle(
+        Text(money(total), style: TextStyle(
           fontWeight: FontWeight.w800, fontSize: 24,
-          color: NohutStyle.green)),
+          color: context.nohut.heading)),
       ]),
       const SizedBox(height: 13),
       FilledButton.icon(
@@ -514,9 +605,9 @@ class _StaffHomeState extends State<StaffHome> {
             : const Icon(Icons.send),
         label: const Text('Siparişi Laptopa Kaydet')),
       const SizedBox(height: 8),
-      const Text('Yalnızca Windows POS siparişi onayladıktan sonra '
+      Text('Yalnızca Windows POS siparişi onayladıktan sonra '
         'kayıt başarılı sayılır. Bağlantı kesilirse sepet korunur.',
-        style: TextStyle(fontSize: 12, color: NohutStyle.muted)),
+        style: TextStyle(fontSize: 12, color: context.nohut.muted)),
     ]);
   }
 
@@ -526,10 +617,9 @@ class _StaffHomeState extends State<StaffHome> {
       _heading('Açık Siparişler', 'Laptop ile ortak sipariş listesi'),
       const SizedBox(height: 10),
       if (c.orders.isEmpty && platforms.isEmpty)
-        const Card(child: Padding(padding: EdgeInsets.all(22),
-          child: Text('Açık sipariş yok.'))),
+        const Card(child: NohutEmpty(icon: Icons.receipt_long_outlined, message: 'Açık sipariş yok.')),
       for (final order in c.orders)
-        Card(child: ListTile(
+        Card(margin: const EdgeInsets.only(bottom: 8), child: ListTile(
           title: Text(orderLabel(order),
             style: const TextStyle(fontWeight: FontWeight.w800)),
           subtitle: Text('${money(orderTotal(order))} · ${order['serviceStatus'] ?? 'Açık'}'),
@@ -542,7 +632,7 @@ class _StaffHomeState extends State<StaffHome> {
           child: Text('Trendyol Go · Salt okunur',
             style: TextStyle(fontWeight: FontWeight.w800))),
         for (final order in platforms)
-          Card(child: ListTile(
+          Card(margin: const EdgeInsets.only(bottom: 8), child: ListTile(
             title: Text('#${order['orderNumber']}'),
             subtitle: Text('${order['status']} · ${money((order['totalCents'] as num?)?.toInt() ?? 0)}'),
             leading: const Icon(Icons.delivery_dining_outlined),
@@ -553,18 +643,42 @@ class _StaffHomeState extends State<StaffHome> {
 
   Widget _settingsPage() {
     return ListView(padding: const EdgeInsets.all(16), children: [
-      _heading('Bağlantı', 'Android yerel uygulama'),
-      const SizedBox(height: 13),
+      _heading('Hesap ve Bağlantı', 'Android yerel uygulama'),
+      if (!widget.ownerMode) ...[
+        const NohutSection('Hesabım'),
+        Card(child: Column(children: [
+          ListTile(
+            leading: const Icon(Icons.person_outline),
+            title: Text(c.api.signedIn ? _signedInLabel() : 'Giriş yapılmadı'),
+            subtitle: Text(c.api.signedIn ? 'Kimliğiniz oturumdan gelir · ${c.api.sessionUser}'
+                : 'Mesai ve maaş için kendi hesabınızla giriş yapın.'),
+          ),
+          if (c.api.signedIn && c.api.sessionEmployeeId != null) ...[
+            const Divider(),
+            ListTile(leading: const Icon(Icons.badge_outlined), title: const Text('Mesai ve Maaşım'),
+              trailing: const Icon(Icons.chevron_right), onTap: _openWork),
+          ],
+          const Divider(),
+          if (c.api.signedIn)
+            ListTile(leading: const Icon(Icons.logout), title: const Text('Çıkış Yap'),
+              onTap: () async { await c.api.logout(); if (mounted) setState(() {}); })
+          else
+            ListTile(leading: const Icon(Icons.login), title: const Text('Giriş Yap'), onTap: _login),
+        ])),
+      ],
+      const NohutSection('Bağlantı'),
       Card(child: Column(children: [
         ListTile(
           leading: Icon(c.online ? Icons.wifi : Icons.wifi_off,
-            color: c.online ? Colors.green : Colors.orange),
+            color: c.online ? context.nohut.success : context.nohut.warning),
           title: Text(c.online ? 'Laptop bağlı' : 'Bağlantı yok'),
           subtitle: Text(c.api.host ?? 'Sunucu bulunamadı'),
+          trailing: NohutPill(c.online ? 'Bağlı' : 'Bağlantı yok',
+            tone: c.online ? NohutTone.success : NohutTone.danger),
         ),
         if (c.error != null)
           ListTile(title: Text(c.error!,
-            style: const TextStyle(color: Colors.red))),
+            style: TextStyle(color: context.nohut.danger))),
         const Divider(height: 1),
         ListTile(leading: const Icon(Icons.refresh),
           title: const Text('Bağlantıyı Yenile'),
@@ -576,8 +690,8 @@ class _StaffHomeState extends State<StaffHome> {
             _message('Android bildirim izinlerini kontrol edin.');
           }),
         ListTile(
-          leading: const Icon(Icons.phonelink_erase_outlined,
-            color: Colors.red),
+          leading: Icon(Icons.phonelink_erase_outlined,
+            color: context.nohut.danger),
           title: const Text('Bu Cihazın Bağlantısını Unut'),
           onTap: () async {
             final ok = await showDialog<bool>(
@@ -600,20 +714,19 @@ class _StaffHomeState extends State<StaffHome> {
         ),
       ])),
       const SizedBox(height: 10),
-      const Text('Siparişler restoran Wi-Fi ağında Windows POS’a '
+      Text('Siparişler restoran Wi-Fi ağında Windows POS’a '
         'kaydedilir. Uygulama kapalıyken bulut push bildirimi yoktur; '
         'Android açıkken yeni personel siparişleri bildirilir.',
-        style: TextStyle(fontSize: 12, color: NohutStyle.muted)),
+        style: TextStyle(fontSize: 12, color: context.nohut.muted)),
     ]);
   }
 
   Widget _heading(String title, String subtitle) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      Text(title, style: const TextStyle(
-        fontSize: 26, fontFamily: 'Bree', color: NohutStyle.green)),
+      Text(title, style: Theme.of(context).textTheme.headlineSmall),
       Text(subtitle, style:
-        const TextStyle(fontSize: 13, color: NohutStyle.muted)),
+        TextStyle(fontSize: 13.5, color: context.nohut.muted)),
     ],
   );
 
@@ -660,12 +773,42 @@ class _StaffHomeState extends State<StaffHome> {
         return Scaffold(
           appBar: AppBar(
             toolbarHeight: height < 500 ? 56 : 75,
-            title: NohutBrandHeader(
-              subtitle: c.online ? '● Laptop bağlı' : '● Bağlantı bekleniyor'),
+            title: NohutBrandHeader(online: c.online,
+              subtitle: c.online ? 'Laptop bağlı' : 'Bağlantı bekleniyor'),
             actions: [
               if (widget.ownerMode)
-                const Padding(padding: EdgeInsets.symmetric(horizontal: 6),
-                  child: Center(child: Text('Ömer Yılmaz', overflow: TextOverflow.ellipsis)))
+                Padding(padding: const EdgeInsets.symmetric(horizontal: 6),
+                  child: Center(child: Text(widget.ownerName ?? 'İşletme sahibi', overflow: TextOverflow.ellipsis)))
+              else if (c.api.signedIn) ...[
+                if (c.api.sessionEmployeeId != null)
+                  IconButton(tooltip: 'Mesai ve Maaşım', onPressed: _openWork,
+                    icon: const Icon(Icons.badge_outlined)),
+                PopupMenuButton<String>(
+                  tooltip: 'Hesabım',
+                  onSelected: (v) async {
+                    if (v == 'work') _openWork();
+                    if (v == 'logout') {
+                      await c.api.logout();
+                      if (mounted) setState(() {});
+                    }
+                  },
+                  itemBuilder: (_) => [
+                    if (c.api.sessionEmployeeId != null)
+                      const PopupMenuItem(value: 'work', child: Text('Mesai ve Maaşım')),
+                    const PopupMenuItem(value: 'logout', child: Text('Çıkış Yap')),
+                  ],
+                  child: Padding(padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      const Icon(Icons.verified_user_outlined, size: 20),
+                      const SizedBox(width: 6),
+                      ConstrainedBox(constraints: BoxConstraints(maxWidth: wide ? 180 : 96),
+                        child: Text(_signedInLabel(), overflow: TextOverflow.ellipsis)),
+                    ])),
+                ),
+              ]
+              else if (c.api.loginRequired)
+                Padding(padding: const EdgeInsets.symmetric(horizontal: 6),
+                  child: FilledButton.tonal(onPressed: _login, child: const Text('Giriş Yap')))
               else if (selected != null || c.employees.isNotEmpty)
                 SizedBox(width: wide ? 170 : width < 360 ? 88 : 110,
                   child: DropdownButton<int>(
@@ -689,6 +832,8 @@ class _StaffHomeState extends State<StaffHome> {
                     },
                   ),
                 ),
+              if (!widget.ownerMode && !c.api.signedIn && !c.api.loginRequired && c.api.paired)
+                IconButton(tooltip: 'Giriş Yap', onPressed: _login, icon: const Icon(Icons.login)),
               IconButton(
                 tooltip: 'Yenile',
                 onPressed: c.refresh,
@@ -699,7 +844,6 @@ class _StaffHomeState extends State<StaffHome> {
           body: Row(children: [
             if (wide)
               NavigationRail(
-                backgroundColor: NohutStyle.card,
                 selectedIndex: tab,
                 onDestinationSelected: (n) => setState(() => tab = n),
                 labelType: height < 760 ? NavigationRailLabelType.selected : NavigationRailLabelType.all,
@@ -714,7 +858,6 @@ class _StaffHomeState extends State<StaffHome> {
             Expanded(child: Column(children: [
               if (!c.online && tab != 5)
                 MaterialBanner(
-                  backgroundColor: const Color(0xffffe9c8),
                   content: const Text('Laptop çevrimdışı · Sepet korunuyor'),
                   actions: [TextButton(
                     onPressed: c.refresh, child: const Text('Yenile'))],

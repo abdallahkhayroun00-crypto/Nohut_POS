@@ -128,7 +128,7 @@ void main() {
     final dbB = '${machineB.path}/nohut-pos.sqlite3';
     final manager = RestoreManager(dbB);
     final manifest = await manager.stage(copied, recoveryKey: key,
-        confirmedBy: 'Ömer', container: fastContainer);
+        confirmedBy: 'Test Yönetici', container: fastContainer);
     expect(manifest.revision, before.revision);
     expect(manager.hasPending, true);
     final outcome = manager.applyPending();
@@ -178,7 +178,7 @@ void main() {
 
     // Failure path: a corrupted staged file must leave the original intact.
     final manager = RestoreManager(dbB);
-    await manager.stage(result.file, recoveryKey: key, confirmedBy: 'Ömer',
+    await manager.stage(result.file, recoveryKey: key, confirmedBy: 'Test Yönetici',
         container: fastContainer);
     manager.stagedFile.writeAsStringSync('not a database');
     final failed = manager.applyPending();
@@ -188,7 +188,7 @@ void main() {
     after.dispose();
 
     // Success path: the previous database is kept as a safety copy.
-    await manager.stage(result.file, recoveryKey: key, confirmedBy: 'Ömer',
+    await manager.stage(result.file, recoveryKey: key, confirmedBy: 'Test Yönetici',
         container: fastContainer);
     final ok = manager.applyPending();
     expect(ok.applied, true, reason: ok.message);
@@ -201,7 +201,7 @@ void main() {
     final result = await fastContainer.create(store, machineA,
         recoveryKey: key);
     final manager = RestoreManager(store.filePath);
-    await manager.stage(result.file, recoveryKey: key, confirmedBy: 'Ömer',
+    await manager.stage(result.file, recoveryKey: key, confirmedBy: 'Test Yönetici',
         container: fastContainer);
     await manager.cancelPending();
     expect(manager.hasPending, false);

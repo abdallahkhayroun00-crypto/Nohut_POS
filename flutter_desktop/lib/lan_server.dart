@@ -16,6 +16,7 @@ import 'finance_sync_server.dart';
 import 'google_business.dart';
 import 'lan_auth_gate.dart';
 import 'yonetici_api.dart';
+import 'workforce_api.dart';
 import 'notification_events.dart';
 
 /// Native Flutter Windows HTTP server for employee phones. No Python process.
@@ -25,6 +26,7 @@ class PosLanServer extends ChangeNotifier {
     : _staffHtml = staffHtml, _yoneticiHtml = yoneticiHtml;
   String? _yoneticiHtml;
   late final YoneticiApi? yonetici = authGate == null ? null : YoneticiApi(store, authGate!);
+  late final WorkforceApi? workforce = authGate == null ? null : WorkforceApi(store, authGate!);
   late final LanNotificationsApi? notifications =
       authGate == null ? null : LanNotificationsApi(store, authGate!.auth);
   /// Individual LAN logins (spec §23.4). Null = legacy shared panel only.
@@ -37,7 +39,8 @@ class PosLanServer extends ChangeNotifier {
   final bool Function()? platformWritable;
   final GoogleBusiness Function()? googleProvider;
   late final MobilePairing pairing = MobilePairing(store);
-  late final FinanceSyncServer financeSync = FinanceSyncServer(store, staffProjection: _staffState, googleProvider: googleProvider);
+  late final FinanceSyncServer financeSync = FinanceSyncServer(store, staffProjection: _staffState,
+      googleProvider: googleProvider, ownerEmployeeIds: () => authGate?.auth.ownerEmployeeIds() ?? const []);
   HttpServer? _server;
   RawDatagramSocket? _discovery;
   String? error;
@@ -437,6 +440,18 @@ class PosLanServer extends ChangeNotifier {
       await _handleNotifications(request, resource.endsWith('/read'));
       return;
     }
+    if (resource.startsWith('/api/work/')) {
+      final api = workforce;
+      if (api == null) {
+        _json(request.response, 404, {'error': 'not_found'});
+        return;
+      }
+      final body = await _lanJsonBody(request, 32 * 1024);
+      if (body == null) return;
+      _reply(request, await api.handle(request.method, resource.substring('/api/work/'.length),
+          request.uri.queryParameters, body, token: _token(request)));
+      return;
+    }
     if (resource.startsWith('/api/yonetici/')) {
       await _handleYonetici(request, resource.substring('/api/yonetici/'.length));
       return;
@@ -522,6 +537,16 @@ class PosLanServer extends ChangeNotifier {
       });
       return;
     }
+    // Restaurant state and staff APIs are for the restaurant network only,
+    // and follow Bireysel giriş zorunlu like every other staff read.
+    if (resource == '/api/state' || resource == '/api/bootstrap' ||
+        resource == '/api/mobile/bootstrap' || resource.startsWith('/api/staff/')) {
+      final addr = request.connectionInfo?.remoteAddress.address ?? '';
+      if (!_privateIp(addr) && addr != '127.0.0.1' && addr != '::1') {
+        _json(request.response, 403, {'error': 'lan_only'});
+        return;
+      }
+    }
     if (request.method == 'GET' &&
         (resource == '/api/state' || resource == '/api/bootstrap') &&
         _guard(request, 'tables.view', touch: false) == null) {
@@ -561,6 +586,7 @@ class PosLanServer extends ChangeNotifier {
         _json(request.response, 401, {'error': 'pairing_required'});
         return;
       }
+      if (_guard(request, 'tables.view', touch: false) == null) return;
       final snapshot = store.read();
       final state = _staffState(snapshot.data);
       state['staffNotices'] = [
@@ -610,10 +636,16 @@ class PosLanServer extends ChangeNotifier {
         final Json result;
         if (resource == '/api/mobile/pair') {
           result = pairing.pair(addr, decoded);
-        } else if (resource == '/api/mobile/orders') {
-          result = submitStaffOrder(store, decoded);
         } else {
-          result = submitStaffAction(store, decoded);
+          // A paired device is not a person. The same gate as the browser
+          // app applies: with Bireysel giriş zorunlu an individual session
+          // is required, and a session always fixes the acting employee.
+          final isOrder = resource == '/api/mobile/orders';
+          final decision = _guard(request,
+              isOrder ? 'orders.create' : LanAuthGate.operationForAction(decoded));
+          if (decision == null) return;
+          final acting = LanAuthGate.withIdentity(decoded, decision.context);
+          result = isOrder ? submitStaffOrder(store, acting) : submitStaffAction(store, acting);
         }
         _json(request.response, 200, result);
       } on StaffConflict {

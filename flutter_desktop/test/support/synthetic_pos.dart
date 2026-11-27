@@ -71,7 +71,7 @@ List<Json> _lines(Random r) {
     table: pickup ? null : 1 + r.nextInt(5),
     productLines: _lines(r),
     pickupChannel: pickup && r.nextBool() ? 'Telefon' : 'Tezgahtan',
-    cashier: 'Mehmet',
+    cashier: 'Test Personel A',
     staffId: 2,
     customer: pickup
         ? {
@@ -82,7 +82,7 @@ List<Json> _lines(Random r) {
         : null,
   );
   if (r.nextInt(100) < 15) {
-    addOrderBatch(s, o['id'] as int, _lines(r), cashier: 'Abdallah', staffId: 3);
+    addOrderBatch(s, o['id'] as int, _lines(r), cashier: 'Test Personel B', staffId: 3);
   }
   if (r.nextInt(100) < 5) {
     cancelProduct(s, o['id'] as int, '1:0', 1, 'Müşteri vazgeçti');

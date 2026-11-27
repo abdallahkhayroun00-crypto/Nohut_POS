@@ -57,6 +57,7 @@ import 'platform_workflows.dart';
 import 'review_sync_service.dart';
 import 'tgo_review_api.dart';
 import 'local_accounts.dart';
+import 'payroll.dart' show ensureOwnerPayrollDefault;
 import 'lan_auth_gate.dart';
 import 'accounts_ui.dart';
 import 'notification_events.dart';
@@ -315,6 +316,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       // state with stable ids, so repeated runs never duplicate.
       _notificationTimer = Timer.periodic(const Duration(seconds: 5), (_) {
         try {
+          ensureOwnerPayrollDefault(store, localAuth.ownerEmployeeIds());
           recordOperationalNotifications(store);
         } catch (e) {
           debugPrint('Notification history: $e');
@@ -3490,7 +3492,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                         label: const Text('Yeni PIN Oluştur'),
                       ),
                       const Divider(height: 22),
-                      const Text('Android Yönetim · Ömer Yılmaz',
+                      const Text('Android Yönetim · İşletme sahibi',
                         style: TextStyle(fontWeight: FontWeight.w800)),
                       TextButton.icon(
                         icon: const Icon(Icons.admin_panel_settings_outlined),
@@ -3498,8 +3500,8 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                         onPressed: !lan.available ? null : () async {
                           final approve = await showDialog<bool>(context: context,
                             builder: (ctx) => AlertDialog(
-                              title: const Text('Ömer Yılmaz yönetici erişimi'),
-                              content: const Text('Yalnızca Ömer Yılmaz cihazına verin. Eski finans anahtarı iptal edilir.'),
+                              title: const Text('İşletme sahibi yönetici erişimi'),
+                              content: const Text('Yalnızca işletme sahibinin cihazına verin. Eski finans anahtarı iptal edilir.'),
                               actions: [
                                 TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('Vazgeç')),
                                 FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('Oluştur')),

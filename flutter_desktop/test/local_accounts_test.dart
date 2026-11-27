@@ -54,13 +54,13 @@ void main() {
     await seed();
     final login = await auth.login(username: 'deniz', password: 'sentetik-sifre-2',
         deviceId: dev1, client: 'personel', label: 'Telefon');
-    await auth.setPin(login.token, 'personel', '582914');
+    await auth.setPin(login.token, 'personel', '58291');
     final dump = [
       for (final t in ['auth_users', 'auth_devices', 'auth_sessions', 'auth_audit'])
         ...db.select('SELECT * FROM $t').map((r) => r.values.join('|')),
     ].join('\n');
     expect(dump, isNot(contains('sentetik-sifre-2')));
-    expect(dump, isNot(contains('582914')));
+    expect(dump, isNot(contains('58291')));
     expect(dump, isNot(contains(login.token)));
   });
 
@@ -101,23 +101,45 @@ void main() {
         deviceId: dev1, client: 'personel')).context.ok, isTrue);
   });
 
+  test('5-digit PIN rules and password unlock share the login lockout (independent review)', () async {
+    await seed();
+    final l = await auth.login(username: 'deniz', password: 'sentetik-sifre-2',
+        deviceId: dev1, client: 'personel');
+    for (final weak in ['11111', '12345', '54321', '123456', '1234', '5829a']) {
+      expect(() => auth.setPin(l.token, 'personel', weak), throwsA(isA<LocalAuthException>()), reason: weak);
+    }
+    await auth.setPin(l.token, 'personel', '58291');
+    now = now.add(const Duration(minutes: 31));
+    expect(auth.check(l.token, 'personel').status, 'locked');
+    for (var i = 0; i < 4; i++) {
+      expect((await auth.unlockWithPassword(l.token, 'personel', 'wrong-pass')).status, 'invalid_credentials');
+    }
+    expect((await auth.unlockWithPassword(l.token, 'personel', 'wrong-pass')).status, 'locked_out');
+    // Even the right password is refused for 15 minutes.
+    expect((await auth.unlockWithPassword(l.token, 'personel', 'sentetik-sifre-2')).status, 'locked_out');
+    now = now.add(const Duration(minutes: 16));
+    expect((await auth.unlockWithPassword(l.token, 'personel', 'sentetik-sifre-2')).ok, isTrue);
+    // A wrong client never unlocks.
+    expect((await auth.unlockWithPassword(l.token, 'yonetici', 'sentetik-sifre-2')).status, 'revoked');
+  });
+
   test('idle lock after 30 minutes; PIN re-entry; 5 wrong PINs need password', () async {
     await seed();
     final l = await auth.login(username: 'deniz', password: 'sentetik-sifre-2',
         deviceId: dev1, client: 'personel');
-    expect(() => auth.setPin(l.token, 'personel', '123456'), throwsA(isA<LocalAuthException>()));
-    await auth.setPin(l.token, 'personel', '582914');
+    expect(() => auth.setPin(l.token, 'personel', '12345'), throwsA(isA<LocalAuthException>()));
+    await auth.setPin(l.token, 'personel', '58291');
     now = now.add(const Duration(minutes: 29));
     expect(auth.check(l.token, 'personel').ok, isTrue); // activity resets idle
     now = now.add(const Duration(minutes: 30));
     expect(auth.check(l.token, 'personel').status, 'locked');
-    expect((await auth.unlockWithPin(l.token, 'personel', '582914')).ok, isTrue);
+    expect((await auth.unlockWithPin(l.token, 'personel', '58291')).ok, isTrue);
     now = now.add(const Duration(minutes: 31));
     for (var i = 0; i < 4; i++) {
-      expect((await auth.unlockWithPin(l.token, 'personel', '000001')).status, 'invalid_pin');
+      expect((await auth.unlockWithPin(l.token, 'personel', '00001')).status, 'invalid_pin');
     }
-    expect((await auth.unlockWithPin(l.token, 'personel', '000001')).status, 'password_required');
-    expect((await auth.unlockWithPin(l.token, 'personel', '582914')).status, 'password_required');
+    expect((await auth.unlockWithPin(l.token, 'personel', '00001')).status, 'password_required');
+    expect((await auth.unlockWithPin(l.token, 'personel', '58291')).status, 'password_required');
     expect((await auth.unlockWithPassword(l.token, 'personel', 'sentetik-sifre-2')).ok, isTrue);
     // Owner-configurable lock time.
     auth.idleLock = const Duration(minutes: 5);

@@ -156,4 +156,28 @@ void main() {
       'paid': false, 'expectedVersion': fixed['updatedAt'], 'expectedPaidAt': pay['paidAt']});
     expect(s4, 200, reason: '$b4');
   });
+
+  test('Gün Sonu report: login required, amounts only with finance gate + sales.view', () async {
+    final (u, _, _) = await call('GET', '/api/yonetici/daily?day=$day');
+    expect(u, 401);
+    final staff = await login('garson', 'staff-pass-1');
+    final (f, _, _) = await call('GET', '/api/yonetici/daily?day=$day', cookie: staff);
+    expect(f, 403);
+    final owner = await login('sahip', 'owner-pass-1');
+    final (a, ab, _) = await call('GET', '/api/yonetici/daily?day=$day', cookie: owner);
+    expect(a, 200);
+    final hidden = (ab as Map)['report'] as Map;
+    expect(hidden['amountsHidden'], true);
+    expect(hidden.containsKey('sales'), false);
+    expect((hidden['orders'] as Map).containsKey('total'), true);
+    auth.setSetting('local_finance_http', '1');
+    final (b, bb, _) = await call('GET', '/api/yonetici/daily?day=$day', cookie: owner);
+    expect(b, 200);
+    final full = (bb as Map)['report'] as Map;
+    expect(full.containsKey('sales'), true);
+    expect(full.containsKey('expenses'), true);
+    expect(full['businessDate'], day);
+    final (bad, _, _) = await call('GET', '/api/yonetici/daily?day=nope', cookie: owner);
+    expect(bad, 422);
+  });
 }

@@ -49,7 +49,7 @@ Json kitchenSink() {
   }
   recordCombinedPickupPayment(s, orderIds: ids, amountCents: 32000,
       method: 'Karışık', cashCents: 12000, receivedCents: 20000);
-  recordStaffNotice(s, mutableOrder(s, ids.first)!, 'staff_ks_1', 'Mehmet',
+  recordStaffNotice(s, mutableOrder(s, ids.first)!, 'staff_ks_1', 'Test Personel A',
       'Yeni sipariş');
   return s;
 }

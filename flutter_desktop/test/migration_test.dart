@@ -544,7 +544,7 @@ void main() {
         expect(a.replace(snap.data, snap.revision).ok, false);
         final order = asMaps(a.read().data['orders']).single;
         expect(orderTotalCents(order), 10001);
-        expect(asMaps(order['batches']).first['staff'], 'Mehmet');
+        expect(asMaps(order['batches']).first['staff'], 'Test Personel A');
         expect(
           () => submitStaffOrder(b, command('request_0002', snap.revision)),
           throwsA(isA<StaffConflict>()),
@@ -589,7 +589,7 @@ void main() {
         expect(order['batches'], hasLength(2));
         expect(order['payments'], isEmpty);
         final snap = a.read(), s = copyJson(snap.data);
-        saveEmployee(s, 2, 'Mehmet', 'Personel', false);
+        saveEmployee(s, 2, 'Test Personel A', 'Personel', false);
         a.replace(s, snap.revision);
         expect(
           () => submitStaffOrder(a, command('request_0003', a.read().revision)),
