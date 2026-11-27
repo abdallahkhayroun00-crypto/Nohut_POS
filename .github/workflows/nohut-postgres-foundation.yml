@@ -41,6 +41,9 @@ jobs:
           psql_ci < supabase/ci/supabase_auth_stub.sql
           for f in supabase/migrations/*.sql; do psql_ci < "$f"; done
           for f in supabase/tests/*.sql; do psql_ci < "$f"; done
+          # Review-only SQL: disposable CI database, never a production migration.
+          psql_ci < supabase/functions/qr-publisher/sql/receipt-storage.review.sql
+          psql_ci < supabase/functions/qr-publisher/sql/receipt-storage.review.test.sql
           echo 'PASS: PostgreSQL integrated synthetic tests (no live Supabase connection)' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Cloud primitives under migration owner without BYPASSRLS
@@ -56,4 +59,6 @@ jobs:
           for f in supabase/tests/*.sql; do
             run_pg -U cloud_migrator -d nohut_cloud_plain < "$f"
           done
+          run_pg -U cloud_migrator -d nohut_cloud_plain < supabase/functions/qr-publisher/sql/receipt-storage.review.sql
+          run_pg -U cloud_migrator -d nohut_cloud_plain < supabase/functions/qr-publisher/sql/receipt-storage.review.test.sql
           echo 'PASS: private cloud functions as plain migration owner' >> "$GITHUB_STEP_SUMMARY"
