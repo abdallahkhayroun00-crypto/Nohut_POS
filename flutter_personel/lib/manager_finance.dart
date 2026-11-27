@@ -383,8 +383,11 @@ class _ManagerFinancePageState extends State<ManagerFinancePage> {
                   (p['market'] ?? '').toString() +
                   (p['recordType'] == 'quick' ? ' · Hızlı gider' : ' · Ürünlü kayıt')),
           ]),
-          _section('Haftalık Maaşlar · ' + _money(summary['payrollCents']), [
-            _add('Haftalık Maaş Ekle', 'payroll'),
+          // Legacy weekly rows only: new pay is recorded in Haftalık Maaş
+          // Ödemeleri (payment ledger). A new legacy row would block ledger
+          // payments for that week, so none can be added here.
+          if (_rows(data['weeklyPayroll']).isNotEmpty)
+          _section('Eski Haftalık Maaş Kayıtları · ' + _money(summary['payrollCents']), [
             for (final p in _rows(data['weeklyPayroll']))
               _line((p['employeeName'] ?? 'Personel').toString(), p['grossCents'],
                 onTap: busy || p['paid'] == true ? null : () => _edit('payroll', p),

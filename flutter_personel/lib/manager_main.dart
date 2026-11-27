@@ -9,6 +9,7 @@ import 'expense_drafts.dart';
 import 'home.dart';
 import 'manager_finance.dart';
 import 'owner_api.dart';
+import 'owner_payroll.dart';
 import 'pos_api.dart';
 import 'style.dart';
 
@@ -384,9 +385,13 @@ class _OwnerHomeState extends State<OwnerHome> {
         ...stats(),
       ];
       case 'finance':return [
-        FilledButton.icon(onPressed:()=>Navigator.of(context).push(MaterialPageRoute<void>(
+        FilledButton.icon(key:const ValueKey('owner-payroll'),onPressed:()=>Navigator.of(context).push(MaterialPageRoute<void>(
+          builder:(_)=>OwnerPayrollPage(request:api.request))),
+          icon:const Icon(Icons.payments_outlined),label:const Text('Haftalık Maaş Ödemeleri')),
+        const SizedBox(height:8),
+        OutlinedButton.icon(onPressed:()=>Navigator.of(context).push(MaterialPageRoute<void>(
           builder:(_)=>Scaffold(appBar:AppBar(title:const Text('Finans')),body:ManagerFinancePage(store:finance)))),
-          icon:const Icon(Icons.account_balance_wallet),label:const Text('Finans · Maaşlar · Giderler')),
+          icon:const Icon(Icons.account_balance_wallet),label:const Text('Finans · Giderler · Aylık Rapor')),
         OutlinedButton.icon(onPressed:()=>Navigator.of(context).push(MaterialPageRoute<void>(
           builder:(_)=>Scaffold(appBar:AppBar(title:const Text('Hızlı Günlük Gider')),body:ExpenseDraftPage(store:finance,ownerMode:true)))),
           icon:const Icon(Icons.add),label:const Text('Hızlı Günlük Gider')),

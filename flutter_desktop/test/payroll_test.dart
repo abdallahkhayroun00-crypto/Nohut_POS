@@ -153,6 +153,32 @@ void main() {
     expect(s['resolved'], false);
   });
 
+  test('native Yönetici payroll (ownerPayroll) shows the same rows and money as the LAN page', () {
+    mgr('own-rate-0001', 'payroll_rate', {'employeeId': ayse, 'payType': 'Saatlik', 'rateCents': 10000, 'effectiveFrom': '2026-11-01'});
+    mgr('own-rate-0002', 'payroll_rate', {'employeeId': ayse, 'payType': 'Saatlik', 'rateCents': 12000, 'effectiveFrom': '2026-11-18'});
+    work(ayse, 'own-w-001', '2026-11-17', '09:00', '17:00');
+    work(ayse, 'own-w-002', '2026-11-18', '09:00', '17:00');
+    mgr('own-pay-0001', 'payroll_payment', {'employeeId': ayse, 'weekStart': week, 'paidOn': '2026-11-23',
+      'method': 'Nakit', 'cashCents': 80000, 'expectedPaidCents': 0});
+    final now = DateTime.utc(2026, 11, 24, 9);
+    // Any day of the week selects its Monday; the owner is excluded by default.
+    final v = FinanceSyncServer.ownerPayroll(store, '2026-11-19', ownerIds: [mehmet], now: now);
+    expect(v['weekStart'], week);
+    final rows = (v['rows'] as List).cast<Map>();
+    expect(rows.map((r) => r['employeeId']), isNot(contains(mehmet)));
+    final a = rows.firstWhere((r) => r['employeeId'] == ayse);
+    expect(a, payrollWeek(store.read().data, week, today: '2026-11-24').firstWhere((r) => r['employeeId'] == ayse));
+    expect([a['earnedCents'], a['paidCents'], a['remainingCents'], a['financialStatus']],
+        [176000, 80000, 96000, 'Kısmen Ödendi']);
+    expect((v['payments'] as List).single['amountCents'], 80000);
+    // No week given: last week (the one being paid out).
+    expect(FinanceSyncServer.ownerPayroll(store, '', ownerIds: [mehmet], now: now)['weekStart'], week);
+    // A stale screen (it still thinks nothing was paid) cannot pay twice.
+    expect(() => mgr('own-pay-0002', 'payroll_payment', {'employeeId': ayse, 'weekStart': week,
+      'paidOn': '2026-11-24', 'method': 'Nakit', 'cashCents': 96000, 'expectedPaidCents': 0}),
+        throwsA(isA<FinanceVersionConflict>()));
+  });
+
   group('owner business rules (2026-11-27)', () {
     DateTime ist(String day, int h) => instantOf(day, '${h.toString().padLeft(2, '0')}:00');
 

@@ -9,10 +9,12 @@ import 'package:http/testing.dart';
 import 'package:nohut_personel/home.dart';
 import 'package:nohut_personel/manager_main.dart';
 import 'package:nohut_personel/owner_api.dart';
+import 'package:nohut_personel/owner_payroll.dart';
 import 'package:nohut_personel/pos_api.dart';
 import 'package:nohut_personel/style.dart';
 import 'package:nohut_personel/work_page.dart';
 
+import '../owner_payroll_test.dart' show payrollReply;
 import '../work_page_test.dart' show weekReply;
 import 'render_harness.dart';
 
@@ -103,6 +105,12 @@ void main() {
           brightness: mode);
       expect(t.takeException(), isNull);
       await t.pumpWidget(const SizedBox()); // stop the 30 s refresh timer
+    });
+    testWidgets('owner payroll $m', (t) async {
+      await renderScreen(t, 'owner-payroll-$m', MaterialApp(debugShowCheckedModeBanner: false,
+          theme: NohutStyle.theme, darkTheme: NohutStyle.darkTheme,
+          home: OwnerPayrollPage(request: (_) async => payrollReply(paid: 80000))), brightness: mode);
+      expect(t.takeException(), isNull);
     });
   }
 }

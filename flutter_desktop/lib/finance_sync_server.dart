@@ -5,6 +5,7 @@ import 'package:nohut_core/finance_wire.dart';
 import 'package:nohut_core/report_period.dart';
 
 import 'payroll.dart';
+import 'workforce.dart' as wf show addDays, isCalendarDay, istanbulDayOfInstant, weekStartOf;
 import 'finance_logic.dart';
 import 'google_business.dart';
 import 'staff_commands.dart';
@@ -440,6 +441,19 @@ class FinanceSyncServer {
     };
   }
 
+  /// §24.6 Haftalık Maaş Ödemeleri for the native Yönetici app: the same
+  /// rows, statuses and money as `/api/yonetici/payroll` (one calculation in
+  /// lib/payroll.dart). Payments go through `managerWrite` `payroll_payment`.
+  static Json ownerPayroll(PosStore store, String weekStart, {required List<int> ownerIds, DateTime? now}) {
+    ensureOwnerPayrollDefault(store, ownerIds);
+    final state = store.read().data;
+    final today = wf.istanbulDayOfInstant(now ?? DateTime.now());
+    final week = wf.isCalendarDay(weekStart) ? wf.weekStartOf(weekStart) : wf.addDays(wf.weekStartOf(today), -7);
+    return {'ok': true, 'weekStart': week, 'today': today,
+      'rows': payrollWeek(state, week, today: today),
+      'payments': [for (final p in financeRows(state, 'payrollPayments')) if (p['weekStart'] == week) p]};
+  }
+
   static Future<Json> report(Json state, Json payload) async {
     if (payload['from'] is! String || payload['to'] is! String) {
       throw const FormatException('Rapor tarih aralığı gerekli. Uygulamayı güncelleyin.');
@@ -473,6 +487,9 @@ class FinanceSyncServer {
           result = {'ok':true,'ownerId':employee['id'],'ownerName':employee['name']};
         } else if (op == 'ownerOverview') {
           result = {'ok':true,'view':ownerOverview(store.read().data, (payload['day'] ?? '').toString())};
+        } else if (op == 'ownerPayroll') {
+          result = ownerPayroll(store, '${payload['weekStart'] ?? ''}',
+              ownerIds: ownerEmployeeIds?.call() ?? [employee['id'] as int]);
         } else if (op == 'ownerGoogle') {
           final google = googleProvider?.call();
           if (google == null || !google.connected) {
