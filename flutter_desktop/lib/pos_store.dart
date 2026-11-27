@@ -505,7 +505,12 @@ class PosStore extends ChangeNotifier {
       final state = snap.data, order = mutableOrder(state, orderId);
       if (order == null) throw const FormatException('Sipariş yok');
       requireLocal(order);
+      // An in-flight or unknown card-terminal outcome must keep its order as
+      // the reconciliation target, even if `terminalPending` was lost.
       if (order['terminalPending'] != null ||
+          asMaps(state['terminalAttempts']).any((a) =>
+              a['orderId'] == orderId &&
+              const {'waiting', 'unknown', 'unavailable'}.contains(a['status'])) ||
           asMaps(
             state['printJobs'],
           ).any((j) => j['orderId'] == orderId && j['state'] == 'Gönderiliyor'))
