@@ -31,6 +31,7 @@ class SimpleSettings extends StatefulWidget {
     this.wifiPanel,
     this.backupPanel,
     this.accountsPanel,
+    this.notificationHistory,
   });
   final Json state;
   final EditState edit;
@@ -39,7 +40,7 @@ class SimpleSettings extends StatefulWidget {
   final TrendyolGoReadonly tgoIntegration;
   final VoidCallback onOpenGoogle;
   final ValueChanged<String>? onTestOnlineSound;
-  final Widget? staffPanel, wifiPanel, backupPanel, accountsPanel;
+  final Widget? staffPanel, wifiPanel, backupPanel, accountsPanel, notificationHistory;
   @override
   State<SimpleSettings> createState() => _SimpleSettingsState();
 }
@@ -284,6 +285,10 @@ class _SimpleSettingsState extends State<SimpleSettings> {
             ),
           ]),
         ],
+        if (tab == 'Bildirimler' && widget.notificationHistory != null)
+          section('Bildirim geçmişi',
+              'Yeni siparişler, yazdırma ve ödeme uyarıları, yorumlar. Bildirimler sipariş veya ödeme onayı değildir.',
+              [widget.notificationHistory!]),
         if (tab == 'Bildirimler') ...[
           section('Masa / Gel-Al Sesleri',
             'Personel siparişleri online platformlardan bağımsızdır.', [

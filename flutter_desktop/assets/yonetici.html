@@ -30,6 +30,11 @@ nav button{flex:1;border:0;border-radius:0;background:transparent;font-size:13px
 .error{color:#9b2c22;min-height:1.2em;margin:0;font-size:14px}
 .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 [hidden]{display:none!important}
+
+#notify-btn{position:relative}#notify-btn[hidden]{display:none}#notify-count{position:absolute;top:-4px;right:-4px;min-width:20px;height:20px;border-radius:10px;background:#b3261e;color:#fff;font-size:12px;line-height:20px;text-align:center;padding:0 5px}#notify-count[hidden]{display:none}
+#notify-panel{position:fixed;inset:0;z-index:40;background:rgba(18,62,48,.35);display:flex;justify-content:flex-end}#notify-panel[hidden]{display:none}
+#notify-panel .sheet{width:min(420px,100%);height:100%;overflow:auto;background:#fbf9f3;color:#123e30;padding:calc(12px + env(safe-area-inset-top)) 16px 16px;box-shadow:-4px 0 18px #0002}
+#notify-list{list-style:none;margin:0;padding:0}#notify-list li{padding:10px 0;border-bottom:1px solid #d9ddcc}#notify-list li.unread strong{color:#123e30}#notify-list li:not(.unread){opacity:.65}#notify-list small{display:block;color:#60705f;font-size:13px}
 </style></head><body>
 <div id="auth-gate"><form id="auth-form" autocomplete="on"><img src="/assets/nohut-logo.webp" width="44" height="44" alt=""><h2 id="auth-title">Yönetici girişi</h2><p id="auth-hint" class="muted"></p>
 <label id="auth-user-row">Kullanıcı adı<input id="auth-username" autocomplete="username" autocapitalize="none" maxlength="32"></label>
@@ -37,7 +42,7 @@ nav button{flex:1;border:0;border-radius:0;background:transparent;font-size:13px
 <label id="auth-pin-row" hidden>PIN<input id="auth-pin" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code"></label>
 <p id="auth-error" class="error" role="alert"></p>
 <button type="submit" class="primary" id="auth-submit">Giriş yap</button><button type="button" id="auth-alt" class="ghost" hidden>Şifre ile aç</button><button type="button" id="auth-skip" class="ghost" hidden>Şimdilik geç</button></form></div>
-<header><img src="/assets/nohut-logo.webp" width="38" height="38" alt="Nohut Falafel"><div class="grow"><h1>Yönetici</h1><small id="who" role="status">Bağlanılıyor…</small></div><button id="logout">Çıkış</button></header>
+<header><img src="/assets/nohut-logo.webp" width="38" height="38" alt="Nohut Falafel"><div class="grow"><h1>Yönetici</h1><small id="who" role="status">Bağlanılıyor…</small></div><button id="notify-btn" type="button" aria-label="Bildirimler" hidden>🔔<span id="notify-count" hidden>0</span></button><button id="logout">Çıkış</button></header>
 <main>
 <section data-screen="ozet"><div class="row spread wrap"><h2>Günün özeti</h2><label class="row"><span class="sr-only">Gün</span><input type="date" id="day" style="width:auto"></label></div>
 <div id="money-note" class="notice" hidden></div><div class="grid" id="stats"></div>
@@ -59,6 +64,7 @@ nav button{flex:1;border:0;border-radius:0;background:transparent;font-size:13px
 </main>
 <nav aria-label="Yönetici bölümleri"><button data-view="ozet" aria-selected="true">Özet</button><button data-view="siparis" aria-selected="false">Siparişler</button><button data-view="personel" aria-selected="false" id="nav-personel">Personel</button><button data-view="finans" aria-selected="false" id="nav-finans">Finans</button><button data-view="menu" aria-selected="false">Menü</button></nav>
 <div id="toast" role="status" hidden></div>
+<div id="notify-panel" hidden><div class="sheet" role="dialog" aria-labelledby="notify-title"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h2 id="notify-title" style="margin:0">Bildirimler</h2><button type="button" id="notify-close">Kapat</button></div><p style="font-size:13px;color:#60705f">Bildirim onay değildir; güncel durum için ekranı yenileyin.</p><button type="button" id="notify-all">Tümünü okundu say</button><ul id="notify-list"></ul></div></div>
 <script>
 'use strict';
 const $=id=>document.getElementById(id);
@@ -116,4 +122,16 @@ $('expense-form').onsubmit=async e=>{e.preventDefault();const cents=Math.round(N
 $('report').onclick=async()=>{const m=$('month').value;const[y,mo]=m.split('-').map(Number);const last=new Date(y,mo,0).getDate();$('report').disabled=true;try{const[st,b]=await call('POST','/api/yonetici/report',{from:m+'-01',to:m+'-'+String(last).padStart(2,'0')},60000);if(st!==200||!b.pdf){toast(b.message||MESSAGES[b.error]||'Rapor alınamadı.');return}const bin=atob(b.pdf),bytes=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);const url=URL.createObjectURL(new Blob([bytes],{type:'application/pdf'})),a=document.createElement('a');a.href=url;a.download=b.name||'rapor.pdf';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),10000)}finally{$('report').disabled=false}};
 $('day').value=localDay();$('month').value=localDay().slice(0,7);$('day').onchange=()=>load();$('month').onchange=loadMonth;
 $('auth-gate').hidden=true;load();setInterval(()=>{if($('auth-gate').hidden&&!document.hidden)load(true)},15000);
+
+// ---- Bildirimler (spec §23.5): foreground LAN feed; never a confirmation.
+let notifyItems=[];
+const nEsc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+async function loadNotifications(){if(!(session)){document.getElementById('notify-btn').hidden=true;return}try{const r=await fetch('/api/notifications?client=yonetici',{cache:'no-store'});if(!r.ok){document.getElementById('notify-btn').hidden=true;return}const b=await r.json();notifyItems=b.notifications||[];document.getElementById('notify-btn').hidden=false;const c=document.getElementById('notify-count');c.hidden=!b.unread;c.textContent=b.unread>99?'99+':String(b.unread);if(!document.getElementById('notify-panel').hidden)renderNotifications()}catch{}}
+function renderNotifications(){const t=s=>{const d=new Date(s);return isNaN(d)?'':d.toLocaleString('tr-TR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})};document.getElementById('notify-list').innerHTML=notifyItems.length?notifyItems.map(n=>`<li class="${n.read?'':'unread'}"><strong>${n.severity==='high'?'⚠️ ':''}${nEsc(n.title)}</strong><small>${nEsc(t(n.createdAt))}${n.body?' · '+nEsc(n.body):''}</small></li>`).join(''):'<li>Bildirim yok.</li>'}
+async function markNotifications(body){try{await fetch('/api/notifications/read',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({client:'yonetici',...body})})}catch{}loadNotifications()}
+document.getElementById('notify-btn').onclick=()=>{document.getElementById('notify-panel').hidden=false;renderNotifications();const ids=notifyItems.filter(n=>!n.read).map(n=>n.eventId);if(ids.length)markNotifications({eventIds:ids})};
+document.getElementById('notify-close').onclick=()=>document.getElementById('notify-panel').hidden=true;
+document.getElementById('notify-panel').onclick=e=>{if(e.target.id==='notify-panel')e.target.hidden=true};
+document.getElementById('notify-all').onclick=()=>markNotifications({all:true});
+setInterval(()=>{if(!document.hidden)loadNotifications()},15000);setTimeout(loadNotifications,1500);
 </script></body></html>
