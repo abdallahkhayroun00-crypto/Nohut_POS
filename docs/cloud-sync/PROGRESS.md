@@ -37,7 +37,8 @@ Repository: `abdallahkhayroun00-crypto/Nohut_POS` (renamed from `brand-managemen
 | 4 Android Personel/Yönetici on cloud transport | ⏳ needs Phase 3 auth | — |
 | 5A Windows command worker (envelope checks, Windows-only refusal, grants, hash, expiry, idempotent receipts) | 🔄 PR open (Claude) | `flutter_desktop/lib/remote_commands.dart`, `test/remote_commands_test.dart` (18), `lib/permission_catalogue.g.dart` (+ drift test) |
 | 5B Cloud command queue RPCs (`claim`/`complete`, lease, server envelope with actor + grants) | ⏳ needs PR-05B + Phase 3 | — |
-| 5C Remaining handlers: shifts (clock in/out), reprint, menu/stock, platform actions | ⏳ | — |
+| 5C Shifts on Windows (entity, Mesai Başlat/Bitir, audited correction, remote `clock_in_out`/`correct_shift`) | 🔄 PR #38 (Claude) | `lib/shifts.dart`, `test/shifts_test.dart` |
+| 5C Remaining handlers: reprint, menu/stock, platform actions | ⏳ | — |
 | 6 Dashboards and parity | ⏳ | — |
 | 7 QA, security, packaging, release | ⏳ | `release.yml` ready; needs signed full build |
 
@@ -55,7 +56,7 @@ Repository: `abdallahkhayroun00-crypto/Nohut_POS` (renamed from `brand-managemen
 | `owner_overview(day)` | `finance_sync_server.dart::ownerOverview` | exists on LAN; cloud projection = PR-05B |
 | `month_view(month)` | `finance_sync_server.dart::monthView` | exists on LAN; cloud projection = PR-05B |
 | `sales_daily` + `top_products` + `heatmap` + `platform_sales` (`SalesView` in `pwa/src/shared/model.ts`) | **new — Windows must compute** from orders/payments | ⏳ Phase 6 |
-| `shifts` (Mesai Başlat/Bitir, corrections) | **no Windows shift model exists yet** — payroll stores weekly minutes only | ⏳ Phase 5/6: Windows shift entity + `clockIn`/`clockOut` commands |
+| `shifts` (Mesai Başlat/Bitir, corrections) | `flutter_desktop/lib/shifts.dart` (state key `shifts`, registered + cloud-allowlisted) | ✅ Windows model + commands (PR #38); cloud projection = PR-05B |
 | `menu_status` (QR version, publish state), `integrations` status | Windows QR publisher / integration settings | ⏳ Phase 5 |
 | `users`, grants, devices, `audit` | Phase 3 auth | ⏳ Phase 3 |
 
@@ -74,7 +75,7 @@ New handlers needed on Windows (Phase 5): `print.reprint`, `platform.accept/read
 | Phase 5A: Windows remote command worker | Claude Code | 2026-11-27 | this PR |
 | Phase 5B: cloud command-queue RPCs (`nohut_private.commands`, claim with lease, complete) | **open — suggested: ChatGPT** (continues PR-05B) | — | — |
 | Phase 6 prerequisite: Windows `sales_daily`/`top_products`/`heatmap` projection functions (pure Dart, tested against `order_reporting.dart`) | **open** | — | — |
-| Phase 5 prerequisite: Windows shift entity + clock-in/out commands | **open** | — | — |
+| Phase 5 prerequisite: Windows shift entity + clock-in/out commands | Claude Code | done | #38 |
 | PR-05B: server RPCs (ingest transaction, reconcile, checkpoint), typed serializers, minimal grants | **open — suggested: ChatGPT** (continues #35) | — | — |
 
 ## Owner-configured services (2026-11-27, per owner)

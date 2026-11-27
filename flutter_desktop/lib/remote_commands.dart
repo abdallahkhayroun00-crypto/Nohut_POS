@@ -31,6 +31,7 @@ import 'package:crypto/crypto.dart' as hash;
 import 'permission_catalogue.g.dart';
 import 'pos_logic.dart';
 import 'pos_store.dart';
+import 'shifts.dart';
 import 'staff_commands.dart';
 
 /// Terminal states of the §11.2 state machine as decided on Windows.
@@ -52,7 +53,8 @@ class _Route {
   const _Route(this.operation, this.kind, {this.actions, this.ttl = const Duration(minutes: 15)});
   final String operation;
 
-  /// `order` → submitStaffOrder, `action` → submitStaffAction.
+  /// `order` → submitStaffOrder, `action` → submitStaffAction,
+  /// `shift` → submitShiftAction, `shiftCorrect` → correctShift.
   final String kind;
 
   /// Allowed `payload.action` values for `kind == 'action'`.
@@ -70,6 +72,8 @@ const _routes = <String, _Route>{
   'mark_delivered': _Route('orders.release', 'action', actions: {'status'}),
   'edit_order_line': _Route('orders.edit', 'action', actions: {'editLine'}),
   'delete_order': _Route('orders.edit', 'action', actions: {'delete'}),
+  'clock_in_out': _Route('shifts.self', 'shift', actions: {'clockIn', 'clockOut'}, ttl: Duration(minutes: 5)),
+  'correct_shift': _Route('shifts.manage', 'shiftCorrect'),
   'print_payment_receipt': _Route('receipts.print', 'action', actions: {'printProductPayment'}, ttl: Duration(minutes: 5)),
 };
 
@@ -152,11 +156,11 @@ RemoteCommandResult executeRemoteCommand(PosStore store, Map<String, dynamic> en
   final body = Map<String, dynamic>.from(payload)
     ..['requestId'] = requestId
     ..['staffId'] = employeeId;
-  if (route.kind == 'action') {
-    if (!(route.actions?.contains(body['action']) ?? false)) {
+  if (route.actions != null) {
+    if (!route.actions!.contains(body['action'])) {
       return reject('action_mismatch', 'İşlem türü ile içerik uyuşmuyor');
     }
-  } else {
+  } else if (route.kind == 'order') {
     final hasOrder = body['orderId'] != null;
     if ((type == 'add_order_items') != hasOrder) {
       return reject('action_mismatch', 'İşlem türü ile içerik uyuşmuyor');
@@ -164,7 +168,12 @@ RemoteCommandResult executeRemoteCommand(PosStore store, Map<String, dynamic> en
   }
 
   try {
-    final result = route.kind == 'order' ? submitStaffOrder(store, body) : submitStaffAction(store, body);
+    final result = switch (route.kind) {
+      'order' => submitStaffOrder(store, body),
+      'shift' => submitShiftAction(store, body..['source'] = 'remote', now: now),
+      'shiftCorrect' => correctShift(store, body),
+      _ => submitStaffAction(store, body),
+    };
     return RemoteCommandResult(CommandOutcome.confirmed, 'ok', Map<String, dynamic>.from(result));
   } on StaffConflict {
     return RemoteCommandResult(CommandOutcome.conflict, 'conflict', {'message': 'Veriler değişti; yenileyip tekrar deneyin', 'revision': store.read().revision});

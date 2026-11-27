@@ -76,6 +76,12 @@ const syncEntityRegistry = <String, SyncEntity>{
     cloudTarget: 'restaurant_settings',
     policy: 'Business settings sync; printer/paper/device keys stay local',
   ),
+  'shifts': SyncEntity(
+    classes: {DataClass.personalPii, DataClass.internal},
+    cloudTarget: 'shifts',
+    policy: 'Phase 5C: employee shifts; never deleted, corrections audited',
+    status: InventoryStatus.verifiedExisting,
+  ),
   'staffNotices': SyncEntity(
     classes: {DataClass.internal},
     cloudTarget: 'audit_logs',
