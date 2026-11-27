@@ -30,9 +30,11 @@ Repository: `abdallahkhayroun00-crypto/Nohut_POS` (renamed from `brand-managemen
 | 2 PR-04 Transactional outbox | ✅ merged (#34, ChatGPT) | `test/sync_outbox_transaction_test.dart` |
 | 2 PR-05A PostgreSQL foundation (private schema, deny-all RLS) | ✅ merged (#35, ChatGPT) | `supabase/tests/*`, `nohut-postgres-foundation.yml` |
 | 2 PR-05B Ingest/reconcile RPCs, typed serializers, client grants | ⏳ | — |
-| 2 PR-06 SyncWorker, first-sync wizard, Bulut & Senkronizasyon UI | ⏳ | — |
+| 2 PR-06 SyncWorker (client) | 🔄 PR open (Claude) | `lib/sync_worker.dart`, `test/sync_worker_test.dart` (fake server with #35 rules) |
+| 2 PR-06 first-sync wizard + Bulut & Senkronizasyon UI + Supabase transport | ⏳ needs PR-05B RPCs | — |
 | 3 Accounts, PIN, MFA, permissions, devices | ⏳ | spec §9, §20.3, `contracts/v1/permissions.json` |
-| 4 Android Personel/Yönetici + 2 PWAs (Cloudflare Pages) | ⏳ | — |
+| 4 PWA shell (2 apps, 3 shared sections, gated state) + Cloudflare Pages deploy | 🔄 PR open (Claude) | `pwa/`, `.github/workflows/pwa.yml`; browser-tested at iPhone 13 size |
+| 4 Android Personel/Yönetici on cloud transport | ⏳ needs Phase 3 auth | — |
 | 5 Remote commands, LAN fallback, recovery | ⏳ | — |
 | 6 Dashboards and parity | ⏳ | — |
 | 7 QA, security, packaging, release | ⏳ | `release.yml` ready; needs signed full build |
@@ -41,9 +43,9 @@ Repository: `abdallahkhayroun00-crypto/Nohut_POS` (renamed from `brand-managemen
 
 | Item | Agent | Since | PR |
 |---|---|---|---|
-| PR-04 hardening: extra outbox tests (phone path, failed command, soft delete, device settings, ACK watermark); refuse enabling the outbox on a legacy (non-normalized) database | Claude Code | 2026-11-27 | — |
-| PR-06 client side: `SyncTransport` interface + `SyncWorker` (single worker, batching, contiguous ACK, backoff) tested against an in-memory fake server | Claude Code | 2026-11-27 | — |
-| Phase 4: PWA shell (TS + Vite, two entries Personel/Yönetici) + Cloudflare Pages deploy workflow | Claude Code | 2026-11-27 | — |
+| PR-04 hardening: extra outbox tests; refuse enabling the outbox on a legacy database | Claude Code | 2026-11-27 | this PR |
+| PR-06 client side: `SyncTransport` + `SyncWorker` | Claude Code | 2026-11-27 | this PR |
+| Phase 4: PWA shell + Cloudflare Pages deploy workflow | Claude Code | 2026-11-27 | this PR |
 | PR-05B: server RPCs (ingest transaction, reconcile, checkpoint), typed serializers, minimal grants | **open — suggested: ChatGPT** (continues #35) | — | — |
 
 ## Owner-configured services (2026-11-27, per owner)
