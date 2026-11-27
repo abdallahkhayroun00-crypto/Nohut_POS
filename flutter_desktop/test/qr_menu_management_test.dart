@@ -219,7 +219,7 @@ void main() {
     await t.pumpAndSettle();
     expect(host.currentState!.data['settings']['qrAutoSync'],false);
     expect(find.text('Yalnızca POS · Yerel fiyatlar'),findsOneWidget);
-    expect(t.widget<OutlinedButton>(find.widgetWithText(OutlinedButton,'Şimdi Eşitle')).onPressed,isNull);
+    expect(t.widget<OutlinedButton>(find.ancestor(of:find.text('Şimdi Eşitle'),matching:find.byWidgetPredicate((w)=>w is OutlinedButton))).onPressed,isNull);
     await t.tap(find.text('Kapat'));
     await t.pumpAndSettle();
     expect(text(t,'qr-fact-sync'),'Kapalı');
