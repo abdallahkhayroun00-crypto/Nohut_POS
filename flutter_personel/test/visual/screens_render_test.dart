@@ -147,6 +147,22 @@ void main() {
       expect(t.takeException(), isNull);
       await t.pumpWidget(const SizedBox());
     });
+    testWidgets('owner Ayarlar $m', (t) async {
+      final api = FakeOwnerApi();
+      await renderScreen(t, 'owner-settings-$m', MaterialApp(debugShowCheckedModeBanner: false,
+          theme: NohutStyle.theme, darkTheme: NohutStyle.darkTheme,
+          home: OwnerHome(controller: PersonelController(api, StaffNotifications()), api: api, onUnpair: () {})),
+          brightness: mode, before: (t) async {
+            await t.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Daha Fazla')));
+            await t.pumpAndSettle();
+            await t.tap(find.byKey(const ValueKey('owner-nav-settings')));
+            await t.pumpAndSettle();
+          });
+      expect(find.text('Windows’ta yönetilenler'), findsOneWidget);
+      await t.scrollUntilVisible(find.byKey(const ValueKey('settings-forget')), 200, scrollable: find.byType(Scrollable).first);
+      expect(t.takeException(), isNull);
+      await t.pumpWidget(const SizedBox());
+    });
     testWidgets('owner dashboard $m', (t) async {
       final api = FakeOwnerApi();
       await renderScreen(t, 'owner-dashboard-$m', MaterialApp(debugShowCheckedModeBanner: false,

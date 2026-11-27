@@ -45,6 +45,7 @@ There is no Bulut & Senkronizasyon page yet. It will be added when Codex's sync 
 | Place | Setting | Scope | Storage | Sync | Audit |
 |---|---|---|---|---|---|
 | Hesabım | Pairing (server id, host, session) | Device | Secure storage | Never | Covered by `session_login_test` |
+| Daha Fazla › Çalışmam | Mesailerim, Vardiyalarım, Maaş & Avans, Giderler (when drafts exist) | Account | Server session | — | Links only; covered by `personel_test` |
 | Hesabım | Theme | Device | Follows the system light or dark setting | — | Rendered in both modes |
 | Hesabım | Sign out / forget pairing | Device | Secure storage | — | Not yet audited |
 
@@ -52,8 +53,11 @@ There is no Bulut & Senkronizasyon page yet. It will be added when Codex's sync 
 
 | Place | Setting | Scope | Storage | Sync | Audit |
 |---|---|---|---|---|---|
-| Ayarlar | Owner pairing key (`owner_pairing_v1`), cached overviews | Device | Secure storage | Never | Not yet audited |
-| Ayarlar | "Yönetim Bağlantısını Unut" | Device | Clears secure storage and keeps pending finance writes | — | Not yet audited |
+| Ayarlar › Hesap | Owner name and role (from the Windows pairing) | Account | Secure storage | Never | Read-only; rendered in light and dark |
+| Ayarlar › Bağlantı | Windows host and status, "Finansı Yenile" with last sync time | Device | Secure storage / memory | Never | Rendered; the sync button calls the real finance sync |
+| Ayarlar › Görünüm | Theme | Device | Follows the system light or dark setting | — | Rendered in both modes |
+| Ayarlar › Windows’ta yönetilenler | Printer, integrations and API keys, users/grants/devices, backup and cloud sync | — | Windows only | — | Listed as information only, with no control (no dead switch) |
+| Ayarlar › Bu cihaz | Owner pairing key (`owner_pairing_v1`), cached overviews, "Yönetim Bağlantısını Unut" | Device | Clears secure storage and keeps pending finance writes | Never | Confirm dialog; not yet tested on a device |
 
 ## Browser apps and PWAs
 

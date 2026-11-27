@@ -509,21 +509,52 @@ class _OwnerHomeState extends State<OwnerHome> {
           (p['market']??'').toString()+' · '+(p['lastCheckedAt']??'').toString(),amount(p['priceCents'])),
         notice('Takip edilen fiyatlar Windows kaydından gelir. Yeni takip ve canlı market araması henüz Windows üzerinden yapılır.'),
       ];
-      case 'settings':return [
-        line(api.ownerName??'İşletme sahibi','Yetkili yönetici · Personel seçimi yok'),
-        line('Windows bağlantısı',api.host??'—'),
-        OutlinedButton.icon(onPressed:()=>finance.sync(force:true),icon:const Icon(Icons.sync),label:const Text('Finansı Yenile')),
+      case 'settings':
+        final nc=context.nohut;
+        Widget tile(IconData icon,String title,String subtitle,{Widget? trailing})=>ListTile(
+          leading:Icon(icon,color:nc.muted),title:Text(title,style:const TextStyle(fontWeight:FontWeight.w600)),
+          subtitle:Text(subtitle),trailing:trailing);
+        return [
+        // Q2 Ayarlar: only settings that really live on this phone, grouped;
+        // what Windows owns is listed as such, never as a dead switch.
+        title('Hesap'),
+        Card(child:Column(children:[
+          tile(Icons.verified_user_outlined,api.ownerName??'İşletme sahibi','Yetkili yönetici · kimlik Windows eşleştirmesinden gelir'),
+        ])),
+        title('Bağlantı'),
+        Card(child:Column(children:[
+          tile(offline?Icons.cloud_off_outlined:Icons.lan_outlined,offline?'Çevrimdışı kopya':'Windows bağlı',api.host??'—',
+            trailing:NohutPill(offline?'Bağlantı yok':'Bağlı',tone:offline?NohutTone.warning:NohutTone.success)),
+          const Divider(height:1),
+          ListTile(key:const ValueKey('settings-finance-sync'),leading:Icon(Icons.sync,color:nc.muted),
+            title:const Text('Finansı Yenile'),
+            subtitle:Text(finance.lastSync==null?'Henüz eşitlenmedi':'Son eşitleme ${TimeOfDay.fromDateTime(finance.lastSync!).format(context)}'),
+            onTap:()async{await finance.sync(force:true);if(mounted)setState((){});}),
+        ])),
+        title('Görünüm'),
+        Card(child:tile(Icons.brightness_6_outlined,'Tema','Telefonun açık veya koyu ayarını izler')),
+        title('Windows’ta yönetilenler'),
+        Card(child:Column(children:[
+          tile(Icons.print_outlined,'Yazıcı & Fiş','Her bilgisayarın kendi ayarı'),
+          tile(Icons.key_outlined,'Entegrasyonlar ve API anahtarları','Maskeli, hiçbir zaman telefona gönderilmez'),
+          tile(Icons.manage_accounts_outlined,'Kullanıcılar, yetkiler ve cihazlar','Kullanıcılar & Güvenlik'),
+          tile(Icons.backup_outlined,'Yedekleme ve Bulut & Senkronizasyon','Yalnızca Windows POS'),
+        ])),
         title('Personel kayıtları · Windows'),
         for(final p in entries('employees'))line((p['name']??'').toString(),(p['role']??'').toString()),
-        notice('Yazıcı, terminal, API anahtarları ve personel ayarları Windows üzerinde kalır.'),
-        TextButton(onPressed:()async{
+        title('Bu cihaz'),
+        Card(child:ListTile(key:const ValueKey('settings-forget'),
+          leading:Icon(Icons.phonelink_erase_outlined,color:nc.danger),
+          title:Text('Yönetim Bağlantısını Unut',style:TextStyle(color:nc.danger,fontWeight:FontWeight.w600)),
+          subtitle:const Text('Yerel onaylı kopyalar silinir. Bekleyen finans işlemleri korunur.'),
+          onTap:()async{
           final yes=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(
             title:const Text('Yönetim bağlantısı kaldırılsın mı?'),
             content:const Text('Yerel onaylı kopyalar silinir. Bekleyen finans işlemleri korunur.'),
             actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('Vazgeç')),
               FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('Bağlantıyı kaldır'))]));
           if(yes==true&&mounted){await api.forget();widget.onUnpair();}
-        },child:const Text('Yönetim Bağlantısını Unut')),
+        })),
       ];
       default:return [];
     }
@@ -544,7 +575,7 @@ class _OwnerHomeState extends State<OwnerHome> {
         if(wide)SizedBox(width:244,child:menu(false)),
         Expanded(child:Center(child:ConstrainedBox(constraints:const BoxConstraints(maxWidth:1100),
           child:ListView(padding:const EdgeInsets.fromLTRB(16,8,16,24),children:[
-            Wrap(spacing:8,runSpacing:8,crossAxisAlignment:WrapCrossAlignment.center,children:[
+            if(section!='settings')Wrap(spacing:8,runSpacing:8,crossAxisAlignment:WrapCrossAlignment.center,children:[
               ActionChip(avatar:const Icon(Icons.calendar_today,size:17),onPressed:loading?null:pickDay,
                 label:Text(day==ReportPeriod.day(ReportPeriod.today())?'Bugün':dayLabel(day))),
               NohutPill(offline?'Çevrimdışı kopya':'Windows bağlı',
