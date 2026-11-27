@@ -1,0 +1,66 @@
+name: Test Nohut auth control plane
+# Phase 3A (Claude). Separate from nohut-postgres-foundation.yml (ChatGPT):
+# applies ALL migrations in order and runs every SQL test, so the auth
+# migration is proven compatible with the PR-05A foundation.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'supabase/**'
+      - 'docs/contracts/**'
+      - 'tools/permission_catalogue_sql.py'
+      - '.github/workflows/nohut-auth-control-plane.yml'
+permissions:
+  contents: read
+jobs:
+  synthetic-postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: disposable-ci-only
+          POSTGRES_DB: nohut_synthetic
+        options: >-
+          --health-cmd "pg_isready -U postgres -d nohut_synthetic"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply all migrations, run all SQL tests
+        env:
+          PG_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          set -euo pipefail
+          psql_ci() { docker exec -i "$PG_CONTAINER" psql -X -v ON_ERROR_STOP=1 -U postgres "$@"; }
+          psql_ci -d nohut_synthetic -c 'create role anon nologin; create role authenticated nologin; create role service_role nologin bypassrls;'
+          for f in supabase/migrations/*.sql; do echo "apply $f"; psql_ci -d nohut_synthetic < "$f"; done
+          for t in supabase/tests/*.sql; do echo "test $t"; psql_ci -d nohut_synthetic < "$t"; done
+      - name: Catalogue in the database equals docs/contracts/v1/permissions.json
+        env:
+          PG_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          set -euo pipefail
+          docker exec -i "$PG_CONTAINER" psql -X -A -t -U postgres -d nohut_synthetic -c \
+            "select json_agg(json_build_object('operation_id',operation_id,'section',section,'sensitivity',sensitivity,'clients',clients,'default_roles',default_roles)) from nohut_private.operation_catalogue" > catalogue.json
+          python3 tools/permission_catalogue_sql.py --check catalogue.json
+      - name: Auth functions work for an owner WITHOUT superuser or BYPASSRLS
+        env:
+          PG_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          set -euo pipefail
+          psql_ci() { docker exec -i "$PG_CONTAINER" psql -X -v ON_ERROR_STOP=1 "$@"; }
+          psql_ci -U postgres -d nohut_synthetic -c "create role migrator login nosuperuser nobypassrls password 'ci'"
+          psql_ci -U postgres -d nohut_synthetic -c "create database nohut_plain owner migrator"
+          psql_ci -U postgres -d nohut_plain -c 'grant authenticated to migrator'
+          for f in supabase/migrations/*.sql; do psql_ci -U migrator -d nohut_plain < "$f"; done
+          psql_ci -U postgres -d nohut_plain -c "insert into nohut_private.restaurants(restaurant_id) values ('a0000000-0000-0000-0000-000000000001'),('a0000000-0000-0000-0000-000000000002')"
+          python3 - <<'PY'
+          s = open('supabase/tests/auth_control_plane_test.sql').read()
+          a = s.index('insert into nohut_private.restaurants'); b = s.index(';', a) + 1
+          open('auth_plain.sql', 'w').write(s[:a] + s[b:])
+          PY
+          psql_ci -U migrator -d nohut_plain < auth_plain.sql
+          echo 'PASS: auth control plane (superuser and plain owner), catalogue matches contract' >> "$GITHUB_STEP_SUMMARY"
