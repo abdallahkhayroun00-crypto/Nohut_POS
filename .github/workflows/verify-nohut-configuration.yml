@@ -1,0 +1,142 @@
+name: Verify Nohut Configuration
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [chatgpt/verify-nohut-configuration]
+    paths: ['.github/workflows/verify-nohut-configuration.yml']
+
+permissions: {}
+
+jobs:
+  android:
+    name: Android signing verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify keystore and sign a disposable JAR
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          umask 077
+          dir="$(mktemp -d)"
+          trap 'rm -rf "$dir"' EXIT
+          fail() { printf 'FAIL: %s\n' "$1" | tee -a "$GITHUB_STEP_SUMMARY"; exit 1; }
+          pass() { printf 'PASS: %s\n' "$1" | tee -a "$GITHUB_STEP_SUMMARY"; }
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            [[ -n "${!name}" ]] || fail "$name is missing"
+          done
+          pass "All four Android secrets present"
+          if ! printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$dir/signing.jks" 2>/dev/null; then
+            fail "Keystore Base64 decoding"
+          fi
+          pass "Keystore Base64 decoding"
+          if ! keytool -list -keystore "$dir/signing.jks" -storepass:env ANDROID_KEYSTORE_PASSWORD -alias "$ANDROID_KEY_ALIAS" > "$dir/keytool.log" 2>&1; then
+            fail "Keystore password or alias invalid"
+          fi
+          pass "Keystore password and alias"
+          printf 'Disposable Nohut signing test\n' > "$dir/probe.txt"
+          jar --create --file "$dir/probe.jar" -C "$dir" probe.txt > /dev/null 2>&1 || fail "Create test JAR"
+          jarsigner -keystore "$dir/signing.jks" -storepass:env ANDROID_KEYSTORE_PASSWORD -keypass:env ANDROID_KEY_PASSWORD "$dir/probe.jar" "$ANDROID_KEY_ALIAS" > "$dir/sign.log" 2>&1 || fail "Private key password or signing failed"
+          pass "Private key access and signing"
+          LC_ALL=C jarsigner -verify "$dir/probe.jar" > "$dir/verify.log" 2>&1 || fail "Signature verification"
+          grep -q '^jar verified\.' "$dir/verify.log" || fail "No verified signature"
+          pass "Disposable JAR signature verified (not an APK build)"
+  cloudflare:
+    name: Cloudflare connectivity
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify token and read Pages project list
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os, re, json, urllib.request, urllib.error, sys
+          def report(msg):
+              print(msg)
+              with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as f:
+                  f.write(msg + '\n')
+          def fail(msg):
+              report('FAIL: ' + msg)
+              sys.exit(1)
+          token = os.environ.get('CLOUDFLARE_API_TOKEN', '')
+          account = os.environ.get('CLOUDFLARE_ACCOUNT_ID', '')
+          if not token or not re.fullmatch(r'[0-9a-fA-F]{32}', account):
+              fail('Missing token or invalid account ID format')
+          report('PASS: Cloudflare secrets present and account ID format valid')
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, *args, **kwargs):
+                  return None
+          opener = urllib.request.build_opener(NoRedirect())
+          def get(path):
+              try:
+                  req = urllib.request.Request('https://api.cloudflare.com/client/v4/' + path, headers={'Authorization': 'Bearer ' + token, 'Accept': 'application/json'})
+                  with opener.open(req, timeout=20) as r:
+                      return json.load(r)
+              except urllib.error.HTTPError as e:
+                  fail('Cloudflare API returned HTTP ' + str(e.code))
+              except Exception:
+                  fail('Cloudflare API connection or response failed')
+          verified = get('user/tokens/verify')
+          if not verified.get('success') or verified.get('result', {}).get('status') != 'active':
+              fail('Token is not active')
+          report('PASS: Cloudflare token active')
+          pages = get('accounts/' + account + '/pages/projects?per_page=1')
+          if not pages.get('success') or not isinstance(pages.get('result'), list):
+              fail('Pages listing not authorized')
+          report('PASS: Cloudflare account and Pages read access')
+          report('NOT TESTED: Pages write permission; no deployment or mutation attempted')
+          PY
+  supabase:
+    name: Supabase connectivity
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify matching project URL and public API key
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os, re, json, urllib.request, urllib.error, sys
+          def report(msg):
+              print(msg)
+              with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as f:
+                  f.write(msg + '\n')
+          def fail(msg):
+              report('FAIL: ' + msg)
+              sys.exit(1)
+          ref = os.environ.get('SUPABASE_PROJECT_REF', '')
+          url = os.environ.get('SUPABASE_URL', '').rstrip('/')
+          key = os.environ.get('SUPABASE_PUBLISHABLE_KEY', '')
+          if not re.fullmatch(r'[a-z0-9]{20}', ref) or url != 'https://' + ref + '.supabase.co':
+              fail('Project reference and URL do not match')
+          if not key.startswith('sb_publishable_'):
+              fail('Missing modern publishable key')
+          report('PASS: Supabase project URL and reference match')
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, *args, **kwargs):
+                  return None
+          opener = urllib.request.build_opener(NoRedirect())
+          try:
+              req = urllib.request.Request(url + '/auth/v1/settings', headers={'apikey': key, 'Accept': 'application/json'})
+              with opener.open(req, timeout=20) as r:
+                  if r.status != 200 or not isinstance(json.load(r), dict):
+                      fail('Unexpected Auth API response')
+          except urllib.error.HTTPError as e:
+              fail('Supabase Auth API returned HTTP ' + str(e.code))
+          except Exception:
+              fail('Supabase API connection or response failed')
+          report('PASS: Supabase Auth API reachable with publishable key')
+          report('NOT TESTED: database migrations, RLS, authenticated users and synchronization')
+          PY
