@@ -27,6 +27,11 @@ begin
     raise exception 'forged identity accepted';
   exception when invalid_parameter_value then null;
   end;
+  begin
+    perform nohut_private.enqueue_command(u,s,d,'personel',1,gen_random_uuid(),'create_order','{"customer":{"phone":"synthetic"}}');
+    raise exception 'contact accepted';
+  exception when invalid_parameter_value then null;
+  end;
   update nohut_private.sessions set revoked_at=clock_timestamp() where session_id=s;
   begin
     perform nohut_private.enqueue_command(u,s,d,'personel',1,q,'create_order','{}');
