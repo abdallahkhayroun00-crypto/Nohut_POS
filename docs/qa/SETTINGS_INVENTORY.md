@@ -67,6 +67,8 @@ There is no Bulut & Senkronizasyon page yet. It will be added when Codex's sync 
 | Personel / Yönetici PWA | Profile, 5-digit PIN (`set_pin`) | Account | Supabase `nohut_private` | Covered by `auth_api_test.sql` |
 | All browser apps | Theme | Device | Follows the phone's light or dark setting | Rendered in both modes (D-29) |
 
+Open item: the browser apps have no Hesabım panel yet. A "PIN Değiştir" button there would let anyone holding an unlocked phone change the PIN, because the server's `setPin` accepts any valid session. It will be added together with a password re-check on the server.
+
 ## Rules carried into the redesign
 
 - Secrets (API keys, OAuth tokens, finance keys, the QR publisher token) are masked and never synced.
