@@ -11,6 +11,10 @@
 /// — spec §23.4.7 asks for a trusted-HTTPS check on a physical iPhone first.
 library;
 
+import 'daily_report.dart';
+import 'finance_logic.dart' show financeRows;
+import 'payroll.dart';
+import 'workforce.dart' show addDays, isCalendarDay, istanbulDayOfInstant, weekStartOf;
 import 'finance_sync_server.dart';
 import 'lan_auth_gate.dart';
 import 'local_accounts.dart';
@@ -69,6 +73,30 @@ class YoneticiApi {
             'session': ctx.toJson(),
             'financeAllowed': financeAllowed(secure: secure),
           });
+        case ('GET', 'daily'):
+          // §24.7 Gün Sonu Raporu: counts for dashboard.view; amounts need
+          // sales.view (+ finance.view for expenses) and the finance gate.
+          final d = _guard(token, 'dashboard.view');
+          if (!d.allowed) return GateReply(d.status, {'error': d.error});
+          final ctx = d.context!;
+          final money = financeAllowed(secure: secure) && _can(ctx, 'sales.view');
+          final report = buildDailyReport(store.read().data, '${query['day'] ?? ''}');
+          return GateReply(200, {'report': redactDailyReport(report,
+              money: money, expenses: _can(ctx, 'finance.view'))});
+        case ('GET', 'payroll'):
+          // §24.6 Haftalık Maaş Ödemeleri (payroll.view; finance gate).
+          final d = _guard(token, 'payroll.view', touch: query['poll'] != '1');
+          if (!d.allowed) return GateReply(d.status, {'error': d.error});
+          if (!financeAllowed(secure: secure)) return const GateReply(403, {'error': 'https_required'});
+          ensureOwnerPayrollDefault(store, auth.ownerEmployeeIds());
+          final state = store.read().data;
+          final today = istanbulDayOfInstant(DateTime.now());
+          final raw = '${query['weekStart'] ?? ''}';
+          final week = isCalendarDay(raw) ? weekStartOf(raw) : addDays(weekStartOf(today), -7);
+          return GateReply(200, {'weekStart': week, 'today': today,
+            'rows': payrollWeek(state, week, today: today),
+            'payments': [for (final p in financeRows(state, 'payrollPayments')) if (p['weekStart'] == week) p],
+            'canManage': _can(d.context!, 'payroll.manage')});
         case ('GET', 'month'):
           final d = _guard(token, 'finance.view');
           if (!d.allowed) return GateReply(d.status, {'error': d.error});
@@ -88,7 +116,10 @@ class YoneticiApi {
           if (!d.allowed) return GateReply(d.status, {'error': d.error});
           if (!financeAllowed(secure: secure)) return const GateReply(403, {'error': 'https_required'});
           try {
-            return GateReply(200, FinanceSyncServer.managerWrite(store, body));
+            return GateReply(200, FinanceSyncServer.managerWrite(store,
+                {...body, 'actor': d.context!.username ?? 'Yönetici'}));
+          } on PayrollConflict catch (e) {
+            return GateReply(409, {'error': 'conflict', 'message': e.message});
           } on FinanceVersionConflict {
             return const GateReply(409, {'error': 'conflict',
               'message': 'Kayıt Windows üzerinde değişti. Yenileyin ve karşılaştırın.'});

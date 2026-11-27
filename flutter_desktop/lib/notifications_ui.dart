@@ -38,14 +38,19 @@ class _NotificationHistoryPanelState extends State<NotificationHistoryPanel> {
   @override
   Widget build(BuildContext context) {
     final rows = asMaps(widget.store.read().data[notificationsStateKey]).reversed
+        .where((r) => notificationCategories['${r['category']}']?.clients.contains('windows') ?? true)
         .where((r) => category == null || r['category'] == category).take(200).toList();
-    final unread = unreadNotifications(widget.store.read().data[notificationsStateKey] as List?);
+    final unread = unreadNotifications([
+      for (final r in asMaps(widget.store.read().data[notificationsStateKey]))
+        if (notificationCategories['${r['category']}']?.clients.contains('windows') ?? true) r,
+    ]);
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Wrap(spacing: 8, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
         Text('Okunmamış: $unread',
             style: const TextStyle(color: NohutBrand.green, fontWeight: FontWeight.w700)),
-        DropdownButton<String?>(
+        LayoutBuilder(builder: (context, c) => SizedBox(width: c.maxWidth < 260 ? c.maxWidth : 260, child: DropdownButton<String?>(
           isDense: true,
+          isExpanded: true,
           value: category,
           hint: const Text('Tüm kategoriler'),
           items: [
@@ -55,7 +60,7 @@ class _NotificationHistoryPanelState extends State<NotificationHistoryPanel> {
                 DropdownMenuItem<String?>(value: e.key, child: Text(e.value.label)),
           ],
           onChanged: (v) => setState(() => category = v),
-        ),
+        ))),
         TextButton(
           key: const ValueKey('notifications-mark-all'),
           onPressed: unread == 0 ? null : () => _markRead((r) => category == null || r['category'] == category),

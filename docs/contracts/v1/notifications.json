@@ -138,6 +138,29 @@
       "windowsOnly": false
     },
     {
+      "id": "report.daily",
+      "label": "Gün sonu raporu hazır",
+      "severity": "normal",
+      "permission": "sales.view",
+      "clients": [
+        "windows",
+        "yonetici"
+      ],
+      "windowsOnly": false
+    },
+    {
+      "id": "personal",
+      "label": "Kişisel: mesai hatırlatması, maaş ödemesi kaydı",
+      "severity": "normal",
+      "permission": null,
+      "recipient": "employee",
+      "clients": [
+        "personel",
+        "yonetici"
+      ],
+      "windowsOnly": false
+    },
+    {
       "id": "review",
       "label": "Yeni platform / Google yorumu",
       "severity": "normal",

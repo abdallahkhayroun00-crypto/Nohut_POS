@@ -338,8 +338,10 @@ Json submitStaffAction(PosStore store, Json payload) {
         );
         for (final p in (order['payments'] as List).cast<Map>().reversed.take(
           2,
-        ))
+        )) {
           p['by'] = by;
+          p['staffId'] = staff['id'];
+        }
         if (payload['printReceipt'] == true)
           queuePaymentReceipt(s, order, requestId: requestId);
       case 'pay':
@@ -359,7 +361,9 @@ Json submitStaffAction(PosStore store, Json payload) {
           receivedCents: payload['receivedCents'] as int?,
           guestId: payload['guestId'] as int?,
         );
-        ((order['payments'] as List).last as Map)['by'] = by;
+        ((order['payments'] as List).last as Map)
+          ..['by'] = by
+          ..['staffId'] = staff['id'];
         if (payload['printReceipt'] == true)
           queuePaymentReceipt(s, order, requestId: requestId);
       case 'close':

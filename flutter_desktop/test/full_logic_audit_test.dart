@@ -111,10 +111,10 @@ void main() {
       s['nextId'] = 1201;
       setLocalService(o, 'Hazır');
       setLocalService(o, 'Teslim Edildi');
-      addOrderBatch(s, 1200, [row()], cashier: 'Abdallah', staffId: 3);
+      addOrderBatch(s, 1200, [row()], cashier: 'Test Personel B', staffId: 3);
       expect(o['serviceStatus'], 'Hazırlanıyor');
       final job = asMaps(s['printJobs']).last;
-      expect(receiptText(s, job), contains('Abdallah'));
+      expect(receiptText(s, job), contains('Test Personel B'));
       expect(receiptText(s, job), contains('Sos ayrı'));
     },
   );
@@ -193,7 +193,7 @@ void main() {
         final current = store.read().data;
         expect(
           receiptText(current, asMaps(current['printJobs']).last),
-          contains('Mehmet'),
+          contains('Test Personel A'),
         );
       } finally {
         store.dispose();

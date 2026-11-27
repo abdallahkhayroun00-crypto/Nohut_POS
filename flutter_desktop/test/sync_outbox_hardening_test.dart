@@ -35,7 +35,8 @@ void main() {
   });
 
   test('disabled by default: nothing is recorded', () {
-    final s = store.read().data..['nextId'] = (store.read().data['nextId'] as int) + 1;
+    final s = store.read().data
+      ..['nextId'] = (store.read().data['nextId'] as int) + 1;
     store.replace(s, store.read().revision);
     expect(outboxEnabled(probe), false);
     expect(pendingOutbox(probe), isEmpty);
@@ -55,8 +56,10 @@ void main() {
     expect(e['op'], 'upsert');
     expect(e['revision'], store.read().revision);
     final body = e['payload_json'] as String;
-    expect(e['payload_sha256'],
-        hash.sha256.convert(utf8.encode(body)).toString());
+    expect(
+      e['payload_sha256'],
+      hash.sha256.convert(utf8.encode(body)).toString(),
+    );
     final payload = jsonDecode(body) as Map;
     expect(payload['serviceStatus'], 'Hazır');
     expect(payload['id'], order['id']);
@@ -65,7 +68,10 @@ void main() {
     if (customer is Map) {
       expect(customer.keys.toSet().difference({'id', 'time'}), isEmpty);
     }
-    expect('${e['event_id']}', endsWith(':${e['revision']}:orders:${order['id']}'));
+    expect(
+      '${e['event_id']}',
+      endsWith(':${e['revision']}:orders:${order['id']}'),
+    );
     expect(e['revision'], isNotNull);
   });
 
@@ -74,7 +80,7 @@ void main() {
     enableOutbox(probe);
     final s = store.read().data
       ..['employees'] = [
-        {'id': 2, 'name': 'Mehmet', 'role': 'Personel', 'active': true},
+        {'id': 2, 'name': 'Test Personel A', 'role': 'Personel', 'active': true},
       ];
     store.replace(s, store.read().revision);
     final before = pendingOutbox(probe).length;
@@ -90,35 +96,48 @@ void main() {
     final events = pendingOutbox(probe).skip(before).toList();
     // The order syncs; print jobs are not in the cloud allowlist yet
     // (receipt facts get their own typed table in PR-05).
-    expect(events.map((e) => e['entity_type']).toSet(), {'orders'});
+    expect(events.map((e) => e['entity_type']).toSet(), {
+      'orders',
+      'printJobs',
+    });
     final all = events.map((e) => e['payload_json']).join();
     expect(all, isNot(contains('05551234567')));
     expect(all, isNot(contains('Ayşe')));
     expect(all, contains('13:15'), reason: 'pickup time is allowed');
     final count = pendingOutbox(probe).length;
-    expect(() => store.command('staff_outbox_fail', {'x': 1}, (s) {
-      s['nextId'] = (s['nextId'] as int) + 5;
-      throw const FormatException('stop');
-    }), throwsFormatException);
+    expect(
+      () => store.command('staff_outbox_fail', {'x': 1}, (s) {
+        s['nextId'] = (s['nextId'] as int) + 5;
+        throw const FormatException('stop');
+      }),
+      throwsFormatException,
+    );
     expect(pendingOutbox(probe).length, count);
   });
 
-  test('soft delete emits a delete and a tombstone; settings never sync',
-      () {
+  test('soft delete emits a delete and a tombstone; settings never sync', () {
     enableOutbox(probe);
     final id = asMaps(store.read().data['orders']).first['id'] as int;
-    store.deleteOrder(id, store.read().revision, 'delete_outbox_1',
-        reason: 'Test');
-    final types = pendingOutbox(probe)
-        .map((e) => '${e['entity_type']}:${e['op']}').toList();
+    store.deleteOrder(
+      id,
+      store.read().revision,
+      'delete_outbox_1',
+      reason: 'Test',
+    );
+    final types = pendingOutbox(
+      probe,
+    ).map((e) => '${e['entity_type']}:${e['op']}').toList();
     expect(types, contains('orders:delete'));
     expect(types, contains('deletedOrders:upsert'));
     final before = pendingOutbox(probe).length;
     final s = store.read().data;
     (s['settings'] as Map)['printerName'] = 'Başka yazıcı';
     store.replace(s, store.read().revision);
-    expect(pendingOutbox(probe).length, before,
-        reason: 'device settings are not in the cloud allowlist');
+    expect(
+      pendingOutbox(probe).length,
+      before,
+      reason: 'device settings are not in the cloud allowlist',
+    );
   });
 
   test('ACK is a contiguous watermark', () {
@@ -136,19 +155,49 @@ void main() {
     expect(left.single['seq'], events[2]['seq']);
   });
 
-  test('canonical JSON sorts keys recursively', () {
-    expect(canonicalJson({'b': 1, 'a': {'d': 2, 'c': [3, {'f': 1, 'e': 0}]}}),
-        '{"a":{"c":[3,{"e":0,"f":1}],"d":2},"b":1}');
+  test('pending index upgrades existing outboxes and serves ordered reads', () {
+    probe.execute('DROP INDEX sync_outbox_pending');
+    enableOutbox(probe);
+    final s = store.read();
+    (s.data['orders'] as List).cast<Map>().first['serviceStatus'] = 'Hazır';
+    expect(store.replace(s.data, s.revision).ok, true);
+    final before = probe.select('SELECT * FROM sync_outbox').map((r) => Map.of(r)).toList();
+    createSyncTables(probe);
+    createSyncTables(probe);
+    expect(probe.select('SELECT * FROM sync_outbox').map((r) => Map.of(r)).toList(), before);
+    final plan = probe.select('EXPLAIN QUERY PLAN SELECT * FROM sync_outbox '
+        'WHERE acked_at IS NULL ORDER BY seq LIMIT 500');
+    expect(plan.map((r) => r['detail']).join(' '), contains('sync_outbox_pending'));
   });
 
-  test('the outbox cannot be enabled on a legacy (non-normalized) database',
-      () {
-    final legacy = sqlite3.open('${dir.path}/legacy.sqlite3');
-    legacy.execute('CREATE TABLE state_snapshot(id INTEGER PRIMARY KEY, '
-        'revision INTEGER, payload TEXT, updated_at TEXT)');
-    createSyncTables(legacy);
-    expect(() => enableOutbox(legacy), throwsFormatException);
-    expect(outboxEnabled(legacy), false);
-    legacy.dispose();
+  test('canonical JSON sorts keys recursively', () {
+    expect(
+      canonicalJson({
+        'b': 1,
+        'a': {
+          'd': 2,
+          'c': [
+            3,
+            {'f': 1, 'e': 0},
+          ],
+        },
+      }),
+      '{"a":{"c":[3,{"e":0,"f":1}],"d":2},"b":1}',
+    );
   });
+
+  test(
+    'the outbox cannot be enabled on a legacy (non-normalized) database',
+    () {
+      final legacy = sqlite3.open('${dir.path}/legacy.sqlite3');
+      legacy.execute(
+        'CREATE TABLE state_snapshot(id INTEGER PRIMARY KEY, '
+        'revision INTEGER, payload TEXT, updated_at TEXT)',
+      );
+      createSyncTables(legacy);
+      expect(() => enableOutbox(legacy), throwsFormatException);
+      expect(outboxEnabled(legacy), false);
+      legacy.dispose();
+    },
+  );
 }

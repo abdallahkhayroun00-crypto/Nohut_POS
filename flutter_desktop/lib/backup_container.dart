@@ -35,6 +35,7 @@ import 'package:sqlite3/sqlite3.dart';
 
 import 'entity_storage.dart';
 import 'pos_store.dart';
+import 'sync_outbox.dart';
 
 const backupMagic = 'NOHUTBK1';
 const backupFormatVersion = 1;
@@ -511,6 +512,10 @@ class RestoreManager {
     try {
       db.execute('PRAGMA journal_mode=WAL');
       db.execute('BEGIN IMMEDIATE');
+      createSyncTables(db);
+      setSyncState(db, 'sync_stopped', '1');
+      setSyncState(db, 'auto_sync_enabled', 'false');
+      setSyncState(db, 'remote_execution_blocked', 'restore_reconciliation_required');
       final row = db.select(
         'SELECT revision,payload FROM state_snapshot WHERE id=1',
       ).single;

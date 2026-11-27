@@ -15,6 +15,8 @@ Nothing in Phase 0 deletes, uploads or rewrites any stored field. Every change l
 
 ## 2. Trendyol Go: what ingestion stores today
 
+PR #39 implementation update (not production activated): the additive `lineFacts` commercial collection retains fully cancelled lines, source item IDs and original quantities where provided; `lines` keeps its existing active-only behavior. `totalKnown`, `quantityKnown` and `unitPriceKnown` distinguish source knowledge from legacy normalized values. Cloud commercial versions retain all available source facts and corrections, redact known contact values from preparation notes and exclude structured customer contact/raw payloads. No bank settlement is inferred from an order total or configured fee estimate. Review implementation and its privacy contract remain Claude-owned.
+
 Ingestion is `normalizeTgoPackage` in `flutter_desktop/lib/trendyol_go_readonly.dart`. It does not store raw payloads; it parses into typed fields.
 
 | Field (stored key) | API source | Class | Today | Proposed V5 treatment |

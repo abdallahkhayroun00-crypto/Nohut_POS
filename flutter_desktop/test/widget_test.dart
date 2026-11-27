@@ -76,7 +76,7 @@ void main() {
           expect(tester.takeException(), isNull, reason: label);
           expect(find.text(label), findsAtLeastNWidgets(2));
         }
-        for (final tab in ['Personel', 'Bağlantı']) {
+        for (final tab in ['Personel', 'Telefon Bağlantısı']) {
           await tester.ensureVisible(find.text(tab).first);
           await tester.tap(find.text(tab).last);
           await tester.pumpAndSettle();

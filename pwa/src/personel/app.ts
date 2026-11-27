@@ -186,7 +186,7 @@ function online(ctx: Ctx) {
               icon,
               primary,
               onclick: async () =>
-                report(await ctx.send('platform', { requestId: newRequestId(), platform: o.platform, orderNumber: o.orderNumber, operation: op })),
+                report(await ctx.send('platform', { requestId: newRequestId(), platform: o.platform, packageId: o.packageId, orderNumber: o.orderNumber, operation: op })),
             })
           : null;
       return h(

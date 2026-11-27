@@ -109,8 +109,14 @@ class LanAuthGate {
   }
 
   /// The acting employee is the signed-in user, not what the phone claims.
+  /// A signed-in account that is not linked to an employee can never act
+  /// as one: the phone's `staffId` is ignored, never trusted.
   static Json withIdentity(Json payload, AuthContext? ctx) {
-    if (ctx == null || ctx.employeeId == null) return payload;
+    if (ctx == null) return payload;
+    if (ctx.employeeId == null) {
+      throw const FormatException(
+          'Hesabınız bir personele bağlı değil. Windows › Kullanıcılar’dan bağlayın.');
+    }
     return {...payload, 'staffId': ctx.employeeId};
   }
 

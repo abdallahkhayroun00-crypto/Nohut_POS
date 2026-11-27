@@ -12,7 +12,8 @@ import 'brand.dart';
 import 'pos_logic.dart';
 import 'pos_store.dart';
 import 'operations.dart';
-import 'finance_logic.dart';
+import 'payroll.dart' show isPayrollEligible, setPayrollEligible, setEmployeeRate;
+import 'workforce.dart' show dayOf, istanbulNow;
 import 'platform_workflows.dart';
 import 'qr_menu_preview.dart';
 import 'qr_menu_sync.dart';
@@ -844,13 +845,15 @@ class StaffPanel extends StatelessWidget {
               person['payRateCents'] is int
                 ? ((person['payRateCents'] as int) / 100).toStringAsFixed(2)
                 : ''),
+            ('Maaş bordrosu', isPayrollEligible(person) ? 'Dahil' : 'Dahil değil'),
           ];
     final values = await askFields(
       context,
       person == null ? 'Personel Ekle' : 'Personel Bilgilerini Düzenle',
       fields,
       choices: {1: ['Personel', 'Yönetici'],
-        if (person != null) 6: ['Saatlik', 'Haftalık Sabit']}, 
+        if (person != null) 6: ['Saatlik', 'Haftalık Sabit'],
+        if (person != null) 8: ['Dahil', 'Dahil değil']},
       validate: (v) {
         if (v[0].trim().isEmpty) return 'Personel adı gerekli';
         if (v[0].length > 120 ||
@@ -879,16 +882,25 @@ class StaffPanel extends StatelessWidget {
         values[1],
         person?['active'] == true || person == null,
       );
-      final employee = (state['employees'] as List).cast<Map>()
-          .firstWhere((entry) => entry['name'] == values[0].trim());
+      // By id: two people may share a name. A new person is the highest id.
+      final people = (state['employees'] as List).cast<Map>();
+      final employee = person == null
+          ? people.reduce((a, b) => (a['id'] as int) > (b['id'] as int) ? a : b)
+          : people.firstWhere((entry) => entry['id'] == person['id']);
       employee['phone'] = values.length > 2 ? values[2].trim() : '';
       employee['jobTitle'] = values.length > 3 ? values[3].trim() : '';
       employee['startDate'] = values.length > 4 ? values[4].trim() : '';
       employee['notes'] = values.length > 5 ? values[5].trim() : '';
       if (values.length > 7 && values[7].trim().isNotEmpty) {
-        final rate = double.parse(values[7].replaceAll(',', '.'));
-        saveEmployeePay(state, employee['id'] as int, values[6],
-          (rate * 100).round());
+        final rate = (double.parse(values[7].replaceAll(',', '.')) * 100).round();
+        // A changed rate starts today; earlier days keep their own rate.
+        if (rate != employee['payRateCents'] || values[6] != employee['payType']) {
+          setEmployeeRate(state, employeeId: employee['id'] as int, payType: values[6],
+              rateCents: rate, effectiveFrom: dayOf(istanbulNow(DateTime.now())), by: 'Windows');
+        }
+      }
+      if (values.length > 8) {
+        setPayrollEligible(state, employee['id'] as int, values[8] == 'Dahil');
       }
     });
   }
@@ -898,7 +910,7 @@ class StaffPanel extends StatelessWidget {
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       panelTitle('Personel Yönetimi'),
-      info('Personel bilgileri yerel olarak saklanır. Şifreli oturum açma bulunmadığından Yetki alanı tek başına güvenlik sağlamaz.'),
+      info('Personel profilleri burada yönetilir. Giriş hesapları ve yetkiler Ayarlar › Güvenlik › Kullanıcılar bölümündedir. Maaş bordrosuna dahil olmayanlar (ör. işletme sahibi) maaş ve hatırlatmalarda yer almaz.'),
       FilledButton.icon(
         onPressed: () => change(context),
         icon: const Icon(Icons.person_add_outlined),
@@ -914,9 +926,11 @@ class StaffPanel extends StatelessWidget {
               (person['jobTitle'] ?? '').toString(),
             if ((person['phone'] ?? '').toString().isNotEmpty)
               (person['phone'] ?? '').toString(),
-            if (person['payRateCents'] is int)
+            if (!isPayrollEligible(person)) 'Maaş bordrosuna dahil değil'
+            else if (person['payRateCents'] is int)
               (person['payType'] ?? 'Saatlik').toString() +
-                ' · ' + formatTry(person['payRateCents'] as int),
+                ' · ' + formatTry(person['payRateCents'] as int)
+            else 'Saatlik ücret henüz belirlenmedi',
           ].join(' · ')),
           trailing: Wrap(
             crossAxisAlignment: WrapCrossAlignment.center,

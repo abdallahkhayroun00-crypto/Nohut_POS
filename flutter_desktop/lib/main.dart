@@ -57,6 +57,7 @@ import 'platform_workflows.dart';
 import 'review_sync_service.dart';
 import 'tgo_review_api.dart';
 import 'local_accounts.dart';
+import 'payroll.dart' show ensureOwnerPayrollDefault;
 import 'lan_auth_gate.dart';
 import 'accounts_ui.dart';
 import 'notification_events.dart';
@@ -315,6 +316,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       // state with stable ids, so repeated runs never duplicate.
       _notificationTimer = Timer.periodic(const Duration(seconds: 5), (_) {
         try {
+          ensureOwnerPayrollDefault(store, localAuth.ownerEmployeeIds());
           recordOperationalNotifications(store);
         } catch (e) {
           debugPrint('Notification history: $e');
@@ -3243,6 +3245,19 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     onlineWarning: _onlineDataWarning,
   );
 
+  /// Two equal columns side by side, or stacked when the page is narrow
+  /// (e.g. Ayarlar with its side navigation on a 1280 px screen).
+  Widget _twoColumns(List<Widget> children) => LayoutBuilder(
+    builder: (context, c) => c.maxWidth >= 760
+        ? Row(crossAxisAlignment: CrossAxisAlignment.start, children: children)
+        : Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            for (final w in children)
+              if (w is Expanded) w.child
+              else if (w is SizedBox) const SizedBox(height: 16)
+              else w,
+          ]),
+  );
+
   Widget _wifi(Json db) {
     final url = lan.staffUrl;
     return Column(
@@ -3252,9 +3267,8 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
           'Personel Bağlantısı',
           'Android uygulaması için QR + tek seferlik PIN; iPhone için Safari.',
         ),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+        _twoColumns(
+          [
             Expanded(
               child: Card(
                 child: Padding(
@@ -3453,11 +3467,12 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                       ),
                       const SizedBox(height: 15),
                       const Divider(height: 28),
-                      const Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
+                      const Wrap(
+                        alignment: WrapAlignment.center,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 6,
                         children: [
                           Icon(Icons.android, color: NohutBrand.green),
-                          SizedBox(width: 6),
                           Text('ANDROID · NOHUT PERSONEL',
                               style: TextStyle(fontWeight: FontWeight.w800)),
                         ],
@@ -3490,7 +3505,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                         label: const Text('Yeni PIN Oluştur'),
                       ),
                       const Divider(height: 22),
-                      const Text('Android Yönetim · Ömer Yılmaz',
+                      const Text('Android Yönetim · İşletme sahibi',
                         style: TextStyle(fontWeight: FontWeight.w800)),
                       TextButton.icon(
                         icon: const Icon(Icons.admin_panel_settings_outlined),
@@ -3498,8 +3513,8 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                         onPressed: !lan.available ? null : () async {
                           final approve = await showDialog<bool>(context: context,
                             builder: (ctx) => AlertDialog(
-                              title: const Text('Ömer Yılmaz yönetici erişimi'),
-                              content: const Text('Yalnızca Ömer Yılmaz cihazına verin. Eski finans anahtarı iptal edilir.'),
+                              title: const Text('İşletme sahibi yönetici erişimi'),
+                              content: const Text('Yalnızca işletme sahibinin cihazına verin. Eski finans anahtarı iptal edilir.'),
                               actions: [
                                 TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('Vazgeç')),
                                 FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('Oluştur')),

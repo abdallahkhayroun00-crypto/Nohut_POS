@@ -82,6 +82,20 @@ const syncEntityRegistry = <String, SyncEntity>{
     policy: 'Phase 5C: employee shifts; never deleted, corrections audited',
     status: InventoryStatus.verifiedExisting,
   ),
+  'shiftPlans': SyncEntity(
+    classes: {DataClass.personalPii, DataClass.internal},
+    cloudTarget: 'shift_plans',
+    policy: 'V6.0 Vardiya (planned, manual, no approval); cancelled not '
+        'deleted; edits audited in history; never becomes pay',
+    status: InventoryStatus.inFlightPr,
+  ),
+  'timesheetWeeks': SyncEntity(
+    classes: {DataClass.personalPii, DataClass.internal},
+    cloudTarget: 'timesheet_weeks',
+    policy: 'V6.1 weekly Mesai submission (communicated, not approved); '
+        'every submission snapshot kept',
+    status: InventoryStatus.inFlightPr,
+  ),
   'staffNotices': SyncEntity(
     classes: {DataClass.internal},
     cloudTarget: 'audit_logs',

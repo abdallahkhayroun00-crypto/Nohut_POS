@@ -96,7 +96,16 @@ Json correctShift(PosStore store, Json payload) {
     if (end == null && other != null && other['id'] != shift['id']) {
       throw const FormatException('Bu personelin başka açık mesaisi var');
     }
-    final before = {'start': shift['start'], 'end': shift['end']};
+    // Manual Mesai rows carry a break; a correction keeps it unchanged and
+    // records it in both audit snapshots (Codex #39 contract). A corrected
+    // closed interval must stay longer than that break.
+    final breakMinutes = shift['breakMinutes'];
+    if (breakMinutes is int && end != null && end.difference(start).inMinutes <= breakMinutes) {
+      throw const FormatException('Çalışma süresi moladan uzun olmalı');
+    }
+    Json snapshot() => {'start': shift['start'], 'end': shift['end'],
+      if (breakMinutes is int) 'breakMinutes': breakMinutes};
+    final before = snapshot();
     shift['start'] = start.toUtc().toIso8601String();
     if (end == null) {
       shift.remove('end');
@@ -108,7 +117,7 @@ Json correctShift(PosStore store, Json payload) {
       'byId': by['id'],
       'by': by['name'],
       'before': before,
-      'after': {'start': shift['start'], 'end': shift['end']},
+      'after': snapshot(),
       'reason': reason,
     });
     return {'ok': true, 'shiftId': shift['id']};

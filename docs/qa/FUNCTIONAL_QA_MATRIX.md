@@ -1,0 +1,99 @@
+# Nohut POS — Cross-platform logic and functional QA matrix
+
+Owner mandates of record: 2026-11-27 18:50 ("Mandatory Architecture, Native Application Quality & Full Functional Audit") and 18:52/18:53 ("Real Business Logic, Roles and Complete Cross-Platform Audit"). This file is the audit record. A row is **Verified** only when the evidence column names an automated test or a rendered run that was actually executed. Nothing here claims a physical-device test or an independent review unless the evidence says so.
+
+Platforms: **W** Windows POS · **AP** Android Personel APK (`flutter_personel/lib/main.dart`) · **AY** Android Yönetici APK (`flutter_personel/lib/manager_main.dart`) · **PP** Personel cloud PWA · **YP** Yönetici cloud PWA · **LP** local Personel browser app (`assets/staff.html`) · **LY** local Yönetici browser app (`assets/yonetici.html`).
+
+Status words: Verified · Implemented (not yet verified end-to-end) · Partial · Restricted (intentional) · Not available · Not yet audited.
+
+## 1. Audit progress by module
+
+| Module | W | AP | AY | PP | YP | LP | LY | Audit state |
+|---|---|---|---|---|---|---|---|---|
+| Authentication, sessions, PIN lock | Verified | Not yet audited | Not yet audited | Not yet audited | Not yet audited | Verified | Verified | Server gate audited (LAN). Cloud A2 pending (Codex #39). |
+| Identity bound to session | — | Not yet audited | Not yet audited | Not yet audited | Not yet audited | Verified | Verified | Fixed D-01, D-02 below. |
+| Employee profiles / roles / payroll eligibility | Verified | — | Not yet audited | — | Not yet audited | — | Verified (API) | D-04…D-07 fixed. |
+| Vardiya (planned shifts) | Not available | Implemented (LAN; widget tests) | Not yet audited | Not yet audited | Not yet audited | Verified | Partial (view only) | Manager editing others in UI pending. |
+| Mesai (actual hours) + weekly submission | Not available | Implemented (LAN; widget tests) | Not yet audited | Not yet audited | Not yet audited | Verified | Verified (team view) | Windows screen pending. |
+| Payroll (rates, ledger, statuses) | Partial (rate + eligibility in Personel; ledger in finance totals) | Implemented (own pay only, LAN; widget tests) | Implemented (week view + record payment over the owner link to Windows; widget + server tests) | — | Not yet audited | Verified (own pay only) | Verified | Cloud projection = Codex (O-03). Reversal, rate change and Ödenmedi stay on Windows/LAN page. |
+| Payroll reminders | Verified (domain) | Not yet audited | Not yet audited | Not yet audited | Not yet audited | Verified (feed) | Verified (feed) | Push (FCM) not approved. |
+| Hızlı Gider Ekle | Verified | — | Implemented | — | Not yet audited | — | Verified | |
+| Gün Sonu Raporu | Verified (domain) | — | Not yet audited | — | Not yet audited | — | Verified | |
+| Masalar, orders, Ek Sipariş, Gel-Al | Verified (domain) | Not yet audited | — | Not yet audited | — | Partial (identity fix D-01) | — | Table transfer refuses occupied tables (`owner_money_scenarios_test`); stale revisions conflict, retries idempotent (`remote_commands_test`, SQLite optimistic revisions); extra order credited to original owner. UI walkthrough per platform still pending. |
+| Payments, refunds, split, receipts | Verified (domain) | — | — | — | — | — | — | `owner_money_scenarios_test`: partial cash + change, overpay/short cash refused, Karma atomic, equal split 100,01 → 33,34+33,34+33,33, refund ≤ collected with reason, cancel refused while money held, closed account takes no money. Terminal: unknown outcome blocks deletion, retry does not charge twice (`updates16_test`). Receipt/reprint guard tests exist. Physical printer and card terminal: owner device test. |
+| Online orders, campaigns, menu | Not yet audited | — | — | — | — | — | — | |
+| Fixed costs, market prices, open accounts | Not yet audited | — | Not yet audited | — | Not yet audited | — | Not yet audited | |
+| Sales analytics, Yoğunluk | Not yet audited | — | Not yet audited | — | Not yet audited | — | Not yet audited | |
+| Customer reviews | Paused by owner | — | — | — | — | — | — | |
+| Notifications | Verified (history, dedup) | Not yet audited | Not yet audited | Not yet audited | Not yet audited | Verified | Verified | |
+| Cloud sync, offline, backup | Restricted (Windows only) | Not yet audited | Not yet audited | Not yet audited | Not yet audited | — | — | Codex owns sync (#39). |
+
+Native Android architecture check (2026-11-27): `flutter_personel/pubspec.yaml` has no WebView dependency (`http`, `share_plus`, `mobile_scanner`, `flutter_secure_storage`, `flutter_local_notifications`); both APKs are Flutter widget apps built from two entry points. Biometrics, native date pickers, haptics and offline states have **not yet been audited** on Android; no emulator run has been done in this cycle.
+
+## 2. Defects found and fixed (PR #44)
+
+| ID | Feature | Intended user | Actual behavior (before) | Expected | Severity | Fix | Automated evidence | Rendered evidence |
+|---|---|---|---|---|---|---|---|---|
+| D-01 | Staff actions over LAN | Personel | A signed-in account **not linked to an employee** could send any `staffId` and act as that employee | Identity always from the session; unlinked accounts refused | Critical (security) | `LanAuthGate.withIdentity` refuses unlinked sessions | `lan_auth_gate_test` "signed-in identity overrides…" | — |
+| D-02 | Employee selector | Personel | Selector visible after individual login (showed another name next to the username) | No selector for signed-in staff; header shows linked profile | High (trust/UX) | `staff.html` hides selector, shows `username · profile` | — | Playwright iPhone 13: selector hidden, header "personela · Test Personel A" |
+| D-03 | `/api/work/week?employeeId=` | Personel | Already returned own week (verified, no defect) | Same | — | Regression test added | `workforce_test` LAN test | Playwright: tampered request returned own id |
+| D-04 | Payroll scope | Owner | Every active profile (incl. owner) in payroll, reminders and Mesai reminders | Owner excluded by default; explicit eligibility flag | High (financial) | `employees[].payrollEligible`; owner-linked profile defaults to `false` once; Windows › Personel "Maaş bordrosu" | `payroll_test` owner rules | Playwright: owner's 13 h not listed in payroll |
+| D-05 | Payroll statuses | Manager, Personel | No work / no rate shown as "Ödenmedi" | Çalışma kaydı yok · Ücret belirlenmedi · Ödenmedi · Kısmen Ödendi · Ödendi | High (financial) | `payrollStatus` derivation | `payroll_test` statuses | Rendered Yönetici + Personel |
+| D-06 | Payday reminders | Manager | Fired while any status unresolved, incl. unknown amounts | Only eligible people with real outstanding earnings | Medium | `payroll_reminders.dart` | `payroll_test` reminders | — |
+| D-07 | Rate edit on Windows › Personel | Owner | Overwrote current rate with no effective date → silently changed past weeks | Change starts today; history preserved | High (financial) | Uses `setEmployeeRate(effectiveFrom: today)` | `control_workflows_test` staff edit | — |
+| D-08 | Windows › Personel edit | Owner | Edited person found **by name** (wrong person if names repeat) | By id | Medium | `operations_ui.dart` | `control_workflows_test` | — |
+| D-09 | Back-dated rate | Manager | A rate could start inside a week that already has payments | Refused with explanation | High (financial) | `PayrollConflict` in `setEmployeeRate` | `payroll_test` acceptance | — |
+| D-10 | Fresh install data | Owner | New database seeded three named employees | No people until the owner adds them | Medium (data integrity) | `emptyPosState()` seeds none; tests use synthetic names | full suite | — |
+| D-11 | Personel own payment history | Personel | Not shown | Own payments only | Medium | `/api/work/week` adds own `payments` | — | Playwright: "Ödeme geçmişim" |
+| D-12 | Overdue label | Manager | "gecikti" on weeks whose amount is unknown | Only when money is actually outstanding | Low | `payrollStatus.overdue` | `payroll_test` | Rendered |
+
+| D-13 | Android Personel orders/actions (`/api/mobile/*`) | Personel | A paired device sent any `staffId`; the path ignored *Bireysel giriş zorunlu* | Same gate as the browser app: individual session required when enforced; session fixes the employee | Critical (security) | `lan_server.dart` mobile branch uses `_guard` + `withIdentity` | `lan_auth_gate_test` "Android paired-device writes…" | — |
+| D-14 | Android Yönetici owner identity | Owner | Owner found by the hardcoded name "Ömer Yılmaz" (Windows, server and APK) | Owner = profile linked to the owner account; name from that profile; legacy name accepted only while no owner is linked (upgrade safety) | High (data integrity) | `FinanceSyncServer.owner(ownerIds:)`, APK shows `ownerName` from Windows, Windows labels say "İşletme sahibi" | `owner_identity_test` | — |
+
+Found by the independent Gemini review on PR #44 (comment 7223333964) and fixed in the follow-up commit:
+
+| ID | Feature | Intended user | Actual behavior (before) | Expected | Severity | Fix | Automated evidence | Rendered evidence |
+|---|---|---|---|---|---|---|---|---|
+| D-15 | Payroll payment retry | Manager | A payment retried after a lost connection could be stored twice under one id | Same request → the recorded row; a different payment under that id → refused | High (financial) | `recordPayrollPayment` checks `pp_<requestId>` | `payroll_test` "a retried payment request…" | — |
+| D-16 | Staff who left | Manager | Deactivated staff with unpaid hours dropped out of the payroll list and payday reminders | They stay until settled; Sunday Mesai reminders stay for active staff only | High (financial) | `_inPayrollWeek`, reminders use all eligible staff | `payroll_test` "someone who left…" | — |
+| D-17 | Trusted-device PIN | Everyone | 6-digit PIN, weak PINs accepted | 5 digits; repeated digits, runs and common PINs refused; existing 6-digit PINs still unlock | Medium (security) | Windows/LAN: `LocalAuth._checkPin`, browser apps say "5 haneli". Cloud: migration `20261127210000_nohut_pin_five_digits.sql` (same rules; `verify_pin` accepts 5 or 6 digits for old verifiers) | `local_accounts_test` "5-digit PIN rules…"; `auth_control_plane_test.sql` + `auth_api_test.sql` (all 6 SQL suites passed on a local Postgres 16) | — |
+| D-18 | Password unlock | Everyone | No attempt limit on unlock with password | Same 5 tries / 15 min lockout as login, audited | High (security) | `unlockWithPassword` | `local_accounts_test` | — |
+| D-19 | Gün Sonu Raporu staff hours (review finding #5) | Owner | — | **Superseded by owner decision (2026-11-27):** the daily report shows no employee hours; hours belong to weekly Mesai and Haftalık Maaş Ödemeleri. The `staffHours` field and the "Personel çalışma saatleri" row were removed | — | Not implemented by design | `daily_report_test` "Gün Sonu Raporu has no employee hours…"; weekly payroll covered by `payroll_test` | — |
+| D-20 | Date validation | Everyone | `2026-02-31` passed the format check (silently became 3 March) | Real calendar days only | Medium (data integrity) | `isCalendarDay` in payroll, workforce, daily report, Yönetici | `payroll_test`, `workforce_test`, `daily_report_test` | — |
+| D-21 | Mid-week pay-type change | Manager | A switch between Saatlik and Haftalık Sabit could start mid-week and pay both | Such a switch starts on a Monday; a fixed week pays once | Medium (financial) | `setEmployeeRate`, `weeklyEarnings` | `payroll_test` "a switch to or from Haftalık Sabit…" | — |
+| D-22 | LAN reads | Personel | `/api/state`, `/api/bootstrap`, `/api/mobile/bootstrap`, `/api/staff/*` answered any address; Android bootstrap ignored *Bireysel giriş zorunlu* | Restaurant network only; Android bootstrap needs a session when login is required (the APK then shows Giriş Yap) | Medium (security) | `lan_server.dart`, `pos_api.dart` | `lan_auth_gate_test` "Android bootstrap follows required login…" | — |
+
+Gemini review pass 2 (comment 7223539958):
+
+| ID | Feature | Intended user | Actual behavior (before) | Expected | Severity | Fix | Automated evidence | Rendered evidence |
+|---|---|---|---|---|---|---|---|---|
+| D-23 | Card terminal reconciliation (QA-10) | Cashier | A declined/cancelled attempt became "unknown" when a later inquiry got no answer, blocking new card payments and deletion of the order | Declined and cancelled are final, like approved | Medium (financial) | `InposPayments._apply` | `terminal_delete_guard_test` "QA-10…" | — |
+| D-24 | Collection attribution (QA-11) | Manager | Staff `pay` and `payMixed` rows had no `staffId` (only the display name) | Every staff payment row carries the collector's employee id | Medium (attribution) | `staff_commands.dart`; field `orders[].payments[].staffId` registered | `terminal_delete_guard_test` "QA-11…" | — |
+| D-25 | Order deletion speed (QA-12, part) | Cashier | `deleteOrder` decoded every command receipt inside the write lock (O(N)) | Indexed lookup by order id; old databases backfilled once | Medium (performance) | `command_receipts.order_id/result_order_id` + indexes | `terminal_delete_guard_test` "QA-12…", full suite | — |
+| D-26 | Personel browser polling (QA-12, part) | Personel | State refresh every 5 s even when the tab is hidden | Paused while hidden; refreshes on return | Low | `staff.html` | — | — |
+| D-27 | Staff product payment (O-11) | Personel | `payProducts` had no automated test; its `productPaymentId`/`productReceipt` fields were not registered for sync | Tested: collector id, stable id, receipt summary, retry adds no second row; fields registered | Medium (coverage) | `sync_field_paths.g.dart`, `data-inventory.md` | `terminal_delete_guard_test` "O-11…" | — |
+| D-28 | Android Personel Mesai / Vardiya / Maaş (was O-09) | Personel | No native screens; only the browser app had them | Native Flutter screens (no WebView) on the same `/api/work/*` server rules: own week from the session, manual hours with native date/time pickers, edit and void with reason, weekly submission that never blocks corrections, own plans with repeat and copy-week, team schedule, own rate/earned/paid/remaining/status and payment history; owner or anyone not on payroll sees no money; a write retried after a lost connection keeps its request id | High (parity) | `flutter_personel/lib/work_page.dart`, `pos_api.dart` `work()`, entry in `home.dart` (badge icon + Hesabım menu) | `work_page_test` (7: no employee id sent, retry same id, acceptance numbers 1.760/800/960 Kısmen Ödendi, not-on-payroll, 320 px + 130 % text without overflow) | Emulator capture added to `integration_test/screens_test.dart` (pending CI run) |
+| D-29 | Browser Personel and Yönetici dark mode (was O-01) | Personel, Yönetici (browser) | `staff.html` ignored the phone's dark setting; `yonetici.html` only darkened the Gün Sonu card, so it showed a dark card on a light page | Both pages follow `prefers-color-scheme` with the native apps' dark tokens; light mode is unchanged; dark `theme-color` for the phone status bar | Low (visual) | `assets/staff.html`, `assets/yonetici.html` | Playwright, Pixel 7 viewport, light and dark, every tab (Masalar, Ürünler, Sepet, Siparişler, Mesai; Özet, Siparişler, Personel, Finans, Menü); no page errors |
+| D-30 | Android Yönetici payroll | Yönetici (Android) | No V6.1 payroll on the phone; its Finans page could still add old-style weekly rows, which then block ledger payments for that week | Native Haftalık Maaş Ödemeleri: week navigation, Windows' own rows and statuses (`ownerPayroll` = same `payrollWeek` as the LAN page), Ödeme Kaydet with native sheet, confirm dialog, `expectedPaidCents` guard; a lost reply is checked against Windows before anything is claimed and an identical retry reuses its request id. Old-style rows can no longer be added on the phone (existing ones stay visible) | High (financial) | `finance_sync_server.dart` (`ownerPayroll`), `flutter_personel/lib/owner_payroll.dart`, `manager_main.dart`, `manager_finance.dart` | `payroll_test` (same rows as LAN, stale screen cannot pay twice); `owner_payroll_test` (1760 / 800 → Kısmen Ödendi / 960, lost reply, retry id, local validation, 320 px + 130 % text); rendered light/dark |
+| D-31 | Print outcome after I/O (Gemini QA-13) | Windows | The post-print status write ignored a failed `replace`; on a revision race a job could stay 'Gönderiliyor' (blocking order delete) until restart | Outcome write re-reads and retries (5 attempts), only touching jobs still 'Gönderiliyor'; concurrent writes are kept | Low/Medium | `receipt_printer.dart` | `tgo_kitchen_print_test` QA-13 |
+| D-32 | Personel Maaş grid (Gemini QA-15) | Personel (Android) | Three metrics left an orphan tile; hours behind the 1.760 TL were not shown | Fourth metric Çalışma süresi | Low (visual) | `work_page.dart` | `work_page_test`, render |
+
+Owner acceptance example (8 h × 100 TL + 8 h × 120 TL = 1.760 TL; pay 800 → Kısmen Ödendi, kalan 960; pay 960 → Ödendi; later raise not retroactive): **Verified** in `payroll_test` and in a rendered LAN run (Yönetici records 800 TL Nakit → Kısmen Ödendi, kalan 960,00 ₺; Personel sees the same numbers).
+
+## 3. Open findings (not yet fixed)
+
+| ID | Finding | Severity | Next step |
+|---|---|---|---|
+| O-02 | Personel rate card shows the rate at week start when the rate changed mid-week | Low | Show both rates for the week |
+| O-03 | Payroll on the cloud PWAs remains incomplete (Android Yönetici done over the LAN owner link, D-30) | High (parity) | Codex #39: typed wage/eligibility, payment/review ledger, actual Mesai and weekly snapshots implemented and synthetic-tested; authorized Windows-calculated reads/runtime UI wiring still pending. See PROGRESS.md checkpoints; do not close parity from typed tables alone. |
+| O-12 | Android Personel opens on Masalar; spec §24.1/§24.3 asks for Ana Sayfa · Masalar · Siparişler · Online · Daha Fazla with Mesai reachable from home (Gemini QA-14) | Low/Medium (navigation parity) | Claude, with the premium redesign |
+| O-04 | Order, payment, refund, receipt, analytics modules not re-audited in this cycle | — | Next audit pass |
+| O-05 | Emulator evidence incomplete. Run 46044521170 (d22e706, API 34 emulator): both real debug APKs built, installed and launched in light and dark with no `FATAL EXCEPTION`/`flutter:E` lines, but every screenshot shows a system "Pixel Launcher isn't responding" dialog over the notification-permission prompt, and the integration test (synthetic-data screens) stopped with "log reader stopped unexpectedly". Capture script hardened (hide error dialogs, settle, pre-grant notifications, retry). No physical-device test has been done. | — | Next emulator run |
+| O-06 | Independent review: Gemini passes 1–3 on PR #44 (comments 7223333964, 7223539958, 7223725943, 7223945667); Claude-owned findings verified resolved on 4249b9e by the reviewer | — | Done for this PR |
+| O-07 | Android Personel APK has no individual login yet; it still shows an employee picker (legacy shared mode). With *Bireysel giriş zorunlu* on, its writes are now refused (401) until it signs in | High (parity) | Native login + 5-digit PIN in the APK (W6/A2) |
+| O-10 | `sync_outbox` pending partial index VERIFIED RESOLVED (QA-12) | Low (performance) | Codex abbcf31: additive index + existing-row upgrade/actual EXPLAIN tests; Gemini independent Pass 6 verification in #39 comment 7225414738 and #45 audit ce8241b. |
+| O-08 | An old Yönetici APK compares the owner name with "Ömer Yılmaz"; after linking the owner account to a differently named profile it needs the new APK from CI | Medium (upgrade) | Install the APK built from #44 |
+
+## 4. Physical-device tests required from the owner
+
+Recorded in PROGRESS.md; none performed by Claude.

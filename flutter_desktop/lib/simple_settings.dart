@@ -1,4 +1,5 @@
 
+import 'daily_report_ui.dart';
 import 'package:flutter/material.dart';
 
 import 'brand.dart';
@@ -70,7 +71,7 @@ class _SimpleSettingsState extends State<SimpleSettings> {
                     color: NohutBrand.muted, size: 17),
                 ]),
                 const Spacer(),
-                Text(name, maxLines: 1, overflow: TextOverflow.ellipsis,
+                Text(_label(name), maxLines: 1, overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: NohutBrand.green,
                     fontSize: 14, fontWeight: FontWeight.w800)),
@@ -204,53 +205,7 @@ class _SimpleSettingsState extends State<SimpleSettings> {
   @override
   Widget build(BuildContext context) {
     final settings = widget.state['settings'] as Map? ?? {};
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const Text('İşletme Ayarları · Yönetim ve Bağlantılar',
-          style: TextStyle(color: NohutBrand.green,
-            fontSize: 19, fontWeight: FontWeight.w800)),
-        const SizedBox(height: 4),
-        const Text('Her bölümü ayrı yönetin. Değişiklikler bu bilgisayarda saklanır.',
-          style: TextStyle(color: NohutBrand.muted, fontSize: 12)),
-        const SizedBox(height: 16),
-        Wrap(
-          spacing: 8,
-          children: [
-            for (final name in [
-              'Genel',
-              'Bildirimler',
-              'Menü',
-              'Yazıcı',
-              'Entegrasyonlar',
-              if (widget.staffPanel != null) 'Personel',
-              if (widget.wifiPanel != null) 'Bağlantı',
-              'Güvenlik',
-              'Yedekleme',
-            ])
-              ChoiceChip(
-                avatar: Icon(
-                  switch (name) {
-                    'Genel' => Icons.dashboard_customize_outlined,
-                    'Bildirimler' => Icons.notifications_active_outlined,
-                    'Menü' => Icons.menu_book_outlined,
-                    'Yazıcı' => Icons.print_outlined,
-                    'Entegrasyonlar' => Icons.hub_outlined,
-                    'Personel' => Icons.people_outline,
-                    'Bağlantı' => Icons.wifi_outlined,
-                    'Güvenlik' => Icons.shield_outlined,
-                    _ => Icons.backup_outlined,
-                  },
-                  size: 17,
-                  color: tab == name ? Colors.white : NohutBrand.green,
-                ),
-                label: Text(name),
-                selected: tab == name,
-                onSelected: (_) => setState(() => tab = name),
-              ),
-          ],
-        ),
-        const SizedBox(height: 16),
+    final content = <Widget>[
         if (tab == 'Personel' && widget.staffPanel != null) widget.staffPanel!,
         if (tab == 'Bağlantı' && widget.wifiPanel != null) widget.wifiPanel!,
         if (tab == 'Genel') ...[
@@ -290,6 +245,9 @@ class _SimpleSettingsState extends State<SimpleSettings> {
               'Yeni siparişler, yazdırma ve ödeme uyarıları, yorumlar. Bildirimler sipariş veya ödeme onayı değildir.',
               [widget.notificationHistory!]),
         if (tab == 'Bildirimler') ...[
+          section('Gün Sonu Raporu',
+              'Kapanış saatinde Yönetici uygulamasına günün özeti. Varsayılan 21:30; gün ve tatile göre değiştirilebilir.',
+              [DailyReportSettings(state: widget.state, edit: widget.edit)]),
           section('Masa / Gel-Al Sesleri',
             'Personel siparişleri online platformlardan bağımsızdır.', [
             SwitchListTile.adaptive(
@@ -817,7 +775,135 @@ class _SimpleSettingsState extends State<SimpleSettings> {
               ),
             ],
           ),
-      ],
+    ];
+    return LayoutBuilder(builder: (context, constraints) {
+      final wide = constraints.maxWidth >= 980;
+      final header = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Text(_label(tab), style: const TextStyle(color: NohutBrand.green,
+          fontSize: 21, fontWeight: FontWeight.w800, fontFamily: NohutBrand.headingFont)),
+        const SizedBox(height: 4),
+        Text(_pages.firstWhere((p) => p.id == tab).about,
+          style: const TextStyle(color: NohutBrand.muted, fontSize: 12.5)),
+        const SizedBox(height: 14),
+      ]);
+      if (!wide) {
+        return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          _searchField(),
+          const SizedBox(height: 10),
+          _compactNav(),
+          const SizedBox(height: 16),
+          header,
+          ...content,
+        ]);
+      }
+      return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        SizedBox(width: 248, child: _sideNav()),
+        const SizedBox(width: 22),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [header, ...content])),
+      ]);
+    });
+  }
+
+  // Q2 Ayarlar information architecture: only real, working settings are
+  // listed (no placeholders for features this version does not have).
+  // Cloud sync and backup administration stay on Windows only.
+  List<_SettingsPage> get _pages => [
+    const _SettingsPage('Genel', 'Genel Bakış', '', Icons.space_dashboard_outlined,
+      'Bölümlere hızlı geçiş ve bağlantı durumu.', 'özet durum bağlantı'),
+    if (widget.staffPanel != null)
+      const _SettingsPage('Personel', 'Personel', 'İşletme', Icons.badge_outlined,
+        'Personel profilleri, ücretler ve bordro seçimi.', 'çalışan ücret maaş bordro saatlik'),
+    const _SettingsPage('Güvenlik', 'Kullanıcılar & Güvenlik', 'İşletme', Icons.admin_panel_settings_outlined,
+      'Hesaplar, roller, yetkiler, bağlı cihazlar ve oturumlar.', 'kullanıcı hesap rol yetki şifre pin cihaz oturum giriş'),
+    if (widget.wifiPanel != null)
+      const _SettingsPage('Bağlantı', 'Telefon Bağlantısı', 'İşletme', Icons.phonelink_setup_outlined,
+        'Personel ve Yönetici telefonlarının yerel ağdan bağlanması.', 'wifi ağ qr telefon lan eşleştir'),
+    const _SettingsPage('Yazıcı', 'Yazıcı & Fiş', 'Operasyon', Icons.print_outlined,
+      'Fiş yazıcısı, kağıt, mod ve test baskısı.', 'xp-237b kağıt fiş logo hizalama esc/pos'),
+    const _SettingsPage('Bildirimler', 'Bildirimler & Sesler', 'Operasyon', Icons.notifications_active_outlined,
+      'Sipariş sesleri ve bildirim geçmişi.', 'ses alarm uyarı bildirim'),
+    const _SettingsPage('Entegrasyonlar', 'Entegrasyonlar', 'Operasyon', Icons.hub_outlined,
+      'Trendyol Go, Yemeksepeti, Migros ve Google bağlantı durumu.', 'trendyol yemeksepeti migros google api'),
+    const _SettingsPage('Menü', 'Menü & QR', 'Operasyon', Icons.qr_code_2_outlined,
+      'Ürünler ve QR menü yayını.', 'ürün fiyat qr menü yayın'),
+    const _SettingsPage('Yedekleme', 'Yedekleme & Geri Yükleme', 'Sistem', Icons.backup_outlined,
+      'Şifreli yedek, doğrulama ve geri yükleme (yalnızca Windows).', 'yedek geri yükle veritabanı şifreli'),
+  ];
+
+  String _label(String id) => _pages.firstWhere((p) => p.id == id, orElse: () => _pages.first).label;
+
+  Widget _searchField() => TextField(
+    key: const ValueKey('settings-search'),
+    decoration: const InputDecoration(isDense: true, hintText: 'Ayarlarda ara',
+      prefixIcon: Icon(Icons.search, size: 20)),
+    onChanged: (v) => setState(() => navSearch = v),
+  );
+
+  String navSearch = '';
+
+  Widget _navTile(_SettingsPage p) {
+    final selected = tab == p.id;
+    return Padding(padding: const EdgeInsets.symmetric(vertical: 1.5), child: Material(
+      color: selected ? NohutBrand.green : Colors.transparent,
+      borderRadius: BorderRadius.circular(11),
+      child: InkWell(
+        key: ValueKey('settings-nav-${p.id}'),
+        borderRadius: BorderRadius.circular(11),
+        onTap: () => setState(() => tab = p.id),
+        child: Padding(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10), child: Row(children: [
+          Icon(p.icon, size: 19, color: selected ? Colors.white : NohutBrand.green),
+          const SizedBox(width: 11),
+          Expanded(child: Text(p.label, maxLines: 1, overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 13.5, fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+              color: selected ? Colors.white : NohutBrand.ink))),
+        ])),
+      )));
+  }
+
+  List<_SettingsPage> get _filtered {
+    final q = navSearch.trim().toLowerCase();
+    if (q.isEmpty) return _pages;
+    return _pages.where((p) => '${p.label} ${p.about} ${p.keywords}'.toLowerCase().contains(q)).toList();
+  }
+
+  Widget _sideNav() {
+    final pages = _filtered;
+    final groups = <String>[];
+    for (final p in pages) {
+      if (!groups.contains(p.group)) groups.add(p.group);
+    }
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(color: NohutBrand.card, borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xffE1E7E3))),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        _searchField(),
+        const SizedBox(height: 8),
+        if (pages.isEmpty) const Padding(padding: EdgeInsets.all(8),
+          child: Text('Eşleşen ayar yok.', style: TextStyle(color: NohutBrand.muted, fontSize: 12.5))),
+        for (final g in groups) ...[
+          if (g.isNotEmpty) Padding(padding: const EdgeInsets.fromLTRB(8, 12, 8, 4), child: Text(g.toUpperCase(),
+            style: const TextStyle(color: NohutBrand.muted, fontSize: 11, letterSpacing: 1, fontWeight: FontWeight.w800))),
+          for (final p in pages.where((p) => p.group == g)) _navTile(p),
+        ],
+      ]),
     );
   }
+
+  Widget _compactNav() => Wrap(spacing: 8, runSpacing: 8, children: [
+    for (final p in _filtered)
+      ChoiceChip(
+        avatar: Icon(p.icon, size: 17, color: tab == p.id ? Colors.white : NohutBrand.green),
+        label: Text(p.label),
+        selected: tab == p.id,
+        onSelected: (_) => setState(() => tab = p.id),
+      ),
+  ]);
+}
+
+class _SettingsPage {
+  const _SettingsPage(this.id, this.label, this.group, this.icon, this.about, this.keywords);
+  final String id, label, group, about, keywords;
+  final IconData icon;
 }

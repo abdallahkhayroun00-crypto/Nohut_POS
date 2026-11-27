@@ -4,6 +4,8 @@ import 'dart:convert';
 import 'package:nohut_core/finance_wire.dart';
 import 'package:nohut_core/report_period.dart';
 
+import 'payroll.dart';
+import 'workforce.dart' as wf show addDays, isCalendarDay, istanbulDayOfInstant, weekStartOf;
 import 'finance_logic.dart';
 import 'google_business.dart';
 import 'staff_commands.dart';
@@ -21,22 +23,32 @@ import 'windows_vault.dart';
 /// Independent, physically enrolled financial capability. Never grant it to
 /// an ordinary staff bearer token. The key is held in the Windows DPAPI vault.
 class FinanceSyncServer {
-  FinanceSyncServer(this.store, {this.staffProjection, this.googleProvider}) :
+  FinanceSyncServer(this.store, {this.staffProjection, this.googleProvider, this.ownerEmployeeIds}) :
     vault = WindowsVault(File(store.filePath + '.finance-sync.dpapi'));
 
   final PosStore store;
   final Json Function(Json)? staffProjection;
   final GoogleBusiness Function()? googleProvider;
+  /// Employee profiles linked to owner accounts (Windows › Kullanıcılar).
+  final List<int> Function()? ownerEmployeeIds;
 
-  static Json owner(Json state) {
-    final matches = asMaps(state['employees']).where((e) => e['active'] == true &&
-      e['name'] == managementOwnerName && e['id'] is int).toList();
-    if (matches.length != 1) throw const FormatException('Aktif Ömer Yılmaz kaydı gerekli.');
-    return matches.single;
+  Json _owner(Json state) => owner(state, ownerIds: ownerEmployeeIds?.call() ?? const []);
+
+  /// The owner profile: the active employee linked to the owner account.
+  /// Installs without a linked owner account keep the legacy name match so
+  /// an existing pairing keeps working after the upgrade.
+  static Json owner(Json state, {List<int> ownerIds = const []}) {
+    final active = asMaps(state['employees']).where((e) => e['active'] == true && e['id'] is int);
+    final linked = active.where((e) => ownerIds.contains(e['id'])).toList();
+    if (linked.length == 1) return linked.single;
+    final legacy = active.where((e) => e['name'] == legacyManagementOwnerName).toList();
+    if (ownerIds.isEmpty && legacy.length == 1) return legacy.single;
+    throw const FormatException(
+        'İşletme sahibi hesabını bir personel profiline bağlayın (Ayarlar › Güvenlik › Kullanıcılar).');
   }
 
   Future<String> rotateOwnerKey() async {
-    final employee = owner(store.read().data);
+    final employee = _owner(store.read().data);
     if (_changing) throw StateError('Yönetici anahtarı değişiyor.');
     _changing = true;
     _generation++;
@@ -169,7 +181,7 @@ class FinanceSyncServer {
         'id', 'recordType', 'date', 'title', 'market', 'storeBrand',
         'quantityMilli', 'unit', 'pricePerUnitCents', 'discountCents',
         'totalCents', 'paymentMethod', 'voided', 'updatedAt', 'note',
-        'discountType', 'discountValue',
+        'discountType', 'discountValue', 'amountsCents',
       ]),
       'weeklyPayroll': pick('weeklyPayroll', (r) => matches(r, 'weekEnd'), [
         'id', 'employeeId', 'employeeName', 'weekStart', 'weekEnd',
@@ -226,6 +238,7 @@ class FinanceSyncServer {
       if (d[key] is! bool) throw const FormatException('Seçim geçersiz.');
       return d[key] as bool;
     }
+    final actor = '${payload['actor'] ?? 'Android yönetici'}';
     return store.command('fin_mgr_' + id, payload, (state) {
       Json? row(String collection, bool Function(Json) match) =>
         financeRows(state, collection).where(match).firstOrNull;
@@ -293,6 +306,52 @@ class FinanceSyncServer {
           if (current == null) throw const FinanceVersionConflict();
           check(current);
           voidManualPlatformIncome(state, str('source'), str('month'));
+        // V6.0 payroll (lib/payroll.dart): rates with effective dates and an
+        // immutable payment ledger; nothing here initiates a transfer.
+        case 'payroll_rate':
+          setEmployeeRate(state, employeeId: num('employeeId'), payType: str('payType'),
+            rateCents: num('rateCents'), effectiveFrom: str('effectiveFrom'), by: actor);
+        case 'payroll_payment':
+          final w = str('weekStart');
+          if (d['expectedPaidCents'] != null &&
+              payrollStatus(state, num('employeeId'), w, today: '9999-12-31')['paidCents'] != d['expectedPaidCents']) {
+            throw const FinanceVersionConflict();
+          }
+          recordPayrollPayment(state, {...d, 'requestId': id}, by: actor);
+        case 'payroll_reverse':
+          reversePayrollPayment(state, d, by: actor);
+        case 'payroll_unpaid':
+          acknowledgeUnpaid(state, d, by: actor);
+        case 'payroll_eligible':
+          if (d['eligible'] is! bool) throw const FormatException('Bordro seçimi geçersiz.');
+          setPayrollEligible(state, num('employeeId'), d['eligible'] as bool);
+        case 'quick_save':
+          // §24.8 Hızlı Gider Ekle from Yönetici (LAN + Android): same rules
+          // as the Windows quick form; edits need the exact prior version.
+          int? editId;
+          if (d['id'] != null) {
+            editId = num('id');
+            final current = row('materials', (r) => r['id'] == editId);
+            if (current == null || current['voided'] == true || !isQuickMaterial(current)) {
+              throw const FinanceVersionConflict();
+            }
+            check(current);
+          }
+          final amounts = d['amountsCents'];
+          if (amounts is! List || !amounts.every((x) => x is int)) {
+            throw const FormatException('Tutarlar geçersiz.');
+          }
+          saveQuickMaterialPurchase(state, id: editId, date: str('date'),
+            storeBrand: str('storeBrand'), amountsCents: amounts.cast<int>(),
+            market: str('market'), paymentMethod: str('paymentMethod'),
+            note: str('note'));
+        case 'quick_void':
+          final current = row('materials', (r) => r['id'] == num('id'));
+          if (current == null || current['voided'] == true || !isQuickMaterial(current)) {
+            throw const FinanceVersionConflict();
+          }
+          check(current);
+          voidMaterialPurchase(state, num('id'), str('reason'));
         case 'material_save':
           Json? current;
           if (d['id'] != null) {
@@ -382,6 +441,19 @@ class FinanceSyncServer {
     };
   }
 
+  /// §24.6 Haftalık Maaş Ödemeleri for the native Yönetici app: the same
+  /// rows, statuses and money as `/api/yonetici/payroll` (one calculation in
+  /// lib/payroll.dart). Payments go through `managerWrite` `payroll_payment`.
+  static Json ownerPayroll(PosStore store, String weekStart, {required List<int> ownerIds, DateTime? now}) {
+    ensureOwnerPayrollDefault(store, ownerIds);
+    final state = store.read().data;
+    final today = wf.istanbulDayOfInstant(now ?? DateTime.now());
+    final week = wf.isCalendarDay(weekStart) ? wf.weekStartOf(weekStart) : wf.addDays(wf.weekStartOf(today), -7);
+    return {'ok': true, 'weekStart': week, 'today': today,
+      'rows': payrollWeek(state, week, today: today),
+      'payments': [for (final p in financeRows(state, 'payrollPayments')) if (p['weekStart'] == week) p]};
+  }
+
   static Future<Json> report(Json state, Json payload) async {
     if (payload['from'] is! String || payload['to'] is! String) {
       throw const FormatException('Rapor tarih aralığı gerekli. Uygulamayı güncelleyin.');
@@ -404,17 +476,20 @@ class FinanceSyncServer {
     if (_changing || generation != _generation) throw const FormatException('Finans erişimi değişti.');
     Json result;
     try {
-      if (access?['ownerId'] != null && owner(store.read().data)['id'] != access?['ownerId']) {
+      if (access?['ownerId'] != null && _owner(store.read().data)['id'] != access?['ownerId']) {
         throw const FormatException('Yönetici yetkisi kaldırıldı.');
       }
       final op = payload['operation'];
       if (op is String && op.startsWith('owner')) {
-        final employee = owner(store.read().data);
-        if (access?['ownerId'] != employee['id']) throw const FormatException('Ömer Yılmaz yönetici eşleştirmesi gerekli.');
+        final employee = _owner(store.read().data);
+        if (access?['ownerId'] != employee['id']) throw const FormatException('İşletme sahibi eşleştirmesi gerekli.');
         if (op == 'ownerHello') {
-          result = {'ok':true,'ownerId':employee['id'],'ownerName':managementOwnerName};
+          result = {'ok':true,'ownerId':employee['id'],'ownerName':employee['name']};
         } else if (op == 'ownerOverview') {
           result = {'ok':true,'view':ownerOverview(store.read().data, (payload['day'] ?? '').toString())};
+        } else if (op == 'ownerPayroll') {
+          result = ownerPayroll(store, '${payload['weekStart'] ?? ''}',
+              ownerIds: ownerEmployeeIds?.call() ?? [employee['id'] as int]);
         } else if (op == 'ownerGoogle') {
           final google = googleProvider?.call();
           if (google == null || !google.connected) {
@@ -443,7 +518,7 @@ class FinanceSyncServer {
           final project = staffProjection;
           if (project == null) throw const FormatException('Sipariş bağlantısı hazır değil.');
           final state = project(snap.data);
-          state['employees'] = [{'id':employee['id'],'name':managementOwnerName,'active':true}];
+          state['employees'] = [{'id':employee['id'],'name':employee['name'],'active':true}];
           result = {'ok':true,'revision':snap.revision,'state':state,'serverId':serverId};
         } else if (op == 'ownerOrder' || op == 'ownerAction') {
           if (payload['data'] is! Map) throw const FormatException('İstek geçersiz.');
