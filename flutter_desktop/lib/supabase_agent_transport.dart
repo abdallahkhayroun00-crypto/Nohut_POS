@@ -107,7 +107,7 @@ class SupabaseAgentTransport implements SyncTransport, CommandTransport {
 
   @override
   Future<IngestResult> ingest(SyncTransaction tx) async {
-    if (tx.authorityEpoch != credentials.authorityEpoch) throw const AgentTransportException('authority_mismatch');
+    if (tx.authorityEpoch != credentials.authorityEpoch.replaceAll('-', '').toLowerCase()) throw const AgentTransportException('authority_mismatch');
     final result = await _rpc('nohut_agent_ingest', {'p_tx': tx.toJson()});
     if (result is! Map || result['acked_through_seq'] is! int) throw const AgentTransportException('invalid_checkpoint');
     final status = switch (result['status']) {

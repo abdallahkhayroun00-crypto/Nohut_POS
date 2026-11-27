@@ -1,0 +1,55 @@
+name: Test Nohut cloud HTTP integration
+on:
+  pull_request:
+    paths: ['supabase/**', 'flutter_desktop/**', '.github/workflows/nohut-cloud-integration.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  synthetic-http-postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: disposable-ci-only
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+        working-directory: supabase/ci
+      - name: Start disposable database and localhost-only RPC bridge
+        env:
+          NOHUT_SYNTHETIC_TEST: '1'
+          PGHOST: 127.0.0.1
+          PGPORT: '5432'
+          PGUSER: postgres
+          PGPASSWORD: disposable-ci-only
+        run: |
+          node supabase/ci/http_rpc_bridge.cjs > "$RUNNER_TEMP/nohut-http.log" 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -fsS -o /dev/null -X POST http://127.0.0.1:55440/test/setup; then exit 0; fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/nohut-http.log"
+          exit 1
+      - run: flutter pub get
+        working-directory: flutter_desktop
+      - name: Real serializers, atomic ingest, lost ACK, Windows execution and app confirmation
+        env:
+          NOHUT_TEST_RPC_URL: http://127.0.0.1:55440
+        run: flutter test test/cloud_http_integration_test.dart --reporter expanded
+        working-directory: flutter_desktop
+      - name: Synthetic integration diagnostics
+        if: failure()
+        run: cat "$RUNNER_TEMP/nohut-http.log"

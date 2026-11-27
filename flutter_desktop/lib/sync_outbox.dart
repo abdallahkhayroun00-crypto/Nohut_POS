@@ -19,6 +19,7 @@ import 'package:sqlite3/sqlite3.dart';
 
 import 'entity_storage.dart';
 import 'sync_field_registry.dart';
+import 'finance_sync_history.dart';
 
 void createSyncTables(Database db) {
   db.execute('''
@@ -90,11 +91,12 @@ String canonicalJson(Object? value) {
 }
 
 class OutboxChange {
-  const OutboxChange(this.entityType, this.entityId, this.op, this.row);
+  const OutboxChange(this.entityType, this.entityId, this.op, this.row, {this.previousRow});
   final String entityType, entityId, op;
 
   /// Full local row (projected before storing); null for `delete`.
   final Object? row;
+  final Object? previousRow;
 }
 
 /// Projects one entity row through the cloud allowlist.
@@ -154,7 +156,7 @@ List<OutboxChange> collectOutboxChanges(
     final newProjection = projectCore(key, next[key]);
     if (jsonEquals(oldProjection, newProjection)) continue;
     changes.add(OutboxChange(
-      key, 'core', newProjection == null ? 'delete' : 'upsert', next[key],
+      key, 'core', newProjection == null ? 'delete' : 'upsert', next[key], previousRow: previous[key],
     ));
   }
   return changes;
@@ -180,7 +182,7 @@ int writeOutboxEvents(
   var written = 0;
   try {
     for (final change in changes) {
-      final Object? payload;
+      Object? payload;
       if (change.op == 'delete') {
         payload = null;
       } else {
@@ -189,6 +191,9 @@ int writeOutboxEvents(
             : projectRow(change.entityType, change.row);
         // Not syncable (e.g. device settings, contact directory): skip.
         if (payload == null) continue;
+        if (change.entityType == 'finance' && payload is Map<String,dynamic>) {
+          payload = captureFinanceReversals(db,change.previousRow,payload,createdAt);
+        }
       }
       final body = canonicalJson(payload);
       insert.execute([

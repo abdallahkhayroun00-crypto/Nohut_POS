@@ -1,0 +1,5 @@
+{
+  "name": "nohut-synthetic-cloud-integration",
+  "private": true,
+  "dependencies": { "pg": "8.23.1" }
+}

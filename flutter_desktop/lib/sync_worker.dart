@@ -36,9 +36,11 @@ class SyncEvent {
     required this.payloadJson,
     required this.payloadSha256,
     required this.ordinal,
+    this.createdAt,
   });
   final int seq, ordinal;
   final String eventId, entityType, entityId, op, payloadJson, payloadSha256;
+  final String? createdAt;
 
   Map<String, Object?> toJson() => {
     'seq': seq,
@@ -57,10 +59,10 @@ class SyncEvent {
 /// One POS commit (all its events), sent and acknowledged atomically.
 class SyncTransaction {
   SyncTransaction({
-    required this.authorityEpoch,
+    required String authorityEpoch,
     required this.sourceRevision,
     required this.events,
-  });
+  }) : authorityEpoch = authorityEpoch.replaceAll('-', '').toLowerCase();
   final String authorityEpoch;
   final int sourceRevision;
   final List<SyncEvent> events;
@@ -163,6 +165,7 @@ List<SyncTransaction> groupPending(Database db, {int limitEvents = 500}) {
       op: r['op'] as String,
       payloadJson: r['payload_json'] as String,
       payloadSha256: r['payload_sha256'] as String,
+      createdAt: r['created_at'] as String,
     ));
   }
   return [

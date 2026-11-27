@@ -1,0 +1,88 @@
+// TEST ONLY. Localhost + explicit synthetic gate. Never deploy this bridge:
+// it stands in for PostgREST/JWT verification against a disposable database.
+const {Client}=require('pg');
+const http=require('node:http');
+const fs=require('node:fs');
+const path=require('node:path');
+const {randomUUID}=require('node:crypto');
+if(process.env.NOHUT_SYNTHETIC_TEST!=='1'||!['127.0.0.1','localhost'].includes(process.env.PGHOST||'127.0.0.1')) {
+  throw Error('Synthetic localhost test gate required');
+}
+const cfg={host:process.env.PGHOST||'127.0.0.1',port:Number(process.env.PGPORT||5432),
+  user:process.env.PGUSER||'postgres',password:process.env.PGPASSWORD,database:'postgres'};
+const base=path.resolve(__dirname,'..');
+const dbname='nohut_test_http_'+Date.now();
+const role='nohut_test_owner';
+const ids={restaurantId:randomUUID(),authorityEpoch:randomUUID(),userId:randomUUID(),deviceId:randomUUID(),sessionId:randomUUID()};
+const methods={
+  nohut_agent_ingest:['p_token','p_tx'],nohut_agent_checkpoint:['p_token'],nohut_agent_claim:['p_token','p_max'],
+  nohut_agent_validate_claim:['p_token','p_request','p_generation','p_envelope_sha256'],
+  nohut_agent_complete:['p_token','p_request','p_generation','p_envelope_sha256','p_result'],
+  nohut_agent_report_receipt:['p_token','p_request','p_envelope_sha256','p_result'],
+  nohut_enqueue_command:['p_device_id','p_client','p_permission_version','p_request_id','p_action','p_payload'],
+  nohut_command_status:['p_device_id','p_client','p_permission_version','p_request_id'],
+};
+let loseAck=false;
+async function main(){
+  const admin=new Client(cfg);await admin.connect();
+  for(const sql of ['create role anon nologin','create role authenticated nologin',
+    'create role service_role nologin bypassrls',`create role ${role} nologin nosuperuser nobypassrls`]){
+    try{await admin.query(sql)}catch(e){if(e.code!=='42710')throw e;}
+  }
+  await admin.query(`grant anon,authenticated to ${role}`);
+  await admin.query(`create database ${dbname} owner ${role}`);
+  const db=new Client({...cfg,database:dbname});await db.connect();
+  await db.query(fs.readFileSync(path.join(base,'ci/supabase_auth_stub.sql'),'utf8'));
+  await db.query(`set role ${role}`);
+  for(const file of fs.readdirSync(path.join(base,'migrations')).filter(f=>f.endsWith('.sql')).sort()){
+    await db.query(fs.readFileSync(path.join(base,'migrations',file),'utf8'));
+  }
+  await db.query('insert into nohut_private.restaurants(restaurant_id) values($1)',[ids.restaurantId]);
+  await db.query('insert into nohut_private.authority_epochs(restaurant_id,authority_epoch) values($1,$2)',[ids.restaurantId,ids.authorityEpoch]);
+  await db.query(`insert into nohut_private.sync_migrations(restaurant_id,migration_id,authority_epoch,snapshot_revision,snapshot_seq,schema_version,manifest_sha256,status)
+    values($1,$2,$3,0,0,1,repeat('a',64),'active')`,[ids.restaurantId,randomUUID(),ids.authorityEpoch]);
+  await db.query('insert into nohut_private.sync_checkpoints(restaurant_id,authority_epoch) values($1,$2)',[ids.restaurantId,ids.authorityEpoch]);
+  await db.query(`insert into nohut_private.app_users(user_id,restaurant_id,username,pos_employee_id,role_template,is_owner)
+    values($1,$2,'synthetic-http-owner',1,'Yönetici',true)`,[ids.userId,ids.restaurantId]);
+  await db.query(`select nohut_private.enroll_device($1,$2,$3,'yonetici','Synthetic HTTP')`,[ids.userId,ids.deviceId,ids.sessionId]);
+  const info=(await db.query(`select nohut_private.enroll_windows_agent($1,$2,$3,'aal2',1,$4,$5) as value`,
+    [ids.userId,ids.sessionId,ids.deviceId,randomUUID(),ids.authorityEpoch])).rows[0].value;
+  ids.token=info.token;
+  // Serialize test requests on one connection so SET LOCAL ROLE is isolated.
+  let tail=Promise.resolve();
+  const server=http.createServer((req,res)=>{
+    tail=tail.then(async()=>{
+      try{
+        let body='';for await(const chunk of req){body+=chunk;if(body.length>8*1024*1024)throw Error('body limit');}
+        const args=body?JSON.parse(body):{};
+        res.setHeader('Content-Type','application/json');
+        if(req.url==='/test/setup'){res.end(JSON.stringify(ids));return;}
+        if(req.url==='/test/lose-next-ingest-ack'){loseAck=true;res.end('{}');return;}
+        if(req.url==='/test/inspect'){
+          const result=(await db.query(`select (select count(*)::integer from nohut_private.expenses where restaurant_id=$1) as expenses,
+            (select coalesce(sum(amount_kurus),0)::text from nohut_private.expenses where restaurant_id=$1) as expense_kurus,
+            (select count(*)::integer from nohut_private.sync_transactions where restaurant_id=$1) as transactions,
+            (select last_acked_seq::integer from nohut_private.sync_checkpoints where restaurant_id=$1) as checkpoint`,[ids.restaurantId])).rows[0];
+          res.end(JSON.stringify(result));return;
+        }
+        const method=req.url?.split('/').pop();const params=methods[method];
+        if(!params||req.url!==`/rest/v1/rpc/${method}`||Object.keys(args).some(k=>!params.includes(k))){res.writeHead(400).end('{}');return;}
+        const app=method==='nohut_enqueue_command'||method==='nohut_command_status';
+        if(app&&req.headers.authorization!=='Bearer synthetic-user-jwt'){res.writeHead(403).end('{}');return;}
+        await db.query('begin');
+        try{
+          await db.query(`set local role ${app?'authenticated':'anon'}`);
+          if(app)await db.query("select set_config('request.jwt.claims',$1,true)",[JSON.stringify({sub:ids.userId,session_id:ids.sessionId,aal:'aal2'})]);
+          const result=(await db.query(`select public.${method}(${params.map((_,i)=>'$'+(i+1)).join(',')}) as value`,params.map(k=>args[k]))).rows[0].value;
+          await db.query('commit');
+          if(method==='nohut_agent_ingest'&&loseAck){loseAck=false;res.writeHead(503).end('{}');return;}
+          res.end(JSON.stringify(result));
+        }catch(e){await db.query('rollback');throw e;}
+      }catch(e){res.writeHead(e.code==='42501'?403:400).end(JSON.stringify({code:e.code||'test_error'}));console.error('RPC test error',e.code,e.message);}
+    }).catch(e=>{console.error(e);res.destroy();});
+  });
+  server.listen(Number(process.env.NOHUT_TEST_HTTP_PORT||55440),'127.0.0.1',()=>console.log('Synthetic HTTP bridge ready on localhost'));
+  async function stop(){server.close();await tail;await db.end();await admin.end();process.exit(0);}
+  process.on('SIGINT',stop);process.on('SIGTERM',stop);
+}
+main().catch(e=>{console.error(e);process.exit(1)});

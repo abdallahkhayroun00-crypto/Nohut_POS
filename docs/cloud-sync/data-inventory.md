@@ -18,6 +18,18 @@ Status legend:
 
 Classes: `PUBLIC`, `INTERNAL`, `PERSONAL_PII`, `FINANCIAL`, `SECRET`, `DEVICE_LOCAL`, `DERIVED`, `TRANSIENT_API`, `NOT_COLLECTED`.
 
+### PR #39 additions (in flight, 2026-11-27)
+
+| Persisted table | Purpose and classification | Cloud policy |
+|---|---|---|
+| `remote_command_receipts` | Immutable envelope SHA-256 + committed result, written in the domain SQLite transaction (`INTERNAL`, `FINANCIAL`) | Scoped agent reports exact outcome; no raw credential or customer payload |
+| `remote_command_report_acks` | Durable acknowledgement of each receipt fingerprint (`INTERNAL`) | Local bookkeeping only |
+| `cloud_source_ids` | Stable source kind/key → UUID allocated once; included in SQLite backups (`INTERNAL`) | IDs referenced by typed rows; never derive them from list positions or display labels |
+| `finance_sync_reversals` | Original fixed-payment month, template, amount and payment time plus explicit reversal time (`FINANCIAL`) | Typed reversal retains undo/repay history; captured atomically with the local mutation/outbox |
+| PostgreSQL `typed_record_versions`, `typed_record_history` | Typed current finance facts and immutable prior versions (`FINANCIAL`, payroll `PERSONAL_PII`) | Private FORCE RLS; trusted migration owner only, no direct client grants |
+
+Finance's nested allowlist now explicitly covers purchases, quantity/price/discount and quick-receipt arrays, all existing purchase corrections, fixed-expense active/amount histories, payments/reversals, payroll/advances, expenses and manual platform gross/net history. Detailed-purchase history fields `previousDiscountCents`, `previousUnitPriceCents`, `previousQuantityMilli`, `referencePriceCents` and manual-platform history fields were verified against the actual writers and declared in the runtime registry. Undeclared nested fields remain excluded.
+
 ---
 
 ## 1. SQLite database `nohut-pos.sqlite3`

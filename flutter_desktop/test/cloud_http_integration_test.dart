@@ -1,0 +1,85 @@
+// Real Dart serializer -> HTTP RPC boundary -> PostgreSQL -> Windows command
+// -> confirmed app status. The bridge is synthetic/local-only, never deployed.
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:nohut_falafel_desktop/cloud_finance_serializer.dart';
+import 'package:nohut_falafel_desktop/finance_logic.dart';
+import 'package:nohut_falafel_desktop/pos_store.dart';
+import 'package:nohut_falafel_desktop/remote_commands.dart';
+import 'package:nohut_falafel_desktop/supabase_agent_transport.dart';
+import 'package:nohut_falafel_desktop/sync_outbox.dart';
+import 'package:nohut_falafel_desktop/sync_worker.dart';
+import 'package:sqlite3/sqlite3.dart';
+
+void main() {
+  final base=Platform.environment['NOHUT_TEST_RPC_URL'];
+  test('full synthetic HTTP/database sync and command recovery', () async {
+    final url=Uri.parse(base!);
+    expect(url.scheme,'http');
+    expect(url.host,'127.0.0.1');
+    final client=HttpClient();
+    Future<Map<String,dynamic>> call(String path, [Map<String,Object?> args=const {},bool app=false]) async {
+      final request=await client.postUrl(url.replace(path:path));
+      request.headers.contentType=ContentType.json;
+      if(app)request.headers.set('Authorization','Bearer synthetic-user-jwt');
+      request.write(jsonEncode(args));
+      final response=await request.close();
+      final body=await utf8.decoder.bind(response).join();
+      expect(response.statusCode,200,reason:body);
+      return Map<String,dynamic>.from(jsonDecode(body) as Map);
+    }
+    final setup=await call('/test/setup');
+    final folder=Directory.systemTemp.createTempSync('nohut-http-integration');
+    final store=PosStore(databaseFile:'${folder.path}/pos.sqlite3');
+    final db=sqlite3.open(store.filePath);
+    final transport=SupabaseAgentTransport(AgentCredentials(url:url,
+      publishableKey:'sb_publishable_synthetic_test_key',token:setup['token'] as String,
+      restaurantId:setup['restaurantId'] as String,authorityEpoch:setup['authorityEpoch'] as String),
+      allowLoopbackHttpForTests:true);
+    var now=DateTime.now().toUtc();
+    final sync=SyncWorker(db,TypedFinanceTransport(CloudIdentityMap(db),transport),clock:()=>now);
+    try {
+      final initial=emptyPosState()..['employees']=[{'id':1,'name':'Synthetic Initial','role':'Yönetici','active':true}];
+      expect(store.replace(initial,store.read().revision).ok,true);
+      setSyncState(db,'authority_epoch',(setup['authorityEpoch'] as String).replaceAll('-',''));
+      enableOutbox(db);
+      store.command('synthetic_finance_delta',{},(s){
+        (s['employees'] as List).first['name']='Synthetic Employee';
+        saveOtherExpense(s,day:'2026-10-01',category:'Diğer',name:'Synthetic expense',amountCents:12345,paymentMethod:'Nakit');
+        return {'ok':true};
+      });
+      expect(groupPending(db).single.events,hasLength(2));
+      await call('/test/lose-next-ingest-ack');
+      expect(await sync.flush(),0);
+      expect(pendingOutbox(db),hasLength(2));
+      final committed=await call('/test/inspect');
+      expect(committed['expenses'],1);
+      expect(committed['expense_kurus'],'12345');
+      expect(committed['transactions'],1);
+      now=now.add(const Duration(minutes:1));
+      expect(await sync.flush(),2);
+      expect(pendingOutbox(db),isEmpty);
+      expect((await call('/test/inspect'))['transactions'],1,reason:'lost ACK must not duplicate finance');
+
+      const requestId='90000000-0000-4000-8000-000000000001';
+      final context=<String,Object?>{'p_device_id':setup['deviceId'],'p_client':'yonetici','p_permission_version':1,'p_request_id':requestId};
+      expect((await call('/rest/v1/rpc/nohut_enqueue_command',{
+        ...context,'p_action':'clock_in_out','p_payload':{'action':'clockIn'},
+      },true))['status'],'accepted');
+      expect((await call('/rest/v1/rpc/nohut_command_status',context,true))['state'],'pending');
+      final worker=RemoteCommandWorker(store,transport);
+      expect(await worker.runOnce(),1,reason:'${worker.lastError}');
+      expect((store.read().data['shifts'] as List),hasLength(1));
+      expect((await call('/rest/v1/rpc/nohut_command_status',context,true))['state'],'confirmed');
+      expect(await worker.runOnce(),0);
+      expect((store.read().data['shifts'] as List),hasLength(1));
+      expect(await sync.flush(),greaterThan(0));
+      expect(pendingOutbox(db),isEmpty);
+    } finally {
+      sync.dispose();transport.close();db.close();store.dispose();
+      client.close(force:true);folder.deleteSync(recursive:true);
+    }
+  },skip:base==null,timeout:const Timeout(Duration(minutes:2)));
+}

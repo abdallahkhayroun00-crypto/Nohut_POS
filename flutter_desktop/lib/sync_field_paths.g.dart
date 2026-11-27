@@ -3,6 +3,14 @@
 part of 'sync_field_registry.dart';
 
 const knownStateFieldPaths = <String>{
+  'finance.materials[].referencePriceCents',
+  'finance.materials[].history[].previousDiscountCents',
+  'finance.materials[].history[].previousUnitPriceCents',
+  'finance.materials[].history[].previousQuantityMilli',
+  'finance.manualPlatformSales[].history[]',
+  'finance.manualPlatformSales[].history[].changedAt',
+  'finance.manualPlatformSales[].history[].kind',
+  'finance.manualPlatformSales[].history[].amountCents',
   'cashBook',
   'cashBook.movements',
   'cashBook.next',
