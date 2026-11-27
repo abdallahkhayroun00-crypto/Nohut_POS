@@ -31,7 +31,24 @@ class NohutApi {
   String? token;
   String? serverId;
   String? employeeId;
+  /// Individual LAN session (cookie value). Identity on the server always
+  /// comes from this session, never from a picker on the phone.
+  String? session;
+  /// Last `/api/auth/session` reply: {required, session: {status, username, employeeId, …}}.
+  Json sessionInfo = const {};
   bool get paired => host != null && token != null && serverId != null;
+  bool get signedIn => sessionInfo['session'] is Map && (sessionInfo['session'] as Map)['status'] == 'ok';
+  bool get loginRequired => sessionInfo['required'] == true;
+  int? get sessionEmployeeId => signedIn ? (sessionInfo['session'] as Map)['employeeId'] as int? : null;
+  String? get sessionUser => signedIn ? '${(sessionInfo['session'] as Map)['username']}' : null;
+  String? get sessionStatus => sessionInfo['session'] is Map ? '${(sessionInfo['session'] as Map)['status']}' : null;
+
+  static const _cookie = 'nohut_lan';
+  Map<String, String> _headers({bool json = false}) => {
+    'Authorization': 'Bearer $token',
+    if (json) 'Content-Type': 'application/json',
+    if (session != null) 'Cookie': '$_cookie=$session',
+  };
 
   static bool isLocalHost(String host) {
     final ip = InternetAddress.tryParse(host);
@@ -61,6 +78,77 @@ class NohutApi {
     token = await _storage.read(key: 'deviceToken');
     serverId = await _storage.read(key: 'serverId');
     employeeId = await _storage.read(key: 'employeeId');
+    session = await _storage.read(key: 'lanSession');
+  }
+
+  Future<String> _deviceId() async {
+    var id = await _storage.read(key: 'authDeviceId');
+    if (id == null) {
+      final r = Random.secure();
+      id = 'android-${List.generate(16, (_) => r.nextInt(16).toRadixString(16)).join()}';
+      await _storage.write(key: 'authDeviceId', value: id);
+    }
+    return id;
+  }
+
+  Future<Json> _auth(String method, String path, [Json? body]) async {
+    if (!paired) throw const FormatException('Önce cihazı eşleştirin.');
+    final uri = Uri.parse(host!).replace(path: '/api/auth/$path',
+        queryParameters: method == 'GET' ? {'client': 'personel'} : null);
+    final response = method == 'GET'
+        ? await _client.get(uri, headers: _headers()).timeout(const Duration(seconds: 8))
+        : await _client.post(uri, headers: _headers(json: true),
+            body: jsonEncode({'client': 'personel', ...?body})).timeout(const Duration(seconds: 12));
+    final setCookie = response.headers['set-cookie'] ?? '';
+    final m = RegExp('$_cookie=([^;]*)').firstMatch(setCookie);
+    if (m != null) {
+      final v = m.group(1)!;
+      if (v.isEmpty || setCookie.contains('Max-Age=0')) {
+        session = null;
+        await _storage.delete(key: 'lanSession');
+      } else {
+        session = v;
+        await _storage.write(key: 'lanSession', value: v);
+      }
+    }
+    final data = jsonDecode(utf8.decode(response.bodyBytes));
+    final result = data is Map ? Map<String, dynamic>.from(data) : <String, dynamic>{};
+    if (response.statusCode >= 400) {
+      throw FormatException(_authMessage('${result['error'] ?? ''}', result['message']));
+    }
+    return result;
+  }
+
+  static String _authMessage(String code, Object? message) => message is String && message.isNotEmpty
+      ? message
+      : switch (code) {
+          'invalid_credentials' => 'Kullanıcı adı veya şifre hatalı.',
+          'locked_out' || 'too_many_attempts' => 'Çok fazla hatalı deneme. Biraz sonra tekrar deneyin.',
+          'invalid_pin' => 'PIN hatalı.',
+          'inactive' => 'Hesap devre dışı.',
+          'device_revoked' || 'revoked' => 'Bu cihazın oturumu kaldırıldı. Yeniden giriş yapın.',
+          _ => 'Giriş yapılamadı.',
+        };
+
+  Future<Json> refreshSession() async => sessionInfo = await _auth('GET', 'session');
+
+  Future<void> login(String username, String password) async {
+    await _auth('POST', 'login', {'username': username.trim(), 'password': password,
+      'deviceId': await _deviceId(), 'label': 'Android Personel'});
+    await refreshSession();
+    if (sessionEmployeeId != null) await saveEmployee(sessionEmployeeId!);
+  }
+
+  Future<void> unlock({String? pin, String? password}) async {
+    await _auth('POST', 'unlock', pin != null ? {'pin': pin} : {'password': password ?? ''});
+    await refreshSession();
+  }
+
+  Future<void> logout() async {
+    try { await _auth('POST', 'logout'); } catch (_) {}
+    session = null;
+    sessionInfo = const {};
+    await _storage.delete(key: 'lanSession');
   }
 
   Future<void> saveEmployee(int id) async {
@@ -94,16 +182,18 @@ class NohutApi {
     if (!paired) throw const FormatException('Önce cihazı eşleştirin.');
     final uri = Uri.parse(host!).replace(path: path);
     final response = body == null
-        ? await _client.get(uri, headers: {'Authorization': 'Bearer $token'})
+        ? await _client.get(uri, headers: _headers())
             .timeout(const Duration(seconds: 8))
-        : await _client.post(uri, headers: {
-            'Authorization': 'Bearer $token',
-            'Content-Type': 'application/json',
-          }, body: jsonEncode(body)).timeout(const Duration(seconds: 12));
+        : await _client.post(uri, headers: _headers(json: true),
+            body: jsonEncode(body)).timeout(const Duration(seconds: 12));
     final data = jsonDecode(utf8.decode(response.bodyBytes));
     if (data is! Map) throw const FormatException('Geçersiz sunucu yanıtı');
     final result = Map<String, dynamic>.from(data);
     if (response.statusCode == 401) {
+      final code = '${result['error'] ?? ''}';
+      if (code == 'auth_required' || code == 'expired' || code == 'locked' || code == 'unknown') {
+        throw const FormatException('Giriş gerekli. Kullanıcı adınızla giriş yapın.');
+      }
       throw const FormatException('Bu cihazın yetkisi kaldırılmış. Yeniden eşleştirin.');
     }
     if (response.statusCode == 409) {
@@ -181,13 +271,15 @@ class NohutApi {
 
   Future<void> forget() async {
     if (serverId != null) await ExpenseDraftStore.forServer(serverId!).disconnect();
-    for (final key in ['lanUrl', 'deviceToken', 'serverId', 'employeeId']) {
+    for (final key in ['lanUrl', 'deviceToken', 'serverId', 'employeeId', 'lanSession']) {
       await _storage.delete(key: key);
     }
     host = null;
     token = null;
     serverId = null;
     employeeId = null;
+    session = null;
+    sessionInfo = const {};
   }
 
   void close() => _client.close();
@@ -275,6 +367,7 @@ class PersonelController extends ChangeNotifier {
     if (!api.paired || busy) return;
     try {
       final result = await api.bootstrap();
+      try { await api.refreshSession(); } catch (_) {}
       if (_disposed) return;
       final next = Map<String, dynamic>.from(result['state'] as Map);
       final incoming = rows(next['staffNotices']);

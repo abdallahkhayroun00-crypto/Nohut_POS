@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
+import 'package:flutter/services.dart';
 
 import 'expense_drafts.dart';
 import 'models.dart';
@@ -145,10 +147,86 @@ class _StaffHomeState extends State<StaffHome> {
     removed.dispose();
   }
 
+  String _signedInLabel() {
+    final id = c.api.sessionEmployeeId;
+    final name = c.employees.where((e) => e['id'] == id).map((e) => '${e['name']}').firstOrNull;
+    return name ?? c.api.sessionUser ?? 'Hesabım';
+  }
+
+  /// Native sign-in sheet (username + password), or PIN unlock when the
+  /// session is only locked after idle time.
+  Future<void> _login() async {
+    final locked = c.api.sessionStatus == 'locked';
+    final user = TextEditingController(), pass = TextEditingController();
+    String? error;
+    var busy = false;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheet) => StatefulBuilder(builder: (sheet, set) => Padding(
+        padding: EdgeInsets.fromLTRB(20, 4, 20, 20 + MediaQuery.viewInsetsOf(sheet).bottom),
+        child: AutofillGroup(child: Column(mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Text(locked ? 'Kilidi Aç' : 'Giriş Yap', style: Theme.of(sheet).textTheme.headlineSmall),
+          const SizedBox(height: 4),
+          Text(locked ? 'Oturumunuz kilitlendi. 5 haneli PIN’inizi girin.'
+              : 'Windows › Kullanıcılar’da oluşturulan hesabınızla giriş yapın.',
+              style: Theme.of(sheet).textTheme.bodyMedium),
+          const SizedBox(height: 16),
+          if (!locked) TextField(controller: user, autofocus: true,
+            autofillHints: const [AutofillHints.username], textInputAction: TextInputAction.next,
+            decoration: const InputDecoration(labelText: 'Kullanıcı adı', prefixIcon: Icon(Icons.person_outline))),
+          if (!locked) const SizedBox(height: 12),
+          TextField(controller: pass, obscureText: true, autofocus: locked,
+            autofillHints: locked ? null : const [AutofillHints.password],
+            keyboardType: locked ? TextInputType.number : TextInputType.visiblePassword,
+            maxLength: locked ? 5 : null,
+            decoration: InputDecoration(labelText: locked ? 'PIN' : 'Şifre',
+              prefixIcon: const Icon(Icons.lock_outline))),
+          if (error != null) Padding(padding: const EdgeInsets.only(top: 8),
+            child: Text(error!, style: TextStyle(color: Theme.of(sheet).colorScheme.error))),
+          const SizedBox(height: 16),
+          FilledButton(onPressed: busy ? null : () async {
+            set(() { busy = true; error = null; });
+            try {
+              if (locked) {
+                await c.api.unlock(pin: pass.text.trim());
+              } else {
+                await c.api.login(user.text, pass.text);
+              }
+              HapticFeedback.lightImpact();
+              if (sheet.mounted) Navigator.pop(sheet);
+            } on FormatException catch (e) {
+              HapticFeedback.heavyImpact();
+              set(() { busy = false; error = e.message; });
+            } catch (_) {
+              set(() { busy = false; error = 'Laptop bağlantısı kurulamadı.'; });
+            }
+          }, child: busy ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2))
+              : Text(locked ? 'Kilidi Aç' : 'Giriş Yap')),
+        ])),
+      )),
+    );
+    user.dispose();
+    pass.dispose();
+    if (mounted) setState(() => _dirty());
+  }
+
+  /// Signed in: the session decides who you are. Legacy shared mode only:
+  /// the picker (the server ignores it whenever a session exists).
+  int? get _actingStaff => c.api.signedIn ? c.api.sessionEmployeeId : selectedStaff;
+
   Future<void> _send() async {
     if (sending || cart.isEmpty) return;
-    if (selectedStaff == null) {
-      _message('Önce personel adınızı seçin.');
+    if (c.api.loginRequired && !c.api.signedIn) {
+      _message('Sipariş için giriş yapın.');
+      unawaited(_login());
+      return;
+    }
+    if (_actingStaff == null) {
+      _message(c.api.signedIn ? 'Hesabınız bir personele bağlı değil. Windows › Kullanıcılar.'
+          : 'Önce giriş yapın veya personel adınızı seçin.');
       return;
     }
     if (!c.online) {
@@ -158,7 +236,7 @@ class _StaffHomeState extends State<StaffHome> {
     _pendingRequest ??= {
       'requestId': requestId(),
       'expectedRevision': c.revision,
-      'staffId': selectedStaff,
+      'staffId': _actingStaff,
       'source': source,
       'table': source == 'Masa' ? tableNumber : null,
       if (targetOrderId != null && source == 'Masa')
@@ -668,6 +746,27 @@ class _StaffHomeState extends State<StaffHome> {
               if (widget.ownerMode)
                 Padding(padding: const EdgeInsets.symmetric(horizontal: 6),
                   child: Center(child: Text(widget.ownerName ?? 'İşletme sahibi', overflow: TextOverflow.ellipsis)))
+              else if (c.api.signedIn)
+                PopupMenuButton<String>(
+                  tooltip: 'Hesabım',
+                  onSelected: (v) async {
+                    if (v == 'logout') {
+                      await c.api.logout();
+                      if (mounted) setState(() {});
+                    }
+                  },
+                  itemBuilder: (_) => const [PopupMenuItem(value: 'logout', child: Text('Çıkış Yap'))],
+                  child: Padding(padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      const Icon(Icons.verified_user_outlined, size: 20),
+                      const SizedBox(width: 6),
+                      ConstrainedBox(constraints: BoxConstraints(maxWidth: wide ? 180 : 96),
+                        child: Text(_signedInLabel(), overflow: TextOverflow.ellipsis)),
+                    ])),
+                )
+              else if (c.api.loginRequired)
+                Padding(padding: const EdgeInsets.symmetric(horizontal: 6),
+                  child: FilledButton.tonal(onPressed: _login, child: const Text('Giriş Yap')))
               else if (selected != null || c.employees.isNotEmpty)
                 SizedBox(width: wide ? 170 : width < 360 ? 88 : 110,
                   child: DropdownButton<int>(
@@ -691,6 +790,8 @@ class _StaffHomeState extends State<StaffHome> {
                     },
                   ),
                 ),
+              if (!widget.ownerMode && !c.api.signedIn && !c.api.loginRequired && c.api.paired)
+                IconButton(tooltip: 'Giriş Yap', onPressed: _login, icon: const Icon(Icons.login)),
               IconButton(
                 tooltip: 'Yenile',
                 onPressed: c.refresh,
