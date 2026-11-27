@@ -1,0 +1,24 @@
+name: Test QR publisher modules
+on:
+  pull_request:
+    paths:
+      - 'supabase/functions/qr-publisher/**'
+      - '.github/workflows/nohut-qr-publisher.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  mock-publisher:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Execute synthetic modules without live credentials
+        run: |
+          set -euo pipefail
+          for f in supabase/functions/qr-publisher/*.test.mjs; do
+            node "$f"
+          done
