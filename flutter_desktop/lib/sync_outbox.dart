@@ -17,6 +17,7 @@ import 'dart:math';
 import 'package:crypto/crypto.dart' as hash;
 import 'package:sqlite3/sqlite3.dart';
 
+import 'entity_storage.dart';
 import 'sync_field_registry.dart';
 
 void createSyncTables(Database db) {
@@ -100,6 +101,58 @@ Object? projectRow(String stateKey, Object? row) {
 Object? projectCore(String key, Object? value) =>
     projectForCloud({key: value})[key];
 
+/// Diff the previous and next committed state using the cloud projection.
+/// Receipt snapshots are intentionally deferred to their dedicated Phase 2
+/// contract. Local-only keys must not produce even deletion events.
+/// This only records local events; it is not a cloud transport or an
+/// authorization to activate sync on production data.
+List<OutboxChange> collectOutboxChanges(
+  Map<String, dynamic> previous,
+  Map<String, dynamic> next,
+) {
+  final changes = <OutboxChange>[];
+  final entityKeys = {for (final kind in entityKinds) kind.stateKey};
+  for (final kind in entityKinds) {
+    final key = kind.stateKey;
+    if (key == 'printJobs') continue;
+    Map<String, Object?> byId(Map<String, dynamic> state) {
+      final rows = state[key];
+      if (rows is! List) return {};
+      if (rows.any((row) => row is! Map)) {
+        throw const FormatException('Invalid sync entity row');
+      }
+      final ids = rowKeys(kind, rows);
+      if (ids.toSet().length != ids.length) {
+        throw const FormatException('Duplicate sync entity identity');
+      }
+      return {for (var i = 0; i < rows.length; i++) ids[i]: rows[i]};
+    }
+
+    final before = byId(previous), after = byId(next);
+    for (final id in {...before.keys, ...after.keys}) {
+      final oldRow = before[id], newRow = after[id];
+      if (jsonEquals(oldRow, newRow)) continue;
+      final oldProjection = oldRow == null ? null : projectRow(key, oldRow);
+      final newProjection = newRow == null ? null : projectRow(key, newRow);
+      if (jsonEquals(oldProjection, newProjection)) continue;
+      changes.add(OutboxChange(
+        key, id, newProjection == null ? 'delete' : 'upsert', newRow,
+      ));
+    }
+  }
+  for (final key in {...previous.keys, ...next.keys}) {
+    if (entityKeys.contains(key)) continue;
+    if (jsonEquals(previous[key], next[key])) continue;
+    final oldProjection = projectCore(key, previous[key]);
+    final newProjection = projectCore(key, next[key]);
+    if (jsonEquals(oldProjection, newProjection)) continue;
+    changes.add(OutboxChange(
+      key, 'core', newProjection == null ? 'delete' : 'upsert', next[key],
+    ));
+  }
+  return changes;
+}
+
 /// Writes the events for one committed revision. Call inside the business
 /// transaction, after the state rows are written.
 int writeOutboxEvents(
@@ -109,7 +162,10 @@ int writeOutboxEvents(
   required List<OutboxChange> changes,
 }) {
   if (!outboxEnabled(db)) return 0;
-  final epoch = syncStateValue(db, 'authority_epoch') ?? 'none';
+  final epoch = syncStateValue(db, 'authority_epoch');
+  if (epoch == null || epoch.isEmpty) {
+    throw const FormatException('Sync authority epoch missing');
+  }
   final insert = db.prepare(
     'INSERT INTO sync_outbox(event_id,revision,entity_type,entity_id,op,'
     'payload_json,payload_sha256,created_at) VALUES(?,?,?,?,?,?,?,?)',
