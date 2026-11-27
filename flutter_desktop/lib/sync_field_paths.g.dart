@@ -58,6 +58,7 @@ const knownStateFieldPaths = <String>{
   'employees[].payHistory[].setAt',
   'employees[].payHistory[].setBy',
   'employees[].payRateCents',
+  'employees[].payrollEligible',
   'employees[].payType',
   'employees[].role',
   'finance',

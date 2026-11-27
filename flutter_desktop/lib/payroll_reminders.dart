@@ -62,7 +62,8 @@ List<Json> payrollReminderEvents(Json state, DateTime now) {
   final clock = now.toUtc();
   final today = dayOf(istanbulNow(clock));
   final events = <Json>[];
-  final employees = asMaps(state['employees']).where((e) => e['active'] != false).toList();
+  // Only active payroll-eligible people (never the owner by default).
+  final employees = asMaps(state['employees']).where((e) => e['active'] != false && isPayrollEligible(e)).toList();
 
   // Employees: payments recorded for them (own, private).
   for (final p in asMaps((state['finance'] is Map ? (state['finance'] as Map)['payrollPayments'] : null))) {
@@ -107,7 +108,8 @@ List<Json> payrollReminderEvents(Json state, DateTime now) {
     if (today.compareTo(due) < 0) continue;
     final open = employees.where((e) {
       final st = payrollStatus(state, e['id'] as int, week, today: today, paydayOffset: cfg.paydayOffset);
-      return st['resolved'] != true;
+      // Only actual outstanding earnings; unknown amounts are not "owed".
+      return (st['remainingCents'] as int? ?? 0) > 0;
     }).length;
     if (open == 0) continue;
     final slot = today == due ? _latestSlot(today, cfg.paydayTimes, clock) : _latestSlot(today, [cfg.dailyTime], clock);

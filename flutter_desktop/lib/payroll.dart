@@ -22,6 +22,7 @@ library;
 
 import 'finance_logic.dart' show financeBook, financeRows;
 import 'pos_logic.dart';
+import 'pos_store.dart';
 import 'workforce.dart';
 
 const payTypes = ['Saatlik', 'Haftalık Sabit'];
@@ -73,6 +74,20 @@ void setEmployeeRate(Json state, {required int employeeId, required String payTy
   if (!_dayRe.hasMatch(effectiveFrom)) throw const FormatException('Geçerlilik tarihi geçersiz');
   final clock = (now ?? DateTime.now()).toUtc();
   final e = _employeeRow(state, employeeId);
+  // Never rewrite a week that already has recorded payments or a legacy
+  // payroll row: a new rate may start only after the last settled week.
+  final settled = [
+    for (final p in financeRows(state, 'payrollPayments'))
+      if (p['employeeId'] == employeeId) '${p['weekStart']}',
+    for (final r in financeRows(state, 'weeklyPayroll'))
+      if (r['employeeId'] == employeeId) '${r['weekStart']}',
+  ];
+  for (final w in settled) {
+    if (effectiveFrom.compareTo(addDays(w, 7)) < 0) {
+      throw PayrollConflict('Ödeme kaydı olan hafta ($w) geriye dönük değiştirilemez. '
+          'Yeni ücret en erken ${addDays(w, 7)} tarihinden başlayabilir.');
+    }
+  }
   final history = (e['payHistory'] ??= <dynamic>[]) as List;
   // First history entry on an employee that already had a rate: keep the
   // old rate in force for earlier days.
@@ -137,19 +152,25 @@ Json payrollStatus(Json state, int employeeId, String weekStart, {required Strin
   final due = addDays(weekStart, paydayOffset);
   final ack = financeRows(state, 'payrollReviews')
       .where((r) => r['employeeId'] == employeeId && r['weekStart'] == weekStart).lastOrNull;
+  final nothingOwed = legacy == null && (earned['minutes'] as int) == 0 && paid == 0;
+  // Never classify money we cannot compute: no work and no rate are states
+  // of their own, not Ödenmedi / Ödendi (owner rule 2026-11-27).
   String financial;
   if (legacy != null) {
     financial = legacy['paid'] == true ? 'Ödendi' : 'Ödenmedi';
+  } else if (nothingOwed) {
+    financial = 'Çalışma kaydı yok';
+  } else if (e == null) {
+    financial = 'Ücret belirlenmedi';
   } else if (paid <= 0) {
     financial = 'Ödenmedi';
-  } else if (e != null && paid >= e) {
+  } else if (paid >= e) {
     financial = 'Ödendi';
   } else {
     financial = 'Kısmen Ödendi';
   }
   final remaining = legacy != null ? (legacy['paid'] == true ? 0 : legacy['payableCents'] as int?)
       : e == null ? null : (e - paid < 0 ? 0 : e - paid);
-  final nothingOwed = legacy == null && (earned['minutes'] as int) == 0 && paid == 0;
   final resolved = nothingOwed || financial == 'Ödendi';
   // Manager review: an explicit Ödenmedi acknowledgement or any payment.
   final review = resolved || paid > 0 || legacy != null ? 'Belirtildi'
@@ -158,6 +179,7 @@ Json payrollStatus(Json state, int employeeId, String weekStart, {required Strin
       (a, b) => a == null || b.compareTo(a) > 0 ? b : a);
   return {
     'employeeId': employeeId, 'weekStart': weekStart, 'weekEnd': addDays(weekStart, 6), 'dueDate': due,
+    'payrollEligible': isPayrollEligible(_employeeRow(state, employeeId)),
     ...earned,
     'legacy': legacy != null,
     'paidCents': legacy != null ? (legacy['paid'] == true ? legacy['payableCents'] : 0) : paid,
@@ -167,7 +189,7 @@ Json payrollStatus(Json state, int employeeId, String weekStart, {required Strin
     'financialStatus': financial,
     'reviewStatus': review,
     'resolved': resolved,
-    'overdue': !resolved && today.compareTo(due) > 0,
+    'overdue': (remaining ?? 0) > 0 && today.compareTo(due) > 0,
     'lastPaidOn': lastPaid,
     'methods': {for (final p in rows) '${p['method']}'}.toList(),
   };
@@ -250,8 +272,40 @@ void acknowledgeUnpaid(Json state, Json d, {required String by, DateTime? now}) 
 }
 
 /// "Haftalık Maaş Ödemeleri" panel rows for [weekStart].
+/// Payroll covers people who are paid as employees. The owner (or anyone
+/// marked `payrollEligible: false`) is excluded unless explicitly enabled.
+bool isPayrollEligible(Map e) => e['payrollEligible'] != false;
+
+/// One-time default: an employee profile linked to the owner account is not
+/// a salaried employee. An explicit choice made later is never overridden.
+bool applyOwnerPayrollDefault(Json state, Iterable<int> ownerEmployeeIds) {
+  var changed = false;
+  for (final e in (state['employees'] is List ? state['employees'] as List : const []).cast<Map>()) {
+    if (ownerEmployeeIds.contains(e['id']) && !e.containsKey('payrollEligible')) {
+      e['payrollEligible'] = false;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+/// Applies [applyOwnerPayrollDefault] to the store when anything changes.
+void ensureOwnerPayrollDefault(PosStore store, List<int> ownerEmployeeIds) {
+  if (ownerEmployeeIds.isEmpty) return;
+  final snap = store.read();
+  if (applyOwnerPayrollDefault(snap.data, ownerEmployeeIds)) store.replace(snap.data, snap.revision);
+}
+
+/// Sets payroll eligibility explicitly (owner/payroll.manage decision).
+void setPayrollEligible(Json state, int employeeId, bool eligible) =>
+    _employeeRow(state, employeeId)['payrollEligible'] = eligible;
+
 List<Json> payrollWeek(Json state, String weekStart, {required String today}) => [
-  for (final e in asMaps(state['employees']).where((e) => e['active'] != false))
+  // Eligible active people, plus anyone who already has payments that week
+  // (history stays visible after a change of eligibility or deactivation).
+  for (final e in asMaps(state['employees']).where((e) =>
+      (e['active'] != false && isPayrollEligible(e)) ||
+      payrollPaymentsFor(state, e['id'] as int, weekStart).isNotEmpty))
     {'name': e['name'], 'rate': () {
       final r = payRateOn(e, weekStart);
       return r == null ? null : {'payType': r.$1, 'rateCents': r.$2};

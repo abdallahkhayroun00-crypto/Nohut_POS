@@ -30,11 +30,13 @@ class WriteResult {
   PosSnapshot get snapshot => _load();
 }
 
+/// Test-only: synthetic people for a fresh store. Production installs start
+/// with no employees; the owner adds real people in Windows › Personel.
+List<Map<String, dynamic>>? debugSeedEmployees;
+
 Map<String, dynamic> emptyPosState() => {
   'employees': [
-    {'id': 1, 'name': 'Ömer', 'role': 'Yönetici', 'active': true},
-    {'id': 2, 'name': 'Mehmet', 'role': 'Personel', 'active': true},
-    {'id': 3, 'name': 'Abdallah', 'role': 'Personel', 'active': true},
+    for (final e in debugSeedEmployees ?? const <Map<String, dynamic>>[]) {...e},
   ],
   'orders': <dynamic>[],
   'nextId': 1200,

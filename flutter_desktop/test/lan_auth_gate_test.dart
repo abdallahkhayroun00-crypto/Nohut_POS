@@ -114,13 +114,18 @@ void main() {
         body: {'username': 'sahip', 'password': 'owner-pass-1', 'deviceId': device});
     final ownerId = auth.users().firstWhere((u) => u['isOwner'] == true)['userId'] as String;
     expect(ownerId, isNotEmpty);
-    // Owner has no employee link: payload kept; a linked user is stamped.
+    // A linked user is always stamped with their own employee id.
     expect(LanAuthGate.withIdentity({'staffId': 3},
         const AuthContext(status: 'ok', employeeId: 7)), {'staffId': 7});
-    final (status, _, _) = await call('POST', '/api/staff/platform',
+    // No session (legacy shared panel, login not required): unchanged.
+    expect(LanAuthGate.withIdentity({'staffId': 3}, null), {'staffId': 3});
+    // Signed in but not linked to an employee (here the owner): the phone's
+    // staffId is never trusted, so the action is refused before it runs.
+    final (status, body, _) = await call('POST', '/api/staff/platform',
         cookie: cookieOf(setCookie), body: {'staffId': 3, 'packageId': 'p', 'action': 'accept'});
-    expect(status, 200);
-    expect(received.single['staffId'], 3);
+    expect(status, 422);
+    expect('${body['message']}', contains('personele bağlı değil'));
+    expect(received, isEmpty);
   });
 
   test('cross-origin auth requests and repeated failures are refused', () async {

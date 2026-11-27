@@ -311,6 +311,9 @@ class FinanceSyncServer {
           reversePayrollPayment(state, d, by: actor);
         case 'payroll_unpaid':
           acknowledgeUnpaid(state, d, by: actor);
+        case 'payroll_eligible':
+          if (d['eligible'] is! bool) throw const FormatException('Bordro seçimi geçersiz.');
+          setPayrollEligible(state, num('employeeId'), d['eligible'] as bool);
         case 'quick_save':
           // §24.8 Hızlı Gider Ekle from Yönetici (LAN + Android): same rules
           // as the Windows quick form; edits need the exact prior version.

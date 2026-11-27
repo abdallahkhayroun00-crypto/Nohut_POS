@@ -345,6 +345,12 @@ class LocalAuth {
     _audit('device.revoke', actor: actor, target: deviceId);
   }
 
+  /// Employee profiles linked to an owner account (payroll exclusion default).
+  List<int> ownerEmployeeIds() => [
+    for (final u in db.select('SELECT employee_id FROM auth_users WHERE is_owner=1 AND employee_id IS NOT NULL'))
+      u['employee_id'] as int,
+  ];
+
   List<Json> users() => [
     for (final u in db.select('SELECT * FROM auth_users ORDER BY is_owner DESC, username'))
       {

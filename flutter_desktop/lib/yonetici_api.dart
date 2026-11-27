@@ -88,6 +88,7 @@ class YoneticiApi {
           final d = _guard(token, 'payroll.view', touch: query['poll'] != '1');
           if (!d.allowed) return GateReply(d.status, {'error': d.error});
           if (!financeAllowed(secure: secure)) return const GateReply(403, {'error': 'https_required'});
+          ensureOwnerPayrollDefault(store, auth.ownerEmployeeIds());
           final state = store.read().data;
           final today = istanbulDayOfInstant(DateTime.now());
           final raw = '${query['weekStart'] ?? ''}';

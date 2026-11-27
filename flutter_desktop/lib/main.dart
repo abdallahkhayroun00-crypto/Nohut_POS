@@ -57,6 +57,7 @@ import 'platform_workflows.dart';
 import 'review_sync_service.dart';
 import 'tgo_review_api.dart';
 import 'local_accounts.dart';
+import 'payroll.dart' show ensureOwnerPayrollDefault;
 import 'lan_auth_gate.dart';
 import 'accounts_ui.dart';
 import 'notification_events.dart';
@@ -315,6 +316,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       // state with stable ids, so repeated runs never duplicate.
       _notificationTimer = Timer.periodic(const Duration(seconds: 5), (_) {
         try {
+          ensureOwnerPayrollDefault(store, localAuth.ownerEmployeeIds());
           recordOperationalNotifications(store);
         } catch (e) {
           debugPrint('Notification history: $e');

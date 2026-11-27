@@ -59,7 +59,7 @@ void main() {
         await t.pumpAndSettle();
         await t.tap(find.byType(DropdownButtonFormField<int>).first);
         await t.pumpAndSettle();
-        await t.tap(find.text('Abdallah').last);
+        await t.tap(find.text('Test Personel B').last);
         await t.pumpAndSettle();
         await t.tap(find.byType(DropdownButtonFormField<int>).last);
         await t.pumpAndSettle();

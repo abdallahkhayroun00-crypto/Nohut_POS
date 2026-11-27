@@ -214,6 +214,11 @@ void main() {
     final (wk, wb) = await call('GET', '/api/work/week?weekStart=$yesterday', cookie: staff);
     expect(wk, 200);
     expect(((wb['week'] as Map)['work'] as List), hasLength(1));
+    // Asking for another employee's week (hours, pay, rate) returns your own.
+    final (spy, sb) = await call('GET', '/api/work/week?weekStart=$yesterday&employeeId=$mehmet', cookie: staff);
+    expect(spy, 200);
+    expect(((sb['week'] as Map)['employee'] as Map)['id'], ayse);
+    expect(sb['self'], true);
     // Staff cannot see the team view or edit another person's plan.
     expect((await call('GET', '/api/work/team', cookie: staff)).$1, 403);
     final (p1, _) = await call('POST', '/api/work/write', cookie: staff, body: {'requestId': 'lan-plan-0001',

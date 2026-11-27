@@ -9,7 +9,7 @@ import 'lan_auth_gate.dart';
 import 'local_accounts.dart';
 import 'pos_logic.dart';
 import 'pos_store.dart';
-import 'payroll.dart' show payrollStatus, payRateOn;
+import 'payroll.dart' show payrollStatus, payRateOn, payrollPaymentsFor;
 import 'workforce.dart';
 
 class WorkforceApi {
@@ -51,6 +51,10 @@ class WorkforceApi {
           if (who == ctx.employeeId || auth.authorize(ctx, 'payroll.view') == 'ok') {
             final data = store.read().data;
             view['pay'] = payrollStatus(data, who, view['weekStart'] as String, today: today);
+            view['payments'] = [
+              for (final p in payrollPaymentsFor(data, who, view['weekStart'] as String))
+                {for (final k in ['id', 'paidOn', 'kind', 'method', 'amountCents', 'reverses']) k: p[k]},
+            ];
             final emp = asMaps(data['employees']).where((e) => e['id'] == who).firstOrNull;
             final rate = emp == null ? null : payRateOn(emp, view['weekStart'] as String);
             (view['employee'] as Map)..['payType'] = rate?.$1..['payRateCents'] = rate?.$2;

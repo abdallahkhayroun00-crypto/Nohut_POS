@@ -34,16 +34,16 @@ void main() {
     };
   Map<String, dynamic> fixture() => {
     'employees': [
-      {'id': 1, 'name': 'Mehmet', 'active': true},
+      {'id': 1, 'name': 'Test Personel A', 'active': true},
       {'id': 2, 'name': 'Bassil', 'active': true},
     ],
     'orders': [
       order(1, 1, [
-        batch(1, 'Mehmet', '2026-10-04T10:00:00Z', 'Falafel Dürüm'),
+        batch(1, 'Test Personel A', '2026-10-04T10:00:00Z', 'Falafel Dürüm'),
         batch(2, 'Bassil', '2026-10-04T11:00:00Z', 'Humus'),
         batch(3, 'Bassil', '2026-10-04T11:10:00Z', 'İptal Ürün', voided: true),
       ]),
-      order(2, 1, [batch(1, 'Mehmet', '2026-10-04T13:00:00Z', 'Falafel Dürüm')]),
+      order(2, 1, [batch(1, 'Test Personel A', '2026-10-04T13:00:00Z', 'Falafel Dürüm')]),
       order(3, 2, [batch(1, 'Bassil', '2026-10-04T14:00:00Z', 'Humus')], cancelled: true),
     ],
     'finance': {
@@ -54,7 +54,7 @@ void main() {
          'discountCents': 0, 'voided': false},
       ],
       'weeklyPayroll': [
-        {'id': 1, 'employeeName': 'Mehmet', 'weekStart': '2026-10-05',
+        {'id': 1, 'employeeName': 'Test Personel A', 'weekStart': '2026-10-05',
          'weekEnd': '2026-10-11', 'workedMinutes': 2400, 'rateCents': 10000,
          'grossCents': 400000, 'advanceCents': 5000, 'payableCents': 395000,
          'paid': false},
@@ -69,7 +69,7 @@ void main() {
   test('staff report separates opened table accounts, distinct tables and extra batches', () {
     final facts = managementReportFacts(fixture(), period);
     final staff = facts['staff'] as List<Map<String,dynamic>>;
-    final mehmet = staff.firstWhere((p) => p['name'] == 'Mehmet');
+    final mehmet = staff.firstWhere((p) => p['name'] == 'Test Personel A');
     final bassil = staff.firstWhere((p) => p['name'] == 'Bassil');
     expect(mehmet['tableOrders'], 2);
     expect(mehmet['tables'], {'1'});

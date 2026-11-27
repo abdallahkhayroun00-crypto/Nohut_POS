@@ -64,6 +64,30 @@ void main() {
     expect(payRateOn(e, '2026-10-01'), isNull, reason: 'no rate before first effective date');
   });
 
+  test('owner acceptance: 8h@100 + 8h@120 = 1760; pay 800 → Kısmen; pay 960 → Ödendi; no retroactive change', () {
+    mgr('acc-rate-0001', 'payroll_rate', {'employeeId': ayse, 'payType': 'Saatlik', 'rateCents': 10000, 'effectiveFrom': '2026-11-01'});
+    mgr('acc-rate-0002', 'payroll_rate', {'employeeId': ayse, 'payType': 'Saatlik', 'rateCents': 12000, 'effectiveFrom': '2026-11-18'});
+    work(ayse, 'acc-w-001', '2026-11-17', '09:00', '17:00'); // 8h × 100 TL
+    work(ayse, 'acc-w-002', '2026-11-18', '09:00', '17:00'); // 8h × 120 TL
+    expect(status(ayse)['earnedCents'], 176000);
+    mgr('acc-pay-0001', 'payroll_payment', {'employeeId': ayse, 'weekStart': week, 'paidOn': '2026-11-23',
+      'method': 'Nakit', 'cashCents': 80000});
+    var st = status(ayse);
+    expect([st['paidCents'], st['remainingCents'], st['financialStatus']], [80000, 96000, 'Kısmen Ödendi']);
+    mgr('acc-pay-0002', 'payroll_payment', {'employeeId': ayse, 'weekStart': week, 'paidOn': '2026-11-24',
+      'method': 'Havale/EFT', 'bankCents': 96000});
+    st = status(ayse);
+    expect([st['paidCents'], st['remainingCents'], st['financialStatus']], [176000, 0, 'Ödendi']);
+    // A rate back-dated into a paid week is refused; the week stays as paid.
+    expect(() => mgr('acc-rate-0009', 'payroll_rate', {'employeeId': ayse, 'payType': 'Saatlik',
+      'rateCents': 20000, 'effectiveFrom': '2026-11-20'}), throwsA(isA<PayrollConflict>()));
+    expect(status(ayse)['earnedCents'], 176000);
+    // A later raise does not change this week's earnings.
+    mgr('acc-rate-0003', 'payroll_rate', {'employeeId': ayse, 'payType': 'Saatlik', 'rateCents': 15000, 'effectiveFrom': '2026-11-25'});
+    expect(status(ayse)['earnedCents'], 176000);
+    expect(status(ayse)['financialStatus'], 'Ödendi');
+  });
+
   test('partial, mixed and full payments; status derived; reversal audited; no double count', () {
     mgr('rate-00000101', 'payroll_rate', {'employeeId': ayse, 'payType': 'Saatlik', 'rateCents': 15000, 'effectiveFrom': '2026-11-01'});
     work(ayse, 'w-0201', '2026-11-17', '10:00', '18:00'); // 8h → 1200,00
@@ -127,6 +151,60 @@ void main() {
     expect(s['financialStatus'], 'Ödenmedi');
     expect(s['paidCents'], 0);
     expect(s['resolved'], false);
+  });
+
+  group('owner business rules (2026-11-27)', () {
+    DateTime ist(String day, int h) => instantOf(day, '${h.toString().padLeft(2, '0')}:00');
+
+    test('owner profile is excluded by default, also from Sunday and payday reminders', () {
+      // ayse's profile is linked to the owner account; she works, no salary.
+      final s = store.read();
+      expect(applyOwnerPayrollDefault(s.data, [ayse]), true);
+      store.replace(s.data, s.revision);
+      work(ayse, 'own-w-001', '2026-11-17', '10:00', '20:00');
+      final rows = payrollWeek(store.read().data, week, today: '2026-11-24');
+      expect(rows.map((r) => r['employeeId']), [mehmet]);
+      final sunday = payrollReminderEvents(store.read().data, ist('2026-11-22', 19));
+      expect(sunday.where((e) => e['recipientEmployeeId'] == ayse), isEmpty);
+      // An explicit later choice is never overridden by the default.
+      final s2 = store.read();
+      setPayrollEligible(s2.data, ayse, true);
+      expect(applyOwnerPayrollDefault(s2.data, [ayse]), false);
+      store.replace(s2.data, s2.revision);
+      expect(payrollWeek(store.read().data, week, today: '2026-11-24').map((r) => r['employeeId']), [ayse, mehmet]);
+    });
+
+    test('statuses: Çalışma kaydı yok, Ücret belirlenmedi, never a fake paid/unpaid', () {
+      expect(status(mehmet)['financialStatus'], 'Çalışma kaydı yok');
+      expect(status(mehmet)['resolved'], true);
+      work(mehmet, 'st-w-0001', '2026-11-18', '10:00', '14:00');
+      final s = status(mehmet);
+      expect(s['financialStatus'], 'Ücret belirlenmedi');
+      expect([s['earnedCents'], s['remainingCents']], [null, null]);
+    });
+
+    test('payday reminders only for eligible people with real outstanding earnings', () {
+      List<Json> payday(DateTime t) => [for (final e in payrollReminderEvents(store.read().data, t))
+          if ('${e['eventId']}'.startsWith('payday:')) e];
+      work(mehmet, 'pd-w-0001', '2026-11-18', '10:00', '14:00'); // no rate: amount unknown
+      expect(payday(ist('2026-11-23', 10)), isEmpty);
+      mgr('pd-rate-0001', 'payroll_rate', {'employeeId': mehmet, 'payType': 'Saatlik', 'rateCents': 10000, 'effectiveFrom': '2026-11-01'});
+      expect(payday(ist('2026-11-23', 10)), hasLength(1));
+      mgr('pd-pay-0001', 'payroll_payment', {'employeeId': mehmet, 'weekStart': week, 'paidOn': '2026-11-23',
+        'method': 'Karma', 'cashCents': 10000, 'bankCents': 30000});
+      expect(status(mehmet)['financialStatus'], 'Ödendi');
+      expect(payday(ist('2026-11-23', 15)), isEmpty);
+    });
+
+    test('duplicate payment request after a lost response records one payment', () {
+      mgr('dup-rate-0001', 'payroll_rate', {'employeeId': mehmet, 'payType': 'Saatlik', 'rateCents': 10000, 'effectiveFrom': '2026-11-01'});
+      work(mehmet, 'dup-w-0001', '2026-11-18', '10:00', '14:00');
+      final body = {'employeeId': mehmet, 'weekStart': week, 'paidOn': '2026-11-23', 'method': 'Nakit', 'cashCents': 15000};
+      mgr('dup-pay-0001', 'payroll_payment', body);
+      mgr('dup-pay-0001', 'payroll_payment', body); // retry with the same request id
+      expect(payrollPaymentsFor(store.read().data, mehmet, week), hasLength(1));
+      expect(status(mehmet)['financialStatus'], 'Kısmen Ödendi');
+    });
   });
 
   group('reminders', () {
