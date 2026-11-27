@@ -29,14 +29,14 @@ Repository: `abdallahkhayroun00-crypto/Nohut_POS` (renamed from `brand-managemen
 | 1B Per-entity tables, soft delete, no ceiling | ✅ merged (#33) | `storage-benchmark.md` (before/after, 1k–100k) |
 | 2 PR-04 Transactional outbox | ✅ merged (#34, ChatGPT) | `test/sync_outbox_transaction_test.dart` |
 | 2 PR-05A PostgreSQL foundation (private schema, deny-all RLS) | ✅ merged (#35, ChatGPT) | `supabase/tests/*`, `nohut-postgres-foundation.yml` |
-| 2 PR-05B Ingest/reconcile RPCs, typed serializers, client grants | 🔄 PR #39: private transaction validator + complete-group/ACK hardening; new CI pending; typed projections, atomic ingest and reconcile still open | `supabase/migrations/20261127004000_nohut_sync_validation.sql`, `test/sync_worker_test.dart` |
+| 2 PR-05B Ingest/reconcile RPCs, typed serializers, client grants | 🔄 PR #39: private validator CI green (45969097410); employee-only atomic ingest + checkpoint implemented; CI pending; other typed projections, snapshot and reconcile still open | `supabase/migrations/20261127123000_nohut_employee_ingest.sql`, `supabase/tests/employee_ingest_test.sql` |
 | 2 PR-06 SyncWorker (client) | ✅ merged (#37) | `lib/sync_worker.dart`, `test/sync_worker_test.dart` (fake server with #35 rules) |
 | 2 PR-06 first-sync wizard + Bulut & Senkronizasyon UI + Supabase transport | ⏳ needs PR-05B RPCs | — |
 | 3 Accounts, PIN, MFA, permissions, devices | ⏳ | spec §9, §20.3, `contracts/v1/permissions.json` |
 | 4 PWA — functional Personel + Yönetici clients (§22), Bulut/Yedek removed, Cloudflare Pages deploy | ✅ merged (#37); live at https://nohut-personel.pages.dev and https://nohut-yonetici.pages.dev. Screens built on the Windows projection shapes; **live data waits for PR-05B + Phase 3 login**, writes wait for the Phase 5 command channel | `pwa/src/{personel,yonetici}/app.ts`, `pwa/test/shared.test.ts` (28 tests), labelled synthetic preview `npm run build:fixtures` |
 | 4 Android Personel/Yönetici on cloud transport | ⏳ needs Phase 3 auth | — |
 | 5A Windows command worker (envelope checks, Windows-only refusal, grants, hash, expiry, idempotent receipts) | 🔄 PR open (Claude) | `flutter_desktop/lib/remote_commands.dart`, `test/remote_commands_test.dart` (18), `lib/permission_catalogue.g.dart` (+ drift test) |
-| 5B Cloud command queue RPCs (`claim`/`complete`, lease, server envelope with actor + grants) | 🔄 private lease/complete primitives; initial CI green (run 45968864764), latest changes pending; auth and enqueue still blocked | `supabase/migrations/20261127003000_nohut_command_queue.sql`, `supabase/tests/command_queue_test.sql` |
+| 5B Cloud command queue RPCs (`claim`/`complete`, lease, server envelope with actor + grants) | 🔄 private lease/complete primitives; initial CI green (run 45968864764), latest changes pending; auth and enqueue still blocked | `supabase/migrations/20261127121000_nohut_command_queue.sql`, `supabase/tests/command_queue_test.sql` |
 | 5C Shifts on Windows (entity, Mesai Başlat/Bitir, audited correction, remote `clock_in_out`/`correct_shift`) | 🔄 PR #38 (Claude) | `lib/shifts.dart`, `test/shifts_test.dart` |
 | 5D Remote reprint (ambiguous prints only, printer checked), product sale toggle (audited), platform Kabul Et / Hazır with stored attempt and `reconciliation_required` | 🔄 PR open (Claude) | `lib/remote_commands.dart`, `test/remote_operations_test.dart`; table `platform_command_attempts` |
 | 5E Menu price/campaign edits from apps (versioned) + QR publish request | ⏳ needs owner-approved QR flow review | — |
@@ -88,3 +88,7 @@ New handlers needed on Windows (Phase 5): `print.reprint`, `platform.accept/read
 | Android signing | JKS keystore + passwords in Secrets; verified by the "Verify Nohut Configuration" workflow. A full signed release build is still to run. |
 
 **KVKK gate (spec §12.2):** no real personal data goes to Supabase until the owner confirms the legal review. All tests use synthetic data.
+
+### PR #39 coordination note (2026-11-27)
+
+Phase 3A PR #40 reserves migration 20261127003000. PR #39 now reserves 20261127121000–20261127123000 (no production migrations applied). The private ingest primitive accepts only complete employees-core upserts after an active migration/checkpoint; unsupported groups fail closed with no ACK. It does not authorize clients or provision a snapshot. PR #40's `authorize()` and `command_actor()` contract will be used by future authenticated wrappers; no Phase 3 files changed.
