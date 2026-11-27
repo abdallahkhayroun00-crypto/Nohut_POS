@@ -70,7 +70,7 @@ String _kind(Object? value) => switch (value) {
 /// Local IDs and history timestamps identify existing source records; list
 /// positions, labels and financial values never become record identities.
 List<FinanceProjectionRow> serializeFinance(Map<String,dynamic> book, CloudIdentityMap ids) {
-  const allowed = {'materials','monthlyFixed','fixedPayments','weeklyPayroll','other','manualPlatformSales','_fixedPaymentReversals'};
+  const allowed = {'materials','monthlyFixed','fixedPayments','weeklyPayroll','other','manualPlatformSales','_fixedPaymentReversals','payrollPayments','payrollReviews'};
   if (book.keys.any((k) => !allowed.contains(k))) throw const FormatException('Unsupported finance category');
   final out = <FinanceProjectionRow>[];
   final seen = <String>{};
@@ -165,6 +165,33 @@ List<FinanceProjectionRow> serializeFinance(Map<String,dynamic> book, CloudIdent
       add('manual_platform_sales_history',key,{'sale_id':id,'history_id':ids.id('manual_platform_sale_history',key),
         'changed_at':h['changedAt'],'amount_kind':_kind(h['kind']),'amount_kurus':_integer(h['amountCents'])});
     }
+  }
+  // Originals precede their audited reversal even in a reordered import.
+  final payments = _rows(book['payrollPayments'])..sort((a,b) =>
+      (a['reverses']==null?0:1).compareTo(b['reverses']==null?0:1));
+  for (final p in payments) {
+    final source = _text(p['id']);
+    add('payroll_payments',source,{
+      'payment_id':ids.id('payroll_payment',source),'source_reference':source,
+      'employee_local_id':_integer(p['employeeId']),
+      'employee_name_at_record':_text(p['employeeName']),
+      'week_start':_text(p['weekStart']),'paid_on':_text(p['paidOn']),
+      'kind':_text(p['kind']),'method':_text(p['method']),
+      'cash_kurus':_integer(p['cashCents']),'bank_kurus':_integer(p['bankCents']),
+      'amount_kurus':_integer(p['amountCents']),
+      'reverses_id':p['reverses']==null?null:ids.id('payroll_payment',_text(p['reverses'])),
+      'note':_text(p['note']),'recorded_at':_text(p['createdAt']),
+      'actor_label':_text(p['createdBy']),
+    });
+  }
+  for (final p in _rows(book['payrollReviews'])) {
+    final source = [_integer(p['employeeId']),_text(p['weekStart']),_text(p['at'])];
+    add('payroll_reviews',source,{
+      'review_id':ids.id('payroll_review',source),
+      'employee_local_id':source[0],'week_start':source[1],
+      'state':_text(p['state']),'note':_text(p['note']),
+      'recorded_at':source[2],'actor_label':_text(p['by']),
+    });
   }
   return out;
 }

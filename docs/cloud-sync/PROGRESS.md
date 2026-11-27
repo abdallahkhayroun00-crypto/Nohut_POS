@@ -83,6 +83,12 @@ EVIDENCE:
 
 **Blockers / owner actions:** live Trendyol read-only check needs explicit owner authorization (R1); physical iPhone HTTPS/Safari test (L4); any FCM project needs owner approval (N4); KVKK gate unchanged.
 
+## Codex payroll ledger checkpoint (2026-11-27)
+
+- QA-09 second slice: typed payrollPayments (partial/mixed payments, advances, audited exact reversals) and payrollReviews (Ödenmedi acknowledgement, no movement) reuse Claude's handlers and the existing atomic finance transaction. Stable source UUID mapping, tenant employee attribution, exact components, immutable financial facts, complete retained history and legacy-week exclusion are enforced before ACK. Private tables have FORCE RLS and no direct client grants. Contract: docs/contracts/v1/payroll-ledger.md.
+- Validation: **44 migrations / 25 SQL suites** passed as superuser and plain non-BYPASSRLS owner, including invalid new amounts/methods/dates, changed/omitted history, exact reversal and duplicate-reversal cases. Targeted payroll/finance Flutter **25 passed**; full Windows **490 passed, 2 skips**. Actual HTTP/PostgreSQL passes lost ACK with one partial mixed payment, retained original + exact reversal + final payment (net 176000 kuruş), and one nonfinancial unpaid review. Analysis no errors/warnings (593 style/deprecation infos).
+- Native Android/PWA checks and new CI running; no production calls. Manual-attendance extensions, planned shifts, weekly submissions and authorized Windows-calculated summary reads remain pending; QA-09/O-03 stays open. PR #39 remains draft.
+
 ## Codex workforce integration and wage checkpoint (2026-11-27)
 
 - Integrated Claude #44 actual head 735d8e9 into #39 only (f5614fe), preserving native applications, ownerPayroll, PIN compatibility, manual workforce/payroll handlers, notifications, quick expenses and no daily staffHours. Merge keeps both durable remote receipts and indexed local receipts. Removed duplicate constant field entries from the automatic registry merge; retained every field. No other agent branch changed.

@@ -136,6 +136,7 @@ void main() {
         store.command('synthetic_finance_delta', {}, (s) {
           (s['employees'] as List).first['name'] = 'Synthetic Employee';
           (s['employees'] as List).first['payrollEligible'] = false;
+          (s['employees'] as List).add({'id': 2, 'name': 'Synthetic payroll staff', 'active': true});
           setEmployeeRate(s, employeeId: 1, payType: 'Saatlik', rateCents: 10000,
               effectiveFrom: '2026-10-01', by: 'Synthetic manager', now: DateTime.utc(2026, 9, 30));
           setEmployeeRate(s, employeeId: 1, payType: 'Saatlik', rateCents: 12000,
@@ -559,6 +560,33 @@ void main() {
         expect((store.read().data['shifts'] as List), hasLength(1));
         expect(await sync.flush(), greaterThan(0));
         expect(pendingOutbox(db), isEmpty);
+        final payrollNow = DateTime.utc(2026, 11, 30, 10);
+        late String partialPayment;
+        store.command('synthetic-payroll-partial', {}, (s) {
+          final p = recordPayrollPayment(s, {'employeeId': 2, 'weekStart': '2026-11-23',
+            'paidOn': '2026-11-30', 'method': 'Karma', 'cashCents': 30000, 'bankCents': 50000,
+            'requestId': 'synthetic-payroll-partial'}, by: 'Synthetic manager', now: payrollNow);
+          partialPayment = p['id'] as String;
+          acknowledgeUnpaid(s, {'employeeId': 2, 'weekStart': '2026-11-23'}, by: 'Synthetic manager', now: payrollNow);
+          return {'ok': true};
+        });
+        await call('/test/lose-next-ingest-ack');
+        expect(await sync.flush(), 0);
+        expect((await call('/test/inspect'))['payroll_total'], '80000');
+        now = now.add(const Duration(seconds: 4));
+        expect(await sync.flush(), greaterThan(0));
+        expect((await call('/test/inspect'))['payroll_count'], 1);
+        store.command('synthetic-payroll-correction', {}, (s) {
+          reversePayrollPayment(s, {'id': partialPayment, 'reason': 'Synthetic correction'}, by: 'Synthetic manager', now: payrollNow);
+          recordPayrollPayment(s, {'employeeId': 2, 'weekStart': '2026-11-23', 'paidOn': '2026-11-30',
+            'method': 'Havale/EFT', 'bankCents': 176000, 'requestId': 'synthetic-payroll-final'}, by: 'Synthetic manager', now: payrollNow);
+          return {'ok': true};
+        });
+        expect(await sync.flush(), greaterThan(0), reason: sync.status().lastError);
+        final payrollFacts = await call('/test/inspect');
+        expect(payrollFacts['payroll_count'], 3);
+        expect(payrollFacts['payroll_total'], '176000');
+        expect(payrollFacts['payroll_reviews'], 1);
         final rotated = await agentSetup.enrollOrRotate(permissionVersion: 1);
         final wageFacts = await call('/test/inspect');
         expect(wageFacts['wage_rates'], [10000, 12000]);
