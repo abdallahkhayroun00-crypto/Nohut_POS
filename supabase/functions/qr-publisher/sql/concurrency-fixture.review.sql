@@ -41,5 +41,16 @@ begin
   insert into qr_concurrency_test.fixture values(label,r,q::text,token,envhash,digest,stamp,revision,draft_json,rec::text,rhash);
  end loop;
 end $$;
+-- Synthetic future recovery command scope. Tenant B is deliberately given
+-- an envelope targeting A's ID to verify the separate tenant boundary.
+with payloads as (
+ select f.restaurant,f.reconcile_id,jsonb_build_object('targetRequestId',a.request_id,'mode','reconcile') as payload
+ from qr_concurrency_test.fixture f cross join qr_concurrency_test.fixture a where a.label='A'
+)
+update nohut_private.commands c set envelope=c.envelope||jsonb_build_object('payload',p.payload,'payload_sha256',
+ encode(sha256(convert_to(nohut_private.canonical_command_json(p.payload),'UTF8')),'hex'))
+ from payloads p where c.restaurant_id=p.restaurant and c.request_id=p.reconcile_id;
+update qr_concurrency_test.fixture f set reconcile_hash=nohut_private.command_envelope_sha256(c.envelope)
+ from nohut_private.commands c where c.restaurant_id=f.restaurant and c.request_id=f.reconcile_id;
 create function qr_concurrency_test.claim(p_label text) returns text language sql set search_path=''
 as $$ select nohut_qr_edge.qr_publish_claim(token,request_id,1,envelope_hash,digest,revision,stamp,draft_json)->>'status' from qr_concurrency_test.fixture where label=p_label $$;
