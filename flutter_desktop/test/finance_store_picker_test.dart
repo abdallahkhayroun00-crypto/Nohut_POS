@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nohut_falafel_desktop/finance_ui.dart';
+import 'package:nohut_falafel_desktop/order_reporting.dart' show istanbulDay;
 import 'package:nohut_falafel_desktop/pos_logic.dart';
 
 void main() {
@@ -56,9 +57,9 @@ void main() {
       tester.view.resetPhysicalSize();
       tester.view.resetDevicePixelRatio();
     });
-    final today = DateTime.now();
-    String two(int v) => v.toString().padLeft(2, '0');
-    final day = '${today.year}-${two(today.month)}-${two(today.day)}';
+    // The panel's "today" is the Istanbul business day, not the machine's
+    // local date (the two differ between 21:00 and 24:00 UTC).
+    final day = istanbulDay(DateTime.now().toUtc());
     final state = <String, dynamic>{
       'employees': <dynamic>[],
       'orders': <dynamic>[],

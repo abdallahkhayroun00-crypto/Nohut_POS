@@ -83,6 +83,20 @@ EVIDENCE:
 
 **Blockers / owner actions:** live Trendyol read-only check needs explicit owner authorization (R1); physical iPhone HTTPS/Safari test (L4); any FCM project needs owner approval (N4); KVKK gate unchanged.
 
+## Antigravity (Gemini) temporary backend continuation — Increment B: QR Menu Management Cloud Integration (2026-11-27)
+
+- **Branch / PR:** `gemini/backend-continuation` (**PR #46** draft targeting `chatgpt/pr-05b-cloud-rpcs`).
+- **Status:** `Implemented / Tested` (NOT self-verified; independent review requested from ChatGPT / Codex).
+- **Implemented:**
+  - `supabase/migrations/20261127168000_nohut_qr_menu_cloud.sql`:
+    - Idempotent `menu.*` role parity alignment for `Personel`, `Müdür`, and `Yönetici` (matching Claude's `20261127221000_nohut_menu_parity.sql`, zero broadening outside `menu.*`).
+    - Private `nohut_private.qr_menu_state` (FORCE RLS + owner-only policy, zero direct client grants), recursive `contains_forbidden_secret_key` guard blocking any token/key from entering cloud state or commands, `apply_qr_menu_projection`, and atomic `ingest_sync_transaction` support for `entity_type = 'qrMenuState'`, `entity_id = 'core'`.
+    - JWT-authenticated `public.nohut_qr_menu_view(p_device_id, p_client, p_permission_version)` returning Claude's `#7228113217` contract shape + dynamic `can` map + `syncMeta`.
+  - `supabase/migrations/20261127169000_nohut_qr_menu_commands.sql`:
+    - Extends `validate_command_payload` and `enqueue_command` for `qr_menu_write` (per-action `menu.*` grant), `qr_menu_publish` (`menu.qr.publish`, `confirmed: true`, 5m TTL), `qr_menu_reconcile` (`menu.qr.publish`, 5m TTL), `qr_menu_image` (`menu.product.edit`, MIME/path/6 MB cap, 10m TTL), and `qr_menu_sync` (`menu.product.edit`, 5m TTL), preserving `expectedStamp`, `requestId` idempotency, actor binding, and zero credentials in cloud.
+  - `flutter_desktop/lib/cloud_qr_menu_bridge.dart` + `flutter_desktop/test/cloud_qr_menu_test.dart` + `docs/contracts/v1/qr-menu-cloud.md`.
+  - CI fixes: eliminated `sync_registry_drift_test` false positive (`s['start']` → `shiftRow['start']` in `cloud_workforce_summary.dart`) and aligned `finance_store_picker_test.dart` to Istanbul business day (mirroring Claude `da7faf5`).
+
 ## Antigravity (Gemini) temporary backend continuation — Increment A: QA-09 / O-03 Workforce & Payroll Read APIs (2026-11-27)
 
 - **Branch / PR:** `gemini/backend-continuation` (branched from verified PR #39 head `8d918b2`, draft PR targeting `chatgpt/pr-05b-cloud-rpcs`; PR #39 untouched).

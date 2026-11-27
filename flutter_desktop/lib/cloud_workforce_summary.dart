@@ -16,8 +16,8 @@ import 'workforce.dart';
 List<String> collectRelevantWeeks(Json state, {required String today}) {
   final cur = weekStartOf(today);
   final weeks = <String>{cur, addDays(cur, -7)};
-  for (final s in asMaps(state['shifts'])) {
-    final start = DateTime.tryParse('${s['start'] ?? ''}');
+  for (final shiftRow in asMaps(state['shifts'])) {
+    final start = DateTime.tryParse('${shiftRow['start'] ?? ''}');
     if (start != null) weeks.add(weekStartOf(istanbulDayOfInstant(start)));
   }
   for (final p in asMaps(state['shiftPlans'])) {
