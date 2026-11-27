@@ -259,10 +259,14 @@ RemoteCommandResult executeRemoteCommand(PosStore store, Map<String, dynamic> en
 }
 
 /// Calls the delivery platform (Trendyol Go today). Returns whether the
-/// platform confirmed the new status. Throws [FormatException] for checks
-/// that fail BEFORE any network call; any other error means the outcome is
-/// unknown.
+/// platform confirmed the new status. Only [PlatformPreflightException]
+/// proves a failure BEFORE external I/O. A generic FormatException can be a
+/// malformed response AFTER acceptance and therefore means unknown outcome.
 typedef PlatformCall = Future<bool> Function(Json order, String action, {int? preparationMinutes});
+
+class PlatformPreflightException extends FormatException {
+  const PlatformPreflightException(super.message);
+}
 
 /// Like [executeRemoteCommand], plus platform actions. The attempt is stored
 /// before the external call; a repeat of an interrupted attempt returns
@@ -298,10 +302,12 @@ Future<RemoteCommandResult> executeRemoteCommandAsync(
   if (expired != null) return expired;
   if (platform == null) return _reject('platform_unavailable', 'Platform bağlantısı etkin değil');
   final packageId = '${c.body['packageId'] ?? ''}';
-  final order = asMaps(store.read().data['trendyolGoOrders'])
+  final matches = asMaps(store.read().data['trendyolGoOrders'])
       .where((o) => packageId.isNotEmpty && '${o['packageId']}' == packageId)
-      .firstOrNull;
-  if (order == null) return _reject('invalid_request', 'Sipariş bulunamadı');
+      .toList();
+  if(matches.isEmpty)return _reject('invalid_request', 'Sipariş bulunamadı');
+  if(matches.length!=1)return _reject('ambiguous_platform_identity','Platform paket kimliği tek bir mağazayla eşleşmiyor');
+  final order=matches.single;
   if (!store.remoteExecutionAllowed || executionGuard?.call() == false) {
     return _reject('execution_fenced', 'Komutun yürütme izni sona erdi');
   }
@@ -320,7 +326,7 @@ Future<RemoteCommandResult> executeRemoteCommandAsync(
     final result = <String, dynamic>{'ok': true, 'verified': verified, 'by': c.employee['name']};
     store.finishPlatformAttempt(requestId, 'confirmed', result);
     return RemoteCommandResult(CommandOutcome.confirmed, 'ok', result);
-  } on FormatException catch (e) {
+  } on PlatformPreflightException catch (e) {
     final result = <String, dynamic>{'code': 'invalid_request', 'message': e.message};
     store.finishPlatformAttempt(requestId, 'rejected', result);
     return RemoteCommandResult(CommandOutcome.rejected, 'invalid_request', result);

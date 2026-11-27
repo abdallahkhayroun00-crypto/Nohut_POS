@@ -143,9 +143,35 @@ void main() {
 
     test('a check that fails before any network call is a plain rejection', () async {
       Future<bool> refuse(Json o, String a, {int? preparationMinutes}) async =>
-          throw const FormatException('Yazma erişimi etkin değil.');
+          throw const PlatformPreflightException('Yazma erişimi etkin değil.');
       final r = await executeRemoteCommandAsync(store, accept(), platform: refuse, now: now);
       expect(r.outcome, CommandOutcome.rejected);
+    });
+
+    test('malformed response after external I/O stays uncertain through restart and expiry',()async{
+      var calls=0;
+      Future<bool> malformed(Json o,String a,{int? preparationMinutes})async{
+        calls++;
+        // An external action may have committed before JSON decoding failed.
+        throw const FormatException('Synthetic malformed provider response');
+      }
+      final e=accept();
+      expect((await executeRemoteCommandAsync(store,e,platform:malformed,now:now)).outcome,CommandOutcome.reconciliationRequired);
+      expect(store.platformAttempt('cmd_tgo_0001')!['state'],'reconciliation_required');
+      store.dispose();store=PosStore(databaseFile:'${dir.path}/db');
+      expect((await executeRemoteCommandAsync(store,e,platform:malformed,now:t0.add(const Duration(hours:1)))).outcome,CommandOutcome.reconciliationRequired);
+      expect(calls,1);
+    });
+
+    test('same package across suppliers is rejected before an external attempt',()async{
+      final snap=store.read();
+      final first=Map<String,dynamic>.from((snap.data['trendyolGoOrders'] as List).single as Map);
+      (snap.data['trendyolGoOrders'] as List).add({...first,'supplierId':'another-supplier'});
+      expect(store.replace(snap.data,snap.revision).ok,true);
+      var calls=0;
+      final result=await executeRemoteCommandAsync(store,accept(),now:now,platform:(o,a,{preparationMinutes})async{calls++;return true;});
+      expect(result.code,'ambiguous_platform_identity');expect(calls,0);
+      expect(store.platformAttempt('cmd_tgo_0001'),null);
     });
 
     test('no integration → rejected without recording an attempt', () async {

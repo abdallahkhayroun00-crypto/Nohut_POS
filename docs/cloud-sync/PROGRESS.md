@@ -101,6 +101,8 @@ EVIDENCE:
 
 ## Owner correction 2026-11-27 (spec §22) — applies to every agent
 
+- **S2 platform uncertainty hardening:** only `PlatformPreflightException` proves an adapter failure before external I/O. A generic `FormatException` can follow a successful external action and is durably `reconciliation_required`; duplicates after restart/expiry cannot repeat it. Package IDs matching several supplier/store records are rejected before recording an attempt or calling a provider. Existing business operations and platform endpoints are reused. Targeted remote command/operation suite **35 passed**, including new malformed-response restart/expiry and ambiguous-package tests. No live platform calls used; full-scope runtime wiring/lease-aware platform adapter remains a release requirement.
+
 - Platform analysis completed with no errors or warnings (576 style/deprecation infos); new CI results to verify after push.
 
 - **Platform validation checkpoint:** full Flutter **386 passed, 2 skips**. Real HTTP integration confirms immutable source corrections/status versions, cancelled lines, privacy redactions, supplier isolation and lost-ACK recovery. All 34 migrations / 21 SQL suites passed in both privilege modes; final analysis and post-push CI tracked separately. Existing active-order behavior and public QR flow are preserved. This is the normalized Trendyol commercial-data slice, not complete settlement/demo-platform/settings coverage or a production activation.
