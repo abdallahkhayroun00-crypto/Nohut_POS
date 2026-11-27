@@ -92,7 +92,10 @@ void main() {
     now = DateTime.utc(2026, 11, 27, 12);
     api = FakeTgo(now);
   });
-  tearDown(() => dir.deleteSync(recursive: true));
+  tearDown(() {
+    pos.dispose(); // Windows cannot delete an open SQLite file.
+    dir.deleteSync(recursive: true);
+  });
 
   ReviewSyncService service({int pageSize = 50}) => ReviewSyncService(
         pos,
@@ -199,6 +202,7 @@ void main() {
 
     // Restart: a new service instance and store reload keep everything.
     s.dispose();
+    pos.dispose();
     pos = PosStore(databaseFile: '${dir.path}/nohut-pos.sqlite3');
     expect(rows(), hasLength(121));
   });
