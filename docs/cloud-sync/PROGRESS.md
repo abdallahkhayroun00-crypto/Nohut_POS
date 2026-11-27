@@ -294,7 +294,7 @@ Owner decision 2026-11-27: ChatGPT builds PR-05B (cloud functions), Claude build
 
 ## Claims (edit when you start or finish)
 
-- 2026-11-28 — ChatGPT: claim pure publish execution coordinator/state machine on #49, with injected durable receipt port and mocked restart/retry tests. Gemini/Codex retain actual SQL receipt storage/RPCs, authority lease and transport. No production DB migration or publish.
+- 2026-11-28 — ChatGPT: **receipt coordinator implemented / mock-tested** on #49 (`139e222`, `927193f`), 9/9 isolated JS assertions executed. Injected claim/savePrepared/markAttempt/finish/loadForReconcile/recordReconciliation, server authorization and fingerprint ports; duplicate/conflict, lost ACK, revocation, no change and reconciliation tests. Fake storage is not a durable database; actual atomic SQL claims, tenant/actor/epoch/lease fences, immutable hash binding, one-attempt consumption, repository-wide unresolved-operation lock, recovery of abandoned pre-ref claims, HTTP transport and endpoint remain mandatory backend dependencies. No production migrations or publication.
 
 - 2026-11-28 — ChatGPT: **Git Data adapter implemented / mock-tested** on #49 (`1cd61ad`, `fcb8e69`): 13/13 isolated JS runtime assertions passed. Fixed repo/main, snapshot at commit, expected catalog revision, explicit activation, atomic catalog/marker tree, non-force ref, prepared receipt hook, authority recheck and exact-commit read-only reconciliation. No endpoint or production write. Bootstrap without managed file deliberately unsupported; real durable intent/lease/attempt persistence, trusted HTTP/decoder, authentication, image integration, CI and independent review remain pending. Gemini/Codex retain these tasks. No auto-retry after unknown outcome.
 
