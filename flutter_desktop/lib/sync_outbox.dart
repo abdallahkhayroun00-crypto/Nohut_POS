@@ -221,12 +221,23 @@ List<Map<String, Object?>> pendingOutbox(Database db, {int limit = 500}) => [
 /// Marks events up to and including [seq] acknowledged by the cloud. Only
 /// a contiguous watermark may be acknowledged (spec §18.1: never skip a gap).
 void ackOutboxThrough(Database db, int seq, String at) {
-  final gap = db.select(
-    'SELECT min(seq) AS m FROM sync_outbox WHERE acked_at IS NULL',
-  ).single['m'];
-  if (gap == null) return;
-  db.execute(
-    'UPDATE sync_outbox SET acked_at=? WHERE acked_at IS NULL AND seq<=?',
-    [at, seq],
-  );
+  db.execute('BEGIN IMMEDIATE');
+  try {
+    final previous = int.tryParse(syncStateValue(db, 'last_acked_seq') ?? '') ??
+        db.select('SELECT coalesce(max(seq),0) AS n FROM sync_outbox WHERE acked_at IS NOT NULL').single['n'] as int;
+    if (seq <= previous) { db.execute('COMMIT'); return; }
+    final rows = db.select('SELECT seq,revision FROM sync_outbox WHERE acked_at IS NULL AND seq<=? ORDER BY seq', [seq]);
+    if (rows.isEmpty || rows.first['seq'] != previous + 1 || rows.last['seq'] != seq || rows.length != seq - previous ||
+        db.select('SELECT 1 FROM sync_outbox WHERE revision=? AND seq>? LIMIT 1', [rows.last['revision'], seq]).isNotEmpty) {
+      throw const FormatException('ACK must cover complete contiguous transactions');
+    }
+    db.execute('UPDATE sync_outbox SET acked_at=? WHERE acked_at IS NULL AND seq<=?', [at, seq]);
+    setSyncState(db, 'last_acked_seq', '$seq');
+    setSyncState(db, 'last_acked_revision', '${rows.last['revision']}');
+    setSyncState(db, 'last_sync_at', at);
+    db.execute('COMMIT');
+  } catch (_) {
+    db.execute('ROLLBACK');
+    rethrow;
+  }
 }

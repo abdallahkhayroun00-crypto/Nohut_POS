@@ -92,6 +92,8 @@ export interface OnlineLine {
 
 export interface OnlineOrder {
   platform: Platform;
+  /** Immutable provider package identity; orderNumber is display-only. */
+  packageId?: string;
   orderNumber: string;
   dailyNumber?: number;
   status: string;

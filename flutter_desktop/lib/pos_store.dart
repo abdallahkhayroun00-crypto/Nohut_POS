@@ -417,16 +417,21 @@ class PosStore extends ChangeNotifier {
   }
 
   (String, String)? _remoteContext;
+  bool Function()? _remoteExecutionGuard;
+
+  bool get remoteExecutionAllowed => syncStateValue(_db, 'remote_execution_blocked') == null;
 
   /// Bind a cloud envelope to the receipt written by the existing handler.
   /// Synchronous only: no network call or await may enter this context.
-  T withRemoteCommand<T>(String requestId, String envelopeSha256, T Function() run) {
+  T withRemoteCommand<T>(String requestId, String envelopeSha256, T Function() run, {bool Function()? guard}) {
     if (_remoteContext != null) throw StateError('Remote command already running');
     _remoteContext = (requestId, envelopeSha256);
+    _remoteExecutionGuard = guard;
     try {
       return run();
     } finally {
       _remoteContext = null;
+      _remoteExecutionGuard = null;
     }
   }
 
@@ -496,6 +501,7 @@ class PosStore extends ChangeNotifier {
     _db.execute('BEGIN IMMEDIATE');
     Map<String, dynamic> result;
     try {
+      _checkRemoteFence();
       final receipt = _db.select(
         'SELECT payload,result FROM command_receipts WHERE request_id=?',
         [requestId],
@@ -566,6 +572,7 @@ class PosStore extends ChangeNotifier {
       throw const FormatException('İstek kimliği geçersiz');
     _db.execute('BEGIN IMMEDIATE');
     try {
+      _checkRemoteFence();
       if (_db.select(
         'SELECT request_id FROM deleted_requests WHERE request_id=?',
         [requestId],
@@ -648,6 +655,12 @@ class PosStore extends ChangeNotifier {
     } catch (_) {
       _db.execute('ROLLBACK');
       rethrow;
+    }
+  }
+
+  void _checkRemoteFence() {
+    if (_remoteContext != null && (!remoteExecutionAllowed || _remoteExecutionGuard?.call() == false)) {
+      throw const FormatException('Remote execution fence expired');
     }
   }
 

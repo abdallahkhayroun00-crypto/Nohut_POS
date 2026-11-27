@@ -126,10 +126,12 @@ export type CommandState = 'confirmed' | 'pending' | 'rejected' | 'unavailable';
 export interface CommandResult {
   state: CommandState;
   message: string;
+  requestId?: string;
 }
 
 export interface CommandChannel {
   send(kind: CommandKind, payload: object): Promise<CommandResult>;
+  status?(requestId: string): Promise<CommandResult>;
 }
 
 /** Phase 5 replaces this with the authenticated cloud command queue. */

@@ -9,10 +9,19 @@ export interface CloudConfig {
   publishableKey: string;
 }
 
+export function isPublishableKey(key: string): boolean {
+  if (key.startsWith('sb_publishable_')) return key.length > 20;
+  try {
+    const parts = key.split('.');
+    if (parts.length !== 3 || !parts[1]) return false;
+    return (JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/'))) as { role?: string }).role === 'anon';
+  } catch { return false; }
+}
+
 export function readConfig(env: Record<string, string | undefined>): CloudConfig | null {
   const url = (env.VITE_SUPABASE_URL ?? '').trim();
   const publishableKey = (env.VITE_SUPABASE_PUBLISHABLE_KEY ?? '').trim();
-  if (!/^https:\/\/[a-z0-9-]+\.supabase\.co$/.test(url) || publishableKey.length < 20) return null;
+  if (!/^https:\/\/[a-z0-9-]+\.supabase\.co$/.test(url) || !isPublishableKey(publishableKey)) return null;
   return { url, publishableKey };
 }
 

@@ -201,6 +201,17 @@ void main() {
     expect(orderDueCents(asMaps(store.read().data['orders']).single), 0);
   });
 
+  test('cloud custom product prices use exact kuruş without changing the hashed request', () {
+    final payload = newOrder()
+      ..['lines'] = [{'customItem': true, 'name': 'Synthetic custom item', 'unitPriceCents': 1234,
+        'qty': 2, 'removed': <String>[], 'note': ''}];
+    final e = envelope('create_order', payload);
+    expect(run(e).outcome, CommandOutcome.confirmed);
+    expect(orderTotalCents(asMaps(store.read().data['orders']).single), 2468);
+    expect((payload['lines'] as List).single, isNot(contains('price')));
+    expect(run(e).outcome, CommandOutcome.confirmed);
+  });
+
   test('stale expected revision is a conflict, not a silent overwrite', () {
     final p = newOrder()..['expectedRevision'] = store.read().revision - 1;
     final r = run(envelope('create_order', p));

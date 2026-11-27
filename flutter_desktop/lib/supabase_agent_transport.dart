@@ -30,9 +30,8 @@ class AgentCredentials {
   });
 }
 
-class AgentTransportException implements Exception {
-  const AgentTransportException(this.code);
-  final String code;
+class AgentTransportException extends SyncRejectedException {
+  const AgentTransportException(super.code);
   @override
   String toString() => 'Cloud agent: $code';
 }

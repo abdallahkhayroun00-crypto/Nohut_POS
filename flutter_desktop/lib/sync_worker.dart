@@ -119,6 +119,15 @@ class SyncNetworkException implements Exception {
   String toString() => message;
 }
 
+/// Permanent transport/auth/schema failure. Keep every event and require
+/// owner reconciliation rather than throwing out of an automatic timer.
+class SyncRejectedException implements Exception {
+  const SyncRejectedException(this.code);
+  final String code;
+  @override
+  String toString() => code;
+}
+
 /// Groups pending outbox rows (oldest first) into commit transactions.
 List<SyncTransaction> groupPending(Database db, {int limitEvents = 500}) {
   final epoch = syncStateValue(db, 'authority_epoch');
@@ -238,6 +247,7 @@ class SyncWorker {
   Future<int> flush({bool manual = false}) async {
     if (_flushing) return 0;
     if (!outboxEnabled(db)) return 0;
+    if (syncStateValue(db, 'remote_execution_blocked') != null) return 0;
     if (syncStateValue(db, 'sync_stopped') == '1' && !manual) return 0;
     final next = DateTime.tryParse(syncStateValue(db, 'next_attempt_at') ?? '');
     if (!manual && next != null && _clock().isBefore(next)) return 0;
@@ -256,6 +266,10 @@ class SyncWorker {
             setSyncState(db, 'last_sync_error', 'Ağ: ${e.message}');
             setSyncState(db, 'next_attempt_at',
                 _clock().add(backoff).toIso8601String());
+            return acked;
+          } on SyncRejectedException catch (e) {
+            setSyncState(db, 'sync_stopped', '1');
+            setSyncState(db, 'last_sync_error', 'transport: ${e.code}');
             return acked;
           }
           switch (result.status) {
