@@ -83,6 +83,13 @@ EVIDENCE:
 
 **Blockers / owner actions:** live Trendyol read-only check needs explicit owner authorization (R1); physical iPhone HTTPS/Safari test (L4); any FCM project needs owner approval (N4); KVKK gate unchanged.
 
+## Codex planned Vardiya checkpoint (2026-11-27)
+
+- QA-09 fifth slice: shiftPlans now ingests into private typed shift_plans and immutable shift_plan_history, separate from actual hours/payroll. Existing source IDs, tenant employee/nullable actor mapping, historical labels, overnight flags, breaks/notes/day off, creation/update and cancelled rows are preserved. Edits retain typed before-values; cancellation keeps the actual source audit without inventing a before snapshot. Missing/rewritten history, invalid intervals, stale revisions and resurrected cancellations fail before ACK. Confirmed overlap remains the existing Windows decision.
+- Validation: **52 migrations / 28 SQL suites** pass as superuser and non-BYPASSRLS owner; targeted plan/submission/workforce **11 passed**. Real HTTP/PostgreSQL passes repeats, overnight edits, lost ACK, cancellation/day off, and proves plans create no actual work. Full Windows **494 passed, 2 skips**; analysis no errors/warnings (596 style/deprecation infos).
+- Shared inventory marks the five typed workforce slices implemented/tested only in PR #39, not merged/deployed. O-10 index is documented tested with independent re-review pending. O-03 remains open for authorized Windows-calculated summaries/read APIs and cloud client runtime wiring. Contract: docs/contracts/v1/planned-shifts.md. Other remaining first-sync/domain/runtime/Phase 7 requirements are unchanged.
+- Independently verified all seven CI workflows green at 20c1fa7: Windows 46047503911; Android Personel 46047503912 / Yönetim 46047504023; PWA 46047504002; PostgreSQL 46047504010; auth 46047503959; HTTP 46047503955. New-head CI follows push; green CI does not satisfy remaining PR completion gates. No production or real data actions.
+
 ## Codex weekly submission checkpoint (2026-11-27)
 
 - QA-09 fourth slice: existing timesheetWeeks event now ingests private typed weeks, immutable submission ordinals and nested historical entry snapshots. Stable source week/shift identities, tenant employee mapping, Istanbul Monday weeks, exact integer-minute totals and current-or-audited historical interval matching are enforced. Changed/omitted snapshots, entry-set changes, invented intervals and inconsistent current headers abort the complete transaction. Shift ingestion precedes submissions; no approvals or planned-hour pay introduced.

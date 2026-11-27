@@ -85,13 +85,13 @@ Owner acceptance example (8 h × 100 TL + 8 h × 120 TL = 1.760 TL; pay 800 → 
 | ID | Finding | Severity | Next step |
 |---|---|---|---|
 | O-02 | Personel rate card shows the rate at week start when the rate changed mid-week | Low | Show both rates for the week |
-| O-03 | Payroll on the cloud PWAs not yet projected (Android Yönetici done over the LAN owner link, D-30) | High (parity) | Codex: cloud projection of `payHistory`, `payrollPayments`, `payrollReviews`, `payrollEligible` |
+| O-03 | Payroll on the cloud PWAs remains incomplete (Android Yönetici done over the LAN owner link, D-30) | High (parity) | Codex #39: typed wage/eligibility, payment/review ledger, actual Mesai and weekly snapshots implemented and synthetic-tested; authorized Windows-calculated reads/runtime UI wiring still pending. See PROGRESS.md checkpoints; do not close parity from typed tables alone. |
 | O-12 | Android Personel opens on Masalar; spec §24.1/§24.3 asks for Ana Sayfa · Masalar · Siparişler · Online · Daha Fazla with Mesai reachable from home (Gemini QA-14) | Low/Medium (navigation parity) | Claude, with the premium redesign |
 | O-04 | Order, payment, refund, receipt, analytics modules not re-audited in this cycle | — | Next audit pass |
 | O-05 | No emulator/APK screenshots in this cycle | — | Android audit pass |
 | O-06 | Independent review: Gemini passes 1–3 on PR #44 (comments 7223333964, 7223539958, 7223725943, 7223945667); Claude-owned findings verified resolved on 4249b9e by the reviewer | — | Done for this PR |
 | O-07 | Android Personel APK has no individual login yet; it still shows an employee picker (legacy shared mode). With *Bireysel giriş zorunlu* on, its writes are now refused (401) until it signs in | High (parity) | Native login + 5-digit PIN in the APK (W6/A2) |
-| O-10 | `sync_outbox` partial index on pending rows (QA-12, part) | Low (performance) | Codex (sync owner, #39) |
+| O-10 | `sync_outbox` pending partial index implemented/tested in #39 (QA-12, part); independent re-review pending | Low (performance) | Codex abbcf31: additive `sync_outbox_pending(seq) WHERE acked_at IS NULL`; existing-row upgrade and actual EXPLAIN QUERY PLAN test pass; re-review request on #45. |
 | O-08 | An old Yönetici APK compares the owner name with "Ömer Yılmaz"; after linking the owner account to a differently named profile it needs the new APK from CI | Medium (upgrade) | Install the APK built from #44 |
 
 ## 4. Physical-device tests required from the owner

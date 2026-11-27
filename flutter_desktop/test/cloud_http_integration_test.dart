@@ -562,6 +562,31 @@ void main() {
         expect(await sync.flush(), greaterThan(0));
         expect(pendingOutbox(db), isEmpty);
         final workNow = DateTime.utc(2026, 11, 24, 12);
+        final planned = applyPlanCommand(store, {'action': 'plan_save', 'requestId': 'synthetic-plan',
+          'date': '2026-11-27', 'start': '22:00', 'end': '06:00', 'breakMinutes': 60, 'repeatWeeks': 1},
+          actorId: 2, actorName: 'Synthetic payroll staff', now: workNow);
+        await call('/test/lose-next-ingest-ack');
+        expect(await sync.flush(), 0);
+        now = now.add(const Duration(seconds: 4));
+        expect(await sync.flush(), greaterThan(0));
+        expect((await call('/test/inspect'))['planned_count'], 2);
+        final plannedId = (planned['ids'] as List).first;
+        var planRow = shiftPlansOf(store.read().data).firstWhere((p) => p['id']==plannedId);
+        applyPlanCommand(store, {'action': 'plan_save', 'requestId': 'synthetic-plan-edit', 'id': plannedId,
+          'expectedUpdatedAt': planRow['updatedAt'], 'date': '2026-11-27', 'start': '22:00', 'end': '07:00', 'breakMinutes': 30},
+          actorId: 2, actorName: 'Synthetic payroll staff', now: workNow);
+        expect(await sync.flush(), greaterThan(0), reason: sync.status().lastError);
+        planRow = shiftPlansOf(store.read().data).firstWhere((p) => p['id']==plannedId);
+        applyPlanCommand(store, {'action': 'plan_cancel', 'requestId': 'synthetic-plan-cancel', 'id': plannedId,
+          'expectedUpdatedAt': planRow['updatedAt']}, actorId: 2, actorName: 'Synthetic payroll staff', now: workNow);
+        applyPlanCommand(store, {'action': 'plan_save', 'requestId': 'synthetic-day-off', 'date': '2026-11-29', 'dayOff': true},
+          actorId: 2, actorName: 'Synthetic payroll staff', now: workNow);
+        expect(await sync.flush(), greaterThan(0), reason: sync.status().lastError);
+        final planFacts = await call('/test/inspect');
+        expect(planFacts['planned_count'], 3);
+        expect(planFacts['planned_cancelled'], 1);
+        expect(planFacts['planned_history'], 2);
+        expect(planFacts['manual_minutes'], '0');
         final manual = applyWorkCommand(store, {'action': 'work_save', 'requestId': 'synthetic-manual',
           'date': '2026-11-23', 'start': '09:00', 'end': '18:00', 'breakMinutes': 60},
           actorId: 2, actorName: 'Synthetic payroll staff', now: workNow);
