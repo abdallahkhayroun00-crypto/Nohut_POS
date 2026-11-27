@@ -12,6 +12,7 @@ import 'sync_outbox.dart';
 import 'pos_logic.dart';
 import 'operations.dart';
 import 'order_sync_identity.dart';
+import 'receipt_sync_history.dart';
 
 /// Compatible with the Python LAN prototype's state_snapshot schema.
 /// All order data lives on the restaurant laptop, not in GitHub Pages.
@@ -212,8 +213,10 @@ class PosStore extends ChangeNotifier {
     // Recording remains disabled until the future owner-authorized wizard.
     if(outboxEnabled(_db)){
       prepareOrderSyncIdentities(_cache!,next);
-      debugWriteObserver?.call(next);
     }
+    // Local print history must survive even before cloud is configured.
+    prepareReceiptSyncHistory(_cache!,next,stamp);
+    debugWriteObserver?.call(next);
     final changes = outboxEnabled(_db)
         ? collectOutboxChanges(_cache!, next)
         : const <OutboxChange>[];
@@ -257,6 +260,7 @@ class PosStore extends ChangeNotifier {
   void prepareCloudOrderIdentities(){
     final snapshot=read(),next=snapshot.data;
     prepareOrderSyncIdentities(next,next,force:true);
+    prepareReceiptSyncHistory(next,next,utcNow(),force:true);
     if(!replace(next,snapshot.revision).ok)throw const FormatException('POS changed during identity preparation');
   }
 

@@ -7,6 +7,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:nohut_falafel_desktop/cloud_finance_serializer.dart';
 import 'package:nohut_falafel_desktop/cloud_catalog_serializer.dart';
 import 'package:nohut_falafel_desktop/cloud_order_serializer.dart';
+import 'package:nohut_falafel_desktop/cloud_receipt_serializer.dart';
+import 'package:nohut_falafel_desktop/receipt_printer.dart';
 import 'package:nohut_falafel_desktop/operations.dart';
 import 'package:nohut_falafel_desktop/order_actions.dart';
 import 'package:nohut_falafel_desktop/pos_logic.dart';
@@ -67,7 +69,10 @@ void main() {
           identities,
           TypedCatalogTransport(
             identities,
-            TypedOrderTransport(identities, transport),
+            TypedOrderTransport(
+              identities,
+              TypedReceiptTransport(identities, transport),
+            ),
           ),
         ),
         clock: () => now,
@@ -256,6 +261,54 @@ void main() {
         expect(edited['order_total'], '4668');
         expect(edited['line_edits'], 1);
         expect(edited['historical_sale_prices'], [1234, 1334, 2000]);
+        store.command('synthetic_payment_receipt', {}, (s) {
+          (s['settings'] as Map)['printerName'] = 'Synthetic printer';
+          queuePaymentReceipt(
+            s,
+            mutableOrder(s, orderId)!,
+            requestId: 'synthetic_payment_receipt',
+          );
+          return {'ok': true};
+        });
+        expect(await sync.flush(), 1, reason: '${sync.status().lastError}');
+        var prints = 0;
+        final printer = ReceiptPrinter(
+          store,
+          transport: (text, name) async {
+            prints++;
+            expect(text, contains('Private synthetic customer'));
+            if (prints == 1)
+              throw const SocketException('Synthetic uncertain print');
+          },
+        );
+        try {
+          await printer.pump();
+          expect(await sync.flush(), 2, reason: '${sync.status().lastError}');
+          await printer.pump();
+          expect(prints, 1);
+          retryAmbiguousPrint(store, {
+            'requestId': 'synthetic_payment_reprint',
+            'target': 'payment',
+            'receiptRequestId': 'synthetic_payment_receipt',
+            'checked': true,
+          });
+          expect(await sync.flush(), 1, reason: '${sync.status().lastError}');
+          await printer.pump();
+          expect(await sync.flush(), 2, reason: '${sync.status().lastError}');
+          final receipt = await call('/test/inspect');
+          expect(receipt['receipt_snapshots'], 1);
+          expect(receipt['print_jobs'], 1);
+          expect(receipt['print_events'], 6);
+          expect(receipt['print_status'], 'spooled');
+          expect(receipt['receipt_body'], contains('Toplam 46,68'));
+          expect(
+            receipt['receipt_body'],
+            isNot(contains('Private synthetic customer')),
+          );
+          expect(receipt['receipt_body'], isNot(contains('05551234567')));
+        } finally {
+          printer.dispose();
+        }
         store.deleteOrder(
           orderId,
           store.read().revision,
@@ -270,6 +323,8 @@ void main() {
         expect(archived['payments'], 2);
         expect(archived['refunds'], 1);
         expect(archived['order_items'], 2);
+        expect(archived['print_jobs'], 1);
+        expect(archived['print_events'], 6);
 
         const requestId = '90000000-0000-4000-8000-000000000001';
         final context = <String, Object?>{

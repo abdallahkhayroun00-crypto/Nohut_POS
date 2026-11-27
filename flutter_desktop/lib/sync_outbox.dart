@@ -21,6 +21,7 @@ import 'entity_storage.dart';
 import 'sync_field_registry.dart';
 import 'finance_sync_history.dart';
 import 'catalog_sync_history.dart';
+import 'receipt_sync_history.dart' show cloudPrintJobs;
 import 'pos_logic.dart' show orderTotalCents, orderPaidCents, orderDueCents;
 
 void createSyncTables(Database db) {
@@ -147,9 +148,8 @@ List<OutboxChange> collectOutboxChanges(
   final entityKeys = {for (final kind in entityKinds) kind.stateKey};
   for (final kind in entityKinds) {
     final key = kind.stateKey;
-    if (key == 'printJobs') continue;
     Map<String, Object?> byId(Map<String, dynamic> state) {
-      final rows = state[key];
+      final rows = key=='printJobs'?cloudPrintJobs(state):state[key];
       if (rows is! List) return {};
       if (rows.any((row) => row is! Map)) {
         throw const FormatException('Invalid sync entity row');

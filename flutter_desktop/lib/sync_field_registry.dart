@@ -81,6 +81,13 @@ List<String> unregisteredFieldPaths(Map state) {
 /// Prefix semantics: listing `orders[].batches[].lines[].removed` allows
 /// that field; a parent is never implicitly allowed by a child.
 const cloudAllowedFieldPaths = <String>{
+  'printJobs','printJobs[].syncId','printJobs[].orderId','printJobs[].batchId','printJobs[].kind',
+  'printJobs[].state','printJobs[].attempts','printJobs[].createdAt','printJobs[].spooledAt',
+  'printJobs[].receiptRequestId','printJobs[].syncReceipt','printJobs[].syncReceipt.schemaVersion',
+  'printJobs[].syncReceipt.sourceFormat','printJobs[].syncReceipt.body','printJobs[].syncReceipt.privacy',
+  'printJobs[].syncPrintHistory','printJobs[].syncPrintHistory[].id','printJobs[].syncPrintHistory[].ordinal',
+  'printJobs[].syncPrintHistory[].observedAt','printJobs[].syncPrintHistory[].origin',
+  'printJobs[].syncPrintHistory[].state','printJobs[].syncPrintHistory[].attempts','printJobs[].syncPrintHistory[].spooledAt',
   'orders[].platformCollection', 'orders[].payments[].staffId', 'orders[].payments[].productPaymentId',
   'orders[].lineEdits', 'orders[].lineEdits[].syncId', 'orders[].lineEdits[].at',
   'orders[].lineEdits[].by', 'orders[].lineEdits[].key', 'orders[].batches[].lines[]',

@@ -3,6 +3,11 @@
 part of 'sync_field_registry.dart';
 
 const knownStateFieldPaths = <String>{
+  'printJobs[].syncId','printJobs[].syncReceipt','printJobs[].syncReceipt.schemaVersion',
+  'printJobs[].syncReceipt.sourceFormat','printJobs[].syncReceipt.body','printJobs[].syncReceipt.privacy',
+  'printJobs[].syncPrintHistory','printJobs[].syncPrintHistory[].id','printJobs[].syncPrintHistory[].ordinal',
+  'printJobs[].syncPrintHistory[].observedAt','printJobs[].syncPrintHistory[].origin',
+  'printJobs[].syncPrintHistory[].state','printJobs[].syncPrintHistory[].attempts','printJobs[].syncPrintHistory[].spooledAt',
   'orders[].payments[].staffId',
   'orders[].payments[].productPaymentId',
   'orders[].syncEventIds',
