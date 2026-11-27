@@ -8,6 +8,8 @@ declare
  d uuid:=gen_random_uuid(); s uuid:=gen_random_uuid(); wd uuid:=gen_random_uuid(); ws uuid:=gen_random_uuid();
  q uuid:=gen_random_uuid(); q2 uuid:=gen_random_uuid(); q3 uuid:=gen_random_uuid();
  token text; envhash text; envhash2 text; recovery_hash text; fence uuid; result jsonb;
+ draft_json text:='{"categories":[],"products":[],"campaigns":[]}';
+ draft_digest text; draft_stamp text; tx uuid:=gen_random_uuid();
  digest text:=repeat('a',64); revision text:=repeat('b',40);
  parent text:=repeat('c',40); gitcommit text:=repeat('d',40);
  tree text:=repeat('e',40); newrev text:=repeat('f',40);
@@ -22,11 +24,34 @@ begin
  perform nohut_private.enroll_device(u,d,s,'yonetici','Synthetic');
  perform nohut_private.enroll_device(u,wd,ws,'windows','Synthetic Windows');
  token:=nohut_private.enroll_windows_agent(u,ws,wd,'aal2',1,wd,e)->>'token';
- perform nohut_private.enqueue_command(u,s,d,'yonetici',1,q,'qr_menu_publish','{"confirmed":true,"expectedStamp":"0123456789abcdef"}');
+ draft_digest:=encode(sha256(convert_to(draft_json,'UTF8')),'hex'); draft_stamp:=left(draft_digest,16);
+ perform nohut_private.enqueue_command(u,s,d,'yonetici',1,q,'qr_menu_publish',jsonb_build_object('confirmed',true,'expectedStamp',draft_stamp)::text);
+ perform nohut_private.apply_qr_menu_projection(r,1,jsonb_build_object('available',true,'stamp',draft_stamp,'revision',revision,'offline',false,'catalog',draft_json::jsonb));
+ insert into nohut_private.sync_transactions(restaurant_id,authority_epoch,tx_id,source_revision,first_seq,last_seq,event_count,schema_version,body_sha256)
+ values(r,e,tx,1,1,1,1,1,repeat('a',64));
+ insert into nohut_private.sync_event_ids(restaurant_id,authority_epoch,tx_id,event_id,event_ordinal,seq,entity_type,entity_id,op,body_sha256)
+ values(r,e,tx,gen_random_uuid()::text,1,1,'qrMenuState','core','upsert',repeat('b',64));
  perform nohut_private.enqueue_command(u,s,d,'yonetici',1,q2,'qr_menu_publish','{"confirmed":true,"expectedStamp":"0123456789abcdef"}');
  perform public.nohut_agent_claim(token,20);
  select nohut_private.command_envelope_sha256(envelope) into strict envhash from nohut_private.commands where restaurant_id=r and request_id=q::text;
  select nohut_private.command_envelope_sha256(envelope) into strict envhash2 from nohut_private.commands where restaurant_id=r and request_id=q2::text;
+ result:=nohut_private.qr_publish_bind_draft(token,q::text,1,envhash,draft_stamp,revision,draft_json);
+ if result->>'digest' is distinct from draft_digest then raise exception 'draft hash mismatch'; end if;
+ begin
+  perform nohut_private.qr_publish_bind_draft(token,q::text,1,envhash,draft_stamp,revision,draft_json||' ');
+  raise exception 'modified draft accepted';
+ exception when insufficient_privilege then null; end;
+ begin
+  perform nohut_private.qr_publish_bind_draft(token,q::text,1,envhash,draft_stamp,repeat('0',40),draft_json);
+  raise exception 'wrong revision accepted';
+ exception when insufficient_privilege then null; end;
+ update nohut_private.qr_menu_state set source_revision=2 where restaurant_id=r;
+ begin
+  perform nohut_private.qr_publish_bind_draft(token,q::text,1,envhash,draft_stamp,revision,draft_json);
+  raise exception 'unproven projection accepted';
+ exception when insufficient_privilege then null; end;
+ update nohut_private.qr_menu_state set source_revision=1 where restaurant_id=r;
+ if has_function_privilege('service_role','nohut_private.qr_publish_bind_draft(text,text,bigint,text,text,text,text)','EXECUTE') then raise exception 'binding exposed'; end if;
  if has_table_privilege('anon','nohut_private.qr_publish_receipts','SELECT') or
  has_table_privilege('authenticated','nohut_private.qr_publish_receipts','INSERT') or
  has_table_privilege('service_role','nohut_private.qr_publish_receipts','UPDATE') then raise exception 'direct grants leaked'; end if;
