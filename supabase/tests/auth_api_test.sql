@@ -50,8 +50,8 @@ begin
   if public.nohut_whoami('f2000000-0000-0000-0000-00000000000a', 'yonetici')->>'status' <> 'device_revoked' then
     raise exception 'foreign device accepted';
   end if;
-  perform public.nohut_set_pin('f2000000-0000-0000-0000-00000000000b', '582914');
-  if public.nohut_verify_pin('f2000000-0000-0000-0000-00000000000b', '582914') <> 'ok' then raise exception 'pin'; end if;
+  perform public.nohut_set_pin('f2000000-0000-0000-0000-00000000000b', '58291');
+  if public.nohut_verify_pin('f2000000-0000-0000-0000-00000000000b', '58291') <> 'ok' then raise exception 'pin'; end if;
   perform public.nohut_logout('f2000000-0000-0000-0000-00000000000b');
   if public.nohut_whoami('f2000000-0000-0000-0000-00000000000b', 'personel')->>'status' <> 'session_revoked' then raise exception 'logout'; end if;
 end $$;
