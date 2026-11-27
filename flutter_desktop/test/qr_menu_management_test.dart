@@ -13,6 +13,8 @@ import 'package:nohut_falafel_desktop/pos_logic.dart';
 import 'package:nohut_falafel_desktop/pos_store.dart';
 import 'package:nohut_falafel_desktop/qr_menu_management.dart';
 import 'package:nohut_falafel_desktop/qr_publisher_client.dart';
+import 'package:nohut_falafel_desktop/qr_publisher_service.dart';
+import 'qr_publisher_service_test.dart' as svc;
 
 Json github() => {
       'schemaVersion': 1,
@@ -68,10 +70,12 @@ class FakePublisher extends QrPublisherClient {
 }
 
 class Host extends StatefulWidget {
-  const Host({super.key, required this.initial, required this.store, required this.publisher});
+  const Host({super.key, required this.initial, required this.store, required this.publisher,
+    this.supervisor});
   final Json initial;
   final PosStore store;
   final FakePublisher publisher;
+  final QrPublisherSupervisor? supervisor;
   @override
   State<Host> createState() => HostState();
 }
@@ -94,6 +98,7 @@ class HostState extends State<Host> {
         publisher: widget.publisher,
         readPublicMenu: () async => github()..['source'] = 'public-website',
         networkImages: false,
+        supervisor: widget.supervisor,
         now: () => DateTime.utc(2026, 11, 27, 19, 55),
       );
 }
@@ -103,7 +108,8 @@ var fontsLoaded = false;
 final boundary = GlobalKey();
 
 Future<GlobalKey<HostState>> mount(WidgetTester t, FakePublisher f,
-    {Json? state, Size size = const Size(1536, 864), Brightness brightness = Brightness.light}) async {
+    {Json? state, Size size = const Size(1536, 864), Brightness brightness = Brightness.light,
+    QrPublisherSupervisor? supervisor}) async {
   t.view.physicalSize = size;
   t.view.devicePixelRatio = 1;
   addTearDown(() {
@@ -134,7 +140,8 @@ Future<GlobalKey<HostState>> mount(WidgetTester t, FakePublisher f,
       child: Scaffold(
         body: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 22),
-          child: Host(key: key, initial: {...emptyPosState(), ...?state}, store: store, publisher: f),
+          child: Host(key: key, initial: {...emptyPosState(), ...?state}, store: store, publisher: f,
+            supervisor: supervisor),
         ),
       ),
     ),
@@ -218,6 +225,52 @@ void main() {
     expect(find.text('95,00 ₺'), findsOneWidget);
     expect(primary(t), 'GitHub’dan Yenile');
     expect(t.takeException(), isNull);
+  });
+
+  testWidgets('publisher stopped: compact card, one-click start, then connected', (t) async {
+    final f = FakePublisher()..up = false;
+    final machine = svc.ready();
+    machine.onLaunch = (_) {
+      f.up = true;
+      machine.healthBody = {'service': 'Nohut QR Publisher', 'version': qrPublisherVersion};
+    };
+    final sup = QrPublisherSupervisor(endpoint: QrPublisherClient.defaultLocalEndpoint,
+      client: f, host: machine, startTimeout: const Duration(milliseconds: 50));
+    await mount(t, f, supervisor: sup);
+    expect(state(t), 'Çevrimdışı taslak');
+    expect(t.widget<Text>(find.byKey(const ValueKey('qr-repair-title'))).data, 'Yayınlama hizmeti durmuş');
+    expect(find.text('Hizmeti Başlat'), findsOneWidget);
+    expect(find.byKey(const ValueKey('qr-repair-log')), findsNothing, reason: 'details stay folded');
+    expect(find.textContaining('start-windows.ps1'), findsNothing, reason: 'no PowerShell instructions');
+    expect(t.widget<Text>(find.byKey(const ValueKey('qr-info'))).style?.color,
+      isNot(Theme.of(t.element(find.byKey(const ValueKey('qr-info')))).colorScheme.error),
+      reason: 'an offline draft is a state, not a red error');
+    await tapKey(t, 'qr-repair-details');
+    expect(find.text('GitHub App anahtarı'), findsOneWidget);
+    expect(find.text('bulundu'), findsOneWidget);
+    await shot(t, 'qr-publisher-stopped-1536x864');
+    await tapKey(t, 'qr-repair-action');
+    expect(machine.launches.single, contains('-NoPrompt'));
+    expect(find.byKey(const ValueKey('qr-repair')), findsNothing);
+    expect(state(t), 'Yayındakiyle aynı');
+    expect(text(t, 'qr-fact-link'), 'GitHub bağlı');
+  });
+
+  testWidgets('missing key and missing Node each name their own fix', (t) async {
+    final f = FakePublisher()..up = false;
+    QrPublisherSupervisor sup(svc.FakeHost h) => QrPublisherSupervisor(
+      endpoint: QrPublisherClient.defaultLocalEndpoint, client: f, host: h,
+      startTimeout: const Duration(milliseconds: 50));
+    await mount(t, f, supervisor: sup(svc.ready()..files.remove(svc.key)));
+    expect(t.widget<Text>(find.byKey(const ValueKey('qr-repair-title'))).data, 'GitHub App anahtarı (.pem) bulunamadı');
+    expect(find.text('Anahtar Dosyasını Seç'), findsOneWidget);
+    await shot(t, 'qr-publisher-no-key-1100x720');
+    await mount(t, f, supervisor: sup(svc.ready()..runs.remove(svc.node)));
+    expect(t.widget<Text>(find.byKey(const ValueKey('qr-repair-title'))).data, 'Node.js 22 veya üstü bulunamadı');
+    expect(find.text('Node.js İndirme Sayfası'), findsOneWidget);
+    await mount(t, f, supervisor: sup(svc.ready()..portIsOpen = true));
+    expect(t.widget<Text>(find.byKey(const ValueKey('qr-repair-title'))).data, 'Yayınlama portu başka bir programda');
+    expect(find.byKey(const ValueKey('qr-repair-action')), findsNothing);
   });
 
   testWidgets('no key: says so and points to Ayarlar', (t) async {
@@ -426,10 +479,8 @@ void main() {
     expect(find.text('199,00 ₺ · Lunch'), findsOneWidget);
     await t.tap(find.text('Ürünler · 4'));
     await t.pumpAndSettle();
-    // Preview and setup from the overflow menu.
-    await tapKey(t, 'qr-more');
-    await t.tap(find.text('Önizle'));
-    await t.pumpAndSettle();
+    // Preview is a stable header button; setup stays in the overflow menu.
+    await tapKey(t, 'qr-preview-button');
     expect(find.byKey(const ValueKey('qr-preview')), findsOneWidget);
     expect(find.text('Mercimek Çorbası'), findsWidgets);
     await t.tap(find.text('Müşteri Görünümü'));

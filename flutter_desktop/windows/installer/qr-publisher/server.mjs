@@ -3,6 +3,8 @@ import http from 'node:http';
 import {readFileSync} from 'node:fs';
 import {createSign,timingSafeEqual} from 'node:crypto';
 
+// Keep in step with qrPublisherVersion in lib/qr_publisher_service.dart.
+const VERSION='2026.11.28';
 const repo='nohutfalafel/qr-menu',branch='main',api='https://api.github.com';
 const appId=process.env.GITHUB_APP_ID || '5845851';
 const privateKey=(process.env.GITHUB_APP_PRIVATE_KEY_FILE
@@ -153,9 +155,20 @@ let publishing=false;
 const server=http.createServer(async(req,res)=>{
   try {
     if(req.method==='GET'&&req.url==='/health'){
-      return respond(res,200,{service:'Nohut QR Publisher',status:'ready'});
+      return respond(res,200,{service:'Nohut QR Publisher',status:'ready',version:VERSION});
     }
     if(!authorized(req))return respond(res,401,{error:'Yönetici anahtarı yanlış.'});
+    if(req.method==='POST'&&req.url==='/shutdown') {
+      // POS restarts an outdated publisher after an upgrade. Never mid-publish.
+      if(publishing)throw fail(409,'Yayın devam ediyor; bitince yeniden deneyin.');
+      res.on('finish',()=>{
+        server.close(()=>process.exit(0));
+        server.closeIdleConnections?.();
+        setTimeout(()=>process.exit(0),2000).unref();
+      });
+      respond(res,200,{status:'stopping',version:VERSION});
+      return;
+    }
     if(req.method==='GET'&&req.url==='/catalog') {
       const result=await currentCatalog(await installationToken());
       return respond(res,200,result);
@@ -216,6 +229,13 @@ const server=http.createServer(async(req,res)=>{
       'Yayın hizmeti başarısız. İşlem gönderilmeden önce bağlantıyı denetleyin.'});
   }
 });
+server.on('error',e=>{
+  // Report a taken port plainly (POS shows it); exit so the script records it.
+  console.error(e.code==='EADDRINUSE'
+    ?'PORT_IN_USE 127.0.0.1:'+port+' başka bir program tarafından kullanılıyor.'
+    :'SERVER_ERROR '+(e.code||e.message));
+  process.exit(e.code==='EADDRINUSE'?98:1);
+});
 server.listen(port,'127.0.0.1',()=>{
-  console.log('Nohut QR Publisher only on http://127.0.0.1:'+port);
+  console.log('Nohut QR Publisher '+VERSION+' only on http://127.0.0.1:'+port);
 });

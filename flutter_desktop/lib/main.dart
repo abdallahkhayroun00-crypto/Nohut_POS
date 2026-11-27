@@ -33,6 +33,7 @@ import 'receipt_preview.dart';
 import 'qr_menu_sync.dart';
 import 'qr_menu_remote.dart';
 import 'qr_publisher_client.dart';
+import 'qr_publisher_service.dart';
 
 import 'dart:convert';
 import 'dart:math' show min;
@@ -341,6 +342,15 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     if (widget.startServer) _scheduleMarketPopup();
     if (widget.startServer && defaultTargetPlatform == TargetPlatform.windows) {
       backups.startAutomatic();
+      // Bring the local QR publisher up quietly (no prompts, no PowerShell
+      // window); QR Menü Yönetimi explains anything it cannot fix itself.
+      unawaited(QrPublisherSupervisor(
+        endpoint: QrPublisherClient.configuredEndpoint(
+            store.read().data['settings']?['qrPublisherUrl']),
+        client: QrPublisherClient(store.filePath),
+      ).ensureRunning().then((d) {
+        if (!d.ok) debugPrint('QR publisher: ${d.title}');
+      }, onError: (Object e) => debugPrint('QR publisher: $e')));
     }
     final migrationNotice = store.migrationError != null
         ? 'Veri taşıma yapılmadı, eski biçim korunuyor: ${store.migrationError}'

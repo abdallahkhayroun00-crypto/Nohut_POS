@@ -60,6 +60,7 @@ Source: "{#ReleaseDir}\data\*"; DestDir: "{app}\data"; Flags: ignoreversion recu
 Source: "{#ReleaseDir}\build-manifest.json"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#ReleaseDir}\QRPublisher\server.mjs"; DestDir: "{app}\QRPublisher"; Flags: ignoreversion
 Source: "{#ReleaseDir}\QRPublisher\start-windows.ps1"; DestDir: "{app}\QRPublisher"; Flags: ignoreversion
+Source: "{#ReleaseDir}\QRPublisher\stop-windows.ps1"; DestDir: "{app}\QRPublisher"; Flags: ignoreversion
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
@@ -70,7 +71,14 @@ Name: "{userprograms}\{#AppTitle}"; Filename: "{app}\{#AppExe}"; WorkingDir: "{a
 Name: "{userprograms}\Nohut QR Publisher Kurulum"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\QRPublisher\start-windows.ps1"""; WorkingDir: "{app}\QRPublisher"
 
 [Run]
+; Start (or, after an upgrade, replace) the local QR publisher without any
+; prompt. If Node.js or the GitHub App key is missing it only records that in
+; %APPDATA%\NohutFalafel\QrPublisher\status.json; POS shows the fix.
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File ""{app}\QRPublisher\start-windows.ps1"" -NoPrompt"; WorkingDir: "{app}\QRPublisher"; Flags: runhidden nowait
 Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppTitle}}"; Flags: nowait postinstall skipifsilent
+
+[UninstallRun]
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File ""{app}\QRPublisher\stop-windows.ps1"""; Flags: runhidden waituntilterminated; RunOnceId: "StopQrPublisher"
 
 [CustomMessages]
 english.NewerInstalled=A newer version of Nohut Falafel POS is already installed.

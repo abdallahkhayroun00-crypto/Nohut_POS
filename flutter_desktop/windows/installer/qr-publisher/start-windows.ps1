@@ -1,9 +1,30 @@
-# Nohut QR Publisher • Windows local service
+﻿# Nohut QR Publisher • Windows local service
 # Requires Node.js 22+ and the existing GitHub App private key from Downloads.
 # Generates a private random access code and stores it in Windows DPAPI for POS.
-param([string]$PrivateKeyFile = "",[int]$Port = 18787)
+# -NoPrompt: used by POS auto-start, the Startup shortcut and Setup. Never
+# opens the file picker; a missing key is reported in status.json instead.
+param([string]$PrivateKeyFile = "",[int]$Port = 18787,[switch]$NoPrompt)
 $ErrorActionPreference = 'Stop'
 if ($Port -lt 1024 -or $Port -gt 65535) { throw 'Invalid port.' }
+$base = Join-Path $env:APPDATA 'NohutFalafel'
+$service = Join-Path $base 'QrPublisher'
+New-Item -ItemType Directory -Path $service -Force | Out-Null
+$statusFile = Join-Path $service 'status.json'
+# POS reads status.json for honest, secret-free status (state, time, message).
+function Write-Status([string]$State, [string]$Message) {
+  $value = [ordered]@{ state = $State; at = (Get-Date).ToUniversalTime().ToString('o'); message = $Message; port = $Port }
+  [IO.File]::WriteAllText($statusFile, ($value | ConvertTo-Json -Compress), (New-Object Text.UTF8Encoding($false)))
+}
+function Stop-With([string]$State, [string]$Message, [int]$Code) {
+  Write-Status $State $Message
+  Write-Host $Message
+  exit $Code
+}
+trap {
+  Write-Status 'failed' ([string]$_.Exception.Message)
+  break
+}
+Write-Status 'starting' 'Başlatılıyor.'
 # POS uses -NoProfile, so fnm may not be active in PATH.
 # Query node --version rather than node -p to avoid PowerShell quoting issues.
 $nodeCandidates = New-Object 'System.Collections.Generic.List[string]'
@@ -43,7 +64,7 @@ foreach ($candidate in ($nodeCandidates | Select-Object -Unique)) {
 $selectedNode = $availableNodes | Where-Object { $_.Version.Major -ge 22 } |
   Sort-Object Version -Descending | Select-Object -First 1
 if (-not $selectedNode) {
-  throw 'Node.js 22+ bulunamadı. POS PowerShell -NoProfile ile acilir; Node 26 icin Windows kurulumunu veya fnm kurulum klasorunu kontrol edin.'
+  Stop-With 'node_missing' 'Node.js 22 veya üstü bulunamadı. Ücretsiz Node.js LTS kurun, sonra POS içinden Hizmeti Başlat.' 2
 }
 $nodePath = $selectedNode.Path
 Write-Host ('QR Publisher Node: ' + $selectedNode.Version.ToString() + ' (' + $nodePath + ')')
@@ -68,6 +89,9 @@ if ([string]::IsNullOrWhiteSpace($PrivateKeyFile)) {
 }
 # If the key is neither in the protected folder nor Downloads, allow a
 # one-time Windows file selection. The PEM never goes into the GitHub repo.
+if (([string]::IsNullOrWhiteSpace($PrivateKeyFile) -or -not (Test-Path -LiteralPath $PrivateKeyFile -PathType Leaf)) -and $NoPrompt) {
+  Stop-With 'key_missing' 'GitHub App anahtarı (.pem) bulunamadı. POS içinden Anahtar Dosyasını Seç ile bir kez seçin.' 3
+}
 if ([string]::IsNullOrWhiteSpace($PrivateKeyFile) -or -not (Test-Path -LiteralPath $PrivateKeyFile -PathType Leaf)) {
   Add-Type -AssemblyName System.Windows.Forms
   $picker = New-Object System.Windows.Forms.OpenFileDialog
@@ -80,15 +104,12 @@ if ([string]::IsNullOrWhiteSpace($PrivateKeyFile) -or -not (Test-Path -LiteralPa
   }
 }
 if ([string]::IsNullOrWhiteSpace($PrivateKeyFile) -or -not (Test-Path -LiteralPath $PrivateKeyFile -PathType Leaf)) {
-  throw 'Nohut QR Publisher için .pem seçilmedi. GitHub App anahtarını bir kez seçin.'
+  Stop-With 'key_missing' 'Anahtar dosyası seçilmedi. GitHub App anahtarını (.pem) bir kez seçin.' 3
 }
 $keyText = Get-Content -LiteralPath $PrivateKeyFile -Raw -Encoding UTF8
 if ($keyText -notmatch '-----BEGIN (RSA )?PRIVATE KEY-----') {
   throw 'Seçilen dosya GitHub App private key (.pem) değil.'
 }
-$base = Join-Path $env:APPDATA 'NohutFalafel'
-$service = Join-Path $base 'QrPublisher'
-New-Item -ItemType Directory -Path $service -Force | Out-Null
 $localKey = Join-Path $service 'github-app-private-key.pem'
 if ((Resolve-Path -LiteralPath $PrivateKeyFile).Path -ne $localKey) {
   Copy-Item -LiteralPath $PrivateKeyFile -Destination $localKey -Force
@@ -123,17 +144,57 @@ $env:GITHUB_APP_ID = '5845851'
 $env:GITHUB_APP_PRIVATE_KEY_FILE = $localKey
 $env:QR_PUBLISH_ADMIN_TOKEN = $token
 $env:QR_PUBLISH_PORT = [string]$Port
+# Already running (e.g. Startup shortcut won the race): vaults are refreshed
+# above. After an upgrade an older publisher may still hold the port: stop
+# exactly that process (node.exe running a QRPublisher\server.mjs) and start
+# the bundled version.
+$bundled = [regex]::Match((Get-Content -LiteralPath (Join-Path $PSScriptRoot 'server.mjs') -Raw -Encoding UTF8), "const VERSION='([^']+)'").Groups[1].Value
+$health = $null
+try { $health = Invoke-RestMethod -Uri ('http://127.0.0.1:' + $Port + '/health') -TimeoutSec 2 } catch { }
+if ($health -and $health.service -eq 'Nohut QR Publisher') {
+  if ([string]$health.version -eq $bundled) {
+    Stop-With 'running' ('Zaten çalışıyor (' + $bundled + ').') 0
+  }
+  $owners = @(Get-NetTCPConnection -LocalAddress 127.0.0.1 -LocalPort $Port -State Listen -ErrorAction SilentlyContinue |
+    Select-Object -ExpandProperty OwningProcess -Unique)
+  foreach ($owner in $owners) {
+    $proc = Get-CimInstance Win32_Process -Filter ('ProcessId=' + $owner) -ErrorAction SilentlyContinue
+    if ($proc -and $proc.Name -eq 'node.exe' -and $proc.CommandLine -like '*QRPublisher*server.mjs*') {
+      Write-Host ('Stopping older QR Publisher (' + [string]$health.version + ')')
+      Stop-Process -Id $owner -Force
+    }
+  }
+  for ($i = 0; $i -lt 20; $i++) {
+    if (-not (Get-NetTCPConnection -LocalAddress 127.0.0.1 -LocalPort $Port -State Listen -ErrorAction SilentlyContinue)) { break }
+    Start-Sleep -Milliseconds 250
+  }
+}
+# Start at Windows sign-in, hidden and without prompts. Rewritten every run so
+# upgrades replace older shortcuts that could open a file picker at sign-in.
 $startup = [Environment]::GetFolderPath('Startup')
 $shortcutFile = Join-Path $startup 'Nohut QR Publisher.lnk'
-if (-not (Test-Path -LiteralPath $shortcutFile)) {
-  $shell = New-Object -ComObject WScript.Shell
-  $link = $shell.CreateShortcut($shortcutFile)
-  $link.TargetPath = Join-Path $PSHOME 'powershell.exe'
-  $link.Arguments = '-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $PSCommandPath + '"'
-  $link.WorkingDirectory = $PSScriptRoot
-  $link.Description = 'Nohut QR Publisher · Windows girişinde otomatik başlat'
-  $link.Save()
+$shell = New-Object -ComObject WScript.Shell
+$link = $shell.CreateShortcut($shortcutFile)
+$link.TargetPath = Join-Path $PSHOME 'powershell.exe'
+$link.Arguments = '-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $PSCommandPath + '" -NoPrompt'
+$link.WorkingDirectory = $PSScriptRoot
+$link.Description = 'Nohut QR Publisher · Windows girişinde otomatik başlat'
+$link.Save()
+$log = Join-Path $service 'publisher.log'
+$errorLog = Join-Path $service 'publisher-error.log'
+foreach ($file in @($log, $errorLog)) {
+  if ((Test-Path -LiteralPath $file) -and (Get-Item -LiteralPath $file).Length -gt 512KB) {
+    Move-Item -LiteralPath $file -Destination ($file + '.1') -Force
+  }
 }
+Write-Status 'running' ('127.0.0.1:' + $Port + ' · Node ' + $selectedNode.Version.ToString())
 Write-Host 'Starting Nohut QR Publisher on localhost' $Port
-Write-Host 'POS > Ayarlar > Entegrasyonlar > GitHub: Bağlantıyı Test Et'
-& $nodePath (Join-Path $PSScriptRoot 'server.mjs')
+$process = Start-Process -FilePath $nodePath -ArgumentList ('"' + (Join-Path $PSScriptRoot 'server.mjs') + '"') `
+  -WorkingDirectory $PSScriptRoot -NoNewWindow -Wait -PassThru `
+  -RedirectStandardOutput $log -RedirectStandardError $errorLog
+switch ($process.ExitCode) {
+  0 { Write-Status 'stopped' 'Hizmet durduruldu.' }
+  98 { Write-Status 'port_busy' ('127.0.0.1:' + $Port + ' başka bir program tarafından kullanılıyor.') }
+  default { Write-Status 'exited' ('Hizmet kapandı (kod ' + $process.ExitCode + '). Teknik ayrıntılara bakın.') }
+}
+exit $process.ExitCode

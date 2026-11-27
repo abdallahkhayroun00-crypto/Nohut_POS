@@ -15,7 +15,9 @@ import 'pos_store.dart';
 import 'qr_menu_draft.dart';
 import 'qr_menu_reader.dart';
 import 'qr_menu_sync.dart';
+import 'qr_image_crops.dart';
 import 'qr_publisher_client.dart';
+import 'qr_publisher_service.dart';
 
 /// How far the publishing chain was verified on the last check.
 enum QrLink { unknown, checking, noToken, serviceDown, githubError, connected }
@@ -23,7 +25,8 @@ enum QrLink { unknown, checking, noToken, serviceDown, githubError, connected }
 class QrMenuManagement extends StatefulWidget {
   const QrMenuManagement({super.key,
     required this.state,required this.edit,required this.store,this.sync,
-    this.publisher,this.readPublicMenu,this.now,this.networkImages=true});
+    this.publisher,this.readPublicMenu,this.now,this.networkImages=true,
+    this.supervisor});
   final Json state;
   final EditState edit;
   final PosStore store;
@@ -33,6 +36,8 @@ class QrMenuManagement extends StatefulWidget {
   final Future<Json> Function()? readPublicMenu;
   final DateTime Function()? now;
   final bool networkImages;
+  /// Finds/starts the local publisher; tests pass a scripted one.
+  final QrPublisherSupervisor? supervisor;
   @override State<QrMenuManagement> createState()=>_QrMenuManagementState();
 }
 
@@ -41,6 +46,7 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
     'qrPublisherDraftSourceSnapshot'];
   static const _pendingKey='qrPublisherPendingPublish';
   late final QrPublisherClient publisher;
+  QrPublisherSupervisor? supervisor;
   Json? menu;
   /// The GitHub (or public website) catalog the draft started from.
   Json? sourceSnapshot;
@@ -57,6 +63,9 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
   Json? pending;
   String info='';
   bool infoError=false;
+  /// Why the local publisher is down, and the one action that fixes it.
+  PublisherDiagnosis? diagnosis;
+  bool showDetails=false;
   String tab='Ürünler',query='',filterCategory='all';
 
   DateTime now()=>(widget.now??DateTime.now)();
@@ -64,6 +73,10 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
   @override void initState(){
     super.initState();
     publisher=widget.publisher??QrPublisherClient(widget.store.filePath);
+    // Production only: a test that injects a publisher scripts the machine
+    // through [QrMenuManagement.supervisor] or not at all.
+    supervisor=widget.supervisor??(widget.publisher==null
+      ?QrPublisherSupervisor(endpoint:endpoint,client:publisher):null);
     _restore();
     if(menu!=null&&changes.isNotEmpty)info='Bu bilgisayardaki taslak geri yüklendi.';
     final p=widget.state[_pendingKey];
@@ -251,13 +264,59 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
     return switch(link){
       QrLink.noToken=>'Ayarlar > Entegrasyonlar > Nohut QR Publisher bölümünde '
         'yönetici anahtarını kaydedin.',
-      QrLink.serviceDown=>'Bu bilgisayarda Nohut QR Publisher hizmeti $where '
-        'adresinde yanıt vermiyor. Hizmeti başlatın (start-windows.ps1). '
-        '8787 portu personel paneline aittir; yayınlama 18787 kullanır.',
+      QrLink.serviceDown=>diagnosis==null
+        ?'Yayınlama hizmeti $where adresinde yanıt vermiyor.'
+        :'${diagnosis!.title}. ${diagnosis!.help}',
       QrLink.githubError=>'Hizmet çalışıyor ama GitHub kataloğu okunamadı: '
         '${linkError??'bilinmeyen hata'}. GitHub App anahtarını ve depo erişimini kontrol edin.',
       _=>'',
     };
+  }
+
+  Future<PublisherDiagnosis?> _diagnose()async{
+    final d=await supervisor?.diagnose();
+    if(d==null||d.issue==PublisherIssue.notWindows||
+      d.issue==PublisherIssue.remoteEndpoint)return null;
+    // The service runs but this POS lacks the access code: the script only
+    // refreshes the DPAPI vaults in that case.
+    if(d.ok&&link==QrLink.noToken)return PublisherDiagnosis(PublisherIssue.stopped,
+      endpoint:d.endpoint,script:d.script,node:d.node,keyFound:true,
+      lastStatus:d.lastStatus,logTail:d.logTail);
+    return d.ok?null:d;
+  }
+  bool get _repairable=>diagnosis!=null;
+
+  /// The one action the status card offers: start, restart, choose the key,
+  /// or open the Node.js download page. Never publishes anything.
+  Future<void> repair()async{
+    final d=diagnosis,sup=supervisor;
+    if(d==null||sup==null||busy)return;
+    if(d.fix==PublisherFix.installNode){
+      try{
+        await Process.start('explorer.exe',['https://nodejs.org/tr/download'],
+          mode:ProcessStartMode.detached);
+        say('Node.js LTS indirme sayfası açıldı. Kurulumdan sonra Hizmeti Başlat’a basın.');
+      }catch(_){
+        say('Tarayıcı açılamadı. nodejs.org adresinden Node.js LTS kurun.',error:true);
+      }
+      return;
+    }
+    setState(()=>busy=true);
+    PublisherDiagnosis? after;
+    try{
+      after=await sup.start(allowPrompt:d.fix==PublisherFix.chooseKey);
+    }catch(e){
+      after=null;
+      say('Yayınlama hizmeti başlatılamadı: $e',error:true);
+    }finally{if(mounted)setState(()=>busy=false);}
+    if(!mounted)return;
+    if(after!=null&&after.ok){
+      say('Yayınlama hizmeti çalışıyor.');
+      await connect();
+    }else if(after!=null){
+      setState(()=>diagnosis=after);
+      say('${after.title}. ${after.help}',error:true);
+    }
   }
 
   /// Verify the chain (key → local service → GitHub), then bring the draft
@@ -267,10 +326,13 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
     setState((){busy=true;link=QrLink.checking;linkError=null;});
     Map<String,dynamic>? answer;
     try{
+      diagnosis=null;
       if(!await publisher.hasToken()){
         link=QrLink.noToken;
+        diagnosis=await _diagnose();
       }else if(!await publisher.health(endpoint)){
         link=QrLink.serviceDown;
+        diagnosis=await _diagnose();
       }else{
         try{
           answer=await publisher.catalog(endpoint);
@@ -297,8 +359,10 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
           say('Önceki yayının sonucu bilinmiyor ve şu an doğrulanamıyor. '
             '$linkHelp',error:true);
         }else if(menu!=null&&revision==null){
-          say('Çevrimdışı taslak: düzenleyebilirsiniz, yayın için bağlantı gerekli. '
-            '$linkHelp',error:true);
+          // An expected state, not an error: the fix sits in the status card.
+          say(_repairable
+            ?'Çevrimdışı taslak: düzenleyebilirsiniz; yayınlamak için önce yayınlama hizmetini düzeltin.'
+            :'Çevrimdışı taslak: düzenleyebilirsiniz, yayın için bağlantı gerekli. $linkHelp');
         }else{
           say('Yayınlama bağlantısı yok. $linkHelp',error:true);
         }
@@ -1044,7 +1108,6 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
         }
       },
       itemBuilder:(_)=>[
-        PopupMenuItem(value:'preview',enabled:menu!=null,child:const Text('Önizle')),
         const PopupMenuItem(value:'check',child:Text('Bağlantıyı Test Et')),
         PopupMenuItem(value:'discard',enabled:hasDraft&&pending==null,
           child:const Text('Taslağı At ve GitHub’dan Yükle')),
@@ -1115,8 +1178,23 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
                 style:theme.textTheme.titleMedium?.copyWith(
                   fontWeight:FontWeight.w800,color:badge.tone)),
             ]),
-            Row(mainAxisSize:MainAxisSize.min,children:[_primary(s),const SizedBox(width:4),_more()]),
+            Row(mainAxisSize:MainAxisSize.min,children:[
+              if(menu!=null)...[
+                OutlinedButton.icon(key:const ValueKey('qr-preview-button'),
+                  onPressed:busy||publishing?null:review,
+                  icon:const Icon(Icons.visibility_outlined,size:18),
+                  label:const Text('Önizle')),
+                const SizedBox(width:8),
+              ],
+              _primary(s),const SizedBox(width:4),_more()]),
           ]),
+          if(changeCount>0&&link!=QrLink.connected&&!busy)Padding(
+            padding:const EdgeInsets.only(top:6),
+            child:Text(key:const ValueKey('qr-publish-blocked'),
+              'Yayınlanamaz: ${diagnosis?.title??linkText}. '
+              'Değişiklikler bu bilgisayarda taslak olarak korunuyor.',
+              style:theme.textTheme.bodySmall?.copyWith(color:const Color(0xFFB07A12),
+                fontWeight:FontWeight.w600))),
           const SizedBox(height:10),
           Wrap(spacing:8,runSpacing:8,children:[
             _fact('Yayındaki sürüm',qrRevisionLabel(revision),key:const ValueKey('qr-fact-revision')),
@@ -1126,6 +1204,8 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
               tone:changeCount==0?null:const Color(0xFFB07A12)),
             _fact('Bağlantı',linkText,key:const ValueKey('qr-fact-link'),tone:linkTone),
           ]),
+          if(diagnosis!=null)Padding(padding:const EdgeInsets.only(top:10),
+            child:_repairCard(diagnosis!)),
           if(busy||publishing)const Padding(padding:EdgeInsets.only(top:10),
             child:LinearProgressIndicator()),
           if(info.isNotEmpty)Padding(padding:const EdgeInsets.only(top:10),
@@ -1141,6 +1221,76 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
     );
   }
 
+  /// Compact, honest publisher status: what is wrong, the one fix, and the
+  /// technical details only on request.
+  Widget _repairCard(PublisherDiagnosis d){
+    final theme=Theme.of(context);
+    const tone=Color(0xFF8A5A12);
+    return Container(
+      key:const ValueKey('qr-repair'),
+      padding:const EdgeInsets.fromLTRB(12,10,10,6),
+      decoration:BoxDecoration(color:const Color(0xFFFFF7E6),
+        borderRadius:BorderRadius.circular(12),
+        border:Border.all(color:const Color(0xFFEAD3A0))),
+      child:Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[
+        Wrap(spacing:12,runSpacing:8,alignment:WrapAlignment.spaceBetween,
+          crossAxisAlignment:WrapCrossAlignment.center,children:[
+          ConstrainedBox(constraints:const BoxConstraints(maxWidth:720),
+            child:Row(mainAxisSize:MainAxisSize.min,
+              crossAxisAlignment:CrossAxisAlignment.start,children:[
+              const Padding(padding:EdgeInsets.only(top:1),
+                child:Icon(Icons.build_circle_outlined,color:tone,size:20)),
+              const SizedBox(width:8),
+              Flexible(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+                Text(d.title,key:const ValueKey('qr-repair-title'),
+                  style:theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight:FontWeight.w800,color:tone)),
+                const SizedBox(height:2),
+                Text(d.help,style:theme.textTheme.bodySmall),
+              ])),
+            ])),
+          if(d.fixLabel!=null)FilledButton.tonalIcon(
+            key:const ValueKey('qr-repair-action'),
+            onPressed:busy||publishing?null:repair,
+            icon:Icon(switch(d.fix){
+              PublisherFix.chooseKey=>Icons.key_outlined,
+              PublisherFix.installNode=>Icons.open_in_new,
+              PublisherFix.restart=>Icons.restart_alt,
+              _=>Icons.play_arrow_rounded,
+            },size:18),
+            label:Text(d.fixLabel!)),
+        ]),
+        Align(alignment:Alignment.centerLeft,child:TextButton.icon(
+          key:const ValueKey('qr-repair-details'),
+          style:TextButton.styleFrom(foregroundColor:tone,
+            padding:const EdgeInsets.symmetric(horizontal:4),
+            visualDensity:VisualDensity.compact),
+          onPressed:()=>setState(()=>showDetails=!showDetails),
+          icon:Icon(showDetails?Icons.expand_less:Icons.expand_more,size:18),
+          label:const Text('Teknik ayrıntılar'))),
+        if(showDetails)Padding(padding:const EdgeInsets.only(bottom:6),
+          child:Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[
+            for(final (k,v) in d.facts)Padding(
+              padding:const EdgeInsets.symmetric(vertical:1.5),
+              child:Row(crossAxisAlignment:CrossAxisAlignment.start,children:[
+                SizedBox(width:160,child:Text(k,style:theme.textTheme.bodySmall
+                  ?.copyWith(color:theme.colorScheme.onSurfaceVariant))),
+                Expanded(child:SelectableText(v,style:theme.textTheme.bodySmall)),
+              ])),
+            if(d.logTail.isNotEmpty)Container(
+              margin:const EdgeInsets.only(top:6),
+              padding:const EdgeInsets.all(8),
+              decoration:BoxDecoration(color:Colors.white,
+                borderRadius:BorderRadius.circular(8),
+                border:Border.all(color:const Color(0xFFEAD3A0))),
+              child:SelectableText(d.logTail.join('\n'),
+                key:const ValueKey('qr-repair-log'),
+                style:const TextStyle(fontFamily:'Consolas',fontSize:11.5,height:1.35))),
+          ])),
+      ]),
+    );
+  }
+
   Widget _thumb(Json p){
     final cs=Theme.of(context).colorScheme;
     final image=p['image']?.toString()??'';
@@ -1148,10 +1298,30 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
       !image.toLowerCase().endsWith('.svg');
     final fallback=Container(color:cs.surfaceContainerHighest,
       child:Icon(Icons.restaurant_menu_outlined,color:cs.onSurfaceVariant,size:20));
-    return ClipRRect(borderRadius:BorderRadius.circular(8),
-      child:SizedBox(width:42,height:42,child:ok
-        ?Image.network('https://nohutfalafel.github.io/qr-menu/$image',fit:BoxFit.cover,
-          errorBuilder:(_,__,___)=>fallback):fallback));
+    final crop=qrAtlasCrop(image,translations(p['name'])['tr']??'');
+    Widget photo(){
+      final net=Image.network('https://nohutfalafel.github.io/qr-menu/$image',
+        fit:crop==null?BoxFit.cover:BoxFit.fill,
+        errorBuilder:(_,__,___)=>fallback);
+      if(crop==null)return net;
+      // One dish out of a shared sheet, the same region the public menu shows.
+      return ColoredBox(color:const Color(0xFFF7F5EE),child:FittedBox(
+        fit:BoxFit.contain,
+        child:SizedBox(width:crop.crop.width,height:crop.crop.height,
+          child:ClipRect(child:OverflowBox(
+            alignment:Alignment.topLeft,
+            minWidth:0,minHeight:0,
+            maxWidth:double.infinity,maxHeight:double.infinity,
+            child:Transform.translate(
+              offset:Offset(-crop.crop.left,-crop.crop.top),
+              child:SizedBox(width:crop.canvas.width,height:crop.canvas.height,
+                child:net)))))));
+    }
+    // A known atlas with no region for this product: never show the sheet.
+    final show=ok&&(crop!=null||!isQrAtlas(image));
+    return ClipRRect(key:ValueKey('qr-thumb-${p['id']}'),
+      borderRadius:BorderRadius.circular(8),
+      child:SizedBox(width:42,height:42,child:show?photo():fallback));
   }
 
   Widget _pill(String text,Color tone,{Key? key,VoidCallback? onTap,String? tooltip}){
@@ -1163,6 +1333,27 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
     final body=onTap==null?pill:InkWell(key:key,borderRadius:BorderRadius.circular(20),
       onTap:onTap,child:pill);
     return tooltip==null?body:Tooltip(message:tooltip,child:body);
+  }
+
+  /// Labels aligned with [productRow]'s wide layout.
+  Widget _columnHeader(){
+    final style=Theme.of(context).textTheme.labelSmall?.copyWith(
+      fontWeight:FontWeight.w800,letterSpacing:.4,
+      color:Theme.of(context).colorScheme.onSurfaceVariant);
+    return Container(
+      key:const ValueKey('qr-columns'),
+      color:const Color(0xFFF4F7F3),
+      padding:const EdgeInsets.symmetric(horizontal:12,vertical:8),
+      child:Row(children:[
+        const SizedBox(width:54),
+        Expanded(flex:5,child:Text('ÜRÜN',style:style)),
+        Expanded(flex:2,child:Text('KATEGORİ',style:style)),
+        SizedBox(width:112,child:Text('FİYAT',textAlign:TextAlign.right,style:style)),
+        const SizedBox(width:6),
+        SizedBox(width:82,child:Text('STOK',textAlign:TextAlign.center,style:style)),
+        SizedBox(width:48,child:Text('QR',textAlign:TextAlign.center,style:style)),
+        const SizedBox(width:32),
+      ]));
   }
 
   Widget productRow(Json p,Map<Object?,String> categoryNames,bool wide){
@@ -1262,7 +1453,7 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
       return c!=0?c:((a['order'] as num?)??0).compareTo((b['order'] as num?)??0);
     });
     return Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[
-      panelTitle('QR Menü Yönetimi'),
+      // The page title is already in the window header; no second heading.
       _header(s,changeCount),
       const SizedBox(height:14),
       if(menu==null)
@@ -1318,7 +1509,9 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
           const SizedBox(height:6),
           LayoutBuilder(builder:(context,c){
             final wide=c.maxWidth>=820;
-            return _list([for(final p in filtered)productRow(p,categoryNames,wide)],
+            return _list([
+              if(wide&&filtered.isNotEmpty)_columnHeader(),
+              for(final p in filtered)productRow(p,categoryNames,wide)],
               empty:'Bu filtreyle eşleşen ürün yok.');
           }),
         ]else if(tab=='Kategoriler')...[

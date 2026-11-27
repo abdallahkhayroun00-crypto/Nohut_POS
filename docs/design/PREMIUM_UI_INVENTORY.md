@@ -45,7 +45,7 @@ The Functional column records test coverage.
 | Receipts preview, printer | `receipt_preview.dart`, `printer_management.dart` | ⬜ | tests ✓ | Receipt layout is printed output; not changed |
 | Online orders (Trendyol Go, alarms) | `online_orders.dart`, `trendyol_go_ui.dart`, `platform_ui.dart` | ⬜ | tests ✓ | No live platform actions in testing |
 | Google business, reviews | `google_business_ui.dart`, `review_display.dart`, `compact_review_card.dart` | ⬜ | tests ✓ | |
-| QR Menü Yönetimi | `qr_menu_management.dart` | 🔄 (4fde30e) | 11 ✓ | Owner rejected the old page; the redesign awaits review |
+| QR Menü Yönetimi | `qr_menu_management.dart` | 🔄 owner screenshot review (relay 7228172987) addressed, awaiting re-review | 14 ✓ | Single heading (window header only); compact publisher status card with one fix button and folded *Teknik ayrıntılar*; offline draft no longer shown as a red error; stable **Önizle** button; *Yayınlanamaz: …* reason when changes exist but publishing is blocked; aligned column headers (Ürün, Kategori, Fiyat, Stok, QR); atlas photos (wraps, sides, salads, fatte) cropped to the one dish the public menu shows, never the whole sheet |
 | Açık hesaplar | `open_accounts_ui.dart` | ⬜ | tests ✓ | |
 | Raporlar, Yoğunluk, Gün Sonu | `sales_reports.dart`, `daily_report_ui.dart`, `report_activity.dart`, `dashboard_sales.dart` | ⬜ | tests ✓ | Data viz palette |
 | Finans, giderler | `finance_ui.dart` | ⬜ | tests ✓ | |
