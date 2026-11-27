@@ -83,6 +83,22 @@ EVIDENCE:
 
 **Blockers / owner actions:** live Trendyol read-only check needs explicit owner authorization (R1); physical iPhone HTTPS/Safari test (L4); any FCM project needs owner approval (N4); KVKK gate unchanged.
 
+## Antigravity (Gemini) temporary backend continuation — Increment A: QA-09 / O-03 Workforce & Payroll Read APIs (2026-11-27)
+
+- **Branch / PR:** `gemini/backend-continuation` (branched from verified PR #39 head `8d918b2`, draft PR targeting `chatgpt/pr-05b-cloud-rpcs`; PR #39 untouched).
+- **Status:** `Implemented / Tested` (NOT self-verified; independent review requested from ChatGPT / Codex when available).
+- **Implemented:**
+  - `supabase/migrations/20261127166000_nohut_workforce_summaries.sql`: private `nohut_private.weekly_workforce_summaries` (FORCE RLS, zero direct client grants), `apply_workforce_summary_projection`, and atomic `ingest_sync_transaction` support for `entity_type = 'workforceSummaries'`, `entity_id = 'core'`.
+  - `supabase/migrations/20261127167000_nohut_workforce_read_rpcs.sql`: `sync_freshness` helper + 3 JWT-scoped `SECURITY DEFINER` read RPCs:
+    - `public.nohut_workforce_own_week(p_device_id, p_client, p_permission_version, p_week_start)` — matches Claude's `/api/work/week` shape, strictly bound to `auth.uid() -> pos_employee_id` (impossible to query another employee).
+    - `public.nohut_team_schedule(p_device_id, p_client, p_permission_version, p_from, p_to)` — shared schedule with employee names and shift times ONLY (zero wages, zero manager notes, zero payroll).
+    - `public.nohut_payroll_week(p_device_id, p_client, p_permission_version, p_week_start)` — matches Claude's `ownerPayroll` shape, enforces `payroll.view` (or owner), excludes non-eligible owners (`payrollEligible=false`), preserves `null` for missing wages (`Ücret belirlenmedi`), retains departed employees with unpaid hours, and returns explicit `syncMeta` (`sourceRevision`, `calculatedAt`, `syncedAt`, `stale`, `staleReason`).
+  - `flutter_desktop/lib/cloud_workforce_summary.dart`: Windows-authoritative serializer reusing `payrollStatus`, `ownWeek`, `payRateOn`, `weekStartOf` (no parallel cloud wage engine).
+  - `docs/contracts/v1/workforce-reads.md`: full contract documentation.
+- **Validation (synthetic data only):**
+  - `flutter test test/employee_wage_sync_test.dart test/payroll_ledger_sync_test.dart test/workforce_summary_sync_test.dart`: **3/3 passed** (verifies owner acceptance 1760/800/960/0, `Kısmen Ödendi` → `Ödendi`, missing rate `null`, owner exclusion, departed employee unpaid dues).
+  - Local Docker Postgres 16: **54/54 migrations & 29/29 SQL test files passed** under both `postgres` superuser and `cloud_migrator` (`NOSUPERUSER NOBYPASSRLS`), including `supabase/tests/workforce_read_rpcs_test.sql` (privacy, permissions, stale-data detection, cross-tenant isolation, direct-table RLS block).
+
 ## Codex verified payment attribution and source-contract checkpoint (2026-11-27)
 
 - Integrated Claude 97bf0c2 / PR #44 0e36b63 into #39 only (bacae0a). Exceptional manual corrections now retain nonzero breaks in both audit snapshots; 8 targeted shifts/manual/submission tests pass. Equivalent render-helper fixes resolved using the already tested try/finally behavior; no agent branch changed.
