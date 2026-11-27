@@ -46,6 +46,7 @@ jobs:
           psql_ci < supabase/functions/qr-publisher/sql/runtime-role.review.sql
           psql_ci < supabase/functions/qr-publisher/sql/receipt-storage.review.test.sql
           psql_ci < supabase/functions/qr-publisher/sql/runtime-role.review.test.sql
+          bash supabase/functions/qr-publisher/sql/concurrency.review.sh "$PG_CONTAINER" nohut_synthetic postgres
           echo 'PASS: PostgreSQL integrated synthetic tests (no live Supabase connection)' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Cloud primitives under migration owner without BYPASSRLS
@@ -65,4 +66,5 @@ jobs:
           run_pg -U cloud_migrator -d nohut_cloud_plain < supabase/functions/qr-publisher/sql/runtime-role.review.sql
           run_pg -U cloud_migrator -d nohut_cloud_plain < supabase/functions/qr-publisher/sql/receipt-storage.review.test.sql
           run_pg -U cloud_migrator -d nohut_cloud_plain < supabase/functions/qr-publisher/sql/runtime-role.review.test.sql
+          bash supabase/functions/qr-publisher/sql/concurrency.review.sh "$PG_CONTAINER" nohut_cloud_plain cloud_migrator
           echo 'PASS: private cloud functions as plain migration owner' >> "$GITHUB_STEP_SUMMARY"
