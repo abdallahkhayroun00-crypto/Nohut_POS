@@ -183,4 +183,26 @@ void main() {
       expect(t.takeException(), isNull);
     });
   }
+
+  // Compact phone with large text and a tablet: the new Ana Sayfa screens.
+  for (final (label, size, scale) in [('compact', const Size(320, 640), 1.3), ('tablet', const Size(1100, 800), 1.0)]) {
+    testWidgets('staff home signed in $label', (t) async {
+      final api = workApi()..sessionInfo = {'session': {'status': 'ok', 'employeeId': 7, 'username': 'personela'}};
+      final c = PersonelController(api, StaffNotifications())..state = staffController().state..online = true;
+      await renderScreen(t, 'staff-home-$label', MaterialApp(debugShowCheckedModeBanner: false,
+          theme: NohutStyle.theme, darkTheme: NohutStyle.darkTheme,
+          builder: (ctx, child) => MediaQuery(data: MediaQuery.of(ctx).copyWith(textScaler: TextScaler.linear(scale)), child: child!),
+          home: StaffHome(controller: c, onUnpair: () {})), size: size);
+      expect(t.takeException(), isNull);
+    });
+    testWidgets('owner dashboard $label', (t) async {
+      final api = FakeOwnerApi();
+      await renderScreen(t, 'owner-dashboard-$label', MaterialApp(debugShowCheckedModeBanner: false,
+          theme: NohutStyle.theme, darkTheme: NohutStyle.darkTheme,
+          builder: (ctx, child) => MediaQuery(data: MediaQuery.of(ctx).copyWith(textScaler: TextScaler.linear(scale)), child: child!),
+          home: OwnerHome(controller: PersonelController(api, StaffNotifications()), api: api, onUnpair: () {})), size: size);
+      expect(t.takeException(), isNull);
+      await t.pumpWidget(const SizedBox());
+    });
+  }
 }

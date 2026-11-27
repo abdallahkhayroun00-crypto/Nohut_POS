@@ -587,7 +587,7 @@ class _OwnerHomeState extends State<OwnerHome> {
             ...body(),
           ])))),
       ]),
-      bottomNavigationBar:wide?null:NavigationBar(
+      bottomNavigationBar:wide?null:MediaQuery.withClampedTextScaling(maxScaleFactor:1.15,child:NavigationBar(
         selectedIndex:barIndex<0?_bar.length:barIndex,
         onDestinationSelected:(i){
           if(i==_bar.length){scaffoldKey.currentState?.openDrawer();return;}
@@ -596,7 +596,7 @@ class _OwnerHomeState extends State<OwnerHome> {
         destinations:[
           for(final (_,label,icon) in _bar)NavigationDestination(icon:Icon(icon),label:label),
           const NavigationDestination(icon:Icon(Icons.more_horiz),label:'Daha Fazla'),
-        ]),
+        ])),
     );
   }
 }

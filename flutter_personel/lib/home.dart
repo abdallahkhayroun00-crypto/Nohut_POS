@@ -915,9 +915,12 @@ class _StaffHomeState extends State<StaffHome> {
                   child: Padding(padding: const EdgeInsets.symmetric(horizontal: 8),
                     child: Row(mainAxisSize: MainAxisSize.min, children: [
                       const Icon(Icons.verified_user_outlined, size: 20),
-                      const SizedBox(width: 6),
-                      ConstrainedBox(constraints: BoxConstraints(maxWidth: wide ? 180 : 96),
-                        child: Text(_signedInLabel(), overflow: TextOverflow.ellipsis)),
+                      // Compact phones: the icon alone, so the brand stays readable.
+                      if (width >= 380) ...[
+                        const SizedBox(width: 6),
+                        ConstrainedBox(constraints: BoxConstraints(maxWidth: wide ? 180 : 96),
+                          child: Text(_signedInLabel(), overflow: TextOverflow.ellipsis)),
+                      ],
                     ])),
                 ),
               ]
@@ -982,7 +985,8 @@ class _StaffHomeState extends State<StaffHome> {
               Expanded(child: KeyedSubtree(key: ValueKey('page-$tab'), child: screen)),
             ])),
           ]),
-          bottomNavigationBar: wide ? null : NavigationBar(
+          // Large system text: labels scale at most 1.15× so they never wrap.
+          bottomNavigationBar: wide ? null : MediaQuery.withClampedTextScaling(maxScaleFactor: 1.15, child: NavigationBar(
             height: height < 500 ? 56 : width < 380 ? 65 : 72,
             labelBehavior: width < 360
               ? NavigationDestinationLabelBehavior.onlyShowSelected
@@ -990,7 +994,7 @@ class _StaffHomeState extends State<StaffHome> {
             selectedIndex: selectedIndex,
             onDestinationSelected: go,
             destinations: destinations,
-          ),
+          )),
         );
       },
     );
