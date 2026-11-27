@@ -17,11 +17,12 @@ append-only correction ordinals. Rewritten/omitted history, broken chains,
 unaudited edits and undoing a void abort the complete transaction before ACK.
 Existing actor/tenant mapping and private FORCE RLS remain in force.
 
-Claude's older `correctShift` audit omits break fields. Zero-break history
-remains compatible; nonzero historical breaks are never guessed. A request
-on #44 asks Claude to include unchanged break minutes in exceptional manual
-corrections. This is a pending source-handler integration dependency, not a
-reason to recreate that business handler.
+Claude's `97bf0c2` (integrated via `bacae0a`) includes unchanged break minutes
+in exceptional manual correction snapshots and rejects intervals no longer
+than their break. Zero-break legacy history remains compatible; missing
+historical nonzero breaks are never guessed. A separate follow-up asks Claude
+to bump existing per-entity updatedAt tokens after a manager correction so a
+stale employee form cannot overwrite it. That source-handler fix stays his.
 
 Authorized weekly payroll reads, planned schedules and weekly submission
 snapshots remain separate unfinished QA-09/O-03 work. Gün Sonu Raporu continues

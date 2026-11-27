@@ -112,6 +112,7 @@ async function main(){
             (select count(*)::integer from nohut_private.shift_plans where restaurant_id=$1) as planned_count,
             (select count(*)::integer from nohut_private.shift_plans where restaurant_id=$1 and cancelled) as planned_cancelled,
             (select count(*)::integer from nohut_private.shift_plan_history where restaurant_id=$1) as planned_history,
+            (select count(*)::integer from nohut_private.payments p join nohut_private.employee_source_ids m using(restaurant_id,employee_id) where p.restaurant_id=$1 and m.local_id=1) as session_collector_payments,
             (select count(*)::integer from nohut_private.agent_enrollment_requests where restaurant_id=$1) as enrollments,
             (select count(*)::integer from nohut_private.windows_agents where restaurant_id=$1 and revoked_at is null) as live_agents,
             (select count(*)::integer from nohut_private.orders where restaurant_id=$1) as orders,

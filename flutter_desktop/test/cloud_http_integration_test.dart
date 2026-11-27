@@ -561,6 +561,39 @@ void main() {
         expect((store.read().data['shifts'] as List), hasLength(1));
         expect(await sync.flush(), greaterThan(0));
         expect(pendingOutbox(db), isEmpty);
+        for (final action in ['pay', 'payMixed', 'payProducts']) {
+          late int targetOrder;
+          store.command('synthetic-attribution-$action', {}, (s) {
+            targetOrder = newLocalOrder(state: s, source: 'Gel-Al', staffId: 1,
+              cashier: 'Synthetic Employee', productLines: [{'name': 'Synthetic attribution item', 'price': 10, 'qty': 1}],
+              customer: {})['id'] as int;
+            return {'ok': true};
+          });
+          expect(await sync.flush(), greaterThan(0), reason: sync.status().lastError);
+          final paymentRequest = '90000000-0000-4000-8000-00000000000${['pay', 'payMixed', 'payProducts'].indexOf(action)+2}';
+          final paymentContext = {...context, 'p_request_id': paymentRequest};
+          final payload = <String,Object?>{'expectedRevision': store.read().revision, 'orderId': targetOrder,
+            'action': action, 'amountCents': 1000, 'confirmed': true};
+          if (action=='payMixed') {
+            payload.addAll({'cashCents': 400, 'receivedCents': 400, 'printReceipt': false});
+          } else {
+            payload['method'] = 'Kart';
+            if (action=='pay') payload['printReceipt'] = false;
+            if (action=='payProducts') payload['shares'] = {checkLines(mutableOrder(store.read().data,targetOrder)!).first.key: 1000};
+          }
+          final enqueue = {...paymentContext, 'p_action': 'record_payment', 'p_payload': payload};
+          expect((await call('/rest/v1/rpc/nohut_enqueue_command',enqueue,true))['status'], 'accepted');
+          expect(await worker.runOnce(), 1, reason: '${worker.lastError}');
+          expect((await call('/rest/v1/rpc/nohut_command_status',paymentContext,true))['state'], 'confirmed');
+          final payments = (mutableOrder(store.read().data,targetOrder)!['payments'] as List).cast<Map>();
+          expect(payments.every((p) => p['staffId']==1), true);
+          final count = payments.length;
+          await call('/rest/v1/rpc/nohut_enqueue_command',enqueue,true);
+          expect(await worker.runOnce(), 0);
+          expect((mutableOrder(store.read().data,targetOrder)!['payments'] as List), hasLength(count));
+          expect(await sync.flush(), greaterThan(0), reason: sync.status().lastError);
+        }
+        expect((await call('/test/inspect'))['session_collector_payments'], 4);
         final workNow = DateTime.utc(2026, 11, 24, 12);
         final planned = applyPlanCommand(store, {'action': 'plan_save', 'requestId': 'synthetic-plan',
           'date': '2026-11-27', 'start': '22:00', 'end': '06:00', 'breakMinutes': 60, 'repeatWeeks': 1},

@@ -83,6 +83,13 @@ EVIDENCE:
 
 **Blockers / owner actions:** live Trendyol read-only check needs explicit owner authorization (R1); physical iPhone HTTPS/Safari test (L4); any FCM project needs owner approval (N4); KVKK gate unchanged.
 
+## Codex verified payment attribution and source-contract checkpoint (2026-11-27)
+
+- Integrated Claude 97bf0c2 / PR #44 0e36b63 into #39 only (bacae0a). Exceptional manual corrections now retain nonzero breaks in both audit snapshots; 8 targeted shifts/manual/submission tests pass. Equivalent render-helper fixes resolved using the already tested try/finally behavior; no agent branch changed.
+- Extended actual HTTP flow: JWT enqueue → scoped lease/Windows execution → durable confirmation → typed ingestion for pay, payMixed and payProducts. All four resulting payment rows carry session-derived staffId=1 and resolve to that tenant's payments.employee_id. Re-enqueue/worker replay creates no extra payment. Full HTTP integration passed; this covers the attribution gap without changing the existing serializer/business handler.
+- Gemini Pass 6 independently verified QA-07, QA-08 and QA-12/O-10 resolved, and wage/ledger/manual attendance slices clean (20c1fa7). O-10 matrix updated with independent evidence. New schedule/submission re-review requested; authorized reads/runtime keep O-03 open.
+- New source-contract requests on #44: correctShift must bump an existing manual updatedAt to reject stale employee forms; historical payday source contract needed because payrollStatus default/reminder configured offsets currently differ and historical due-date retention is not explicit. Do not invent a parallel cloud wage/payday engine. Continue independent read integration; no production actions.
+
 ## Codex planned Vardiya checkpoint (2026-11-27)
 
 - QA-09 fifth slice: shiftPlans now ingests into private typed shift_plans and immutable shift_plan_history, separate from actual hours/payroll. Existing source IDs, tenant employee/nullable actor mapping, historical labels, overnight flags, breaks/notes/day off, creation/update and cancelled rows are preserved. Edits retain typed before-values; cancellation keeps the actual source audit without inventing a before snapshot. Missing/rewritten history, invalid intervals, stale revisions and resurrected cancellations fail before ACK. Confirmed overlap remains the existing Windows decision.
