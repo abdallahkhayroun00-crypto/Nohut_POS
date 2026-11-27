@@ -462,6 +462,8 @@ const knownStateFieldPaths = <String>{
   'orders[].payments[].guestAllocations[].guestCheckId',
   'orders[].payments[].guestCheckId',
   'orders[].payments[].method',
+  'orders[].payments[].productPaymentId',
+  'orders[].payments[].productReceipt',
   'orders[].payments[].received',
   'orders[].payments[].refunds',
   'orders[].payments[].refunds[]',

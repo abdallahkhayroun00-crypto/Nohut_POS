@@ -7,6 +7,7 @@ import 'package:nohut_falafel_desktop/card_terminal.dart';
 import 'package:nohut_falafel_desktop/pos_logic.dart';
 import 'package:nohut_falafel_desktop/pos_store.dart';
 import 'package:nohut_falafel_desktop/staff_commands.dart';
+import 'package:nohut_falafel_desktop/operations.dart';
 
 class FakeTerminal implements InposGateway {
   TerminalReply payReply = const TerminalReply(TerminalStatus.unknown);
@@ -125,6 +126,20 @@ void main() {
       final rows = asMaps(mutableOrder(store.read().data, orderId)!['payments']);
       expect(rows, hasLength(3));
       expect(rows.map((p) => p['staffId']), everyElement(2));
+    });
+
+    test('O-11: staff product payment records the collector, a stable id and the summary', () {
+      final key = checkLines(mutableOrder(store.read().data, orderId)!).first.key;
+      final pay = {'requestId': 'staff_o11_prod1', 'expectedRevision': store.read().revision, 'staffId': 2,
+        'action': 'payProducts', 'orderId': orderId,
+        'shares': {key: 14000}, 'amountCents': 14000, 'method': 'Kart', 'confirmed': true};
+      submitStaffAction(store, pay);
+      submitStaffAction(store, Map<String, dynamic>.from(pay)); // retry: same receipt, no second row
+      final rows = asMaps(mutableOrder(store.read().data, orderId)!['payments']);
+      expect(rows, hasLength(1));
+      expect(rows.single['staffId'], 2);
+      expect(rows.single['productPaymentId'], 'staff_o11_prod1');
+      expect('${rows.single['productReceipt']}', contains('MALI FIS DEGILDIR'));
     });
 
     test('QA-12: deleting an order fences its receipts through the indexed lookup', () {

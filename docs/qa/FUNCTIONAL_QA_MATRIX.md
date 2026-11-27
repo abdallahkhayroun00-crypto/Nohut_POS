@@ -71,6 +71,7 @@ Gemini review pass 2 (comment 7223539958):
 | D-24 | Collection attribution (QA-11) | Manager | Staff `pay` and `payMixed` rows had no `staffId` (only the display name) | Every staff payment row carries the collector's employee id | Medium (attribution) | `staff_commands.dart`; field `orders[].payments[].staffId` registered | `terminal_delete_guard_test` "QA-11…" | — |
 | D-25 | Order deletion speed (QA-12, part) | Cashier | `deleteOrder` decoded every command receipt inside the write lock (O(N)) | Indexed lookup by order id; old databases backfilled once | Medium (performance) | `command_receipts.order_id/result_order_id` + indexes | `terminal_delete_guard_test` "QA-12…", full suite | — |
 | D-26 | Personel browser polling (QA-12, part) | Personel | State refresh every 5 s even when the tab is hidden | Paused while hidden; refreshes on return | Low | `staff.html` | — | — |
+| D-27 | Staff product payment (O-11) | Personel | `payProducts` had no automated test; its `productPaymentId`/`productReceipt` fields were not registered for sync | Tested: collector id, stable id, receipt summary, retry adds no second row; fields registered | Medium (coverage) | `sync_field_paths.g.dart`, `data-inventory.md` | `terminal_delete_guard_test` "O-11…" | — |
 
 Owner acceptance example (8 h × 100 TL + 8 h × 120 TL = 1.760 TL; pay 800 → Kısmen Ödendi, kalan 960; pay 960 → Ödendi; later raise not retroactive): **Verified** in `payroll_test` and in a rendered LAN run (Yönetici records 800 TL Nakit → Kısmen Ödendi, kalan 960,00 ₺; Personel sees the same numbers).
 
@@ -83,11 +84,10 @@ Owner acceptance example (8 h × 100 TL + 8 h × 120 TL = 1.760 TL; pay 800 → 
 | O-03 | Payroll on Android Yönetici and cloud PWAs not yet projected | High (parity) | Codex: cloud projection of `payHistory`, `payrollPayments`, `payrollReviews`, `payrollEligible` |
 | O-04 | Order, payment, refund, receipt, analytics modules not re-audited in this cycle | — | Next audit pass |
 | O-05 | No emulator/APK screenshots in this cycle | — | Android audit pass |
-| O-06 | Independent review: Gemini reviewed PR #44 (comment 7223333964); findings fixed as D-15…D-22 | — | Re-review after the fix commit |
+| O-06 | Independent review: Gemini passes 1–3 on PR #44 (comments 7223333964, 7223539958, 7223725943, 7223945667); Claude-owned findings verified resolved on 4249b9e by the reviewer | — | Done for this PR |
 | O-07 | Android Personel APK has no individual login yet; it still shows an employee picker (legacy shared mode). With *Bireysel giriş zorunlu* on, its writes are now refused (401) until it signs in | High (parity) | Native login + 5-digit PIN in the APK (W6/A2) |
 | O-09 | Android Personel APK has no Mesai, Vardiya or own-pay screens yet (browser app has them) | High (parity) | Native screens |
 | O-10 | `sync_outbox` partial index on pending rows (QA-12, part) | Low (performance) | Codex (sync owner, #39) |
-| O-11 | Staff `payProducts` has no automated test; its `productPaymentId`/`productReceipt` fields are not in the field registry | Medium (coverage) | Add test + register fields |
 | O-08 | An old Yönetici APK compares the owner name with "Ömer Yılmaz"; after linking the owner account to a differently named profile it needs the new APK from CI | Medium (upgrade) | Install the APK built from #44 |
 
 ## 4. Physical-device tests required from the owner
