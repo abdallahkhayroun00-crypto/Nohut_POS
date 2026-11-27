@@ -9,9 +9,12 @@ import 'pos_store.dart';
 import 'qr_menu_remote.dart';
 
 class QrMenuLanApi {
-  QrMenuLanApi(this.store, this.gate, {DateTime Function()? clock}) : _clock = clock ?? DateTime.now;
+  QrMenuLanApi(this.store, this.gate, {this.remote, DateTime Function()? clock}) : _clock = clock ?? DateTime.now;
   final PosStore store;
   final LanAuthGate gate;
+  /// Publish / verify / photo / POS sync through Windows' own publisher.
+  /// Null in tests and before the publisher is wired: phones then only edit.
+  final QrMenuRemoteService? remote;
   final DateTime Function() _clock;
 
   Future<GateReply> handle(String method, String path, Map<String, String> query, Json body,
@@ -22,14 +25,33 @@ class QrMenuLanApi {
     if (!d.allowed) return GateReply(d.status, {'error': d.error});
     final ctx = d.context!;
     bool can(String op) => gate.auth.authorize(ctx, op) == 'ok';
+    final actor = ctx.username ?? 'personel';
+    final r = remote;
+    void need(String op) {
+      if (!can(op)) throw QrMenuForbidden(op);
+    }
     try {
       switch ((method, path)) {
         case ('GET', 'view'):
-          return GateReply(200, qrMenuView(store.read().data, can: can));
+          return GateReply(200, qrMenuView(store.read().data, can: can, link: await r?.linkState()));
+        case ('POST', 'publish' || 'reconcile' || 'image' || 'sync') when r == null:
+          return const GateReply(404, {'error': 'not_found'});
+        case ('POST', 'publish'):
+          need('menu.qr.publish');
+          return GateReply(200, await r!.publish(expectedStamp: '${body['expectedStamp'] ?? ''}',
+              actor: actor, actorId: ctx.employeeId));
+        case ('POST', 'reconcile'):
+          need('menu.qr.publish');
+          return GateReply(200, await r!.reconcile(actor: actor, actorId: ctx.employeeId));
+        case ('POST', 'image'):
+          return GateReply(200, await r!.uploadImage(payload: body, can: can, actor: actor, actorId: ctx.employeeId));
+        case ('POST', 'sync'):
+          need('menu.product.edit');
+          return GateReply(200, await r!.sync(actor: actor));
         case ('POST', 'write'):
           final payload = Map<String, dynamic>.from(body)..remove('client');
           final result = applyQrMenuCommand(store, payload, can: can,
-              actor: ctx.username ?? 'personel', actorId: ctx.employeeId, now: _clock());
+              actor: actor, actorId: ctx.employeeId, now: _clock());
           return GateReply(200, result);
       }
       return const GateReply(404, {'error': 'not_found'});

@@ -231,8 +231,15 @@ export class LoginBff {
     let token = access, cookie: string | undefined;
     if (body.password != null) {
       const w = await this.whoami(access, deviceId, client);
-      const t = await this.passwordTokens(String(w.username), String(body.password), ip);
-      await this.rpc('nohut_register_device', { p_device_id: deviceId, p_client: client, p_label: '' }, t.access_token);
+      // A wrong password keeps the session: 403 (like LAN), so the page stays
+      // on the PIN form instead of signing the person out (QA-19).
+      const t = await this.passwordTokens(String(w.username), String(body.password), ip).catch((e: unknown) => {
+        if (e instanceof BffError && e.status === 401) throw new BffError(403, 'invalid_credentials');
+        throw e;
+      });
+      // Binds the new session to this device. The device row already exists,
+      // so its label is kept (enroll_device: on conflict do nothing); no label is sent.
+      await this.rpc('nohut_register_device', { p_device_id: deviceId, p_client: client, p_label: null }, t.access_token);
       token = t.access_token;
       cookie = setCookie(t.refresh_token);
     }

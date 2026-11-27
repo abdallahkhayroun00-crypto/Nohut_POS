@@ -475,11 +475,11 @@ class _OwnerHomeState extends State<OwnerHome> {
           key:const ValueKey('open-menu-admin'),
           leading:const Icon(Icons.restaurant_menu_outlined),
           title:const Text('Menü Yönetimi',style:TextStyle(fontWeight:FontWeight.w700)),
-          subtitle:const Text('Ürünler, fiyatlar, stok, QR görünürlüğü, kategoriler ve kampanyalar · '
-            'Windows’taki taslağa kaydedilir'),
+          subtitle:const Text('Ürünler, fiyatlar, stok, QR görünürlüğü, fotoğraf, kategoriler, kampanyalar · '
+            'önizle ve yayınla'),
           trailing:const Icon(Icons.chevron_right),
           onTap:offline?null:()=>Navigator.of(context).push(menuAdminRoute(api)))),
-        notice('Yayınlama Windows’taki QR Menü Yönetimi’nden, işletme sahibi onayıyla yapılır. '
+        notice('Yayınlama, gözden geçirip onayladığınızda Windows’taki anahtarla yapılır; telefonda anahtar tutulmaz. '
           'Uzaktan (bulut) menü düzenleme henüz hazır değil.'),
         title('Windows POS menüsü'),...[
           for(final p in entries('menu'))line((p['name']??'').toString(),(p['category']??'').toString(),

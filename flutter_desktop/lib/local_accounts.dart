@@ -87,6 +87,27 @@ class LocalAuth {
     Random? random,
   }) : _clock = clock ?? DateTime.now, _random = random ?? Random.secure() {
     createTables(db);
+    _upgradeMenuParity();
+  }
+
+  /// Owner decision 2026-11-27 (relay 7226936601): Personel, Müdür and
+  /// Yönetici hold every `menu.*` operation by default, publishing included.
+  /// Runs once per database; a grant the owner removes afterwards stays removed.
+  /// Only `menu.*` changes, never finance, employee, system or backup grants.
+  void _upgradeMenuParity() {
+    const key = 'upgrade.menu_parity_2026_11_27';
+    if (db.select('SELECT 1 FROM auth_settings WHERE key=?', [key]).isNotEmpty) return;
+    for (final u in db.select('SELECT user_id, role, grants FROM auth_users WHERE active=1 AND is_owner=0')) {
+      final role = u['role'] as String;
+      final grants = (jsonDecode(u['grants'] as String) as List).cast<String>().toSet();
+      final missing = [for (final op in defaultGrants(role)) if (op.startsWith('menu.') && !grants.contains(op)) op]..sort();
+      if (missing.isEmpty) continue;
+      grants.addAll(missing);
+      db.execute('UPDATE auth_users SET grants=? WHERE user_id=?', [jsonEncode(grants.toList()..sort()), u['user_id']]);
+      _bump(u['user_id'] as String);
+      _audit('grant.add', target: u['user_id'] as String, detail: {'operations': missing, 'reason': 'menu_parity'});
+    }
+    db.execute('INSERT INTO auth_settings(key,value) VALUES(?,?)', [key, _now()]);
   }
 
   final Database db;

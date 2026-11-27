@@ -14,6 +14,7 @@ import 'package:crypto/crypto.dart';
 import 'pos_logic.dart';
 import 'pos_store.dart';
 import 'qr_menu_draft.dart';
+import 'qr_publisher_client.dart';
 
 const qrMenuAuditKey = 'qrMenuAudit';
 const _draftKey = 'qrPublisherDraft', _baseKey = 'qrPublisherDraftSourceSnapshot',
@@ -21,7 +22,7 @@ const _draftKey = 'qrPublisherDraft', _baseKey = 'qrPublisherDraftSourceSnapshot
 
 /// Edit operations a phone may hold (permission catalogue `menu.*`).
 const qrMenuEditOps = ['menu.product.edit', 'menu.price.edit', 'menu.category.edit',
-  'menu.campaign.edit', 'menu.stock.toggle'];
+  'menu.campaign.edit', 'menu.stock.toggle', 'menu.qr.publish'];
 
 class QrMenuConflict implements Exception {
   const QrMenuConflict([this.message = 'Menü taslağı başka bir cihazda değişti. Yenileyip tekrar deneyin.']);
@@ -40,7 +41,9 @@ Json? _currentDraft(Json state) => _map(state[_draftKey]) ?? _map(state[_baseKey
 
 /// What a phone sees: the shared draft, what differs from the published
 /// catalog, and which edits this person may make. Never a token or key.
-Json qrMenuView(Json state, {required bool Function(String op) can}) {
+/// [link] is Windows' publishing chain as seen right now (`ready`, `no_key`,
+/// `service_down`); null when this server cannot publish for phones.
+Json qrMenuView(Json state, {required bool Function(String op) can, String? link}) {
   final draft = _currentDraft(state), base = _map(state[_baseKey]);
   final permissions = {for (final op in qrMenuEditOps) op: can(op)};
   if (draft == null) {
@@ -63,7 +66,8 @@ Json qrMenuView(Json state, {required bool Function(String op) can}) {
     'offline': revision == null,
     'pendingPublish': state[_pendingKey] is Map,
     'can': permissions,
-    'publish': 'windows',
+    'publish': link == null ? 'windows' : 'here',
+    if (link != null) 'link': link,
     'changes': [for (final c in changes) {'list': c.list, 'id': c.id, 'label': c.label, 'detail': c.detail}],
     'catalog': {
       'categories': [for (final c in asMaps(draft['categories']))
@@ -146,6 +150,9 @@ Json applyQrMenuCommand(PosStore store, Json payload,
         if (payload['active'] is! bool) throw const FormatException('Görünürlük değeri geçersiz.');
         if (list == 'categories' && id == 'all') throw const FormatException('“Tümü” kategorisi gizlenemez.');
         find(list, id)['active'] = payload['active'];
+      case 'set_image':
+        need('menu.product.edit');
+        find('products', id)['image'] = _image(payload['image']);
       case 'save_product':
         need('menu.product.edit');
         final names = _texts(payload['name'], required: true, what: 'Ürün adı');
@@ -253,4 +260,171 @@ class QrMenuForbidden implements Exception {
   final String operation;
   @override
   String toString() => 'Bu işlem için yetkiniz yok ($operation).';
+}
+
+/// Publishing, image upload and POS sync for phones, done by Windows with
+/// Windows' own publisher key (owner decision 2026-11-27: Personel and
+/// Yönetici have full QR menu access). The phone names the draft it reviewed;
+/// Windows publishes exactly that draft, bound to its GitHub revision, records
+/// the attempt first and never retries blindly.
+class QrMenuRemoteService {
+  QrMenuRemoteService(this.store, {required this.publisher, required this.endpoint, this.syncPos, DateTime Function()? clock})
+      : _clock = clock ?? DateTime.now;
+  final PosStore store;
+  final QrPublisherClient Function() publisher;
+  final String Function() endpoint;
+  final Future<void> Function()? syncPos;
+  final DateTime Function() _clock;
+  bool _publishing = false;
+
+  void _audit(Json s, String action, String actor, int? actorId, [Json extra = const {}]) {
+    final audit = (s[qrMenuAuditKey] ??= <dynamic>[]) as List;
+    audit.add({'at': _clock().toUtc().toIso8601String(), 'by': actor, 'byId': actorId, 'action': action,
+      'list': 'catalog', 'id': extra['commit'] ?? extra['revision']});
+    if (audit.length > 200) audit.removeRange(0, audit.length - 200);
+  }
+
+  void _write(void Function(Json s) change) {
+    final snap = store.read();
+    final next = copyJson(snap.data);
+    change(next);
+    store.replace(next, snap.revision);
+  }
+
+  /// `ready`, `no_key` or `service_down`, for the phone's status line.
+  Future<String> linkState() async {
+    final p = publisher();
+    if (!await p.hasToken()) return 'no_key';
+    return await p.health(endpoint()) ? 'ready' : 'service_down';
+  }
+
+  /// Is the chain usable right now? Never returns the key itself.
+  Future<String?> _linkProblem(QrPublisherClient p) async {
+    if (!await p.hasToken()) return 'Windows’ta yayınlama anahtarı kayıtlı değil (Ayarlar › Entegrasyonlar).';
+    if (!await p.health(endpoint())) return 'Windows’ta QR yayınlama hizmeti çalışmıyor.';
+    return null;
+  }
+
+  Future<Json> publish({required String expectedStamp, required String actor, int? actorId}) async {
+    if (_publishing) throw const QrMenuConflict('Başka bir yayın sürüyor.');
+    _publishing = true;
+    try {
+      final state = store.read().data;
+      if (state[_pendingKey] is Map) {
+        throw const QrMenuConflict('Önceki yayının sonucu henüz doğrulanmadı. Önce “Sonucu Doğrula”.');
+      }
+      final base = _map(state[_baseKey]), draft = _map(state[_draftKey]);
+      final revision = state[_revisionKey]?.toString();
+      if (base == null || draft == null) throw const FormatException('Yayınlanacak değişiklik yok.');
+      if (revision == null) {
+        throw const FormatException('Taslak GitHub sürümüne bağlı değil. Windows’ta QR Menü Yönetimi’ni açıp bağlanın.');
+      }
+      if (qrDraftStamp(draft) != expectedStamp) throw const QrMenuConflict();
+      final changes = diffCatalog(base, draft);
+      if (changes.isEmpty) throw const FormatException('Yayınlanacak değişiklik yok.');
+      final problems = validateQrCatalog(draft);
+      if (problems.isNotEmpty) throw FormatException(problems.first);
+      final p = publisher();
+      final problem = await _linkProblem(p);
+      if (problem != null) throw FormatException(problem);
+      // Record the attempt before sending: a lost answer is reconciled, never retried blindly.
+      _write((s) {
+        s[_pendingKey] = {'revision': revision, 'at': _clock().toUtc().toIso8601String(), 'changes': changes.length};
+        _audit(s, 'publish_requested', actor, actorId, {'revision': revision});
+      });
+      try {
+        final answer = await p.publish(endpoint(), revision, draft);
+        final rev = answer['revision']?.toString() ?? '';
+        if (answer['published'] != true || rev.isEmpty) throw const QrPublisherNoAnswer('Yayın yanıtı eksik.');
+        _write((s) {
+          s[_baseKey] = copyJson(draft);
+          s[_revisionKey] = rev;
+          s.remove(_draftKey);
+          s.remove(_pendingKey);
+          _audit(s, 'publish', actor, actorId, {'commit': answer['commit'] ?? rev});
+        });
+        return {'ok': true, 'outcome': 'published', 'revision': rev, 'revisionLabel': qrRevisionLabel(rev),
+          'changes': changes.length, 'commit': answer['commit']};
+      } on QrPublisherNoAnswer catch (e) {
+        return {'ok': false, 'outcome': 'unknown', 'message': 'Yayın sonucu bilinmiyor: ${e.message} '
+            'Yeniden göndermeden önce “Sonucu Doğrula”.'};
+      } on FormatException catch (e) {
+        _write((s) => s.remove(_pendingKey));
+        return {'ok': false, 'outcome': 'refused', 'message': 'Yayın reddedildi, web menüsü değişmedi: ${e.message}'};
+      }
+    } finally {
+      _publishing = false;
+    }
+  }
+
+  /// Decides what happened to an unanswered publish by reading GitHub.
+  Future<Json> reconcile({required String actor, int? actorId}) async {
+    final state = store.read().data;
+    final pending = _map(state[_pendingKey]);
+    if (pending == null) return {'ok': true, 'outcome': 'none'};
+    final p = publisher();
+    final problem = await _linkProblem(p);
+    if (problem != null) throw FormatException(problem);
+    final answer = await p.catalog(endpoint());
+    final rev = answer['revision']?.toString() ?? '';
+    final remote = answer['catalog'];
+    if (rev.isEmpty || remote is! Map) throw const FormatException('GitHub kataloğu okunamadı.');
+    final draft = _currentDraft(state);
+    if (rev == pending['revision']) {
+      _write((s) {
+        s.remove(_pendingKey);
+        _audit(s, 'publish_not_applied', actor, actorId, {'revision': rev});
+      });
+      return {'ok': true, 'outcome': 'not_applied', 'message': 'Önceki yayın GitHub’a ulaşmamış; taslak korunuyor, yeniden yayınlayabilirsiniz.'};
+    }
+    if (draft != null && diffCatalog(Map<String, dynamic>.from(remote), draft).isEmpty) {
+      _write((s) {
+        s[_baseKey] = copyJson(Map<String, dynamic>.from(remote));
+        s[_revisionKey] = rev;
+        s.remove(_draftKey);
+        s.remove(_pendingKey);
+        _audit(s, 'publish_confirmed', actor, actorId, {'revision': rev});
+      });
+      return {'ok': true, 'outcome': 'confirmed', 'message': 'Önceki yayın doğrulandı.'};
+    }
+    _write((s) => s.remove(_pendingKey));
+    return {'ok': true, 'outcome': 'diverged', 'message': 'GitHub’da farklı bir sürüm var. Windows’ta QR Menü Yönetimi '
+        'farkları birleştirir; ardından yeniden yayınlayın.'};
+  }
+
+  /// Uploads a product photo with Windows' key and puts its path in the draft.
+  Future<Json> uploadImage({required Json payload, required bool Function(String op) can,
+      required String actor, int? actorId}) async {
+    if (!can('menu.product.edit')) throw const QrMenuForbidden('menu.product.edit');
+    final mime = '${payload['mime'] ?? ''}';
+    if (!['image/png', 'image/jpeg', 'image/webp'].contains(mime)) throw const FormatException('PNG/JPEG/WEBP resim gerekli.');
+    final List<int> bytes;
+    try {
+      bytes = base64Decode('${payload['base64'] ?? ''}');
+    } on FormatException {
+      throw const FormatException('Resim okunamadı.');
+    }
+    if (bytes.isEmpty || bytes.length > 6000000) throw const FormatException('Resim en fazla 6 MB.');
+    final state = store.read().data;
+    if (qrDraftStamp(_currentDraft(state)) != payload['expectedStamp']) throw const QrMenuConflict();
+    final p = publisher();
+    final problem = await _linkProblem(p);
+    if (problem != null) throw FormatException(problem);
+    final uploaded = await p.uploadImage(endpoint(), mime, bytes);
+    final path = '${uploaded['path'] ?? ''}';
+    if (!path.startsWith('assets/')) throw const FormatException('Görsel yolu alınamadı.');
+    // The draft may have moved while uploading: bind to the current one.
+    return applyQrMenuCommand(store, {
+      'requestId': '${payload['requestId']}-img',
+      'action': 'set_image', 'id': payload['id'], 'image': path,
+      'expectedStamp': qrDraftStamp(_currentDraft(store.read().data)),
+    }, can: can, actor: actor, actorId: actorId);
+  }
+
+  Future<Json> sync({required String actor}) async {
+    final f = syncPos;
+    if (f == null) throw const FormatException('POS menü eşitlemesi bu bilgisayarda kapalı.');
+    await f();
+    return {'ok': true};
+  }
 }

@@ -1,13 +1,17 @@
 /// Menü Yönetimi on Android (Personel with grants, Yönetici as owner).
 /// Edits the shared QR menu draft that lives on the Windows POS: the server
 /// checks every `menu.*` grant and refuses edits based on an older draft.
-/// No publisher key or GitHub token is ever on the phone, and publishing
-/// stays on Windows (owner, explicit confirmation).
+/// No publisher key or GitHub token is ever on the phone: when this person
+/// holds `menu.qr.publish` (Personel and Yönetici by default, owner decision
+/// 2026-11-27), the phone asks Windows to publish the exact draft it reviewed,
+/// and Windows does it with its own key, recording who did it.
 library;
 
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import 'pos_api.dart';
 import 'style.dart';
@@ -26,6 +30,19 @@ int? _parseCents(String text) {
 }
 String _tr(Object? f, [String l = 'tr']) => f is Map ? '${f[l] ?? ''}' : '';
 
+/// A product photo chosen on the phone: (mime, bytes), or null when cancelled.
+typedef MenuPhotoPicker = Future<(String, List<int>)?> Function();
+
+/// Android photo picker (no storage permission), resized so the photo also
+/// fits the owner channel's request limit.
+Future<(String, List<int>)?> pickMenuPhoto() async {
+  final f = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 1000, maxHeight: 1000, imageQuality: 75);
+  if (f == null) return null;
+  final name = f.name.toLowerCase();
+  final mime = name.endsWith('.png') ? 'image/png' : name.endsWith('.webp') ? 'image/webp' : 'image/jpeg';
+  return (mime, await f.readAsBytes());
+}
+
 /// Full-screen route used by both apps.
 Route<void> menuAdminRoute(NohutApi api, {String? imageBase = 'https://nohutfalafel.github.io/qr-menu/'}) =>
     MaterialPageRoute<void>(builder: (_) => Scaffold(
@@ -33,9 +50,11 @@ Route<void> menuAdminRoute(NohutApi api, {String? imageBase = 'https://nohutfala
       body: MenuAdminPage(api: api, imageBase: imageBase)));
 
 class MenuAdminPage extends StatefulWidget {
-  const MenuAdminPage({super.key, required this.api, this.imageBase = 'https://nohutfalafel.github.io/qr-menu/'});
+  const MenuAdminPage({super.key, required this.api, this.imageBase = 'https://nohutfalafel.github.io/qr-menu/',
+    this.pickPhoto = pickMenuPhoto});
   final NohutApi api;
   final String? imageBase;
+  final MenuPhotoPicker pickPhoto;
   @override
   State<MenuAdminPage> createState() => _MenuAdminPageState();
 }
@@ -122,6 +141,12 @@ class _MenuAdminPageState extends State<MenuAdminPage> {
     final v = view!;
     final n = (v['changes'] as List? ?? const []).length;
     final pending = v['pendingPublish'] == true, offline = v['offline'] == true;
+    final here = v['publish'] == 'here';
+    final linkProblem = !here ? null : switch (v['link']) {
+      'no_key' => 'Windows’ta yayınlama anahtarı kayıtlı değil (Windows › Ayarlar › Entegrasyonlar).',
+      'service_down' => 'Windows’ta QR yayınlama hizmeti çalışmıyor; yayın şu an yapılamaz.',
+      _ => null,
+    };
     return Card(
       key: const ValueKey('menu-status'),
       child: Padding(padding: const EdgeInsets.all(14), child: Column(
@@ -135,19 +160,120 @@ class _MenuAdminPageState extends State<MenuAdminPage> {
           ]),
           const SizedBox(height: 6),
           Text(pending
-              ? 'Windows’ta bir yayının sonucu doğrulanıyor; bu sırada düzenleme yapılamaz.'
-              : 'Yayındaki sürüm ${v['revisionLabel']}. Değişiklikler Windows’taki taslağa kaydedilir; '
-                'QR menüde yayınlama Windows’ta işletme sahibi onayıyla yapılır.',
+              ? 'Bir yayının sonucu henüz doğrulanmadı; bu sırada düzenleme ve yeni yayın yapılamaz. '
+                '“Sonucu Doğrula” GitHub’daki menüyü okuyup ne olduğunu belirler.'
+              : 'Yayındaki sürüm ${v['revisionLabel']}. Değişiklikler Windows’taki ortak taslağa kaydedilir. '
+                '${here ? 'Yayınla: önce değişiklikleri gözden geçirir, onayınızla Windows QR menüyü yayınlar.' : 'Bu Windows sürümü telefondan yayınlamayı desteklemiyor; Windows › QR Menü Yönetimi’nden yayınlayın.'}',
             style: Theme.of(context).textTheme.bodySmall),
+          if (linkProblem != null) ...[
+            const SizedBox(height: 6),
+            Text(linkProblem, key: const ValueKey('menu-link'),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: context.nohut.danger, fontWeight: FontWeight.w700)),
+          ],
           const SizedBox(height: 8),
           Wrap(spacing: 8, runSpacing: 4, children: [
+            if (here && pending)
+              FilledButton.icon(key: const ValueKey('menu-reconcile'),
+                onPressed: can['menu.qr.publish'] == true && !busy ? _reconcile : null,
+                icon: const Icon(Icons.sync_problem_outlined, size: 18), label: const Text('Sonucu Doğrula'))
+            else if (here)
+              FilledButton.icon(key: const ValueKey('menu-publish'),
+                onPressed: n > 0 && allowed('menu.qr.publish') && v['link'] == 'ready' ? _publish : null,
+                icon: const Icon(Icons.publish_outlined, size: 18), label: const Text('Yayınla')),
             OutlinedButton.icon(key: const ValueKey('menu-changes'), onPressed: n == 0 ? null : _changes,
               icon: const Icon(Icons.fact_check_outlined, size: 18), label: const Text('Değişiklikler')),
             OutlinedButton.icon(key: const ValueKey('menu-preview'), onPressed: _preview,
               icon: const Icon(Icons.visibility_outlined, size: 18), label: const Text('Önizle')),
+            if (here)
+              OutlinedButton.icon(key: const ValueKey('menu-sync'),
+                onPressed: can['menu.product.edit'] == true && !busy ? _syncPos : null,
+                icon: const Icon(Icons.point_of_sale_outlined, size: 18), label: const Text('POS’a Eşitle')),
           ]),
         ])),
     );
+  }
+
+  /// Publish / verify / POS sync: Windows does the work with its own key.
+  Future<Json?> _command(String path, [Json body = const {}]) async {
+    setState(() => busy = true);
+    try {
+      final requestId = 'menu-${DateTime.now().microsecondsSinceEpoch}-${_rand.nextInt(1 << 30)}';
+      final (code, result) = await widget.api.menu('POST', path, body: {...body, 'requestId': requestId});
+      if (!mounted) return null;
+      if (code == 200) return result;
+      _say(code == 409
+          ? '${result['message'] ?? 'Menü başka bir cihazda değişti.'} Güncel hali yüklendi.'
+          : code == 403 ? 'Bu işlem için yetkiniz yok.'
+          : '${result['message'] ?? result['error'] ?? 'İşlem yapılamadı.'}');
+      return null;
+    } on FormatException catch (e) {
+      if (mounted) _say(e.message);
+      return null;
+    } catch (_) {
+      if (mounted) _say('Windows POS’a ulaşılamadı. Yayın gönderilmedi.');
+      return null;
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  Future<void> _publish() async {
+    final v = view!;
+    final changes = rows(v['changes']);
+    final ok = await showModalBottomSheet<bool>(context: context, showDragHandle: true, isScrollControlled: true,
+      builder: (sheet) => SafeArea(child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(sheet).height * .8),
+        child: Column(key: const ValueKey('menu-publish-sheet'), mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 4), child: Text('QR menüde yayınla',
+            style: Theme.of(sheet).textTheme.titleLarge)),
+          Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: Text(
+            '${changes.length} değişiklik, yayındaki sürüm ${v['revisionLabel']} üzerine yayınlanacak. '
+            'Müşteriler QR menüde bu hali görür.', style: Theme.of(sheet).textTheme.bodySmall)),
+          Flexible(child: ListView(shrinkWrap: true, padding: const EdgeInsets.symmetric(horizontal: 16), children: [
+            for (final c in changes)
+              ListTile(dense: true, contentPadding: EdgeInsets.zero, title: Text('${c['label']}'),
+                subtitle: Text('${c['detail']}')),
+          ])),
+          Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 12), child: Row(children: [
+            Expanded(child: OutlinedButton(onPressed: () => _preview(), child: const Text('Önizle'))),
+            const SizedBox(width: 8),
+            Expanded(child: FilledButton(key: const ValueKey('menu-publish-confirm'),
+              onPressed: () => Navigator.pop(sheet, true), child: const Text('Onayla ve Yayınla'))),
+          ])),
+        ]))));
+    if (ok != true || !mounted) return;
+    final r = await _command('publish', {'expectedStamp': v['stamp']});
+    if (r != null) {
+      _say(switch (r['outcome']) {
+        'published' => 'QR menü yayınlandı (sürüm ${r['revisionLabel'] ?? r['revision']}).',
+        _ => '${r['message'] ?? 'Yayın sonucu alınamadı.'}',
+      });
+    }
+    await load();
+  }
+
+  /// Windows uploads the photo with its own key, then puts its path in the draft.
+  Future<void> _photo(Json p) async {
+    final picked = await widget.pickPhoto();
+    if (picked == null || !mounted) return;
+    final (mime, bytes) = picked;
+    if (bytes.length > 6000000) return _say('Fotoğraf en fazla 6 MB olabilir.');
+    final r = await _command('image', {'id': p['id'], 'mime': mime, 'base64': base64Encode(bytes),
+      'expectedStamp': view!['stamp']});
+    if (r != null) _say('Fotoğraf yüklendi ve taslağa eklendi.');
+    await load();
+  }
+
+  Future<void> _reconcile() async {
+    final r = await _command('reconcile');
+    if (r != null) _say('${r['message'] ?? 'Doğrulanacak yayın yok.'}');
+    await load();
+  }
+
+  Future<void> _syncPos() async {
+    final r = await _command('sync');
+    if (r != null) _say('POS menüsü QR menüden eşitleniyor.');
   }
 
   void _changes() => showModalBottomSheet<void>(context: context, showDragHandle: true, isScrollControlled: true,
@@ -231,8 +357,13 @@ class _MenuAdminPageState extends State<MenuAdminPage> {
     if (cats.isEmpty) return;
     final saved = await Navigator.of(context).push<Json>(MaterialPageRoute(
       builder: (_) => _ProductEditor(product: p, categories: cats,
-        canProduct: allowed('menu.product.edit'), canPrice: allowed('menu.price.edit'))));
+        canProduct: allowed('menu.product.edit'), canPrice: allowed('menu.price.edit'),
+        canPhoto: p != null && view?['publish'] == 'here' && allowed('menu.product.edit'))));
     if (saved == null) return;
+    if (saved['pickPhoto'] == true) {
+      await _photo(p!);
+      return;
+    }
     if (saved['onlyPrice'] == true) {
       await send({'action': 'set_price', 'id': p!['id'], 'priceCents': saved['priceCents']}, 'Fiyat taslağa kaydedildi.');
     } else {
@@ -366,10 +497,10 @@ Widget _saveBar(BuildContext context, VoidCallback save, String? problem) => Saf
 
 class _ProductEditor extends StatefulWidget {
   const _ProductEditor({required this.product, required this.categories,
-    required this.canProduct, required this.canPrice});
+    required this.canProduct, required this.canPrice, this.canPhoto = false});
   final Json? product;
   final List<Json> categories;
-  final bool canProduct, canPrice;
+  final bool canProduct, canPrice, canPhoto;
   @override
   State<_ProductEditor> createState() => _ProductEditorState();
 }
@@ -426,7 +557,13 @@ class _ProductEditorState extends State<_ProductEditor> {
       _field(descs[1], 'Description · English', lines: 2, enabled: widget.canProduct),
       _field(descs[2], 'الوصف · العربية', lines: 2, rtl: true, enabled: widget.canProduct),
       if (!widget.canPrice) const Text('Fiyat değiştirme yetkiniz yok.'),
-      Text('Fotoğraf Windows’taki QR Menü Yönetimi’nden yüklenir.', style: Theme.of(context).textTheme.bodySmall),
+      if (widget.canPhoto)
+        Align(alignment: Alignment.centerLeft, child: OutlinedButton.icon(key: const ValueKey('menu-photo'),
+          onPressed: () => Navigator.pop(context, <String, dynamic>{'pickPhoto': true}),
+          icon: const Icon(Icons.add_photo_alternate_outlined), label: const Text('Fotoğraf Seç ve Yükle')))
+      else
+        Text(widget.product == null ? 'Fotoğraf, ürün kaydedildikten sonra eklenir.'
+            : 'Fotoğraf Windows’taki QR Menü Yönetimi’nden yüklenir.', style: Theme.of(context).textTheme.bodySmall),
     ]),
     bottomNavigationBar: _saveBar(context, save, problem),
   );

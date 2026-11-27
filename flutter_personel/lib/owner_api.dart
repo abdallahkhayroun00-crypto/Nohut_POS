@@ -79,7 +79,14 @@ class OwnerApi extends NohutApi {
       if (view is! Map) throw const FormatException('Menü yanıtı geçersiz.');
       return (200, Map<String, dynamic>.from(view));
     }
-    final r = await request({'operation': 'ownerMenuWrite', 'data': {...?body}});
+    final op = switch (path) {
+      'publish' => 'ownerMenuPublish',
+      'reconcile' => 'ownerMenuReconcile',
+      'sync' => 'ownerMenuSync',
+      'image' => 'ownerMenuImage',
+      _ => 'ownerMenuWrite',
+    };
+    final r = await request({'operation': op, 'data': {...?body}});
     if (r['ok'] == false && r['error'] == 'conflict') return (409, r);
     return (200, r);
   }

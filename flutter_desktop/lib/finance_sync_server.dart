@@ -24,7 +24,7 @@ import 'windows_vault.dart';
 /// Independent, physically enrolled financial capability. Never grant it to
 /// an ordinary staff bearer token. The key is held in the Windows DPAPI vault.
 class FinanceSyncServer {
-  FinanceSyncServer(this.store, {this.staffProjection, this.googleProvider, this.ownerEmployeeIds}) :
+  FinanceSyncServer(this.store, {this.staffProjection, this.googleProvider, this.ownerEmployeeIds, this.menuRemote}) :
     vault = WindowsVault(File(store.filePath + '.finance-sync.dpapi'));
 
   final PosStore store;
@@ -32,6 +32,8 @@ class FinanceSyncServer {
   final GoogleBusiness Function()? googleProvider;
   /// Employee profiles linked to owner accounts (Windows › Kullanıcılar).
   final List<int> Function()? ownerEmployeeIds;
+  /// QR publish / verify / POS sync with Windows' key (owner channel).
+  final QrMenuRemoteService? menuRemote;
 
   Json _owner(Json state) => owner(state, ownerIds: ownerEmployeeIds?.call() ?? const []);
 
@@ -512,12 +514,29 @@ class FinanceSyncServer {
           result = ownerPayroll(store, '${payload['weekStart'] ?? ''}',
               ownerIds: ownerEmployeeIds?.call() ?? [employee['id'] as int]);
         } else if (op == 'ownerMenu') {
-          result = {'ok': true, 'menu': qrMenuView(store.read().data, can: (_) => true)};
+          result = {'ok': true, 'menu': qrMenuView(store.read().data, can: (_) => true,
+              link: await menuRemote?.linkState())};
         } else if (op == 'ownerMenuWrite') {
           if (payload['data'] is! Map) throw const FormatException('İstek geçersiz.');
           try {
             result = applyQrMenuCommand(store, Map<String, dynamic>.from(payload['data'] as Map),
                 can: (_) => true, actor: '${employee['name']}', actorId: employee['id'] as int?);
+          } on QrMenuConflict catch (e) {
+            result = {'ok': false, 'error': 'conflict', 'message': e.message};
+          }
+        } else if (op == 'ownerMenuPublish' || op == 'ownerMenuReconcile' || op == 'ownerMenuSync' ||
+            op == 'ownerMenuImage') {
+          final r = menuRemote ?? (throw const FormatException('QR yayınlama bu bilgisayarda kapalı.'));
+          final actor = '${employee['name']}';
+          final id = employee['id'] as int?;
+          final request = payload['data'] is Map ? Map<String, dynamic>.from(payload['data'] as Map) : <String, dynamic>{};
+          try {
+            result = switch (op) {
+              'ownerMenuPublish' => await r.publish(expectedStamp: '${request['expectedStamp'] ?? ''}', actor: actor, actorId: id),
+              'ownerMenuReconcile' => await r.reconcile(actor: actor, actorId: id),
+              'ownerMenuImage' => await r.uploadImage(payload: request, can: (_) => true, actor: actor, actorId: id),
+              _ => await r.sync(actor: actor),
+            };
           } on QrMenuConflict catch (e) {
             result = {'ok': false, 'error': 'conflict', 'message': e.message};
           }

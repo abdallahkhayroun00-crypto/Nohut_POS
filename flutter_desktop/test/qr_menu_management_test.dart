@@ -482,4 +482,26 @@ void main() {
     await publishNow(t);
     expect(f.remote['products'][1]['available'], false);
   });
+
+  testWidgets('a phone publish shows up on Windows: pending first, then the new revision', (t) async {
+    final f = FakePublisher();
+    final host = await mount(t, f);
+    final phone = github();
+    phone['products'][1]['available'] = false;
+    host.currentState!.edit((s) => s['qrPublisherDraft'] = phone);
+    await t.pumpAndSettle();
+    host.currentState!.edit((s) => s['qrPublisherPendingPublish'] = {'revision': 'sha-1', 'at': '2026-11-27T21:00:00Z', 'changes': 1});
+    await t.pumpAndSettle();
+    expect(find.textContaining('Bir telefondan yayın gönderildi'), findsOneWidget);
+    host.currentState!.edit((s) {
+      s['qrPublisherDraftSourceSnapshot'] = copyJson(phone);
+      s['qrPublisherDraftRevision'] = 'sha-phone99';
+      s.remove('qrPublisherDraft');
+      s.remove('qrPublisherPendingPublish');
+    });
+    await t.pumpAndSettle();
+    expect(find.textContaining('Telefondan yayınlandı: sha-pho'), findsOneWidget);
+    expect(text(t, 'qr-fact-changes'), 'Değişiklik yok');
+    expect(f.publishes, 0, reason: 'Windows does not publish again');
+  });
 }

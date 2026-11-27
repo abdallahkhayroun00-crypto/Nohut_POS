@@ -1,5 +1,6 @@
 // Menü Yönetimi (Android): grants decide the controls, edits carry the
-// draft stamp, a stale draft reloads, publishing is not on the phone.
+// draft stamp, a stale draft reloads; with menu.qr.publish the phone reviews,
+// confirms and asks Windows to publish (owner decision 2026-11-27).
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -32,7 +33,9 @@ class FakeMenuApi extends NohutApi {
   final Set<String> grants;
   Json draft = jsonDecode(jsonEncode(catalog())) as Json;
   int version = 1;
-  bool reachable = true;
+  bool reachable = true, pending = false;
+  String link = 'ready';
+  int publishes = 0, syncs = 0;
   final writes = <Json>[];
   String get stamp => 'stamp-$version';
 
@@ -42,16 +45,32 @@ class FakeMenuApi extends NohutApi {
     if (method == 'GET') {
       return (200, <String, dynamic>{
         'available': true, 'stamp': stamp, 'revision': 'abc1234ffff', 'revisionLabel': 'abc1234',
-        'offline': false, 'pendingPublish': false, 'publish': 'windows',
+        'offline': false, 'pendingPublish': pending, 'publish': 'here', 'link': link,
         'can': {for (final op in ['menu.product.edit', 'menu.price.edit', 'menu.category.edit',
-          'menu.campaign.edit', 'menu.stock.toggle']) op: grants.contains(op)},
+          'menu.campaign.edit', 'menu.stock.toggle', 'menu.qr.publish']) op: grants.contains(op)},
         'changes': [if (version > 1) {'list': 'products', 'id': 1, 'label': 'Falafel Dürüm', 'detail': 'değişti'}],
         'catalog': jsonDecode(jsonEncode(draft)),
       });
     }
-    writes.add(body!);
+    writes.add({...body!, 'path': path});
+    if (path == 'sync') {
+      syncs++;
+      return (200, <String, dynamic>{'ok': true});
+    }
+    if (path == 'reconcile') {
+      pending = false;
+      return (200, <String, dynamic>{'ok': true, 'outcome': 'confirmed', 'message': 'Önceki yayın doğrulandı.'});
+    }
+    if (pending) return (409, <String, dynamic>{'error': 'conflict', 'message': 'Önceki yayının sonucu henüz doğrulanmadı.'});
     if (body['expectedStamp'] != stamp) return (409, <String, dynamic>{'error': 'conflict', 'message': 'Menü başka bir cihazda değişti.'});
+    if (path == 'publish') {
+      if (!grants.contains('menu.qr.publish')) return (403, <String, dynamic>{'error': 'forbidden'});
+      publishes++;
+      version = 1; // published: draft equals the base again
+      return (200, <String, dynamic>{'ok': true, 'outcome': 'published', 'revision': 'def5678ffff', 'revisionLabel': 'def5678'});
+    }
     final p = (draft['products'] as List).cast<Map>().firstWhere((p) => p['id'] == (body['id'] ?? 1), orElse: () => {});
+    if (path == 'image') p['image'] = 'assets/products/upload.webp';
     switch (body['action']) {
       case 'set_stock':
         if (!grants.contains('menu.stock.toggle')) return (403, <String, dynamic>{'error': 'forbidden'});
@@ -72,15 +91,18 @@ class FakeMenuApi extends NohutApi {
   }
 }
 
-Widget app(NohutApi api, {ThemeMode mode = ThemeMode.light}) => MaterialApp(
+Widget app(NohutApi api, {ThemeMode mode = ThemeMode.light, MenuPhotoPicker? photo}) => MaterialApp(
     debugShowCheckedModeBanner: false, theme: NohutStyle.theme, darkTheme: NohutStyle.darkTheme, themeMode: mode,
     home: Scaffold(appBar: AppBar(title: const Text('Menü Yönetimi')),
-      body: MenuAdminPage(api: api, imageBase: null)));
+      body: MenuAdminPage(api: api, imageBase: null, pickPhoto: photo ?? () async => null)));
+
+const allMenu = {'menu.product.edit', 'menu.price.edit', 'menu.category.edit', 'menu.campaign.edit',
+  'menu.stock.toggle', 'menu.qr.publish'};
 
 void main() {
   setUpAll(loadNohutFonts);
 
-  testWidgets('Personel with stock grant only: toggles stock, cannot edit price or visibility', (t) async {
+  testWidgets('narrowed by the owner to stock only: toggles stock, no price, visibility or publish', (t) async {
     final api = FakeMenuApi({'menu.stock.toggle'});
     await t.pumpWidget(app(api));
     await t.pumpAndSettle();
@@ -96,13 +118,79 @@ void main() {
     expect(api.writes.single['expectedStamp'], 'stamp-1');
     expect(api.writes.single['requestId'], startsWith('menu-'));
     expect(find.text('1 değişiklik yayın bekliyor'), findsOneWidget);
-    expect(find.textContaining('işletme sahibi onayıyla'), findsOneWidget);
-    expect(find.textContaining('Yayınla'), findsNothing, reason: 'no publish button on phones');
+    expect(t.widget<FilledButton>(find.byKey(const ValueKey('menu-publish'))).onPressed, isNull,
+        reason: 'no menu.qr.publish grant');
+  });
+
+  for (final role in ['Personel', 'Yönetici']) {
+    testWidgets('$role (default grants): review, confirm, publish; photo; POS sync; verify a lost answer', (t) async {
+      final api = FakeMenuApi({...allMenu});
+      await t.pumpWidget(app(api, photo: () async => ('image/jpeg', [1, 2, 3])));
+      await t.pumpAndSettle();
+      expect(t.widget<FilledButton>(find.byKey(const ValueKey('menu-publish'))).onPressed, isNull, reason: 'nothing to publish');
+      await t.tap(find.byKey(const ValueKey('menu-stock-1')));
+      await t.pumpAndSettle();
+      await t.pump(const Duration(seconds: 6));
+      await t.pumpAndSettle();
+      // Photo through Windows.
+      await t.tap(find.byKey(const ValueKey('menu-product-1')));
+      await t.pumpAndSettle();
+      await t.scrollUntilVisible(find.byKey(const ValueKey('menu-photo')), 200,
+          scrollable: find.byType(Scrollable).last);
+      await t.tap(find.byKey(const ValueKey('menu-photo')));
+      await t.pumpAndSettle();
+      expect(api.writes.last['path'], 'image');
+      expect(api.writes.last['mime'], 'image/jpeg');
+      expect(api.writes.last['base64'], 'AQID');
+      expect(api.writes.last['expectedStamp'], 'stamp-2');
+      await t.pump(const Duration(seconds: 6));
+      await t.pumpAndSettle();
+      // Publish: review sheet, cancel publishes nothing; confirm publishes the reviewed stamp.
+      await t.tap(find.byKey(const ValueKey('menu-publish')));
+      await t.pumpAndSettle();
+      expect(find.byKey(const ValueKey('menu-publish-sheet')), findsOneWidget);
+      expect(find.textContaining('yayındaki sürüm abc1234'), findsOneWidget);
+      await t.tapAt(const Offset(10, 10));
+      await t.pumpAndSettle();
+      expect(api.publishes, 0);
+      await t.tap(find.byKey(const ValueKey('menu-publish')));
+      await t.pumpAndSettle();
+      await t.tap(find.byKey(const ValueKey('menu-publish-confirm')));
+      await t.pumpAndSettle();
+      expect(api.publishes, 1);
+      expect(api.writes.last['expectedStamp'], 'stamp-3');
+      expect(find.textContaining('QR menü yayınlandı (sürüm def5678)'), findsOneWidget);
+      expect(find.text('Yayındakiyle aynı'), findsOneWidget);
+      await t.pump(const Duration(seconds: 6));
+      await t.pumpAndSettle();
+      await t.tap(find.byKey(const ValueKey('menu-sync')));
+      await t.pumpAndSettle();
+      expect(api.syncs, 1);
+      // An unanswered publish: edits and publish are frozen until verified.
+      api.pending = true;
+      await t.pump(const Duration(seconds: 6));
+      await t.pumpAndSettle();
+      await t.tap(find.byKey(const ValueKey('menu-stock-2')));
+      await t.pumpAndSettle();
+      expect(find.byKey(const ValueKey('menu-publish')), findsNothing);
+      await t.tap(find.byKey(const ValueKey('menu-reconcile')));
+      await t.pumpAndSettle();
+      expect(find.textContaining('doğrulandı'), findsOneWidget);
+      expect(find.byKey(const ValueKey('menu-publish')), findsOneWidget);
+      expect(t.takeException(), isNull);
+    });
+  }
+
+  testWidgets('Windows publishing chain down: says why and publish stays disabled', (t) async {
+    final api = FakeMenuApi({...allMenu})..version = 2..link = 'service_down';
+    await t.pumpWidget(app(api));
+    await t.pumpAndSettle();
+    expect(find.textContaining('yayınlama hizmeti çalışmıyor'), findsOneWidget);
+    expect(t.widget<FilledButton>(find.byKey(const ValueKey('menu-publish'))).onPressed, isNull);
   });
 
   testWidgets('owner/manager: price via the edit screen, new product, stale draft reloads', (t) async {
-    final api = FakeMenuApi({'menu.product.edit', 'menu.price.edit', 'menu.category.edit',
-      'menu.campaign.edit', 'menu.stock.toggle'});
+    final api = FakeMenuApi({...allMenu});
     await t.pumpWidget(app(api));
     await t.pumpAndSettle();
     await t.tap(find.byKey(const ValueKey('menu-product-1')));
@@ -167,8 +255,7 @@ void main() {
   for (final mode in [Brightness.light, Brightness.dark]) {
     final m = mode == Brightness.light ? 'light' : 'dark';
     testWidgets('render menu admin $m', (t) async {
-      final api = FakeMenuApi({'menu.product.edit', 'menu.price.edit', 'menu.stock.toggle',
-        'menu.category.edit', 'menu.campaign.edit'})..version = 2;
+      final api = FakeMenuApi({...allMenu})..version = 2;
       await renderScreen(t, 'menu-admin-$m', app(api, mode: mode == Brightness.light ? ThemeMode.light : ThemeMode.dark),
           brightness: mode);
       await renderScreen(t, 'menu-admin-compact-$m', app(api, mode: mode == Brightness.light ? ThemeMode.light : ThemeMode.dark),

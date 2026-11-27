@@ -141,6 +141,7 @@ describe('Login BFF', () => {
     const bare = await bff.handle(req('pin', { pin: '47302' }, { bearer: later }), 'pin');
     expect(((await bare.json()) as any).error).toBe('password_required');
     const wrong = await bff.handle(req('pin', { pin: '47302', password: 'nope' }, { bearer: later }), 'pin');
+    expect(wrong.status).toBe(403);
     expect(((await wrong.json()) as any).error).toBe('invalid_credentials');
     const ok = await bff.handle(req('pin', { pin: '47302', password: 'synthetic-pass-1' }, { bearer: later }), 'pin');
     expect(ok.status).toBe(200);

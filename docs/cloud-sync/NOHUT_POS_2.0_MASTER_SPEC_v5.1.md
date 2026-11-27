@@ -740,12 +740,12 @@ First sync must create all required dictionary/version references before publish
 | Operation ID | Section | Default: Personel | Müdür | Yönetici | Sensitivity |
 |---|---|---|---|---|---|
 | `menu.view` | Menü & Kampanya | ✓ | ✓ | ✓ | normal |
-| `menu.product.edit` | Menü & Kampanya | – | ✓ | ✓ | elevated (confirm) |
-| `menu.price.edit` | Menü & Kampanya | – | – | ✓ | elevated (confirm, shows old → new) |
-| `menu.category.edit` | Menü & Kampanya | – | ✓ | ✓ | elevated |
-| `menu.campaign.edit` | Menü & Kampanya | – | – | ✓ | elevated |
+| `menu.product.edit` | Menü & Kampanya | ✓ | ✓ | ✓ | elevated (confirm) |
+| `menu.price.edit` | Menü & Kampanya | ✓ | ✓ | ✓ | elevated (confirm, shows old → new) |
+| `menu.category.edit` | Menü & Kampanya | ✓ | ✓ | ✓ | elevated |
+| `menu.campaign.edit` | Menü & Kampanya | ✓ | ✓ | ✓ | elevated |
 | `menu.stock.toggle` | Menü & Kampanya | ✓ | ✓ | ✓ | normal |
-| `menu.qr.publish` | Menü & Kampanya | – | – | ✓ | elevated (public output; allowlist check) |
+| `menu.qr.publish` | Menü & Kampanya | ✓ | ✓ | ✓ | elevated (public output; review + confirm, revision-bound, audited) |
 | `sync.view` | Bulut & Senk. | – | ✓ | ✓ | normal |
 | `sync.manual` | Bulut & Senk. | – | ✓ | ✓ | normal |
 | `sync.retry` | Bulut & Senk. | – | ✓ | ✓ | normal |
@@ -759,6 +759,8 @@ First sync must create all required dictionary/version references before publish
 | `backup.verify` | Yedekleme | – | ✓ | ✓ | normal |
 | `backup.restore` | Yedekleme | – | – | owner | **owner-only, non-delegable**, MFA + local Windows confirmation |
 | `backup.delete` / any destructive cleanup | Yedekleme | – | – | owner | **owner-only**; V5 forbids silent deletion; requires retention policy + confirmation |
+
+**Owner decision 2026-11-27 (QR menu parity):** Personel, Müdür and Yönetici hold every `menu.*` operation by default, publishing included, on native Android, the iPhone PWA and the LAN browser alike. Publishing never needs an owner account or owner MFA for these roles; it needs an individual sign-in, the grant, an explicit review/confirmation of the exact draft (its fingerprint), a validated catalog bound to the published GitHub revision, and it is audited with the actor. The publisher key stays on Windows; phones only ask Windows to publish. The owner can still revoke any `menu.*` grant per user. No other section's defaults changed. Existing accounts received the grants once (Windows `LocalAuth` upgrade flag, Supabase migration `20261127221000`).
 
 Sensitive-action rules:
 1. **Owner-only non-delegable:** `sync.initial.start`, `sync.cloud.configure`, `sync.full_resync`, `backup.restore` and every destructive change. The grant UI cannot assign them; the server rejects them for any identity that is not the verified owner, regardless of stored grants.

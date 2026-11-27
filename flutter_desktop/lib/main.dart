@@ -31,6 +31,8 @@ import 'dart:collection';
 import 'receipt_printer.dart';
 import 'receipt_preview.dart';
 import 'qr_menu_sync.dart';
+import 'qr_menu_remote.dart';
+import 'qr_publisher_client.dart';
 
 import 'dart:convert';
 import 'dart:math' show min;
@@ -256,6 +258,12 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       googleProvider: () => google,
       platformWritable: () => tgo.canWrite && !tgo.writing,
       platformAction: _staffPlatformAction,
+      menuRemote: QrMenuRemoteService(
+        store,
+        publisher: () => QrPublisherClient(store.filePath),
+        endpoint: () => QrPublisherClient.configuredEndpoint(store.read().data['settings']?['qrPublisherUrl']),
+        syncPos: () => qrSync.syncNow(),
+      ),
     );
     receiptPrinter = ReceiptPrinter(store);
     qrSync = QrMenuAutoSync(store);

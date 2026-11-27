@@ -93,11 +93,29 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
   }
   @override void didUpdateWidget(covariant QrMenuManagement old){
     super.didUpdateWidget(old);
+    if(busy||publishing||merge!=null)return;
+    // A phone may publish too (owner decision 2026-11-27): follow its
+    // pending marker and the new published revision.
+    final p=widget.state[_pendingKey];
+    final incomingPending=p is Map?Map<String,dynamic>.from(p):null;
+    if(jsonEncode(incomingPending)!=jsonEncode(pending)){
+      pending=incomingPending;
+      info=incomingPending!=null
+        ?'Bir telefondan yayın gönderildi; sonuç bekleniyor.'
+        :'Telefondan gönderilen yayının sonucu alındı.';
+      infoError=false;
+    }
+    if(pending!=null)return;
     final incoming=jsonEncode(widget.state['qrPublisherDraft']);
-    if(incoming==_seenDraft||busy||publishing||merge!=null||pending!=null)return;
-    final hadMenu=menu!=null;
+    final rev=widget.state['qrPublisherDraftRevision']?.toString();
+    if(incoming==_seenDraft&&rev==revision)return;
+    final hadMenu=menu!=null,oldRevision=revision;
     _restore();
-    if(hadMenu)info='Telefondan yapılan menü değişikliği alındı.';
+    if(!hadMenu)return;
+    info=rev!=null&&oldRevision!=null&&rev!=oldRevision
+      ?'Telefondan yayınlandı: ${qrRevisionLabel(rev)}.'
+      :'Telefondan yapılan menü değişikliği alındı.';
+    infoError=false;
   }
 
   String get endpoint=>QrPublisherClient.configuredEndpoint(

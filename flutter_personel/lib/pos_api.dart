@@ -229,7 +229,9 @@ class NohutApi {
     final response = method == 'GET'
         ? await _client.get(uri, headers: _headers()).timeout(const Duration(seconds: 8))
         : await _client.post(uri, headers: _headers(json: true),
-            body: jsonEncode({'client': 'personel', ...?body})).timeout(const Duration(seconds: 12));
+            body: jsonEncode({'client': 'personel', ...?body}))
+            // Publishing and photos go through Windows to GitHub: allow longer.
+            .timeout(Duration(seconds: const {'publish', 'reconcile', 'image'}.contains(path) ? 90 : 12));
     final data = jsonDecode(utf8.decode(response.bodyBytes));
     final result = data is Map ? Map<String, dynamic>.from(data) : <String, dynamic>{};
     if (response.statusCode == 401) {
@@ -247,7 +249,9 @@ class NohutApi {
     final response = method == 'GET'
         ? await _client.get(uri, headers: _headers()).timeout(const Duration(seconds: 8))
         : await _client.post(uri, headers: _headers(json: true),
-            body: jsonEncode({'client': 'personel', ...?body})).timeout(const Duration(seconds: 12));
+            body: jsonEncode({'client': 'personel', ...?body}))
+            // Publishing and photos go through Windows to GitHub: allow longer.
+            .timeout(Duration(seconds: const {'publish', 'reconcile', 'image'}.contains(path) ? 90 : 12));
     final data = jsonDecode(utf8.decode(response.bodyBytes));
     final result = data is Map ? Map<String, dynamic>.from(data) : <String, dynamic>{};
     if (response.statusCode == 401) {
