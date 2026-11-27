@@ -1,0 +1,43 @@
+name: Test Nohut PostgreSQL foundation
+on:
+  workflow_dispatch:
+  push:
+    branches: [chatgpt/phase2-postgres-foundation]
+    paths:
+      - 'supabase/**'
+      - '.github/workflows/nohut-postgres-foundation.yml'
+  pull_request:
+    paths:
+      - 'supabase/**'
+      - '.github/workflows/nohut-postgres-foundation.yml'
+permissions:
+  contents: read
+jobs:
+  synthetic-postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: disposable-ci-only
+          POSTGRES_DB: nohut_synthetic
+        options: >-
+          --health-cmd "pg_isready -U postgres -d nohut_synthetic"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply migration and verify fail-closed schema
+        env:
+          PG_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          set -euo pipefail
+          psql_ci() {
+            docker exec -i "$PG_CONTAINER" psql -X -v ON_ERROR_STOP=1 -U postgres -d nohut_synthetic "$@"
+          }
+          psql_ci -c 'create role anon nologin; create role authenticated nologin; create role service_role nologin bypassrls;'
+          psql_ci < supabase/migrations/20261127001000_nohut_private_foundation.sql
+          psql_ci < supabase/tests/private_foundation_test.sql
+          echo 'PASS: PostgreSQL synthetic foundation tests (no live Supabase connection)' >> "$GITHUB_STEP_SUMMARY"
