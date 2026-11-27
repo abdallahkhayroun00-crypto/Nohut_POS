@@ -205,6 +205,18 @@ begin
   or nohut_private.command_still_authorized(a.restaurant_id,c.envelope) is not true then
    raise exception 'reconciliation authority denied' using errcode='42501';
  end if;
+ -- The execution target and operation are not authority: they must match
+ -- the original authenticated command. Legacy {} fails closed.
+ if jsonb_typeof(c.envelope->'payload') is distinct from 'object'
+ or not ((c.envelope->'payload') ?& array['targetRequestId','mode'])
+ or (select count(*) from jsonb_object_keys(c.envelope->'payload'))<>2
+ or jsonb_typeof(c.envelope->'payload'->'targetRequestId') is distinct from 'string'
+ or coalesce(c.envelope->'payload'->>'targetRequestId','') !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}
+ or jsonb_typeof(c.envelope->'payload'->'mode') is distinct from 'string'
+ or coalesce(c.envelope->'payload'->>'mode','') not in ('reconcile','cancel_before_attempt')
+ or c.envelope->>'payload_sha256' is distinct from encode(sha256(convert_to(nohut_private.canonical_command_json(c.envelope->'payload'),'UTF8')),'hex') then
+   raise exception 'recovery command scope denied' using errcode='42501';
+ end if;
  return a;
 end $$;
 
@@ -223,6 +235,14 @@ begin
  a:=nohut_private.qr_recovery_authority(p_token,p_reconcile_request,p_generation,p_envelope_sha256);
  if p_target is null or p_target !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
    raise exception 'invalid receipt target' using errcode='22023';
+ end if;
+ -- qr_recovery_authority holds this command row lock until transaction end.
+ select * into strict c from nohut_private.commands x where x.restaurant_id=a.restaurant_id and x.request_id=p_reconcile_request;
+ if c.envelope->'payload'->>'targetRequestId' is distinct from p_target
+ or (case when p_step='cancel_before_attempt' then 'cancel_before_attempt'
+          when p_step in ('inspect','confirm_reachable') then 'reconcile'
+          else null end) is distinct from c.envelope->'payload'->>'mode' then
+   raise exception 'recovery target or mode denied' using errcode='42501';
  end if;
  select * into q from nohut_private.qr_publish_receipts x where x.restaurant_id=a.restaurant_id and x.request_id=p_target for update;
  if not found then return jsonb_build_object('status','not_found'); end if;
