@@ -43,8 +43,10 @@ void main() {
         expect(t.takeException(), isNull);
       }
       await helpers.click(t, 'Ayarlar');
+      // QR settings now live exclusively in QR Menü Yönetimi.
+      expect(find.text('Menü & QR'), findsNothing);
+      expect(find.byKey(const ValueKey('settings-nav-Menü')), findsNothing);
       for (final tab in [
-        'Menü & QR',
         'Yazıcı & Fiş',
         'Entegrasyonlar',
         'Yedekleme & Geri Yükleme',
