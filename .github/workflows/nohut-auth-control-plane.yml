@@ -59,13 +59,14 @@ jobs:
           psql_ci -U postgres -d nohut_plain -c 'grant authenticated, anon to migrator'
           psql_ci -U postgres -d nohut_plain < supabase/ci/supabase_auth_stub.sql
           for f in supabase/migrations/*.sql; do psql_ci -U migrator -d nohut_plain < "$f"; done
-          psql_ci -U postgres -d nohut_plain -c "insert into nohut_private.restaurants(restaurant_id) values ('a0000000-0000-0000-0000-000000000001'),('a0000000-0000-0000-0000-000000000002'),('e0000000-0000-0000-0000-000000000001')"
+          psql_ci -U postgres -d nohut_plain -c "insert into nohut_private.restaurants(restaurant_id) values ('a0000000-0000-0000-0000-000000000001'),('a0000000-0000-0000-0000-000000000002'),('e0000000-0000-0000-0000-000000000001'),('e0000000-0000-0000-0000-0000000000a1')"
           python3 - <<'PY'
-          for name in ['auth_control_plane_test', 'auth_api_test']:
+          for name in ['auth_control_plane_test', 'auth_api_test', 'windows_owner_session_test']:
               s = open(f'supabase/tests/{name}.sql').read()
               a = s.index('insert into nohut_private.restaurants'); b = s.index(';', a) + 1
               open(f'{name}_plain.sql', 'w').write(s[:a] + s[b:])
           PY
           psql_ci -U migrator -d nohut_plain < auth_control_plane_test_plain.sql
           psql_ci -U migrator -d nohut_plain < auth_api_test_plain.sql
+          psql_ci -U migrator -d nohut_plain < windows_owner_session_test_plain.sql
           echo 'PASS: auth control plane (superuser and plain owner), catalogue matches contract' >> "$GITHUB_STEP_SUMMARY"

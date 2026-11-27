@@ -8,7 +8,7 @@ Repository: `abdallahkhayroun00-crypto/Nohut_POS` (renamed from `brand-managemen
 
 1. **Fetch first.** Before each iteration, read `main`, the open PRs and their latest CI, and this file.
 2. **One branch per agent; never push to another agent's branch.**
-   - Claude Code: `claude/inspiring-mccarthy-t5ywuv`.
+   - Claude Code: `claude/inspiring-mccarthy-t5ywuv`, `claude/project-thread-51u0i4` (spec §23 consolidation + review work).
    - ChatGPT: `chatgpt/<topic>`.
 3. **Claim before you start.** Add your name and the date to an item in "Claims". Do not start an item that another agent has claimed and is still working on. If a claim is older than 24 h with no PR, note that in the PR and take it over.
 4. **Reuse; don't duplicate.** If an open PR already implements something, review it and build on it. Do not open a competing implementation.
@@ -19,6 +19,59 @@ Repository: `abdallahkhayroun00-crypto/Nohut_POS` (renamed from `brand-managemen
    - no production data uploaded or deleted;
    - no paid service activated.
 6. **Never print secrets.** No real restaurant data in tests. No Nohut AI.
+
+## Cumulative owner requirements (2026-11-27) — spec §23, binding for every agent
+
+All owner messages are **cumulative requirements**, not competing tasks. Requirement text: Master Spec **§23**. Do not drop any of them after a usage-limit reset.
+
+**Priority:** 1 unified auth + Windows account management → 2 local Personel + `/yonetici` browser apps → 3 unified notifications → 4 Trendyol review sync + dynamic store identity → 5 remaining Phase 6/7.
+
+**Connectivity decision (owner, verified on a physical iPhone):** Windows POS authoritative · Android native = cloud + LAN · iPhone in the restaurant = local browser apps served by Windows, no VPN · iPhone outside = existing Cloudflare PWAs (via VPN; `pages.dev` blocked in Türkiye). Keep Cloudflare + Supabase. No hosting change, no domain purchase.
+
+**Ownership:** PR #39 / `chatgpt/pr-05b-cloud-rpcs` belongs to **ChatGPT Codex** (has uncommitted local work) — nobody else pushes there. Claude owns auth, local browser UI, notifications, reviews and Windows analytics; Codex consumes those contracts and does not duplicate them.
+
+### Agent-to-agent protocol (GitHub, mandatory)
+
+Before every iteration: read this file, open PR comments and issues, pending requests, recent commits, CI and shared contracts. Use PR comments for technical talk, this file as the durable board. Answer pending requests in your next run; report completed dependencies with commit SHA, PR link, API contract, test evidence and limitations. Never post credentials, tokens, passwords or private restaurant data.
+
+```
+FROM: Claude | ChatGPT Codex
+TO: Claude | ChatGPT Codex
+STATUS: REQUEST | RESPONSE | BLOCKER | COMPLETED
+TASK:
+DEPENDENCY:
+EXPECTED INTERFACE:
+ACCEPTANCE CRITERIA:
+RELATED PR:
+EVIDENCE:
+```
+
+### Task board (§23)
+
+| # | Task | Owner | Status | Depends on | PR / evidence |
+|---|---|---|---|---|---|
+| A1 | Windows owner session + MFA contract for Windows agent enrollment (`client=windows`, `sync.*` allowed only there) — open request from Codex on #39 | Claude | ✅ SQL contract (#42): migration `20261127200000_nohut_windows_owner_session.sql`, `public.nohut_windows_owner_session(device)`, tests `windows_owner_session_test.sql` (superuser + plain owner; also green on top of #39 locally). Windows login UI = A2/A3 | #40/#41 | #39 comment 2026-11-27 12:18Z |
+| A2 | Login BFF (3B-2), PWA + Android login, trusted devices, 6-digit PIN, 30-min configurable lock, biometrics where secure, owner TOTP | Claude | ⏳ | A1 | — |
+| A3 | Windows Kullanıcılar & Yetkiler, Bağlı Cihazlar, password/PIN reset, deactivation, session revocation (3C) | Claude | ⏳ | A2 | — |
+| A4 | Bounded offline local sessions for LAN apps (no plaintext passwords, no cloud refresh tokens over HTTP) | Claude | ⏳ | A2 | — |
+| L1 | Authenticate + authorize every legacy LAN endpoint (`/api/state`, `/api/bootstrap`, `/api/staff/*`, finance routes) | Claude | ⏳ | A4 | — |
+| L2 | Upgrade local Personel (`assets/staff.html`): keep floor plan + functions, add §22.2 features, reuse PWA components | Claude | ⏳ | L1 | — |
+| L3 | Local Yönetici at `/yonetici` reusing `finance_sync_server.dart` | Claude | ⏳ | L1 | — |
+| L4 | Bundle assets in the installer; trusted local HTTPS; Safari check on a physical iPhone (owner device test) | Claude | ⏳ | L2, L3 | — |
+| N1 | Notification event contract `docs/contracts/v1/notifications.json` | Claude | ⏳ | — | — |
+| N2 | Windows notification center (reuse sound, `online_order_alarm.dart`, `staffNotices`) | Claude | ⏳ | N1 | — |
+| N3 | Bildirimler in Android + local + cloud apps; LAN events + Supabase Realtime | Claude (cloud read RPCs: Codex) | ⏳ | N1, #39 | — |
+| N4 | FCM + `flutter_local_notifications` **evaluation only** (free; owner approval before any new project/credential) | Claude | ⏳ | N1 | — |
+| R1 | Trendyol review root-cause investigation (read-only, code + official docs) | Claude | ✅ docs; ⏳ one authorized live read-only check | — | `trendyol-review-investigation.md` |
+| R2 | `TgoStoreIdentityService` (official `/stores` discovery, remove `316490` fallback, diagnostics) | Claude | ⏳ | R1 | — |
+| R3 | `ReviewSyncService` + persistent review repository + checkpoints | Claude | ⏳ | R2 | — |
+| R4 | Review notifications (no storm, exactly once) + Yorum Merkezi (Windows, Yönetici) + reply state machine | Claude | ⏳ | R3, N1 | — |
+| S1 | PR-05B typed sync, snapshot/first sync, reconciliation, read projections (incl. reviews/notifications projections when contracts exist) | ChatGPT Codex | 🔄 #39 | A1 | #39 |
+| S2 | Phase 5B command queue RPCs | ChatGPT Codex | 🔄 #39 | — | #39 |
+| P6 | Windows sales/top products/heatmap projections (Phase 6) | open | ⏳ | — | — |
+| P7 | Phase 7 acceptance incl. spec §23.7 | all | ⏳ | all | — |
+
+**Blockers / owner actions:** live Trendyol read-only check needs explicit owner authorization (R1); physical iPhone HTTPS/Safari test (L4); any FCM project needs owner approval (N4); KVKK gate unchanged.
 
 ## Phase status
 
