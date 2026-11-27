@@ -39,7 +39,7 @@ The Functional column records test coverage.
 | Surface | Code | Visual | Functional | Notes / known gaps |
 |---|---|---|---|---|
 | Login, owner MFA, Kullanıcılar & Güvenlik | `main.dart`, `accounts_ui.dart` | ⬜ | tests ✓ | Needs the shared form, sheet and state components |
-| Masalar (floor plan, table detail) | `tables_panel.dart`, `floor_plan.dart` | ⬜ | tests ✓ | Highest-traffic screen: density, keyboard flow |
+| Masalar (floor plan, table detail) | `tables_panel.dart`, `floor_plan.dart` | 🔄 board done, owner review pending | tests ✓ (`masalar_render_test`, `tables_panel_test`) | `MasalarBoard`: shared `TableTone` colours; legend pills; status tiles under 740 px (was plain buttons); open-orders list moves below the plan under 1150 px (it used to disappear) in 2 columns; layout-editing banner. Rendered 1536/1100/720/420 and 1.3× text. Windows POS has no dark theme yet (light only). Table detail dialog next |
 | Sipariş composer, product customization | `order_composer.dart`, `product_customization.dart` | ⬜ | tests ✓ | |
 | Payment, split, refund, mixed card | `payment_dialog.dart`, `group_payments.dart`, `card_terminal.dart` | ⬜ | tests ✓ | Financial logic frozen; visual only |
 | Receipts preview, printer | `receipt_preview.dart`, `printer_management.dart` | ⬜ | tests ✓ | Receipt layout is printed output; not changed |

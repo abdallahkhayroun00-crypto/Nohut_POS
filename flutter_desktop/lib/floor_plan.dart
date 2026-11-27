@@ -75,7 +75,7 @@ class RestaurantFloorPlan extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final occupied = List.generate(
-      5,
+      floorDefaults.length,
       (i) => activeTable(state, i + 1),
     ).where((o) => o != null).length;
     return Card(
@@ -87,21 +87,32 @@ class RestaurantFloorPlan extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
+            Wrap(
+              spacing: 12,
+              runSpacing: 8,
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                const Icon(Icons.chair_outlined, color: Color(0xff285940)),
-                const SizedBox(width: 8),
-                const Expanded(
-                  child: Text(
-                    'Restoran Yerleşimi',
-                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
-                  ),
+                const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.chair_outlined, color: Color(0xff285940)),
+                    SizedBox(width: 8),
+                    Text(
+                      'Restoran Yerleşimi',
+                      style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                    ),
+                  ],
                 ),
-                _legend('Boş ${5 - occupied}', const Color(0xff7FB08F)),
-                const SizedBox(width: 12),
-                _legend('Dolu $occupied', const Color(0xffD9A24E)),
-                const SizedBox(width: 12),
-                _legend('Ödendi', const Color(0xff5E9CB0)),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    _legend('Boş ${floorDefaults.length - occupied}', TableTone.free),
+                    _legend('Dolu $occupied', TableTone.busy),
+                    _legend('Ödendi', TableTone.paid),
+                  ],
+                ),
               ],
             ),
             if (editing) ...[
@@ -115,47 +126,19 @@ class RestaurantFloorPlan extends StatelessWidget {
             LayoutBuilder(
               builder: (context, constraints) {
                 if (!editing && constraints.maxWidth < 740) {
-                  return Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
+                  return EvenGrid(
+                    minTileWidth: 150,
+                    spacing: 10,
                     children: [
-                      for (var n = 1; n <= 5; n++)
-                        SizedBox(
-                          width: constraints.maxWidth < 380
-                              ? constraints.maxWidth
-                              : (constraints.maxWidth - 8) / 2,
-                          child: Builder(
-                            builder: (context) {
-                              final o = activeTable(state, n);
-                              return OutlinedButton(
-                                onPressed: () => onTable(n),
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 12,
-                                  ),
-                                  child: Column(
-                                    children: [
-                                      Text(
-                                        'Masa $n',
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w800,
-                                        ),
-                                      ),
-                                      Text(
-                                        o == null
-                                            ? 'Boş · Yeni sipariş'
-                                            : '${orderDueCents(o) == 0 ? 'Ödendi · Masa açık' : 'Dolu'}',
-                                      ),
-                                      if (o != null)
-                                        Text(
-                                          'Kalan ${formatTry(orderDueCents(o))}',
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
+                      for (var n = 1; n <= floorDefaults.length; n++)
+                        TableStatusTile(
+                          key: ValueKey('table-tile-$n'),
+                          number: n,
+                          order: activeTable(state, n),
+                          minutes: activeTable(state, n) == null
+                              ? 0 : _minutes(activeTable(state, n)!),
+                          selected: selected == n,
+                          onTap: () => onTable(n),
                         ),
                     ],
                   );
@@ -212,15 +195,22 @@ class RestaurantFloorPlan extends StatelessWidget {
     );
   }
 
-  Widget _legend(String label, Color color) => Row(
-    children: [
-      CircleAvatar(radius: 5, backgroundColor: color),
-      const SizedBox(width: 6),
-      Text(
-        label,
-        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
-      ),
-    ],
+  Widget _legend(String label, TableTone tone) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+    decoration: BoxDecoration(
+      color: tone.fill,
+      borderRadius: BorderRadius.circular(20),
+      border: Border.all(color: tone.accent.withValues(alpha: .55)),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        CircleAvatar(radius: 4, backgroundColor: tone.accent),
+        const SizedBox(width: 6),
+        Text(label, style: TextStyle(fontSize: 11.5,
+          fontWeight: FontWeight.w700, color: tone.ink)),
+      ],
+    ),
   );
 
   Widget _table(BuildContext context, int n, double width, double height) {
@@ -228,11 +218,8 @@ class RestaurantFloorPlan extends StatelessWidget {
     final order = activeTable(state, n);
     final busy = order != null;
     final paid = busy && orderDueCents(order) == 0;
-    final (fill, accent, ink) = !busy
-        ? (const Color(0xffF1F7F2), const Color(0xff7FB08F), const Color(0xff23553a))
-        : paid
-            ? (const Color(0xffE3F1F5), const Color(0xff5E9CB0), const Color(0xff1F5566))
-            : (const Color(0xffFFF1D6), const Color(0xffD9A24E), const Color(0xff6E4614));
+    final tone = TableTone.of(order);
+    final (fill, accent, ink) = (tone.fill, tone.accent, tone.ink);
     final small = n == 5;
     // Only large tables have room for the status pill and item/staff line.
     final roomy = r.height * height >= 85 && r.width * width >= 200;
@@ -425,4 +412,112 @@ class _FloorPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _FloorPainter old) => old.tables != tables;
+}
+
+
+/// Colours shared by the floor plan, the compact tiles and the legend.
+class TableTone {
+  const TableTone._(this.fill, this.accent, this.ink);
+  final Color fill, accent, ink;
+
+  static const free = TableTone._(
+    Color(0xffF1F7F2), Color(0xff7FB08F), Color(0xff23553a));
+  static const busy = TableTone._(
+    Color(0xffFFF1D6), Color(0xffD9A24E), Color(0xff6E4614));
+  static const paid = TableTone._(
+    Color(0xffE3F1F5), Color(0xff5E9CB0), Color(0xff1F5566));
+
+  static TableTone of(Json? order) => order == null
+      ? free
+      : orderDueCents(order) == 0 ? paid : busy;
+}
+
+/// One table as a compact card, used when the window is too narrow for the
+/// drawn floor plan. Same colours, same tap behaviour as the plan.
+class TableStatusTile extends StatelessWidget {
+  const TableStatusTile({
+    super.key,
+    required this.number,
+    required this.order,
+    required this.minutes,
+    required this.onTap,
+    this.selected = false,
+  });
+  final int number;
+  final Json? order;
+  final int minutes;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final o = order;
+    final tone = TableTone.of(o);
+    final long = minutes >= 90;
+    final status = o == null
+        ? 'Boş · Yeni sipariş'
+        : orderDueCents(o) == 0 ? 'Ödendi · Masa açık' : 'Dolu';
+    return Material(
+      color: tone.fill,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 96),
+          padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: selected ? NohutBrand.green : tone.accent,
+              width: selected ? 2.4 : 1.4),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Wrap(
+                spacing: 8,
+                runSpacing: 2,
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  Text('Masa $number', style: TextStyle(
+                    fontSize: 16, fontWeight: FontWeight.w900, color: tone.ink)),
+                  if (o == null)
+                    Icon(Icons.add_circle_outline, size: 18, color: tone.accent)
+                  else
+                    Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Icons.timer_outlined, size: 13,
+                        color: long ? const Color(0xffB3261E) : tone.ink),
+                      const SizedBox(width: 2),
+                      Flexible(
+                        child: Text(minutes < 60 ? '$minutes dk'
+                            : '${minutes ~/ 60} sa ${minutes % 60} dk',
+                          maxLines: 1, overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: long ? const Color(0xffB3261E) : tone.ink)),
+                      ),
+                    ]),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(status, maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 12.5, color: tone.ink,
+                  fontWeight: FontWeight.w600)),
+              if (o != null) ...[
+                const SizedBox(height: 6),
+                Text(orderDueCents(o) == 0
+                    ? 'Ödenen ${formatTry(orderPaidCents(o))}'
+                    : 'Kalan ${formatTry(orderDueCents(o))}', maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900,
+                    color: tone.ink)),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }

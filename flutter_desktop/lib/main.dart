@@ -2049,114 +2049,43 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
         : asMaps(db['orders'])
               .where((o) => o['id'] == selectedOrder)
               .firstOrNull;
-    final positions = floorEditing
-        ? draftFloor
-        : positionsFromJson(db['floorPositions']);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        TablesSummaryStrip(state: db, now: DateTime.now()),
-        const SizedBox(height: 14),
-        Row(
-          children: [
-            if (floorEditing) ...[
-              OutlinedButton(
-                onPressed: () =>
-                    setState(() => draftFloor = {...floorDefaults}),
-                child: const Text('İlk Yerleşim'),
-              ),
-              const SizedBox(width: 8),
-              OutlinedButton(
-                onPressed: () => setState(() => floorEditing = false),
-                child: const Text('Vazgeç'),
-              ),
-              const SizedBox(width: 8),
-              FilledButton(
-                onPressed: () {
-                  if (!validFloorPlacement(draftFloor)) {
-                    _notify(
-                      'Masalar çakışamaz ve kapı açık kalmalı.',
-                      error: true,
-                    );
-                    return;
-                  }
-                  final done = _edit(
-                    (data) =>
-                        data['floorPositions'] = positionsToJson(draftFloor),
-                  );
-                  if (done) setState(() => floorEditing = false);
-                },
-                child: const Text('Düzeni Kaydet'),
-              ),
-            ],
-          ],
-        ),
-        if (floorEditing) const SizedBox(height: 12),
-        LayoutBuilder(builder: (context, box) {
-          final plan = RestaurantFloorPlan(
-          state: db,
-          positions: positions,
-          editing: floorEditing,
-          selected: selectedTable,
-          onTable: _onTable,
-          onMove: (n, delta) => setState(() {
-            final r = draftFloor[n]!;
-            final left = (r.left + delta.dx)
-                .clamp(0.0, 1.0 - r.width)
-                .toDouble();
-            final top = (r.top + delta.dy)
-                .clamp(0.0, 1.0 - r.height)
-                .toDouble();
-            final next = {
-              ...draftFloor,
-              n: Rect.fromLTWH(left, top, r.width, r.height),
-            };
-            if (validFloorPlacement(next)) draftFloor = next;
-          }),
-          );
-          if (floorEditing || box.maxWidth < 1150) return plan;
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(flex: 3, child: plan),
-              const SizedBox(width: 12),
-              SizedBox(
-                width: min(420, box.maxWidth * 0.34),
-                child: OpenOrdersPanel(
-                  state: db,
-                  now: DateTime.now(),
-                  onOpenTable: _onTable,
-                  onOpenOrder: (o) => _showOrder(o['id'] as int),
-                  onPrintBill: _printBillBeforePayment,
-                ),
-              ),
-            ],
-          );
-        }),
-        const SizedBox(height: 17),
-        if (order != null && order['source'] == 'Masa')
-          OutlinedButton(
-            onPressed: () => _showOrder(order['id'] as int),
-            child: Text('Masa ${order['table']} · Hesabı Aç'),
-          ),
-        if (order == null)
-          Row(
-            children: [
-              const Icon(Icons.info_outline, size: 16, color: Color(0xff647a67)),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  floorEditing
-                      ? 'Masaları sürükleyin. Numaralar, hesaplar ve 5 masa değişmez.'
-                      : 'Boş masaya tıklayın: yeni sipariş. Dolu masaya tıklayın: hesap, ek sipariş ve ödeme.',
-                  style: const TextStyle(color: Color(0xff647a67), fontSize: 12.5),
-                ),
-              ),
-            ],
-          ),
-      ],
+    return MasalarBoard(
+      state: db,
+      now: DateTime.now(),
+      positions: floorEditing
+          ? draftFloor
+          : positionsFromJson(db['floorPositions']),
+      editing: floorEditing,
+      selectedTable: selectedTable,
+      selectedOrder: order,
+      onTable: _onTable,
+      onOpenOrder: (o) => _showOrder(o['id'] as int),
+      onPrintBill: _printBillBeforePayment,
+      onResetLayout: () => setState(() => draftFloor = {...floorDefaults}),
+      onCancelLayout: () => setState(() => floorEditing = false),
+      onSaveLayout: () {
+        if (!validFloorPlacement(draftFloor)) {
+          _notify('Masalar çakışamaz ve kapı açık kalmalı.', error: true);
+          return;
+        }
+        final done = _edit(
+          (data) => data['floorPositions'] = positionsToJson(draftFloor),
+        );
+        if (done) setState(() => floorEditing = false);
+      },
+      onMove: (n, delta) => setState(() {
+        final r = draftFloor[n]!;
+        final left = (r.left + delta.dx).clamp(0.0, 1.0 - r.width).toDouble();
+        final top = (r.top + delta.dy).clamp(0.0, 1.0 - r.height).toDouble();
+        final next = {
+          ...draftFloor,
+          n: Rect.fromLTWH(left, top, r.width, r.height),
+        };
+        if (validFloorPlacement(next)) draftFloor = next;
+      }),
     );
   }
+
 
   Widget _orderDetail(Json o) {
     final id = o['id'] as int;
@@ -2391,6 +2320,8 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
               if (canSplitByProduct)
                 Expanded(
                   child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 10)),
                     onPressed: () => _selectProductsToPay(o),
                     icon: const Icon(Icons.checklist, size: 18),
                     label: const Text('Ürün seçerek öde',
@@ -2412,10 +2343,11 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                         ),
                     ],
                     child: Container(
-                      height: 40,
+                      height: 44,
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(20),
+                        borderRadius: BorderRadius.circular(12),
                         border: Border.all(color: const Color(0xffBECFC5)),
                       ),
                       child: const Row(
