@@ -9,6 +9,7 @@ export function makePublishCoordinator({adapter,receipts,authorize,fingerprint})
   if(!value||value.requestId!==requestId)throw Error("invalid_result");
   if(value.status==="committed"&&sha(value.commit)&&sha(value.revision))return {requestId,status:"committed",commit:value.commit,revision:value.revision,pages:"unverified"};
   if(value.status==="no_change"&&sha(value.revision))return {requestId,status:"no_change",revision:value.revision};
+  if(value.status==="cancelled_before_attempt")return response(requestId,"cancelled_before_attempt");
   if(value.status==="unknown")return response(requestId,"reconciliation_required");
   throw Error("invalid_result");
  };
@@ -64,7 +65,8 @@ export function makePublishCoordinator({adapter,receipts,authorize,fingerprint})
   const stored=await receipts.loadForReconcile(scope,{requestId});
   if(!stored||stored.requestId!==requestId)return response(requestId,"not_found");
   if(stored.status==="completed")return known(requestId,stored.result);
-  if(!["prepared","attempted","unknown"].includes(stored.status)||!stored.prepared)return response(requestId,"reconciliation_required");
+  // Pre-attempt cancellation is an explicit fenced recovery operation, not a GitHub lookup.
+  if(!["attempted","unknown"].includes(stored.status)||!stored.prepared)return response(requestId,"reconciliation_required");
   const p=stored.prepared;
   if(p.requestId!==requestId||![p.parent,p.commit,p.tree,p.revision,p.expectedRevision].every(sha))throw Error("invalid_prepared");
   // Reconciliation is strictly read-only at GitHub. Authorization and atomic
