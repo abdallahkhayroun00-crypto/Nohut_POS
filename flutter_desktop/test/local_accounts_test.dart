@@ -123,6 +123,26 @@ void main() {
     expect((await auth.unlockWithPassword(l.token, 'yonetici', 'sentetik-sifre-2')).status, 'revoked');
   });
 
+  test('changing an existing PIN needs the password (an unlocked phone is not enough)', () async {
+    await seed();
+    final l = await auth.login(username: 'deniz', password: 'sentetik-sifre-2',
+        deviceId: dev1, client: 'personel');
+    await auth.setPin(l.token, 'personel', '58291'); // first PIN right after login
+    await auth.setPin(l.token, 'personel', '58291'); // still the sign-in step: allowed
+    // A password that is sent is checked even during the sign-in step.
+    await expectLater(auth.setPin(l.token, 'personel', '47302', password: 'wrong-pass'),
+        throwsA(isA<LocalAuthException>().having((e) => e.code, 'code', 'invalid_credentials')));
+    now = now.add(const Duration(minutes: 6));
+    await expectLater(auth.setPin(l.token, 'personel', '47302'),
+        throwsA(isA<LocalAuthException>().having((e) => e.code, 'code', 'password_required')));
+    await expectLater(auth.setPin(l.token, 'personel', '47302', password: 'wrong-pass'),
+        throwsA(isA<LocalAuthException>().having((e) => e.code, 'code', 'invalid_credentials')));
+    await auth.setPin(l.token, 'personel', '47302', password: 'sentetik-sifre-2');
+    now = now.add(const Duration(minutes: 31));
+    expect((await auth.unlockWithPin(l.token, 'personel', '58291')).status, 'invalid_pin');
+    expect((await auth.unlockWithPin(l.token, 'personel', '47302')).ok, isTrue);
+  });
+
   test('idle lock after 30 minutes; PIN re-entry; 5 wrong PINs need password', () async {
     await seed();
     final l = await auth.login(username: 'deniz', password: 'sentetik-sifre-2',

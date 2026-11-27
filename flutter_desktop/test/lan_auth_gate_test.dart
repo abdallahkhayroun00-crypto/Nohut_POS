@@ -206,6 +206,24 @@ void main() {
     expect(g.guard(token: token, client: 'personel', operation: 'tables.view').allowed, true);
   });
 
+  test('PIN change later needs the password; a wrong one is refused and throttled like login', () async {
+    var now = DateTime.utc(2026, 11, 27, 12);
+    final a = LocalAuth(store.authDatabase, iterations: 1000, clock: () => now);
+    final g = LanAuthGate(a, clock: () => now);
+    final login = await g.handle('POST', 'login',
+        {'username': 'ayse', 'password': 'staff-pass-1', 'deviceId': device}, ip: '10.0.0.2');
+    final token = login.setToken!;
+    expect((await g.handle('POST', 'pin', {'pin': '48291'}, token: token, ip: '10.0.0.2')).status, 200);
+    now = now.add(const Duration(minutes: 10));
+    final bare = await g.handle('POST', 'pin', {'pin': '37162'}, token: token, ip: '10.0.0.2');
+    expect(bare.body['error'], 'password_required');
+    final wrong = await g.handle('POST', 'pin', {'pin': '37162', 'password': 'nope'}, token: token, ip: '10.0.0.2');
+    expect(wrong.body['error'], 'invalid_credentials');
+    expect(wrong.status, 403); // the session stays; the page keeps the PIN form
+    final ok = await g.handle('POST', 'pin', {'pin': '37162', 'password': 'staff-pass-1'}, token: token, ip: '10.0.0.2');
+    expect(ok.status, 200);
+  });
+
   test('action to operation mapping is decided on the server', () {
     expect(LanAuthGate.operationForAction({'action': 'pay'}), 'payments.take');
     expect(LanAuthGate.operationForAction({'action': 'move'}), 'orders.move');

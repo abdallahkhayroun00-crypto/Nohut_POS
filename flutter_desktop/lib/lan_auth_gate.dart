@@ -180,7 +180,19 @@ class LanAuthGate {
           return GateReply(200, {'session': ctx.toJson()});
         case 'pin':
           if (token == null) return const GateReply(401, {'error': 'auth_required'});
-          await auth.setPin(token, client, '${body['pin'] ?? ''}');
+          if (body['password'] != null && _throttled(ip)) return const GateReply(429, {'error': 'too_many_attempts'});
+          try {
+            await auth.setPin(token, client, '${body['pin'] ?? ''}',
+                password: body['password'] == null ? null : '${body['password']}');
+          } on LocalAuthException catch (e) {
+            if (e.code == 'invalid_credentials') _fail(ip);
+            // A wrong password while changing the PIN keeps the session:
+            // 403, so the page stays on the PIN form instead of signing out.
+            if (e.code == 'invalid_credentials' || e.code == 'locked_out') {
+              return GateReply(403, {'error': e.code});
+            }
+            rethrow;
+          }
           return const GateReply(200, {'ok': true});
         case 'mfa':
           if (token == null) return const GateReply(401, {'error': 'auth_required'});
