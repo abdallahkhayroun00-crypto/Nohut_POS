@@ -17,8 +17,11 @@ class StaffHome extends StatefulWidget {
     required this.onUnpair,
     this.ownerMode = false,
     this.ownerName,
+    this.homeStyle = PersonelHomeStyle.summary,
   });
   final PersonelController controller;
+  /// Ana Sayfa layout; two alternatives await the owner's choice (relay 7226986975).
+  final PersonelHomeStyle homeStyle;
   final VoidCallback onUnpair;
   final bool ownerMode;
   final String? ownerName;
@@ -220,6 +223,8 @@ class _StaffHomeState extends State<StaffHome> {
       onOrders: () => setState(() => tab = 3),
       onWork: _openWork,
       onLogin: _login,
+      online: c.online,
+      style: widget.homeStyle,
     );
   }
 
@@ -897,7 +902,7 @@ class _StaffHomeState extends State<StaffHome> {
         };
         return Scaffold(
           appBar: AppBar(
-            toolbarHeight: height < 500 ? 56 : 75,
+            toolbarHeight: height < 500 ? 56 : 64,
             title: NohutBrandHeader(online: c.online,
               subtitle: c.online ? 'Laptop bağlı' : 'Bağlantı bekleniyor'),
             actions: [
@@ -986,7 +991,8 @@ class _StaffHomeState extends State<StaffHome> {
             Expanded(child: Column(children: [
               if (!c.online && tab != 5)
                 MaterialBanner(
-                  content: const Text('Laptop çevrimdışı · Sepet korunuyor'),
+                  content: const Text('Laptop çevrimdışı · Sepet korunuyor',
+                    style: TextStyle(fontFamily: 'Barlow', fontWeight: FontWeight.w700)),
                   actions: [TextButton(
                     onPressed: c.refresh, child: const Text('Yenile'))],
                 ),
@@ -996,15 +1002,20 @@ class _StaffHomeState extends State<StaffHome> {
             ])),
           ]),
           // Large system text: labels scale at most 1.15× so they never wrap.
-          bottomNavigationBar: wide ? null : MediaQuery.withClampedTextScaling(maxScaleFactor: 1.15, child: NavigationBar(
-            height: height < 500 ? 56 : width < 380 ? 65 : 72,
-            labelBehavior: width < 360
-              ? NavigationDestinationLabelBehavior.onlyShowSelected
-              : NavigationDestinationLabelBehavior.alwaysShow,
+          // Labels always visible (owner, relay 7226986975); narrow phones use a
+          // smaller label so five fit at 320 dp. NavigationBar keeps the
+          // system gesture area clear (bottom safe area).
+          bottomNavigationBar: wide ? null : MediaQuery.withClampedTextScaling(maxScaleFactor: 1.15, child: NavigationBarTheme(
+            data: NavigationBarTheme.of(context).copyWith(labelTextStyle: WidgetStateProperty.resolveWith((st) =>
+                TextStyle(fontFamily: 'Barlow', fontSize: width < 360 ? 11 : 12.5,
+                  fontWeight: st.contains(WidgetState.selected) ? FontWeight.w700 : FontWeight.w600))),
+            child: NavigationBar(
+            height: height < 500 ? 56 : 68,
+            labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
             selectedIndex: selectedIndex,
             onDestinationSelected: go,
             destinations: destinations,
-          )),
+          ))),
         );
       },
     );
