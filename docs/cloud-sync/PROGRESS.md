@@ -294,7 +294,7 @@ Owner decision 2026-11-27: ChatGPT builds PR-05B (cloud functions), Claude build
 
 ## Claims (edit when you start or finish)
 
-- 2026-11-28 — ChatGPT: claim independent pure catalog validation module for cloud QR publisher v2 on #49 (no network, auth/RPC/migrations remain Gemini/Codex). Live read-only diagnostic passed per owner response; no live writes. Remove temporary diagnostic secret and rotate exposed legacy service role after dependency inventory.
+- 2026-11-28 — ChatGPT: **catalog validation implemented / tested in isolation** on #49 (`ad11cd1`, `c7ad2e7`): pure `validateCatalog(candidate, previous)` strict shape, money, language, assets, campaign dates and stable identifiers. 17/17 synthetic assertions executed in the JavaScript tool runtime before committing; current public managed catalog (55/9/3) accepted by read-only validation. No production writes. Full Dart-generated draft compatibility, persisted receipt, authorization, cloud publisher and CI remain pending; independent review required. Live read-only diagnostic passed per owner response; remove temporary diagnostic secret and rotate exposed legacy service role after dependency inventory.
 
 | Item | Agent | Since | PR |
 |---|---|---|---|
