@@ -6,6 +6,7 @@ import 'expense_drafts.dart';
 import 'models.dart';
 import 'pos_api.dart';
 import 'style.dart';
+import 'work_page.dart';
 
 class StaffHome extends StatefulWidget {
   const StaffHome({
@@ -146,6 +147,9 @@ class _StaffHomeState extends State<StaffHome> {
     note.dispose();
     removed.dispose();
   }
+
+  void _openWork() => Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => WorkPage(api: c.api)));
 
   String _signedInLabel() {
     final id = c.api.sessionEmployeeId;
@@ -746,16 +750,24 @@ class _StaffHomeState extends State<StaffHome> {
               if (widget.ownerMode)
                 Padding(padding: const EdgeInsets.symmetric(horizontal: 6),
                   child: Center(child: Text(widget.ownerName ?? 'İşletme sahibi', overflow: TextOverflow.ellipsis)))
-              else if (c.api.signedIn)
+              else if (c.api.signedIn) ...[
+                if (c.api.sessionEmployeeId != null)
+                  IconButton(tooltip: 'Mesai ve Maaşım', onPressed: _openWork,
+                    icon: const Icon(Icons.badge_outlined)),
                 PopupMenuButton<String>(
                   tooltip: 'Hesabım',
                   onSelected: (v) async {
+                    if (v == 'work') _openWork();
                     if (v == 'logout') {
                       await c.api.logout();
                       if (mounted) setState(() {});
                     }
                   },
-                  itemBuilder: (_) => const [PopupMenuItem(value: 'logout', child: Text('Çıkış Yap'))],
+                  itemBuilder: (_) => [
+                    if (c.api.sessionEmployeeId != null)
+                      const PopupMenuItem(value: 'work', child: Text('Mesai ve Maaşım')),
+                    const PopupMenuItem(value: 'logout', child: Text('Çıkış Yap')),
+                  ],
                   child: Padding(padding: const EdgeInsets.symmetric(horizontal: 8),
                     child: Row(mainAxisSize: MainAxisSize.min, children: [
                       const Icon(Icons.verified_user_outlined, size: 20),
@@ -763,7 +775,8 @@ class _StaffHomeState extends State<StaffHome> {
                       ConstrainedBox(constraints: BoxConstraints(maxWidth: wide ? 180 : 96),
                         child: Text(_signedInLabel(), overflow: TextOverflow.ellipsis)),
                     ])),
-                )
+                ),
+              ]
               else if (c.api.loginRequired)
                 Padding(padding: const EdgeInsets.symmetric(horizontal: 6),
                   child: FilledButton.tonal(onPressed: _login, child: const Text('Giriş Yap')))

@@ -13,9 +13,9 @@ Status words: Verified · Implemented (not yet verified end-to-end) · Partial �
 | Authentication, sessions, PIN lock | Verified | Not yet audited | Not yet audited | Not yet audited | Not yet audited | Verified | Verified | Server gate audited (LAN). Cloud A2 pending (Codex #39). |
 | Identity bound to session | — | Not yet audited | Not yet audited | Not yet audited | Not yet audited | Verified | Verified | Fixed D-01, D-02 below. |
 | Employee profiles / roles / payroll eligibility | Verified | — | Not yet audited | — | Not yet audited | — | Verified (API) | D-04…D-07 fixed. |
-| Vardiya (planned shifts) | Not available | Not yet audited | Not yet audited | Not yet audited | Not yet audited | Verified | Partial (view only) | Manager editing others in UI pending. |
-| Mesai (actual hours) + weekly submission | Not available | Not yet audited | Not yet audited | Not yet audited | Not yet audited | Verified | Verified (team view) | Windows screen pending. |
-| Payroll (rates, ledger, statuses) | Partial (rate + eligibility in Personel; ledger in finance totals) | — | Not yet audited | — | Not yet audited | Verified (own pay only) | Verified | Android/cloud projection = Codex. |
+| Vardiya (planned shifts) | Not available | Implemented (LAN; widget tests) | Not yet audited | Not yet audited | Not yet audited | Verified | Partial (view only) | Manager editing others in UI pending. |
+| Mesai (actual hours) + weekly submission | Not available | Implemented (LAN; widget tests) | Not yet audited | Not yet audited | Not yet audited | Verified | Verified (team view) | Windows screen pending. |
+| Payroll (rates, ledger, statuses) | Partial (rate + eligibility in Personel; ledger in finance totals) | Implemented (own pay only, LAN; widget tests) | Not yet audited | — | Not yet audited | Verified (own pay only) | Verified | Android/cloud projection = Codex. |
 | Payroll reminders | Verified (domain) | Not yet audited | Not yet audited | Not yet audited | Not yet audited | Verified (feed) | Verified (feed) | Push (FCM) not approved. |
 | Hızlı Gider Ekle | Verified | — | Implemented | — | Not yet audited | — | Verified | |
 | Gün Sonu Raporu | Verified (domain) | — | Not yet audited | — | Not yet audited | — | Verified | |
@@ -72,6 +72,7 @@ Gemini review pass 2 (comment 7223539958):
 | D-25 | Order deletion speed (QA-12, part) | Cashier | `deleteOrder` decoded every command receipt inside the write lock (O(N)) | Indexed lookup by order id; old databases backfilled once | Medium (performance) | `command_receipts.order_id/result_order_id` + indexes | `terminal_delete_guard_test` "QA-12…", full suite | — |
 | D-26 | Personel browser polling (QA-12, part) | Personel | State refresh every 5 s even when the tab is hidden | Paused while hidden; refreshes on return | Low | `staff.html` | — | — |
 | D-27 | Staff product payment (O-11) | Personel | `payProducts` had no automated test; its `productPaymentId`/`productReceipt` fields were not registered for sync | Tested: collector id, stable id, receipt summary, retry adds no second row; fields registered | Medium (coverage) | `sync_field_paths.g.dart`, `data-inventory.md` | `terminal_delete_guard_test` "O-11…" | — |
+| D-28 | Android Personel Mesai / Vardiya / Maaş (was O-09) | Personel | No native screens; only the browser app had them | Native Flutter screens (no WebView) on the same `/api/work/*` server rules: own week from the session, manual hours with native date/time pickers, edit and void with reason, weekly submission that never blocks corrections, own plans with repeat and copy-week, team schedule, own rate/earned/paid/remaining/status and payment history; owner or anyone not on payroll sees no money; a write retried after a lost connection keeps its request id | High (parity) | `flutter_personel/lib/work_page.dart`, `pos_api.dart` `work()`, entry in `home.dart` (badge icon + Hesabım menu) | `work_page_test` (7: no employee id sent, retry same id, acceptance numbers 1.760/800/960 Kısmen Ödendi, not-on-payroll, 320 px + 130 % text without overflow) | Emulator capture added to `integration_test/screens_test.dart` (pending CI run) |
 
 Owner acceptance example (8 h × 100 TL + 8 h × 120 TL = 1.760 TL; pay 800 → Kısmen Ödendi, kalan 960; pay 960 → Ödendi; later raise not retroactive): **Verified** in `payroll_test` and in a rendered LAN run (Yönetici records 800 TL Nakit → Kısmen Ödendi, kalan 960,00 ₺; Personel sees the same numbers).
 
@@ -86,7 +87,6 @@ Owner acceptance example (8 h × 100 TL + 8 h × 120 TL = 1.760 TL; pay 800 → 
 | O-05 | No emulator/APK screenshots in this cycle | — | Android audit pass |
 | O-06 | Independent review: Gemini passes 1–3 on PR #44 (comments 7223333964, 7223539958, 7223725943, 7223945667); Claude-owned findings verified resolved on 4249b9e by the reviewer | — | Done for this PR |
 | O-07 | Android Personel APK has no individual login yet; it still shows an employee picker (legacy shared mode). With *Bireysel giriş zorunlu* on, its writes are now refused (401) until it signs in | High (parity) | Native login + 5-digit PIN in the APK (W6/A2) |
-| O-09 | Android Personel APK has no Mesai, Vardiya or own-pay screens yet (browser app has them) | High (parity) | Native screens |
 | O-10 | `sync_outbox` partial index on pending rows (QA-12, part) | Low (performance) | Codex (sync owner, #39) |
 | O-08 | An old Yönetici APK compares the owner name with "Ömer Yılmaz"; after linking the owner account to a differently named profile it needs the new APK from CI | Medium (upgrade) | Install the APK built from #44 |
 

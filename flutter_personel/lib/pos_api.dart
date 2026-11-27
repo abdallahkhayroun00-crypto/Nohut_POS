@@ -205,6 +205,26 @@ class NohutApi {
     return result;
   }
 
+  /// `/api/work/*` (Vardiya, Mesai, own pay). Needs an individual session;
+  /// the server decides whose week it is. Returns the status with the body
+  /// so the screen can tell an overlap warning (409) from a hard error.
+  Future<(int, Json)> work(String method, String path,
+      {Map<String, String>? query, Json? body}) async {
+    if (!paired) throw const FormatException('Önce cihazı eşleştirin.');
+    final uri = Uri.parse(host!).replace(path: '/api/work/$path',
+        queryParameters: {'client': 'personel', ...?query});
+    final response = method == 'GET'
+        ? await _client.get(uri, headers: _headers()).timeout(const Duration(seconds: 8))
+        : await _client.post(uri, headers: _headers(json: true),
+            body: jsonEncode({'client': 'personel', ...?body})).timeout(const Duration(seconds: 12));
+    final data = jsonDecode(utf8.decode(response.bodyBytes));
+    final result = data is Map ? Map<String, dynamic>.from(data) : <String, dynamic>{};
+    if (response.statusCode == 401) {
+      throw const FormatException('Giriş gerekli. Kullanıcı adınızla giriş yapın.');
+    }
+    return (response.statusCode, result);
+  }
+
   Future<Json> bootstrap() async {
     try {
       final data = await _jsonRequest('/api/mobile/bootstrap');
