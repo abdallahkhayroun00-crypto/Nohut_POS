@@ -15,6 +15,7 @@ import 'pos_store.dart';
 import 'qr_menu_draft.dart';
 import 'qr_menu_reader.dart';
 import 'qr_menu_sync.dart';
+import 'qr_menu_preview.dart';
 import 'qr_image_crops.dart';
 import 'qr_publisher_client.dart';
 import 'qr_publisher_service.dart';
@@ -1103,7 +1104,8 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
           case 'preview':review();
           case 'check':connect();
           case 'discard':discardDraft();
-          case 'sync':widget.sync?.syncNow();say('POS menüsü QR menüden eşitleniyor.');
+          case 'sync':widget.sync?.syncNow();
+          case 'sync-settings':syncSettings();
           case 'setup':setupHelp();
         }
       },
@@ -1111,11 +1113,66 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
         const PopupMenuItem(value:'check',child:Text('Bağlantıyı Test Et')),
         PopupMenuItem(value:'discard',enabled:hasDraft&&pending==null,
           child:const Text('Taslağı At ve GitHub’dan Yükle')),
-        if(widget.sync!=null)const PopupMenuItem(value:'sync',child:Text('POS Menüsünü Eşitle')),
+        if(widget.sync!=null)...[
+          const PopupMenuItem(value:'sync-settings',child:Text('Eşitleme Ayarları')),
+          PopupMenuItem(value:'sync',enabled:widget.state['settings']?['qrAutoSync']!=false&&!widget.sync!.busy,
+            child:const Text('Şimdi Eşitle')),
+        ],
         const PopupMenuItem(value:'setup',child:Text('Yayınlama Kurulumu')),
       ],
       child:const Padding(padding:EdgeInsets.all(8),child:Icon(Icons.more_horiz)),
     );
+  }
+
+  Future<void> syncSettings() async {
+    final sync=widget.sync;
+    if(sync==null)return;
+    var enabled=widget.state['settings']?['qrAutoSync']!=false;
+    var localSearch='';
+    await showDialog<void>(context:context,builder:(d)=>StatefulBuilder(
+      builder:(d,refresh)=>AlertDialog(
+        title:const Text('Eşitleme Ayarları'),
+        content:SizedBox(width:560,child:SingleChildScrollView(
+          child:Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[
+            QrMenuSyncPanel(sync:sync,enabled:enabled,onToggle:(v){
+              final saved=widget.edit((s){
+                (s.putIfAbsent('settings',()=> <String,dynamic>{}) as Map)['qrAutoSync']=v;
+              });
+              if(!saved)return;
+              refresh(()=>enabled=v);
+              if(v)unawaited(sync.syncNow());
+            }),
+            if(!enabled)ExpansionTile(
+              title:const Text('Yalnızca POS · Yerel fiyatlar'),
+              subtitle:const Text('QR menüyü veya eski siparişleri değiştirmez.'),
+              children:[
+                TextField(decoration:const InputDecoration(labelText:'Yerel ürün ara'),
+                  onChanged:(v)=>refresh(()=>localSearch=v)),
+                for(final p in asMaps(widget.store.read().data['localMenu']).where(
+                  (p)=>'${p['name']}'.toLowerCase().contains(localSearch.toLowerCase())))
+                  ListTile(title:Text('${p['name']}'),
+                    subtitle:Text(p['price']==null?'Satış dışı':formatTry(cents(p['price']))),
+                    trailing:IconButton(tooltip:'Yerel Fiyatı Düzenle',
+                      icon:const Icon(Icons.edit_outlined),onPressed:() async {
+                        final v=await askFields(d,'Yerel Ürün Fiyatı',[
+                          ('Fiyat ₺ (boş = satış dışı)','${p['price']??''}'),
+                        ]);
+                        if(v==null||!mounted||!d.mounted)return;
+                        final saved=widget.edit((s){
+                          if(s['settings']?['qrAutoSync']!=false){
+                            throw const FormatException('Otomatik eşitleme açık.');
+                          }
+                          final row=(s['localMenu'] as List).cast<Map>()
+                            .firstWhere((x)=>x['id']==p['id']);
+                          row['price']=v[0].isEmpty?null:fromCents(parseMoney(v[0]));
+                        });
+                        if(saved)refresh((){});
+                      })),
+              ]),
+          ]))),
+        actions:[FilledButton(onPressed:()=>Navigator.pop(d),child:const Text('Kapat'))],
+      )));
+    if(mounted)setState((){});
   }
 
   Future<void> setupHelp()=>showDialog<void>(context:context,builder:(d)=>AlertDialog(
@@ -1203,6 +1260,18 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
               key:const ValueKey('qr-fact-changes'),
               tone:changeCount==0?null:const Color(0xFFB07A12)),
             _fact('Bağlantı',linkText,key:const ValueKey('qr-fact-link'),tone:linkTone),
+            if(widget.sync!=null)AnimatedBuilder(animation:widget.sync!,builder:(context,_){
+              final sync=widget.sync!;
+              final enabled=widget.state['settings']?['qrAutoSync']!=false;
+              final label=!enabled?'Kapalı':sync.busy?'Eşitleniyor…':sync.lastError!=null
+                ?'Hata · yerel menü korunuyor':sync.lastSuccessAtUtc==null
+                ?'İlk kontrol bekleniyor':'Etkin · 10 dk.';
+              return _fact('POS eşitleme',label,key:const ValueKey('qr-fact-sync'),
+                tone:enabled&&sync.lastError!=null?cs.error:null);
+            }),
+            if(widget.sync!=null)AnimatedBuilder(animation:widget.sync!,builder:(context,_)=>
+              _fact('Son başarılı eşitleme',_time(widget.sync!.lastSuccessAtUtc),
+                key:const ValueKey('qr-fact-sync-time'))),
           ]),
           if(diagnosis!=null)Padding(padding:const EdgeInsets.only(top:10),
             child:_repairCard(diagnosis!)),
