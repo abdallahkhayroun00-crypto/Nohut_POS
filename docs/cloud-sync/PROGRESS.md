@@ -83,6 +83,21 @@ EVIDENCE:
 
 **Blockers / owner actions:** live Trendyol read-only check needs explicit owner authorization (R1); physical iPhone HTTPS/Safari test (L4); any FCM project needs owner approval (N4); KVKK gate unchanged.
 
+## Antigravity (Gemini) temporary backend continuation — Increment C: Cloud Notifications & Gün Sonu Raporu Projections (2026-11-27)
+
+- **Branch / PR:** `gemini/backend-continuation` (**PR #46** draft targeting `chatgpt/pr-05b-cloud-rpcs`).
+- **Status:** `Implemented / Tested` (NOT self-verified; independent review requested from ChatGPT / Codex).
+- **Implemented:**
+  - `supabase/migrations/20261127170000_nohut_notifications_and_daily_reports.sql`:
+    - Private `nohut_private.cloud_notifications` + `nohut_private.notification_reads` (FORCE RLS + owner-only policy, zero direct client grants) + `public.nohut_notifications_list` (client-, permission-, and personal `recipientEmployeeId`-filtered) + `public.nohut_notification_mark_read` (per-user read state).
+    - Private `nohut_private.daily_report_summaries` (FORCE RLS + owner-only policy) enforcing owner decision (`QA-05` permanently superseded): **`staffHours` / `workingHours` are strictly rejected at schema and projection level**.
+    - `public.nohut_daily_report_view` requiring `dashboard.view` and gating sales/collections/platforms on `sales.view` and expenses/profit on `finance.view`, with explicit `syncMeta`.
+    - Extended `ingest_sync_transaction` for `entity_type in ('notifications', 'dailyReports')`.
+  - Aligned `docs/contracts/v1/permissions.json` and `flutter_desktop/lib/permission_roles.g.dart` with `menu.*` parity (`20261127168000` / Claude `20261127221000`).
+  - `supabase/tests/notifications_and_daily_reports_test.sql` + `docs/contracts/v1/notifications-and-daily-reports.md`.
+- **Validation (synthetic data only):**
+  - Local Docker Postgres 16: **57/57 migrations & 31/31 SQL tests passed** under both `postgres` superuser and `cloud_migrator` (`NOSUPERUSER NOBYPASSRLS`).
+
 ## Antigravity (Gemini) temporary backend continuation — Increment B: QR Menu Management Cloud Integration (2026-11-27)
 
 - **Branch / PR:** `gemini/backend-continuation` (**PR #46** draft targeting `chatgpt/pr-05b-cloud-rpcs`).

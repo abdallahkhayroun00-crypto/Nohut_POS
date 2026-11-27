@@ -4,12 +4,12 @@
 /// Operation id → role templates that receive it by default.
 const Map<String, List<String>> permissionRoleDefaults = {
   'menu.view': ['Personel', 'Müdür', 'Yönetici', 'Muhasebe'],
-  'menu.product.edit': ['Müdür', 'Yönetici'],
-  'menu.price.edit': ['Yönetici'],
-  'menu.category.edit': ['Müdür', 'Yönetici'],
-  'menu.campaign.edit': ['Yönetici'],
+  'menu.product.edit': ['Personel', 'Müdür', 'Yönetici'],
+  'menu.price.edit': ['Personel', 'Müdür', 'Yönetici'],
+  'menu.category.edit': ['Personel', 'Müdür', 'Yönetici'],
+  'menu.campaign.edit': ['Personel', 'Müdür', 'Yönetici'],
   'menu.stock.toggle': ['Personel', 'Müdür', 'Yönetici'],
-  'menu.qr.publish': ['Yönetici'],
+  'menu.qr.publish': ['Personel', 'Müdür', 'Yönetici'],
   'sync.view': ['Müdür', 'Yönetici'],
   'sync.manual': ['Müdür', 'Yönetici'],
   'sync.retry': ['Müdür', 'Yönetici'],
