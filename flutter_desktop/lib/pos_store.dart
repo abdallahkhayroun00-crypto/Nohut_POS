@@ -88,6 +88,14 @@ class PosStore extends ChangeNotifier {
     _db.execute(
       'CREATE TABLE IF NOT EXISTS deleted_requests (request_id TEXT PRIMARY KEY)',
     );
+    // Phase 5D: remote actions with external side effects (delivery
+    // platforms). The attempt is recorded BEFORE the external call, so an
+    // interrupted call is never blindly repeated (spec §11.2).
+    _db.execute(
+      'CREATE TABLE IF NOT EXISTS platform_command_attempts ('
+      'request_id TEXT PRIMARY KEY, payload_sha256 TEXT NOT NULL, '
+      'state TEXT NOT NULL, result TEXT NOT NULL, updated_at TEXT NOT NULL)',
+    );
     // Spec V5.1 §4.4: local backup history (additive; never pruned).
     _db.execute('''
       CREATE TABLE IF NOT EXISTS backup_history(
@@ -560,6 +568,39 @@ class PosStore extends ChangeNotifier {
       _db.execute('ROLLBACK');
       rethrow;
     }
+  }
+
+  /// Phase 5D: the stored attempt for [requestId], if any.
+  Map<String, Object?>? platformAttempt(String requestId) {
+    final rows = _db.select(
+      'SELECT payload_sha256,state,result FROM platform_command_attempts WHERE request_id=?',
+      [requestId],
+    );
+    if (rows.isEmpty) return null;
+    final r = rows.single;
+    return {
+      'payload_sha256': r['payload_sha256'],
+      'state': r['state'],
+      'result': jsonDecode(r['result'] as String),
+    };
+  }
+
+  /// Records `processing` before the external call. Returns false when an
+  /// attempt already exists (the caller must then use [platformAttempt]).
+  bool beginPlatformAttempt(String requestId, String payloadSha256) {
+    _db.execute(
+      'INSERT OR IGNORE INTO platform_command_attempts(request_id,payload_sha256,state,result,updated_at) '
+      "VALUES(?,?,'processing','{}',?)",
+      [requestId, payloadSha256, DateTime.now().toUtc().toIso8601String()],
+    );
+    return _db.updatedRows == 1;
+  }
+
+  void finishPlatformAttempt(String requestId, String state, Map<String, dynamic> result) {
+    _db.execute(
+      'UPDATE platform_command_attempts SET state=?,result=?,updated_at=? WHERE request_id=?',
+      [state, jsonEncode(result), DateTime.now().toUtc().toIso8601String(), requestId],
+    );
   }
 
   void recordBackupHistory({
