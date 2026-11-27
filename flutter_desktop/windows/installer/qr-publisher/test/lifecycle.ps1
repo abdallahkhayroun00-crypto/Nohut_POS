@@ -43,6 +43,16 @@ $health = Wait-Health
 $expected = [regex]::Match((Get-Content -LiteralPath (Join-Path $root 'server.mjs') -Raw), "const VERSION='([^']+)'").Groups[1].Value
 if ($health.version -ne $expected) { throw "Version $($health.version) != $expected" }
 if ((Get-Status).state -ne 'running') { throw "Status should be running: $((Get-Status).state)" }
+# The Windows shell Startup path may be absent or belong to the runner's real
+# profile. The launcher must create the shortcut only in our disposable profile.
+$startup = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Startup'
+$shortcut = Join-Path $startup 'Nohut QR Publisher.lnk'
+if (-not (Test-Path -LiteralPath $shortcut -PathType Leaf)) { throw 'Isolated Startup shortcut missing' }
+$shortcutInfo = (New-Object -ComObject WScript.Shell).CreateShortcut($shortcut)
+if ($shortcutInfo.Arguments -notmatch '-NoPrompt' -or $shortcutInfo.Arguments -notmatch '-WindowStyle Hidden' -or $shortcutInfo.WorkingDirectory -ne $root) {
+  throw 'Startup shortcut must launch the bundled publisher hidden and without prompts'
+}
+Write-Host 'OK isolated Startup shortcut'
 if (-not (Test-Path -LiteralPath (Join-Path $service 'github-app-private-key.pem'))) { throw 'Key not copied to protected folder' }
 Add-Type -AssemblyName System.Security
 $vault = Join-Path $env:APPDATA 'NohutFalafel\qr-publisher-credentials.dpapi'
