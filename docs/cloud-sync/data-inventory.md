@@ -142,6 +142,7 @@ Fields:
 | Printing policy | `autoPrint`, `autoPrintEnabledAt`, `receiptPolicy` (legacy), `receiptPolicyVersion` | INTERNAL | business setting |
 | Platform | `platformDeductionRates`, `tgoKitchenTiming` (legacy), `storeId`, `supplierId`, `acceptFlow`, `open`, `connection`, `cursor`, `lastSync` | INTERNAL | business setting (credentials are NOT here; see §5) |
 | Alerts / QR | `onlineOrderSound`, `soundAlerts`, `qrAutoSync`, `migrated` | INTERNAL | business setting |
+| Gün Sonu Raporu (§24.7) | `dailyReport` {enabled, time, weekdays, dates} | INTERNAL | business setting (closing time per weekday / special date) |
 
 ---
 

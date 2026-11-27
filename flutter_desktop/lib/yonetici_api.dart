@@ -11,6 +11,7 @@
 /// — spec §23.4.7 asks for a trusted-HTTPS check on a physical iPhone first.
 library;
 
+import 'daily_report.dart';
 import 'finance_sync_server.dart';
 import 'lan_auth_gate.dart';
 import 'local_accounts.dart';
@@ -69,6 +70,16 @@ class YoneticiApi {
             'session': ctx.toJson(),
             'financeAllowed': financeAllowed(secure: secure),
           });
+        case ('GET', 'daily'):
+          // §24.7 Gün Sonu Raporu: counts for dashboard.view; amounts need
+          // sales.view (+ finance.view for expenses) and the finance gate.
+          final d = _guard(token, 'dashboard.view');
+          if (!d.allowed) return GateReply(d.status, {'error': d.error});
+          final ctx = d.context!;
+          final money = financeAllowed(secure: secure) && _can(ctx, 'sales.view');
+          final report = buildDailyReport(store.read().data, '${query['day'] ?? ''}');
+          return GateReply(200, {'report': redactDailyReport(report,
+              money: money, expenses: _can(ctx, 'finance.view'))});
         case ('GET', 'month'):
           final d = _guard(token, 'finance.view');
           if (!d.allowed) return GateReply(d.status, {'error': d.error});

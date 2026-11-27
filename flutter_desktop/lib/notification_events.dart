@@ -7,6 +7,7 @@
 /// Notifications are never confirmation of an order or payment.
 library;
 
+import 'daily_report.dart' show dailyReportEvent;
 import 'local_accounts.dart';
 import 'notification_center.dart';
 import 'pos_logic.dart';
@@ -26,6 +27,7 @@ const Map<String, NotificationCategory> notificationCategories = {
   'menu.availability': (label: 'Ürün stok durumu değişti', severity: 'low', permission: 'menu.view', clients: ['windows', 'personel', 'yonetici'], windowsOnly: false),
   'shift': (label: 'Vardiya başladı/bitti, düzeltme', severity: 'normal', permission: 'shifts.manage', clients: ['windows', 'yonetici'], windowsOnly: false),
   'payroll': (label: 'Maaş, prim, avans, ödeme', severity: 'normal', permission: 'payroll.view', clients: ['windows', 'yonetici'], windowsOnly: false),
+  'report.daily': (label: 'Gün sonu raporu hazır', severity: 'normal', permission: 'sales.view', clients: ['windows', 'yonetici'], windowsOnly: false),
   'review': (label: 'Yeni platform / Google yorumu', severity: 'normal', permission: 'reviews.reply', clients: ['windows', 'yonetici'], windowsOnly: false),
   'pos.unavailable': (label: 'Windows POS erişilemiyor', severity: 'high', permission: null, clients: ['personel', 'yonetici'], windowsOnly: false),
   'command.failed': (label: 'Uzak komut başarısız / bekliyor', severity: 'high', permission: 'online.act', clients: ['windows', 'yonetici'], windowsOnly: false),
@@ -93,8 +95,13 @@ List<String> recordOperationalNotifications(PosStore store, {DateTime Function()
   final now = (clock ?? DateTime.now)().toUtc();
   final snap = store.read();
   final known = {for (final r in asMaps(snap.data[notificationsStateKey])) '${r['eventId']}'};
+  final daily = dailyReportEvent(snap.data, now);
   final fresh = [
-    for (final e in deriveOperationalEvents(snap.data))
+    for (final e in [
+      ...deriveOperationalEvents(snap.data),
+      if (daily != null) {...daily, 'severity': notificationCategories['report.daily']!.severity,
+        'permission': notificationCategories['report.daily']!.permission},
+    ])
       if (!known.contains(e['eventId'])) () {
         final at = DateTime.tryParse('${e['createdAt']}');
         final stale = at == null ? false : now.difference(at) > notificationFreshness;

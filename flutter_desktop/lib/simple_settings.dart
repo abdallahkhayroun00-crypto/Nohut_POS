@@ -1,4 +1,5 @@
 
+import 'daily_report_ui.dart';
 import 'package:flutter/material.dart';
 
 import 'brand.dart';
@@ -290,6 +291,9 @@ class _SimpleSettingsState extends State<SimpleSettings> {
               'Yeni siparişler, yazdırma ve ödeme uyarıları, yorumlar. Bildirimler sipariş veya ödeme onayı değildir.',
               [widget.notificationHistory!]),
         if (tab == 'Bildirimler') ...[
+          section('Gün Sonu Raporu',
+              'Kapanış saatinde Yönetici uygulamasına günün özeti. Varsayılan 21:30; gün ve tatile göre değiştirilebilir.',
+              [DailyReportSettings(state: widget.state, edit: widget.edit)]),
           section('Masa / Gel-Al Sesleri',
             'Personel siparişleri online platformlardan bağımsızdır.', [
             SwitchListTile.adaptive(

@@ -138,6 +138,17 @@
       "windowsOnly": false
     },
     {
+      "id": "report.daily",
+      "label": "Gün sonu raporu hazır",
+      "severity": "normal",
+      "permission": "sales.view",
+      "clients": [
+        "windows",
+        "yonetici"
+      ],
+      "windowsOnly": false
+    },
+    {
       "id": "review",
       "label": "Yeni platform / Google yorumu",
       "severity": "normal",
