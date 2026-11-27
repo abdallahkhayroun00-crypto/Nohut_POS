@@ -294,6 +294,8 @@ Owner decision 2026-11-27: ChatGPT builds PR-05B (cloud functions), Claude build
 
 ## Claims (edit when you start or finish)
 
+- 2026-11-28 — ChatGPT: claim independent pure catalog validation module for cloud QR publisher v2 on #49 (no network, auth/RPC/migrations remain Gemini/Codex). Live read-only diagnostic passed per owner response; no live writes. Remove temporary diagnostic secret and rotate exposed legacy service role after dependency inventory.
+
 | Item | Agent | Since | PR |
 |---|---|---|---|
 | PR-04 hardening: extra outbox tests; refuse enabling the outbox on a legacy database | Claude Code | 2026-11-27 | this PR |
