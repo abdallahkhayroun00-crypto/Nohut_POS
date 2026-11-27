@@ -53,7 +53,7 @@ jobs:
           run_pg -U postgres -d nohut_synthetic -c 'create database nohut_cloud_plain owner cloud_migrator'
           run_pg -U postgres -d nohut_cloud_plain < supabase/ci/supabase_auth_stub.sql
           for f in supabase/migrations/*.sql; do run_pg -U cloud_migrator -d nohut_cloud_plain < "$f"; done
-          for f in command_queue_test employee_ingest_test sync_validation_test authorized_enqueue_test authorized_claim_test command_canonical_json_test; do
+          for f in command_queue_test employee_ingest_test sync_validation_test authorized_enqueue_test authorized_claim_test command_canonical_json_test windows_agent_test; do
             run_pg -U cloud_migrator -d nohut_cloud_plain < "supabase/tests/$f.sql"
           done
           echo 'PASS: private cloud functions as plain migration owner' >> "$GITHUB_STEP_SUMMARY"

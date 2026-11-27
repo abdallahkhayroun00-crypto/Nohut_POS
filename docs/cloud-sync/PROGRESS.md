@@ -120,3 +120,5 @@ PR #39 adds `claim_authorized_commands`: rechecks session/device/permission vers
 PR #39 canonical command hash now generated server-side from sorted JSON, safe integer amounts, booleans, strings, null, and nested lists/objects. Fractional/unsafe numbers and supplementary-codepoint object keys fail closed. Customer contact fields rejected at enqueue; only pickup time is allowed. This is a deliberately restricted contract until action-specific validation and cross-runtime QA are complete.
 
 Integrated #41 and added narrowly scoped migration-owner RLS policies for the private queue/employee ingest and a disposable non-BYPASSRLS CI test. All new results pending. No phone grants or production deployment. Supabase migration versions remain distinct.
+
+PR #39: added private Windows agent enrollment, 30-day opaque hashed credential rotation/revocation and tenant/epoch-derived ingest/claim/complete/checkpoint wrappers. Enrollment requires active manager owner session and MFA; changing PC requires a new epoch. The 30-day lifetime is a proposed engineering default, not deployed. TLS API, DPAPI client storage, agent recovery and all new CI results remain pending.
