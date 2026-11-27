@@ -47,6 +47,9 @@ Native Android architecture check (2026-11-27): `flutter_personel/pubspec.yaml` 
 | D-11 | Personel own payment history | Personel | Not shown | Own payments only | Medium | `/api/work/week` adds own `payments` | — | Playwright: "Ödeme geçmişim" |
 | D-12 | Overdue label | Manager | "gecikti" on weeks whose amount is unknown | Only when money is actually outstanding | Low | `payrollStatus.overdue` | `payroll_test` | Rendered |
 
+| D-13 | Android Personel orders/actions (`/api/mobile/*`) | Personel | A paired device sent any `staffId`; the path ignored *Bireysel giriş zorunlu* | Same gate as the browser app: individual session required when enforced; session fixes the employee | Critical (security) | `lan_server.dart` mobile branch uses `_guard` + `withIdentity` | `lan_auth_gate_test` "Android paired-device writes…" | — |
+| D-14 | Android Yönetici owner identity | Owner | Owner found by the hardcoded name "Ömer Yılmaz" (Windows, server and APK) | Owner = profile linked to the owner account; name from that profile; legacy name accepted only while no owner is linked (upgrade safety) | High (data integrity) | `FinanceSyncServer.owner(ownerIds:)`, APK shows `ownerName` from Windows, Windows labels say "İşletme sahibi" | `owner_identity_test` | — |
+
 Owner acceptance example (8 h × 100 TL + 8 h × 120 TL = 1.760 TL; pay 800 → Kısmen Ödendi, kalan 960; pay 960 → Ödendi; later raise not retroactive): **Verified** in `payroll_test` and in a rendered LAN run (Yönetici records 800 TL Nakit → Kısmen Ödendi, kalan 960,00 ₺; Personel sees the same numbers).
 
 ## 3. Open findings (not yet fixed)
@@ -59,6 +62,8 @@ Owner acceptance example (8 h × 100 TL + 8 h × 120 TL = 1.760 TL; pay 800 → 
 | O-04 | Order, payment, refund, receipt, analytics modules not re-audited in this cycle | — | Next audit pass |
 | O-05 | No emulator/APK screenshots in this cycle | — | Android audit pass |
 | O-06 | No independent review yet | — | Request on PR #44 |
+| O-07 | Android Personel APK has no individual login yet; it still shows an employee picker (legacy shared mode). With *Bireysel giriş zorunlu* on, its writes are now refused (401) until it signs in | High (parity) | Native login + 5-digit PIN in the APK (W6/A2) |
+| O-08 | An old Yönetici APK compares the owner name with "Ömer Yılmaz"; after linking the owner account to a differently named profile it needs the new APK from CI | Medium (upgrade) | Install the APK built from #44 |
 
 ## 4. Physical-device tests required from the owner
 

@@ -11,10 +11,12 @@ class StaffHome extends StatefulWidget {
     required this.controller,
     required this.onUnpair,
     this.ownerMode = false,
+    this.ownerName,
   });
   final PersonelController controller;
   final VoidCallback onUnpair;
   final bool ownerMode;
+  final String? ownerName;
 
   @override
   State<StaffHome> createState() => _StaffHomeState();
@@ -664,8 +666,8 @@ class _StaffHomeState extends State<StaffHome> {
               subtitle: c.online ? '● Laptop bağlı' : '● Bağlantı bekleniyor'),
             actions: [
               if (widget.ownerMode)
-                const Padding(padding: EdgeInsets.symmetric(horizontal: 6),
-                  child: Center(child: Text('Ömer Yılmaz', overflow: TextOverflow.ellipsis)))
+                Padding(padding: const EdgeInsets.symmetric(horizontal: 6),
+                  child: Center(child: Text(widget.ownerName ?? 'İşletme sahibi', overflow: TextOverflow.ellipsis)))
               else if (selected != null || c.employees.isNotEmpty)
                 SizedBox(width: wide ? 170 : width < 360 ? 88 : 110,
                   child: DropdownButton<int>(

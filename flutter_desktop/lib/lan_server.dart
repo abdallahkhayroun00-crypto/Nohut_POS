@@ -39,7 +39,8 @@ class PosLanServer extends ChangeNotifier {
   final bool Function()? platformWritable;
   final GoogleBusiness Function()? googleProvider;
   late final MobilePairing pairing = MobilePairing(store);
-  late final FinanceSyncServer financeSync = FinanceSyncServer(store, staffProjection: _staffState, googleProvider: googleProvider);
+  late final FinanceSyncServer financeSync = FinanceSyncServer(store, staffProjection: _staffState,
+      googleProvider: googleProvider, ownerEmployeeIds: () => authGate?.auth.ownerEmployeeIds() ?? const []);
   HttpServer? _server;
   RawDatagramSocket? _discovery;
   String? error;
@@ -624,10 +625,16 @@ class PosLanServer extends ChangeNotifier {
         final Json result;
         if (resource == '/api/mobile/pair') {
           result = pairing.pair(addr, decoded);
-        } else if (resource == '/api/mobile/orders') {
-          result = submitStaffOrder(store, decoded);
         } else {
-          result = submitStaffAction(store, decoded);
+          // A paired device is not a person. The same gate as the browser
+          // app applies: with Bireysel giriş zorunlu an individual session
+          // is required, and a session always fixes the acting employee.
+          final isOrder = resource == '/api/mobile/orders';
+          final decision = _guard(request,
+              isOrder ? 'orders.create' : LanAuthGate.operationForAction(decoded));
+          if (decision == null) return;
+          final acting = LanAuthGate.withIdentity(decoded, decision.context);
+          result = isOrder ? submitStaffOrder(store, acting) : submitStaffAction(store, acting);
         }
         _json(request.response, 200, result);
       } on StaffConflict {

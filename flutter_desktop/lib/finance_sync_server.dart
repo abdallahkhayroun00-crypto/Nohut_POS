@@ -22,22 +22,32 @@ import 'windows_vault.dart';
 /// Independent, physically enrolled financial capability. Never grant it to
 /// an ordinary staff bearer token. The key is held in the Windows DPAPI vault.
 class FinanceSyncServer {
-  FinanceSyncServer(this.store, {this.staffProjection, this.googleProvider}) :
+  FinanceSyncServer(this.store, {this.staffProjection, this.googleProvider, this.ownerEmployeeIds}) :
     vault = WindowsVault(File(store.filePath + '.finance-sync.dpapi'));
 
   final PosStore store;
   final Json Function(Json)? staffProjection;
   final GoogleBusiness Function()? googleProvider;
+  /// Employee profiles linked to owner accounts (Windows › Kullanıcılar).
+  final List<int> Function()? ownerEmployeeIds;
 
-  static Json owner(Json state) {
-    final matches = asMaps(state['employees']).where((e) => e['active'] == true &&
-      e['name'] == managementOwnerName && e['id'] is int).toList();
-    if (matches.length != 1) throw const FormatException('Aktif Ömer Yılmaz kaydı gerekli.');
-    return matches.single;
+  Json _owner(Json state) => owner(state, ownerIds: ownerEmployeeIds?.call() ?? const []);
+
+  /// The owner profile: the active employee linked to the owner account.
+  /// Installs without a linked owner account keep the legacy name match so
+  /// an existing pairing keeps working after the upgrade.
+  static Json owner(Json state, {List<int> ownerIds = const []}) {
+    final active = asMaps(state['employees']).where((e) => e['active'] == true && e['id'] is int);
+    final linked = active.where((e) => ownerIds.contains(e['id'])).toList();
+    if (linked.length == 1) return linked.single;
+    final legacy = active.where((e) => e['name'] == legacyManagementOwnerName).toList();
+    if (ownerIds.isEmpty && legacy.length == 1) return legacy.single;
+    throw const FormatException(
+        'İşletme sahibi hesabını bir personel profiline bağlayın (Ayarlar › Güvenlik › Kullanıcılar).');
   }
 
   Future<String> rotateOwnerKey() async {
-    final employee = owner(store.read().data);
+    final employee = _owner(store.read().data);
     if (_changing) throw StateError('Yönetici anahtarı değişiyor.');
     _changing = true;
     _generation++;
@@ -452,15 +462,15 @@ class FinanceSyncServer {
     if (_changing || generation != _generation) throw const FormatException('Finans erişimi değişti.');
     Json result;
     try {
-      if (access?['ownerId'] != null && owner(store.read().data)['id'] != access?['ownerId']) {
+      if (access?['ownerId'] != null && _owner(store.read().data)['id'] != access?['ownerId']) {
         throw const FormatException('Yönetici yetkisi kaldırıldı.');
       }
       final op = payload['operation'];
       if (op is String && op.startsWith('owner')) {
-        final employee = owner(store.read().data);
-        if (access?['ownerId'] != employee['id']) throw const FormatException('Ömer Yılmaz yönetici eşleştirmesi gerekli.');
+        final employee = _owner(store.read().data);
+        if (access?['ownerId'] != employee['id']) throw const FormatException('İşletme sahibi eşleştirmesi gerekli.');
         if (op == 'ownerHello') {
-          result = {'ok':true,'ownerId':employee['id'],'ownerName':managementOwnerName};
+          result = {'ok':true,'ownerId':employee['id'],'ownerName':employee['name']};
         } else if (op == 'ownerOverview') {
           result = {'ok':true,'view':ownerOverview(store.read().data, (payload['day'] ?? '').toString())};
         } else if (op == 'ownerGoogle') {
@@ -491,7 +501,7 @@ class FinanceSyncServer {
           final project = staffProjection;
           if (project == null) throw const FormatException('Sipariş bağlantısı hazır değil.');
           final state = project(snap.data);
-          state['employees'] = [{'id':employee['id'],'name':managementOwnerName,'active':true}];
+          state['employees'] = [{'id':employee['id'],'name':employee['name'],'active':true}];
           result = {'ok':true,'revision':snap.revision,'state':state,'serverId':serverId};
         } else if (op == 'ownerOrder' || op == 'ownerAction') {
           if (payload['data'] is! Map) throw const FormatException('İstek geçersiz.');

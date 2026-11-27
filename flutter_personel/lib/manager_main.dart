@@ -92,7 +92,7 @@ class _OwnerPairState extends State<_OwnerPair> {
       child:ListView(padding:const EdgeInsets.all(24),children:[
         const NohutBrandHeader(subtitle:'İşletme paneli'),
         const SizedBox(height:20),
-        const Text(managementOwnerName,style:TextStyle(fontSize:27,fontFamily:'Bree')),
+        const Text('İşletme sahibi girişi',style:TextStyle(fontSize:27,fontFamily:'Bree')),
         const Text('Yalnızca yönetici cihazı. Windows > Ayarlar > Yönetim APK Eşleştir.'),
         const SizedBox(height:18),
         if(scanning) SizedBox(height:280,child:MobileScanner(onDetect:(capture){
@@ -214,7 +214,7 @@ class _OwnerHomeState extends State<OwnerHome> {
             if(section=='google'||section=='reviews')unawaited(loadGoogle());
           }),
     ])),
-    const Padding(padding:EdgeInsets.all(12),child:Text(managementOwnerName,style:TextStyle(color:Colors.white70))),
+    Padding(padding:const EdgeInsets.all(12),child:Text(api.ownerName??'İşletme sahibi',style:const TextStyle(color:Colors.white70))),
   ])));
   String amount(Object? v)=>v is int?money(v):'—';
   List<Json> entries(String key)=>rows(data?[key]);
@@ -275,7 +275,7 @@ class _OwnerHomeState extends State<OwnerHome> {
       ];
       case 'tables':return [
         FilledButton.icon(onPressed:widget.controller.online?()=>Navigator.of(context).push(MaterialPageRoute<void>(
-          builder:(_)=>StaffHome(controller:widget.controller,onUnpair:(){},ownerMode:true))):null,
+          builder:(_)=>StaffHome(controller:widget.controller,onUnpair:(){},ownerMode:true,ownerName:api.ownerName))):null,
           icon:const Icon(Icons.table_restaurant),label:const Text('Masa Planı · Sipariş İşlemleri')),
         title('Kayıtlı siparişler'),...orderList('orders'),
       ];
@@ -324,7 +324,7 @@ class _OwnerHomeState extends State<OwnerHome> {
         notice('Takip edilen fiyatlar Windows kaydından gelir. Yeni takip ve canlı market araması henüz Windows üzerinden yapılır.'),
       ];
       case 'settings':return [
-        line(managementOwnerName,'Yetkili yönetici · Personel seçimi yok'),
+        line(api.ownerName??'İşletme sahibi','Yetkili yönetici · Personel seçimi yok'),
         line('Windows bağlantısı',api.host??'—'),
         OutlinedButton.icon(onPressed:()=>finance.sync(force:true),icon:const Icon(Icons.sync),label:const Text('Finansı Yenile')),
         title('Personel kayıtları · Windows'),
@@ -355,7 +355,7 @@ class _OwnerHomeState extends State<OwnerHome> {
         if(wide)SizedBox(width:244,child:menu(false)),
         Expanded(child:Center(child:ConstrainedBox(constraints:const BoxConstraints(maxWidth:1100),
           child:ListView(padding:const EdgeInsets.all(12),children:[
-            Text(managementOwnerName+' · '+(offline?'Çevrimdışı kopya / bağlantı bekleniyor':'Windows bağlı')),
+            Text((api.ownerName??'İşletme sahibi')+' · '+(offline?'Çevrimdışı kopya / bağlantı bekleniyor':'Windows bağlı')),
             if(loading)const LinearProgressIndicator(),
             if(error!=null)notice(error!),
             OutlinedButton.icon(onPressed:loading?null:pickDay,icon:const Icon(Icons.calendar_today),label:Text(day)),

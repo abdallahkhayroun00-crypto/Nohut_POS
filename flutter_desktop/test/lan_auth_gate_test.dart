@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:nohut_falafel_desktop/lan_auth_gate.dart';
 import 'package:nohut_falafel_desktop/lan_server.dart';
 import 'package:nohut_falafel_desktop/local_accounts.dart';
+import 'package:nohut_falafel_desktop/pos_logic.dart';
 import 'package:nohut_falafel_desktop/pos_store.dart';
 
 void main() {
@@ -41,11 +42,12 @@ void main() {
   });
 
   Future<(int, Map, String?)> call(String method, String path,
-      {Object? body, String? cookie, String? origin}) async {
+      {Object? body, String? cookie, String? origin, String? bearer}) async {
     final client = HttpClient();
     try {
       final req = await client.openUrl(method, Uri.parse('http://127.0.0.1:${server.port}$path'));
       if (cookie != null) req.headers.set(HttpHeaders.cookieHeader, cookie);
+      if (bearer != null) req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $bearer');
       if (origin != null) req.headers.set('origin', origin);
       if (body != null) {
         req.headers.contentType = ContentType.json;
@@ -126,6 +128,30 @@ void main() {
     expect(status, 422);
     expect('${body['message']}', contains('personele bağlı değil'));
     expect(received, isEmpty);
+  });
+
+  test('Android paired-device writes obey individual login and never trust staffId', () async {
+    final (ps, pb, _) = await call('POST', '/api/mobile/pair',
+        body: {'pin': server.pairing.pin, 'deviceName': 'Test Android'});
+    expect(ps, 200, reason: '$pb');
+    final token = pb['token'] as String;
+    final order = {'requestId': 'mobile-order-0001', 'expectedRevision': 0, 'staffId': 1,
+      'source': 'Masa', 'table': 1, 'lines': []};
+    // Legacy shared mode (owner has not required login): the domain decides.
+    final (legacy, _, _) = await call('POST', '/api/mobile/orders', bearer: token, body: order);
+    expect(legacy, isNot(401));
+    // With Bireysel giriş zorunlu, a paired device alone is not a person.
+    auth.setSetting('lan_login_required', '1');
+    final (noSession, nb, _) = await call('POST', '/api/mobile/orders', bearer: token, body: order);
+    expect(noSession, 401, reason: '$nb');
+    // A session that is not linked to an employee cannot pick one.
+    final (_, _, setCookie) = await call('POST', '/api/auth/login',
+        body: {'username': 'sahip', 'password': 'owner-pass-1', 'deviceId': device});
+    final (unlinked, ub, _) = await call('POST', '/api/mobile/orders', bearer: token,
+        cookie: cookieOf(setCookie), body: order);
+    expect(unlinked, 422);
+    expect('${ub['message']}', contains('personele bağlı değil'));
+    expect(asMaps(store.read().data['orders']), isEmpty);
   });
 
   test('cross-origin auth requests and repeated failures are refused', () async {
