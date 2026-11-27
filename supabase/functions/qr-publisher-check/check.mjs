@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import {generateKeyPairSync,verify} from 'node:crypto';
 import {makeHandler} from './index.ts';
 const {privateKey, publicKey}=generateKeyPairSync('rsa',{modulusLength:2048});
-const env={SUPABASE_SERVICE_ROLE_KEY:'fake-service-role',NOHUT_QR_GITHUB_APP_ID:'123',NOHUT_QR_GITHUB_PRIVATE_KEY:privateKey.export({type:'pkcs1',format:'pem'}).toString()};
-const req=(token='fake-service-role',method='POST')=>new Request('https://local.invalid',{method,headers:{authorization:'Bearer '+token}});
+const env={NOHUT_QR_CHECK_KEY:'synthetic-check-key-not-for-production-123',NOHUT_QR_GITHUB_APP_ID:'123',NOHUT_QR_GITHUB_PRIVATE_KEY:privateKey.export({type:'pkcs1',format:'pem'}).toString()};
+const req=(token='synthetic-check-key-not-for-production-123',method='POST')=>new Request('https://local.invalid',{method,headers:{'x-nohut-check-key':token}});
 function fixture({wrongApp=false,wrongPermission=false,missing=false}={}) {
  const calls=[];
  const h=makeHandler(k=>env[k],async (url,init)=>{
@@ -24,3 +24,5 @@ test('wrong app is rejected before installation',async()=>{const {h,calls}=fixtu
 test('unexpected write token is rejected before content read',async()=>{const {h,calls}=fixture({wrongPermission:true});assert.equal((await h(req())).status,502);assert.equal(calls.length,3)});
 test('missing managed catalog reads bootstrap',async()=>{const {h,calls}=fixture({missing:true});assert.equal((await h(req())).status,200);assert(calls.at(-1)[0].endsWith('catalog-v1.json'))});
 test('invalid PEM emits no key content',async()=>{const h=makeHandler(k=>k==='NOHUT_QR_GITHUB_PRIVATE_KEY'?'bad-secret':env[k],()=>{throw Error('unexpected network')});const res=await h(req());assert.equal(res.status,502);assert(!(await res.text()).includes('bad-secret'))});
+
+test('absent or short diagnostic key fails closed before network',async()=>{for(const value of [undefined,'short']){const h=makeHandler(k=>k==='NOHUT_QR_CHECK_KEY'?value:env[k],()=>{throw Error('unexpected network')});assert.equal((await h(req())).status,403);}});
