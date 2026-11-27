@@ -294,6 +294,8 @@ Owner decision 2026-11-27: ChatGPT builds PR-05B (cloud functions), Claude build
 
 ## Claims (edit when you start or finish)
 
+- 2026-11-28 — ChatGPT: claim isolated Git Data transaction adapter for #49 (mock-only tests, no endpoint or production writes). Gemini/Codex retain authenticated RPC, durable receipt storage, execution lease/epoch and image endpoint integration; reuse this adapter rather than duplicate. Requires explicit durable receipt persistence and authority recheck before ref update.
+
 - 2026-11-28 — ChatGPT: **catalog validation implemented / tested in isolation** on #49 (`ad11cd1`, `c7ad2e7`): pure `validateCatalog(candidate, previous)` strict shape, money, language, assets, campaign dates and stable identifiers. 17/17 synthetic assertions executed in the JavaScript tool runtime before committing; current public managed catalog (55/9/3) accepted by read-only validation. No production writes. Full Dart-generated draft compatibility, persisted receipt, authorization, cloud publisher and CI remain pending; independent review required. Live read-only diagnostic passed per owner response; remove temporary diagnostic secret and rotate exposed legacy service role after dependency inventory.
 
 | Item | Agent | Since | PR |
