@@ -466,4 +466,20 @@ void main() {
     await shot(t, 'qr-offline-760x900-dark');
     expect(t.takeException(), isNull);
   });
+
+  testWidgets('a phone edit of the shared draft shows up on Windows; the base stays saved for phones', (t) async {
+    final f = FakePublisher();
+    final host = await mount(t, f);
+    expect(host.currentState!.data['qrPublisherDraftSourceSnapshot'], isNotNull);
+    expect(host.currentState!.data['qrPublisherDraftRevision'], 'sha-1');
+    final phone = github();
+    phone['products'][1]['available'] = false;
+    host.currentState!.edit((s) => s['qrPublisherDraft'] = phone);
+    await t.pumpAndSettle();
+    expect(state(t), 'Yayın bekliyor');
+    expect(text(t, 'qr-fact-changes'), '1 değişiklik');
+    expect(find.textContaining('Telefondan'), findsOneWidget);
+    await publishNow(t);
+    expect(f.remote['products'][1]['available'], false);
+  });
 }

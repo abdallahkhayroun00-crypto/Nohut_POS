@@ -163,6 +163,11 @@ const syncEntityRegistry = <String, SyncEntity>{
     cloudTarget: null,
     policy: 'Copy of published catalog the draft was based on; derived',
   ),
+  'qrMenuAudit': SyncEntity(
+    classes: {DataClass.internal},
+    cloudTarget: 'audit_logs',
+    policy: 'Rolling last 200 phone edits of the QR menu draft {at, by, byId, action, list, id}',
+  ),
   'qrPublisherPendingPublish': SyncEntity(
     classes: {DataClass.internal},
     cloudTarget: null,

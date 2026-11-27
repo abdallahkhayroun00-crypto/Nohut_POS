@@ -17,6 +17,7 @@ import 'google_business.dart';
 import 'lan_auth_gate.dart';
 import 'yonetici_api.dart';
 import 'workforce_api.dart';
+import 'qr_menu_lan_api.dart';
 import 'notification_events.dart';
 
 /// Native Flutter Windows HTTP server for employee phones. No Python process.
@@ -27,6 +28,7 @@ class PosLanServer extends ChangeNotifier {
   String? _yoneticiHtml;
   late final YoneticiApi? yonetici = authGate == null ? null : YoneticiApi(store, authGate!);
   late final WorkforceApi? workforce = authGate == null ? null : WorkforceApi(store, authGate!);
+  late final QrMenuLanApi? menuApi = authGate == null ? null : QrMenuLanApi(store, authGate!);
   late final LanNotificationsApi? notifications =
       authGate == null ? null : LanNotificationsApi(store, authGate!.auth);
   /// Individual LAN logins (spec §23.4). Null = legacy shared panel only.
@@ -449,6 +451,18 @@ class PosLanServer extends ChangeNotifier {
       final body = await _lanJsonBody(request, 32 * 1024);
       if (body == null) return;
       _reply(request, await api.handle(request.method, resource.substring('/api/work/'.length),
+          request.uri.queryParameters, body, token: _token(request)));
+      return;
+    }
+    if (resource.startsWith('/api/menu/')) {
+      final api = menuApi;
+      if (api == null) {
+        _json(request.response, 404, {'error': 'not_found'});
+        return;
+      }
+      final body = await _lanJsonBody(request, 32 * 1024);
+      if (body == null) return;
+      _reply(request, await api.handle(request.method, resource.substring('/api/menu/'.length),
           request.uri.queryParameters, body, token: _token(request)));
       return;
     }

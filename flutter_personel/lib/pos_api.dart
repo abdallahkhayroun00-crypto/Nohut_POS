@@ -238,6 +238,24 @@ class NohutApi {
     return (response.statusCode, result);
   }
 
+  /// `/api/menu/*` (QR menu draft). The server checks each `menu.*` grant
+  /// and binds every edit to the draft it was based on; no keys on the phone.
+  Future<(int, Json)> menu(String method, String path, {Json? body}) async {
+    if (!paired) throw const FormatException('Önce cihazı eşleştirin.');
+    final uri = Uri.parse(host!).replace(path: '/api/menu/$path',
+        queryParameters: method == 'GET' ? {'client': 'personel'} : null);
+    final response = method == 'GET'
+        ? await _client.get(uri, headers: _headers()).timeout(const Duration(seconds: 8))
+        : await _client.post(uri, headers: _headers(json: true),
+            body: jsonEncode({'client': 'personel', ...?body})).timeout(const Duration(seconds: 12));
+    final data = jsonDecode(utf8.decode(response.bodyBytes));
+    final result = data is Map ? Map<String, dynamic>.from(data) : <String, dynamic>{};
+    if (response.statusCode == 401) {
+      throw const FormatException('Giriş gerekli. Kullanıcı adınızla giriş yapın.');
+    }
+    return (response.statusCode, result);
+  }
+
   Future<Json> bootstrap() async {
     try {
       final data = await _jsonRequest('/api/mobile/bootstrap');

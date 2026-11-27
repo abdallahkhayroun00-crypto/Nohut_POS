@@ -64,19 +64,40 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
   @override void initState(){
     super.initState();
     publisher=widget.publisher??QrPublisherClient(widget.store.filePath);
-    final saved=widget.state['qrPublisherDraft'];
-    if(saved is Map){
-      menu=copyJson(Map<String,dynamic>.from(saved));
-      final snapshot=widget.state['qrPublisherDraftSourceSnapshot'];
-      if(snapshot is Map)sourceSnapshot=copyJson(Map<String,dynamic>.from(snapshot));
-      revision=widget.state['qrPublisherDraftRevision']?.toString();
-      info='Bu bilgisayardaki taslak geri yüklendi.';
-    }
+    _restore();
+    if(menu!=null&&changes.isNotEmpty)info='Bu bilgisayardaki taslak geri yüklendi.';
     final p=widget.state[_pendingKey];
     if(p is Map)pending=Map<String,dynamic>.from(p);
     WidgetsBinding.instance.addPostFrameCallback((_){
       if(mounted)connect(auto:true);
     });
+  }
+
+  /// Draft as last written by this page; anything else came from a phone.
+  String _seenDraft='null';
+  void _restore(){
+    final saved=widget.state['qrPublisherDraft'];
+    final snapshot=widget.state['qrPublisherDraftSourceSnapshot'];
+    final rev=widget.state['qrPublisherDraftRevision']?.toString();
+    _seenDraft=jsonEncode(saved);
+    if(saved is Map){
+      menu=copyJson(Map<String,dynamic>.from(saved));
+      sourceSnapshot=snapshot is Map?copyJson(Map<String,dynamic>.from(snapshot)):null;
+      revision=rev;
+    }else if(snapshot is Map&&rev!=null){
+      // Last known published catalog (kept so phones can edit against it).
+      menu=copyJson(Map<String,dynamic>.from(snapshot));
+      sourceSnapshot=copyJson(Map<String,dynamic>.from(snapshot));
+      revision=rev;
+    }
+  }
+  @override void didUpdateWidget(covariant QrMenuManagement old){
+    super.didUpdateWidget(old);
+    final incoming=jsonEncode(widget.state['qrPublisherDraft']);
+    if(incoming==_seenDraft||busy||publishing||merge!=null||pending!=null)return;
+    final hadMenu=menu!=null;
+    _restore();
+    if(hadMenu)info='Telefondan yapılan menü değişikliği alındı.';
   }
 
   String get endpoint=>QrPublisherClient.configuredEndpoint(
@@ -174,12 +195,16 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
     final dirty=changes.isNotEmpty;
     final copy=copyJson(menu!),base=sourceSnapshot==null?null:copyJson(sourceSnapshot!);
     final rev=revision;
+    _seenDraft=dirty?jsonEncode(copy):'null';
     widget.edit((state){
-      if(!dirty){
+      if(!dirty&&(rev==null||base==null)){
         for(final k in _draftKeys){state.remove(k);}
         return;
       }
-      state['qrPublisherDraft']=copy;
+      // The published base and its revision stay saved even without edits,
+      // so Personel/Yönetici phones can edit against the same catalog.
+      if(dirty)state['qrPublisherDraft']=copy;
+      else state.remove('qrPublisherDraft');
       if(rev==null)state.remove('qrPublisherDraftRevision');
       else state['qrPublisherDraftRevision']=rev;
       if(base!=null)state['qrPublisherDraftSourceSnapshot']=base;
@@ -276,10 +301,12 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
   void _adopt(String rev,Json remote,{bool auto=false}){
     if(menu==null){
       menu=copyJson(remote);sourceSnapshot=copyJson(remote);revision=rev;
+      _persist();
       say('GitHub kataloğu yüklendi. Düzenlemeler önce bu bilgisayarda taslak olur.');
       return;
     }
     if(revision==rev&&sourceSnapshot!=null){
+      _persist();
       say(changes.isEmpty?'Menü yayındaki GitHub sürümüyle aynı.'
         :'Taslak yayındaki GitHub sürümüne bağlı. ${changes.length} değişiklik yayın bekliyor.');
       return;

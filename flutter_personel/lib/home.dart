@@ -7,6 +7,7 @@ import 'personel_dashboard.dart';
 import 'models.dart';
 import 'pos_api.dart';
 import 'style.dart';
+import 'menu_admin_page.dart';
 import 'work_page.dart';
 
 class StaffHome extends StatefulWidget {
@@ -752,6 +753,15 @@ class _StaffHomeState extends State<StaffHome> {
         ])),
       ],
       if (!widget.ownerMode) ...[
+        const NohutSection('Menü'),
+        Card(child: ListTile(
+          key: const ValueKey('more-menu-admin'),
+          leading: const Icon(Icons.restaurant_menu_outlined),
+          title: const Text('Menü Yönetimi'),
+          subtitle: Text(c.api.signedIn ? 'Stok, fiyat ve QR görünürlüğü · yetkinize göre'
+              : 'Kendi hesabınızla giriş yapın'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: c.api.signedIn ? () => Navigator.of(context).push(menuAdminRoute(c.api)) : _login)),
         const NohutSection('Hesabım'),
         Card(child: Column(children: [
           ListTile(

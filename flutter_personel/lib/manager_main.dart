@@ -9,6 +9,7 @@ import 'expense_drafts.dart';
 import 'home.dart';
 import 'manager_finance.dart';
 import 'owner_api.dart';
+import 'menu_admin_page.dart';
 import 'owner_payroll.dart';
 import 'pos_api.dart';
 import 'style.dart';
@@ -470,11 +471,20 @@ class _OwnerHomeState extends State<OwnerHome> {
       ];
       case 'google':return googleContent();
       case 'qr-menu':return [
+        Card(child:ListTile(
+          key:const ValueKey('open-menu-admin'),
+          leading:const Icon(Icons.restaurant_menu_outlined),
+          title:const Text('Menü Yönetimi',style:TextStyle(fontWeight:FontWeight.w700)),
+          subtitle:const Text('Ürünler, fiyatlar, stok, QR görünürlüğü, kategoriler ve kampanyalar · '
+            'Windows’taki taslağa kaydedilir'),
+          trailing:const Icon(Icons.chevron_right),
+          onTap:offline?null:()=>Navigator.of(context).push(menuAdminRoute(api)))),
+        notice('Yayınlama Windows’taki QR Menü Yönetimi’nden, işletme sahibi onayıyla yapılır. '
+          'Uzaktan (bulut) menü düzenleme henüz hazır değil.'),
         title('Windows POS menüsü'),...[
           for(final p in entries('menu'))line((p['name']??'').toString(),(p['category']??'').toString(),
             p['price'] is num?money(asCents(p['price'])):'—'),
         ],
-        notice('QR menü taslağı, düzenleme ve yayınlama henüz Windows üzerinden yapılır.'),
       ];
       case 'open-accounts':return [
         for(final o in entries('openAccounts'))line(orderName(o),'Kalan ödeme',amount(o['dueCents'])),

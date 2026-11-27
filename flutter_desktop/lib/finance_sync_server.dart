@@ -18,6 +18,7 @@ import 'package:nohut_core/management_sections.dart';
 import 'finance_pdf.dart';
 import 'pos_logic.dart';
 import 'pos_store.dart';
+import 'qr_menu_remote.dart';
 import 'windows_vault.dart';
 
 /// Independent, physically enrolled financial capability. Never grant it to
@@ -510,6 +511,16 @@ class FinanceSyncServer {
         } else if (op == 'ownerPayroll') {
           result = ownerPayroll(store, '${payload['weekStart'] ?? ''}',
               ownerIds: ownerEmployeeIds?.call() ?? [employee['id'] as int]);
+        } else if (op == 'ownerMenu') {
+          result = {'ok': true, 'menu': qrMenuView(store.read().data, can: (_) => true)};
+        } else if (op == 'ownerMenuWrite') {
+          if (payload['data'] is! Map) throw const FormatException('İstek geçersiz.');
+          try {
+            result = applyQrMenuCommand(store, Map<String, dynamic>.from(payload['data'] as Map),
+                can: (_) => true, actor: '${employee['name']}', actorId: employee['id'] as int?);
+          } on QrMenuConflict catch (e) {
+            result = {'ok': false, 'error': 'conflict', 'message': e.message};
+          }
         } else if (op == 'ownerGoogle') {
           final google = googleProvider?.call();
           if (google == null || !google.connected) {
