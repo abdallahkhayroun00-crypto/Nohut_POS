@@ -8,6 +8,7 @@ import 'package:nohut_falafel_desktop/cloud_finance_serializer.dart';
 import 'package:nohut_falafel_desktop/cloud_catalog_serializer.dart';
 import 'package:nohut_falafel_desktop/cloud_order_serializer.dart';
 import 'package:nohut_falafel_desktop/cloud_receipt_serializer.dart';
+import 'package:nohut_falafel_desktop/cloud_platform_serializer.dart';
 import 'package:nohut_falafel_desktop/receipt_printer.dart';
 import 'package:nohut_falafel_desktop/operations.dart';
 import 'package:nohut_falafel_desktop/order_actions.dart';
@@ -22,6 +23,7 @@ import 'package:nohut_falafel_desktop/windows_agent_setup.dart';
 import 'package:sqlite3/sqlite3.dart';
 
 import 'support/synthetic_agent_secrets.dart';
+import 'support/synthetic_platform_order.dart';
 
 void main() {
   final base = Platform.environment['NOHUT_TEST_RPC_URL'];
@@ -49,8 +51,13 @@ void main() {
       }
 
       final setup = await call('/test/setup');
-      final concurrent=await call('/test/concurrent-enrollment');
-      expect(concurrent,{'enrollments':1,'live_agents':1,'same_agent':true,'session_ok':true});
+      final concurrent = await call('/test/concurrent-enrollment');
+      expect(concurrent, {
+        'enrollments': 1,
+        'live_agents': 1,
+        'same_agent': true,
+        'session_ok': true,
+      });
       final folder = Directory.systemTemp.createTempSync(
         'nohut-http-integration',
       );
@@ -91,7 +98,10 @@ void main() {
             identities,
             TypedOrderTransport(
               identities,
-              TypedReceiptTransport(identities, transport),
+              TypedReceiptTransport(
+                identities,
+                TypedPlatformTransport(identities, transport),
+              ),
             ),
           ),
         ),
@@ -345,6 +355,61 @@ void main() {
         expect(archived['order_items'], 2);
         expect(archived['print_jobs'], 1);
         expect(archived['print_events'], 6);
+        store.command('synthetic_platform_import', {}, (s) {
+          s['trendyolGoOrders'] = [syntheticPlatformOrder()];
+          return {'ok': true};
+        });
+        expect(await sync.flush(), 1, reason: '${sync.status().lastError}');
+        final imported = await call('/test/inspect');
+        expect(imported['platform_records'], 1);
+        expect(imported['platform_versions'], 1);
+        expect(imported['platform_line_versions'], 3);
+        expect(imported['platform_cancelled_qty'], '1');
+        expect(
+          imported['platform_collection_net'],
+          null,
+          reason: 'order data does not prove bank settlement',
+        );
+        expect(imported['platform_note'], contains('Sos ayrı olsun'));
+        expect(
+          imported['platform_note'],
+          isNot(contains('Private PlatformCustomer')),
+        );
+        expect(imported['platform_note'], isNot(contains('0850 000 0000')));
+        store.command('synthetic_platform_delivered', {}, (s) {
+          final o = (s['trendyolGoOrders'] as List).single as Map;
+          o['status'] = 'Delivered';
+          o['modifiedAt'] = '2026-11-27T12:01:00Z';
+          return {'ok': true};
+        });
+        expect(await sync.flush(), 1, reason: '${sync.status().lastError}');
+        store.command('synthetic_platform_correction', {}, (s) {
+          final o = (s['trendyolGoOrders'] as List).single as Map;
+          (o['lineFacts'] as List).first['unitPriceCents'] = 1500;
+          (o['lines'] as List).first['unitPriceCents'] = 1500;
+          o['totalCents'] = 2200;
+          o['modifiedAt'] = '2026-11-27T12:02:00Z';
+          return {'ok': true};
+        });
+        await call('/test/lose-next-ingest-ack');
+        expect(await sync.flush(), 0);
+        now = now.add(const Duration(minutes: 1));
+        expect(await sync.flush(), 1);
+        final history = await call('/test/inspect');
+        expect(history['platform_records'], 1);
+        expect(history['platform_versions'], 3);
+        expect(history['platform_line_versions'], 9);
+        expect(history['platform_first_total'], '2000');
+        expect(history['platform_current_total'], '2200');
+        expect(history['platform_current_sales_eligible'], true);
+        store.command('synthetic_platform_supplier_isolation', {}, (s) {
+          (s['trendyolGoOrders'] as List).add(
+            syntheticPlatformOrder(supplier: '999'),
+          );
+          return {'ok': true};
+        });
+        expect(await sync.flush(), 1, reason: '${sync.status().lastError}');
+        expect((await call('/test/inspect'))['platform_records'], 2);
 
         const requestId = '90000000-0000-4000-8000-000000000001';
         final context = <String, Object?>{

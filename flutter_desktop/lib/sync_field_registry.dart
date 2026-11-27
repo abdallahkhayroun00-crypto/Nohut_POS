@@ -81,6 +81,16 @@ List<String> unregisteredFieldPaths(Map state) {
 /// Prefix semantics: listing `orders[].batches[].lines[].removed` allows
 /// that field; a parent is never implicitly allowed by a child.
 const cloudAllowedFieldPaths = <String>{
+  'trendyolGoOrders[].totalKnown','trendyolGoOrders[].lineFacts',
+  'trendyolGoOrders[].lineFacts[].name','trendyolGoOrders[].lineFacts[].qty',
+  'trendyolGoOrders[].lineFacts[].unitPriceCents','trendyolGoOrders[].lineFacts[].options',
+  'trendyolGoOrders[].lineFacts[].removed','trendyolGoOrders[].lineFacts[].extras',
+  'trendyolGoOrders[].lineFacts[].originalQty','trendyolGoOrders[].lineFacts[].quantityKnown',
+  'trendyolGoOrders[].lineFacts[].unitPriceKnown','trendyolGoOrders[].lineFacts[].itemIds',
+  'trendyolGoOrders[].lineFacts[].cancelledItemIds',
+  'trendyolGoOrders[].kitchenPrintState','trendyolGoOrders[].kitchenQueuedAt',
+  'trendyolGoOrders[].pickupEtaState','trendyolGoOrders[].deliveryEta',
+  'trendyolGoOrders[].courierNearby','trendyolGoOrders[].courierEtaFrom','trendyolGoOrders[].courierEtaTo',
   'printJobs','printJobs[].syncId','printJobs[].orderId','printJobs[].batchId','printJobs[].kind',
   'printJobs[].state','printJobs[].attempts','printJobs[].createdAt','printJobs[].spooledAt',
   'printJobs[].receiptRequestId','printJobs[].syncReceipt','printJobs[].syncReceipt.schemaVersion',

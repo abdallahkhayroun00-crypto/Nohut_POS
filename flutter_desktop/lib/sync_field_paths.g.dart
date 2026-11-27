@@ -3,6 +3,13 @@
 part of 'sync_field_registry.dart';
 
 const knownStateFieldPaths = <String>{
+  'trendyolGoOrders[].totalKnown','trendyolGoOrders[].lineFacts',
+  'trendyolGoOrders[].lineFacts[].name','trendyolGoOrders[].lineFacts[].qty',
+  'trendyolGoOrders[].lineFacts[].unitPriceCents','trendyolGoOrders[].lineFacts[].options',
+  'trendyolGoOrders[].lineFacts[].removed','trendyolGoOrders[].lineFacts[].extras',
+  'trendyolGoOrders[].lineFacts[].originalQty','trendyolGoOrders[].lineFacts[].quantityKnown',
+  'trendyolGoOrders[].lineFacts[].unitPriceKnown','trendyolGoOrders[].lineFacts[].itemIds',
+  'trendyolGoOrders[].lineFacts[].cancelledItemIds',
   'printJobs[].syncId','printJobs[].syncReceipt','printJobs[].syncReceipt.schemaVersion',
   'printJobs[].syncReceipt.sourceFormat','printJobs[].syncReceipt.body','printJobs[].syncReceipt.privacy',
   'printJobs[].syncPrintHistory','printJobs[].syncPrintHistory[].id','printJobs[].syncPrintHistory[].ordinal',

@@ -21,7 +21,7 @@ import 'entity_storage.dart';
 import 'sync_field_registry.dart';
 import 'finance_sync_history.dart';
 import 'catalog_sync_history.dart';
-import 'receipt_sync_history.dart' show cloudPrintJobs;
+import 'receipt_sync_history.dart' show cloudPrintJobs, privateReceiptText;
 import 'pos_logic.dart' show orderTotalCents, orderPaidCents, orderDueCents;
 
 void createSyncTables(Database db) {
@@ -127,6 +127,12 @@ Object? projectRow(String stateKey, Object? row) {
   if(row is Map&&result is Map){
     if(stateKey=='orders')enrich(row,result);
     if(stateKey=='deletedOrders'&&row['order'] is Map&&result['order'] is Map)enrich(row['order'] as Map,result['order'] as Map);
+    if(stateKey=='trendyolGoOrders'&&row['customerNote'] is String){
+      var note=privateReceiptText(row['customerNote'] as String,{'name':row['customerName'],'phone':row['customerPhone']});
+      final address='${row['deliveryAddress']??''}'.trim();
+      if(address.isNotEmpty)note=note.replaceAll(address,'[yerel iletişim bilgisi]');
+      result['customerNote']=note;
+    }
   }
   return result;
 }
@@ -136,8 +142,8 @@ Object? projectCore(String key, Object? value) =>
     projectForCloud({key: value})[key];
 
 /// Diff the previous and next committed state using the cloud projection.
-/// Receipt snapshots are intentionally deferred to their dedicated Phase 2
-/// contract. Local-only keys must not produce even deletion events.
+/// Frozen receipts use their dedicated typed audit contract. Local-only keys
+/// must not produce even deletion events.
 /// This only records local events; it is not a cloud transport or an
 /// authorization to activate sync on production data.
 List<OutboxChange> collectOutboxChanges(
