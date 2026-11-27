@@ -6,8 +6,8 @@ do $$
 declare
  r uuid:=gen_random_uuid(); e uuid:=gen_random_uuid(); u uuid:=gen_random_uuid();
  d uuid:=gen_random_uuid(); s uuid:=gen_random_uuid(); wd uuid:=gen_random_uuid(); ws uuid:=gen_random_uuid();
- q uuid:=gen_random_uuid(); q2 uuid:=gen_random_uuid();
- token text; envhash text; envhash2 text; fence uuid; result jsonb;
+ q uuid:=gen_random_uuid(); q2 uuid:=gen_random_uuid(); q3 uuid:=gen_random_uuid();
+ token text; envhash text; envhash2 text; recovery_hash text; fence uuid; result jsonb;
  digest text:=repeat('a',64); revision text:=repeat('b',40);
  parent text:=repeat('c',40); gitcommit text:=repeat('d',40);
  tree text:=repeat('e',40); newrev text:=repeat('f',40);
@@ -61,9 +61,35 @@ begin
  perform nohut_private.qr_publish_transition(token,q::text,1,envhash,digest,fence,'unknown');
  if (nohut_private.qr_publish_claim(token,q::text,1,envhash,digest,revision)->>'status') is distinct from 'unknown' then raise exception 'unknown receipt lost'; end if;
  if (nohut_private.qr_publish_claim(token,q2::text,1,envhash2,digest,revision)->>'status') is distinct from 'busy' then raise exception 'unresolved lock released'; end if;
+ perform nohut_private.enqueue_command(u,s,d,'yonetici',1,q3,'qr_menu_reconcile','{}');
+ perform public.nohut_agent_claim(token,20);
+ select nohut_private.command_envelope_sha256(envelope) into strict recovery_hash from nohut_private.commands where restaurant_id=r and request_id=q3::text;
+ update nohut_private.commands set lease_until=clock_timestamp()-interval '1 second' where restaurant_id=r and request_id=q::text;
+ result:=nohut_private.qr_publish_recover(token,q3::text,1,recovery_hash,q::text,'inspect');
+ if result->'prepared'->>'commit' is distinct from gitcommit then raise exception 'missing recovery evidence'; end if;
+ begin
+  perform nohut_private.qr_publish_recover(token,q3::text,1,recovery_hash,q::text,'cancel_before_attempt');
+  raise exception 'ambiguous operation cancelled';
+ exception when invalid_parameter_value then null; end;
+ begin
+  perform nohut_private.qr_publish_recover(token,q3::text,1,recovery_hash,q::text,'confirm_reachable',parent,newrev);
+  raise exception 'wrong commit evidence accepted';
+ exception when invalid_parameter_value then null; end;
+ result:=nohut_private.qr_publish_recover(token,q3::text,1,recovery_hash,q::text,'confirm_reachable',gitcommit,newrev);
+ if result->>'status' is distinct from 'committed' then raise exception 'recovery failed'; end if;
+ if nohut_private.qr_publish_recover(token,q3::text,1,recovery_hash,q::text,'inspect')->'result'->>'status' is distinct from 'committed' then raise exception 'recovered receipt not durable'; end if;
+ result:=nohut_private.qr_publish_claim(token,q2::text,1,envhash2,digest,revision);
+ if result->>'status' is distinct from 'new' then raise exception 'confirmed recovery did not release lock'; end if;
+ fence:=(result->>'fence')::uuid;
+ perform nohut_private.qr_publish_transition(token,q2::text,1,envhash2,digest,fence,'prepare',parent,gitcommit,tree,newrev);
+ if nohut_private.qr_publish_recover(token,q3::text,1,recovery_hash,q2::text,'cancel_before_attempt')->>'status' is distinct from 'busy' then raise exception 'active claim cancelled'; end if;
+ update nohut_private.commands set lease_until=clock_timestamp()-interval '1 second' where restaurant_id=r and request_id=q2::text;
+ if nohut_private.qr_publish_recover(token,q3::text,1,recovery_hash,q2::text,'cancel_before_attempt')->>'status' is distinct from 'cancelled_before_attempt' then raise exception 'abandoned claim not released'; end if;
+ if has_function_privilege('anon','nohut_private.qr_publish_recover(text,text,bigint,text,text,text,text,text)','EXECUTE') or
+ has_function_privilege('service_role','nohut_private.qr_publish_recover(text,text,bigint,text,text,text,text,text)','EXECUTE') then raise exception 'recovery exposed'; end if;
  update nohut_private.sessions set revoked_at=clock_timestamp() where session_id=s;
  begin
-  perform nohut_private.qr_publish_claim(token,q2::text,1,envhash2,digest,revision);
+  perform nohut_private.qr_publish_recover(token,q3::text,1,recovery_hash,q::text,'inspect');
   raise exception 'revoked actor accepted';
  exception when insufficient_privilege then null; end;
 end $$;
