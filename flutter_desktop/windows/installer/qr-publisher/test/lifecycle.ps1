@@ -13,6 +13,14 @@ if ($LASTEXITCODE -ne 0 -or $version -notmatch '^v([0-9]+)\.' -or [int]$Matches[
 Write-Host "CI Node $version"
 $root = Split-Path -Parent $PSScriptRoot
 $script = Join-Path $root 'start-windows.ps1'
+$bundled = Join-Path $root 'runtime\node.exe'
+if (-not (Test-Path -LiteralPath $bundled -PathType Leaf)) { throw 'Packaged runtime is missing' }
+$node = $bundled
+if ((& $node --version) -ne 'v22.23.5' -or $LASTEXITCODE -ne 0) {
+  throw 'Packaged runtime is not the pinned version'
+}
+# Exercise startup without the runner's Node installation in PATH.
+$env:PATH = (Join-Path $env:SystemRoot 'System32') + ';' + $PSHOME + ';' + $env:SystemRoot
 $work = Join-Path $env:RUNNER_TEMP ('qrpub-' + [guid]::NewGuid())
 $env:APPDATA = Join-Path $work 'AppData'
 $env:USERPROFILE = Join-Path $work 'User'
@@ -51,7 +59,7 @@ Write-Host 'OK key_missing without prompt'
 # 2. GitHub's original key file name in Downloads: picked up, protected, started.
 $pem = Join-Path $downloads 'nohut-qr-publisher.2026-11-28.private-key.pem'
 & $node -e "process.stdout.write(require('crypto').generateKeyPairSync('rsa',{modulusLength:2048}).privateKey.export({type:'pkcs8',format:'pem'}))" | Set-Content -LiteralPath $pem -Encoding ascii
-$running = Invoke-Start
+$running = Invoke-Start -DiscoverNode
 $health = Wait-Health $running
 $expected = [regex]::Match((Get-Content -LiteralPath (Join-Path $root 'server.mjs') -Raw), "const VERSION='([^']+)'").Groups[1].Value
 if ($health.version -ne $expected) { throw "Version $($health.version) != $expected" }
