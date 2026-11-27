@@ -9,11 +9,12 @@ begin
   insert into nohut_private.sync_checkpoints(restaurant_id,authority_epoch,last_acked_seq,last_acked_revision) values(r,e,10,2);
   insert into nohut_private.app_users(user_id,restaurant_id,username,pos_employee_id,role_template,is_owner)
     values(u,r,'syntheticowner',1,'Yönetici',true);
-  perform nohut_private.enroll_device(u,d,s,'yonetici','Synthetic');
+  perform nohut_private.enroll_device(u,d,s,'windows','Synthetic');
   begin
     perform nohut_private.enroll_windows_agent(u,s,d,'aal1',1,pc,e);
     raise exception 'enrollment without MFA';
   exception when insufficient_privilege then null; end;
+  pc:=d;
   info:=nohut_private.enroll_windows_agent(u,s,d,'aal2',1,pc,e);
   token:=info->>'token';
   if length(token)<>64 or (nohut_private.agent_checkpoint(token)->>'last_acked_seq')::bigint<>10 then raise exception 'agent auth/checkpoint failed'; end if;

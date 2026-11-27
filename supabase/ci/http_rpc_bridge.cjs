@@ -13,7 +13,7 @@ const cfg={host:process.env.PGHOST||'127.0.0.1',port:Number(process.env.PGPORT||
 const base=path.resolve(__dirname,'..');
 const dbname='nohut_test_http_'+Date.now();
 const role='nohut_test_owner';
-const ids={restaurantId:randomUUID(),authorityEpoch:randomUUID(),userId:randomUUID(),deviceId:randomUUID(),sessionId:randomUUID()};
+const ids={restaurantId:randomUUID(),authorityEpoch:randomUUID(),userId:randomUUID(),deviceId:randomUUID(),sessionId:randomUUID(),windowsDeviceId:randomUUID(),windowsSessionId:randomUUID()};
 const methods={
   nohut_agent_ingest:['p_token','p_tx'],nohut_agent_checkpoint:['p_token'],nohut_agent_claim:['p_token','p_max'],
   nohut_agent_validate_claim:['p_token','p_request','p_generation','p_envelope_sha256'],
@@ -21,8 +21,35 @@ const methods={
   nohut_agent_report_receipt:['p_token','p_request','p_envelope_sha256','p_result'],
   nohut_enqueue_command:['p_device_id','p_client','p_permission_version','p_request_id','p_action','p_payload'],
   nohut_command_status:['p_device_id','p_client','p_permission_version','p_request_id'],
+  nohut_windows_owner_session:['p_device_id'],
+  nohut_enroll_agent:['p_device_id','p_permission_version','p_epoch','p_request_id','p_token_sha256'],
+  nohut_revoke_agent:['p_device_id','p_permission_version','p_agent_id'],
 };
-let loseAck=false;
+let loseAck=false,loseEnrollAck=false;
+// Real independent database connections, including concurrent session_status
+// updates. The HTTP request queue itself deliberately remains serialized.
+async function verifySetupConcurrency(db){
+  const [r,e,u,d,s,q]=Array.from({length:6},()=>randomUUID());
+  await db.query('insert into nohut_private.restaurants(restaurant_id) values($1)',[r]);
+  await db.query('insert into nohut_private.authority_epochs(restaurant_id,authority_epoch) values($1,$2)',[r,e]);
+  await db.query("insert into nohut_private.app_users(user_id,restaurant_id,username,role_template,is_owner) values($1,$2,$3,'Yönetici',true)",[u,r,'synthetic-concurrent-owner']);
+  await db.query("select nohut_private.enroll_device($1,$2,$3,'windows','Synthetic concurrency')",[u,d,s]);
+  const args=[d,1,e,q,require('node:crypto').createHash('sha256').update(randomUUID()+randomUUID()).digest('hex')];
+  async function run(sessionOnly){
+    const c=new Client({...cfg,database:dbname});await c.connect();
+    try{
+      await c.query('begin');await c.query('set local statement_timeout=10000');await c.query('set local role authenticated');
+      await c.query("select set_config('request.jwt.claims',$1,true)",[JSON.stringify({sub:u,session_id:s,aal:'aal2'})]);
+      const result=(await c.query(sessionOnly?'select public.nohut_windows_owner_session($1) as value':
+        'select public.nohut_enroll_agent($1,$2,$3,$4,$5) as value',sessionOnly?[d]:args)).rows[0].value;
+      await c.query('commit');return result;
+    }catch(err){await c.query('rollback');throw err;}finally{await c.end();}
+  }
+  const result=await Promise.all([run(false),run(false),run(true)]);
+  const counts=(await db.query(`select (select count(*)::integer from nohut_private.agent_enrollment_requests where restaurant_id=$1) as enrollments,
+    (select count(*)::integer from nohut_private.windows_agents where restaurant_id=$1 and revoked_at is null) as live_agents`,[r])).rows[0];
+  return {...counts,same_agent:result[0].agent_id===result[1].agent_id,session_ok:result[2].status==='ok'};
+}
 async function main(){
   const admin=new Client(cfg);await admin.connect();
   for(const sql of ['create role anon nologin','create role authenticated nologin',
@@ -45,9 +72,11 @@ async function main(){
   await db.query(`insert into nohut_private.app_users(user_id,restaurant_id,username,pos_employee_id,role_template,is_owner)
     values($1,$2,'synthetic-http-owner',1,'Yönetici',true)`,[ids.userId,ids.restaurantId]);
   await db.query(`select nohut_private.enroll_device($1,$2,$3,'yonetici','Synthetic HTTP')`,[ids.userId,ids.deviceId,ids.sessionId]);
-  const info=(await db.query(`select nohut_private.enroll_windows_agent($1,$2,$3,'aal2',1,$4,$5) as value`,
-    [ids.userId,ids.sessionId,ids.deviceId,randomUUID(),ids.authorityEpoch])).rows[0].value;
-  ids.token=info.token;
+  await db.query('begin');
+  await db.query('set local role authenticated');
+  await db.query("select set_config('request.jwt.claims',$1,true)",[JSON.stringify({sub:ids.userId,session_id:ids.windowsSessionId,aal:'aal2'})]);
+  await db.query("select public.nohut_register_device($1,'windows','Synthetic Windows')",[ids.windowsDeviceId]);
+  await db.query('commit');
   // Serialize test requests on one connection so SET LOCAL ROLE is isolated.
   let tail=Promise.resolve();
   const server=http.createServer((req,res)=>{
@@ -58,8 +87,12 @@ async function main(){
         res.setHeader('Content-Type','application/json');
         if(req.url==='/test/setup'){res.end(JSON.stringify(ids));return;}
         if(req.url==='/test/lose-next-ingest-ack'){loseAck=true;res.end('{}');return;}
+        if(req.url==='/test/lose-next-enroll-ack'){loseEnrollAck=true;res.end('{}');return;}
+        if(req.url==='/test/concurrent-enrollment'){res.end(JSON.stringify(await verifySetupConcurrency(db)));return;}
         if(req.url==='/test/inspect'){
           const result=(await db.query(`select (select count(*)::integer from nohut_private.expenses where restaurant_id=$1) as expenses,
+            (select count(*)::integer from nohut_private.agent_enrollment_requests where restaurant_id=$1) as enrollments,
+            (select count(*)::integer from nohut_private.windows_agents where restaurant_id=$1 and revoked_at is null) as live_agents,
             (select count(*)::integer from nohut_private.orders where restaurant_id=$1) as orders,
             (select count(*)::integer from nohut_private.order_items where restaurant_id=$1) as order_items,
             (select count(*)::integer from nohut_private.receipt_snapshots where restaurant_id=$1) as receipt_snapshots,
@@ -88,15 +121,17 @@ async function main(){
         }
         const method=req.url?.split('/').pop();const params=methods[method];
         if(!params||req.url!==`/rest/v1/rpc/${method}`||Object.keys(args).some(k=>!params.includes(k))){res.writeHead(400).end('{}');return;}
-        const app=method==='nohut_enqueue_command'||method==='nohut_command_status';
-        if(app&&req.headers.authorization!=='Bearer synthetic-user-jwt'){res.writeHead(403).end('{}');return;}
+        const windows=['nohut_windows_owner_session','nohut_enroll_agent','nohut_revoke_agent'].includes(method);
+        const app=windows||method==='nohut_enqueue_command'||method==='nohut_command_status';
+        if(app&&req.headers.authorization!==`Bearer ${windows?'synthetic-windows-owner-jwt':'synthetic-user-jwt'}`){res.writeHead(403).end('{}');return;}
         await db.query('begin');
         try{
           await db.query(`set local role ${app?'authenticated':'anon'}`);
-          if(app)await db.query("select set_config('request.jwt.claims',$1,true)",[JSON.stringify({sub:ids.userId,session_id:ids.sessionId,aal:'aal2'})]);
+          if(app)await db.query("select set_config('request.jwt.claims',$1,true)",[JSON.stringify({sub:ids.userId,session_id:windows?ids.windowsSessionId:ids.sessionId,aal:'aal2'})]);
           const result=(await db.query(`select public.${method}(${params.map((_,i)=>'$'+(i+1)).join(',')}) as value`,params.map(k=>args[k]))).rows[0].value;
           await db.query('commit');
           if(method==='nohut_agent_ingest'&&loseAck){loseAck=false;res.writeHead(503).end('{}');return;}
+          if(method==='nohut_enroll_agent'&&loseEnrollAck){loseEnrollAck=false;res.writeHead(503).end('{}');return;}
           res.end(JSON.stringify(result));
         }catch(e){await db.query('rollback');throw e;}
       }catch(e){res.writeHead(e.code==='42501'?403:400).end(JSON.stringify({code:e.code||'test_error'}));console.error('RPC test error',e.code,e.message);}

@@ -19,6 +19,7 @@ class AgentCredentials {
   static Future<AgentCredentials?> load(WindowsVault vault) async {
     final fields = await vault.load();
     if (fields == null) return null;
+    if(fields['revoked']==true||fields['token']==null)return null;
     return AgentCredentials(url: Uri.parse(fields['url'] as String),
       publishableKey: fields['publishableKey'] as String, token: fields['token'] as String,
       restaurantId: fields['restaurantId'] as String, authorityEpoch: fields['authorityEpoch'] as String);
@@ -46,7 +47,7 @@ class SupabaseAgentTransport implements SyncTransport, CommandTransport {
     if ((!localTest && url.scheme != 'https') || url.userInfo.isNotEmpty ||
         url.hasQuery || url.hasFragment || (url.path.isNotEmpty && url.path != '/') ||
         url.host.isEmpty || !RegExp(r'^[0-9a-f]{64}$').hasMatch(credentials.token) ||
-        !_publicKey(credentials.publishableKey)) {
+        !isPublishableKey(credentials.publishableKey)) {
       throw const AgentTransportException('invalid_configuration');
     }
   }
@@ -55,7 +56,7 @@ class SupabaseAgentTransport implements SyncTransport, CommandTransport {
   final DateTime Function() _clock;
   final Duration timeout;
 
-  static bool _publicKey(String key) {
+  static bool isPublishableKey(String key) {
     if (key.startsWith('sb_publishable_')) return key.length > 20;
     try {
       final parts = key.split('.');

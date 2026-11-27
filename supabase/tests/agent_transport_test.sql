@@ -2,7 +2,7 @@
 begin;
 do $$
 declare r uuid:=gen_random_uuid(); e uuid:=gen_random_uuid(); u uuid:=gen_random_uuid();
-  d uuid:=gen_random_uuid(); s uuid:=gen_random_uuid(); q uuid:=gen_random_uuid(); info jsonb;
+  d uuid:=gen_random_uuid(); s uuid:=gen_random_uuid(); wd uuid:=gen_random_uuid(); ws uuid:=gen_random_uuid(); q uuid:=gen_random_uuid(); info jsonb;
   token text; claimed jsonb; fingerprint text; status text;
   receipt jsonb:='{"state":"confirmed","code":"ok","ok":true,"revision":1}'::jsonb;
 begin
@@ -14,7 +14,8 @@ begin
   insert into nohut_private.app_users(user_id,restaurant_id,username,pos_employee_id,role_template,is_owner)
     values(u,r,'synthetictransportowner',1,'Yönetici',true);
   perform nohut_private.enroll_device(u,d,s,'yonetici','Synthetic');
-  info:=nohut_private.enroll_windows_agent(u,s,d,'aal2',1,gen_random_uuid(),e);
+  perform nohut_private.enroll_device(u,wd,ws,'windows','Synthetic Windows');
+  info:=nohut_private.enroll_windows_agent(u,ws,wd,'aal2',1,wd,e);
   token:=info->>'token';
   perform nohut_private.enqueue_command(u,s,d,'yonetici',1,q,'create_order','{}');
   set local role anon;

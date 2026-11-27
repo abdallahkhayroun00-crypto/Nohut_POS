@@ -18,7 +18,10 @@ import 'package:nohut_falafel_desktop/remote_commands.dart';
 import 'package:nohut_falafel_desktop/supabase_agent_transport.dart';
 import 'package:nohut_falafel_desktop/sync_outbox.dart';
 import 'package:nohut_falafel_desktop/sync_worker.dart';
+import 'package:nohut_falafel_desktop/windows_agent_setup.dart';
 import 'package:sqlite3/sqlite3.dart';
+
+import 'support/synthetic_agent_secrets.dart';
 
 void main() {
   final base = Platform.environment['NOHUT_TEST_RPC_URL'];
@@ -46,19 +49,36 @@ void main() {
       }
 
       final setup = await call('/test/setup');
+      final concurrent=await call('/test/concurrent-enrollment');
+      expect(concurrent,{'enrollments':1,'live_agents':1,'same_agent':true,'session_ok':true});
       final folder = Directory.systemTemp.createTempSync(
         'nohut-http-integration',
       );
       final store = PosStore(databaseFile: '${folder.path}/pos.sqlite3');
       final db = sqlite3.open(store.filePath);
+      final agentSetup = WindowsAgentSetup(
+        url: url,
+        publishableKey: 'sb_publishable_synthetic_test_key',
+        deviceId: setup['windowsDeviceId'] as String,
+        restaurantId: setup['restaurantId'] as String,
+        authorityEpoch: setup['authorityEpoch'] as String,
+        accessToken: () async => 'synthetic-windows-owner-jwt',
+        secrets: SyntheticAgentSecrets(),
+        allowLoopbackHttpForTests: true,
+      );
+      await call('/test/lose-next-enroll-ack');
+      await expectLater(
+        agentSetup.enrollOrRotate(permissionVersion: 1),
+        throwsA(isA<SyncNetworkException>()),
+      );
+      final credentials = await agentSetup.enrollOrRotate(permissionVersion: 1);
+      expect(
+        (await call('/test/inspect'))['enrollments'],
+        1,
+        reason: 'lost enrollment ACK must not rotate twice',
+      );
       final transport = SupabaseAgentTransport(
-        AgentCredentials(
-          url: url,
-          publishableKey: 'sb_publishable_synthetic_test_key',
-          token: setup['token'] as String,
-          restaurantId: setup['restaurantId'] as String,
-          authorityEpoch: setup['authorityEpoch'] as String,
-        ),
+        credentials,
         allowLoopbackHttpForTests: true,
       );
       var now = DateTime.now().toUtc();
@@ -364,7 +384,33 @@ void main() {
         expect((store.read().data['shifts'] as List), hasLength(1));
         expect(await sync.flush(), greaterThan(0));
         expect(pendingOutbox(db), isEmpty);
+        final rotated = await agentSetup.enrollOrRotate(permissionVersion: 1);
+        expect(rotated.token, isNot(credentials.token));
+        await expectLater(
+          transport.checkpoint(),
+          throwsA(isA<AgentTransportException>()),
+        );
+        final replacement = SupabaseAgentTransport(
+          rotated,
+          allowLoopbackHttpForTests: true,
+        );
+        try {
+          expect(
+            (await replacement.checkpoint())['last_acked_seq'],
+            greaterThan(0),
+          );
+          expect((await call('/test/inspect'))['enrollments'], 2);
+          await agentSetup.revoke(permissionVersion: 1);
+          await expectLater(
+            replacement.checkpoint(),
+            throwsA(isA<AgentTransportException>()),
+          );
+          expect((await call('/test/inspect'))['live_agents'], 0);
+        } finally {
+          replacement.close();
+        }
       } finally {
+        agentSetup.close();
         sync.dispose();
         transport.close();
         db.close();
