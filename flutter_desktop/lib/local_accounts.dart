@@ -140,7 +140,37 @@ class LocalAuth {
       action TEXT NOT NULL,
       target TEXT,
       detail TEXT NOT NULL DEFAULT '{}')''');
+    db.execute('''CREATE TABLE IF NOT EXISTS auth_settings(
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL)''');
   }
+
+  // ---------------------------------------------------------------- settings
+  String? setting(String key) {
+    final r = db.select('SELECT value FROM auth_settings WHERE key=?', [key]);
+    return r.isEmpty ? null : r.single['value'] as String;
+  }
+
+  void setSetting(String key, String value, {String? actor}) {
+    db.execute('INSERT INTO auth_settings(key,value) VALUES(?,?) '
+        'ON CONFLICT(key) DO UPDATE SET value=excluded.value', [key, value]);
+    _audit('setting.update', actor: actor, target: key, detail: {'value': value});
+  }
+
+  /// "Bireysel giriş zorunlu": LAN apps need an individual login. Off until
+  /// the owner turns it on, so existing restaurant phones keep working.
+  bool get lanLoginRequired => setting('lan_login_required') == '1';
+
+  /// Loads the owner-configured idle lock (minutes) into [idleLock].
+  void loadSettings() {
+    final m = int.tryParse(setting('idle_lock_minutes') ?? '');
+    if (m != null && m >= 1 && m <= 720) idleLock = Duration(minutes: m);
+  }
+
+  List<Json> audit({int limit = 200}) => [
+    for (final r in db.select('SELECT * FROM auth_audit ORDER BY id DESC LIMIT ?', [limit]))
+      {'at': r['at'], 'actor': r['actor'], 'action': r['action'], 'target': r['target']},
+  ];
 
   // ---------------------------------------------------------------- crypto
   String _randomB64(int bytes) => base64UrlEncode(
@@ -408,27 +438,27 @@ class LocalAuth {
 
   /// Validates a token for [client]. `touch` records activity (resets idle).
   AuthContext check(String token, String client, {bool touch = true}) {
-    final s = _session(token);
-    if (s == null) return const AuthContext(status: 'unknown');
-    if (s['revoked_at'] != null) return const AuthContext(status: 'revoked');
+    final sess = _session(token);
+    if (sess == null) return const AuthContext(status: 'unknown');
+    if (sess['revoked_at'] != null) return const AuthContext(status: 'revoked');
     final now = _clock().toUtc();
-    if (!now.isBefore(DateTime.parse(s['expires_at'] as String))) {
+    if (!now.isBefore(DateTime.parse(sess['expires_at'] as String))) {
       return const AuthContext(status: 'expired');
     }
-    final d = db.select('SELECT * FROM auth_devices WHERE device_id=?', [s['device_id']]).single;
+    final d = db.select('SELECT * FROM auth_devices WHERE device_id=?', [sess['device_id']]).single;
     if (d['revoked_at'] != null) return const AuthContext(status: 'revoked');
     if (d['client'] != client) return const AuthContext(status: 'client_mismatch');
-    final u = _user(s['user_id'] as String)!;
+    final u = _user(sess['user_id'] as String)!;
     if (u['active'] != 1) return const AuthContext(status: 'inactive');
-    if (now.difference(DateTime.parse(s['last_seen_at'] as String)) >= idleLock) {
+    if (now.difference(DateTime.parse(sess['last_seen_at'] as String)) >= idleLock) {
       return const AuthContext(status: 'locked');
     }
     if (touch) {
-      db.execute('UPDATE auth_sessions SET last_seen_at=? WHERE token_sha256=?', [_now(), s['token_sha256']]);
+      db.execute('UPDATE auth_sessions SET last_seen_at=? WHERE token_sha256=?', [_now(), sess['token_sha256']]);
       db.execute('UPDATE auth_devices SET last_seen_at=? WHERE device_id=?', [_now(), d['device_id']]);
     }
     final isOwner = u['is_owner'] == 1;
-    final mfaAt = DateTime.tryParse('${s['mfa_at'] ?? ''}');
+    final mfaAt = DateTime.tryParse('${sess['mfa_at'] ?? ''}');
     return AuthContext(
       status: 'ok',
       userId: u['user_id'] as String, username: u['username'] as String,
@@ -470,9 +500,9 @@ class LocalAuth {
 
   /// Re-entry after inactivity. 5 wrong PINs clear the PIN: password needed.
   Future<AuthContext> unlockWithPin(String token, String client, String pin) async {
-    final s = _session(token);
-    if (s == null || s['revoked_at'] != null) return const AuthContext(status: 'revoked');
-    final d = db.select('SELECT * FROM auth_devices WHERE device_id=?', [s['device_id']]).single;
+    final sess = _session(token);
+    if (sess == null || sess['revoked_at'] != null) return const AuthContext(status: 'revoked');
+    final d = db.select('SELECT * FROM auth_devices WHERE device_id=?', [sess['device_id']]).single;
     if (d['revoked_at'] != null || d['client'] != client) return const AuthContext(status: 'revoked');
     if (d['pin_hash'] == null) return const AuthContext(status: 'password_required');
     if (!await _verify(pin, d['pin_hash'] as String)) {
@@ -486,28 +516,28 @@ class LocalAuth {
       return const AuthContext(status: 'invalid_pin');
     }
     db.execute('UPDATE auth_devices SET pin_failed=0 WHERE device_id=?', [d['device_id']]);
-    db.execute('UPDATE auth_sessions SET last_seen_at=? WHERE token_sha256=?', [_now(), s['token_sha256']]);
+    db.execute('UPDATE auth_sessions SET last_seen_at=? WHERE token_sha256=?', [_now(), sess['token_sha256']]);
     return check(token, client);
   }
 
   /// Password re-entry on a locked session (no PIN or PIN cleared).
   Future<AuthContext> unlockWithPassword(String token, String client, String password) async {
-    final s = _session(token);
-    if (s == null || s['revoked_at'] != null) return const AuthContext(status: 'revoked');
-    final u = _user(s['user_id'] as String)!;
+    final sess = _session(token);
+    if (sess == null || sess['revoked_at'] != null) return const AuthContext(status: 'revoked');
+    final u = _user(sess['user_id'] as String)!;
     if (!await _verify(password, u['password_hash'] as String)) {
       return const AuthContext(status: 'invalid_credentials');
     }
-    db.execute('UPDATE auth_sessions SET last_seen_at=? WHERE token_sha256=?', [_now(), s['token_sha256']]);
+    db.execute('UPDATE auth_sessions SET last_seen_at=? WHERE token_sha256=?', [_now(), sess['token_sha256']]);
     return check(token, client);
   }
 
   void logout(String token) {
-    final s = _session(token);
-    if (s == null) return;
+    final sess = _session(token);
+    if (sess == null) return;
     db.execute('UPDATE auth_sessions SET revoked_at=? WHERE token_sha256=? AND revoked_at IS NULL',
-        [_now(), s['token_sha256']]);
-    _audit('logout', actor: s['user_id'] as String, target: s['device_id'] as String);
+        [_now(), sess['token_sha256']]);
+    _audit('logout', actor: sess['user_id'] as String, target: sess['device_id'] as String);
   }
 
   // ---------------------------------------------------------------- TOTP

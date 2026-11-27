@@ -56,6 +56,9 @@ import 'platform_ui.dart';
 import 'platform_workflows.dart';
 import 'review_sync_service.dart';
 import 'tgo_review_api.dart';
+import 'local_accounts.dart';
+import 'lan_auth_gate.dart';
+import 'accounts_ui.dart';
 
 part 'order_composer.dart';
 
@@ -157,6 +160,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
   bool terminalBusy = false;
   late final ReceiptPrinter receiptPrinter;
   late final PosLanServer lan;
+  late final LocalAuth localAuth;
   late final QrMenuAutoSync qrSync;
   late final TrendyolGoReadonly tgo;
   late final ReviewSyncService reviewSync;
@@ -242,8 +246,10 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     );
     onlineAlarm.setAudioEnabled(settings['onlineOrderSound'] != false);
     inpos = InposPayments(store, widget.inposGateway ?? UnavailableInpos());
+    localAuth = LocalAuth(store.authDatabase)..loadSettings();
     lan = PosLanServer(
       store,
+      authGate: LanAuthGate(localAuth),
       googleProvider: () => google,
       platformWritable: () => tgo.canWrite && !tgo.writing,
       platformAction: _staffPlatformAction,
@@ -3623,6 +3629,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     staffPanel: _staff(db),
     wifiPanel: _wifi(db),
     backupPanel: BackupPanel(service: backups, restore: restorer),
+    accountsPanel: AccountsPanel(auth: localAuth, employees: asMaps(db['employees'])),
   );
 
   Widget _notice(String text) => Container(

@@ -14,12 +14,15 @@ import 'pos_store.dart';
 import 'mobile_pairing.dart';
 import 'finance_sync_server.dart';
 import 'google_business.dart';
+import 'lan_auth_gate.dart';
 
 /// Native Flutter Windows HTTP server for employee phones. No Python process.
 class PosLanServer extends ChangeNotifier {
   PosLanServer(this.store, {this.port = 8787, String? staffHtml, this.googleProvider,
-      this.platformAction, this.platformWritable})
+      this.platformAction, this.platformWritable, this.authGate})
     : _staffHtml = staffHtml;
+  /// Individual LAN logins (spec §23.4). Null = legacy shared panel only.
+  final LanAuthGate? authGate;
   final PosStore store;
   /// Runs a staff phone's Trendyol Go Kabul Et / Hazır through the laptop's
   /// own integration (same validation and platform pre-check as the POS).
@@ -298,9 +301,77 @@ class PosLanServer extends ChangeNotifier {
     };
   }
 
+  String? _token(HttpRequest r) => LanAuthGate.tokenFrom(
+      cookie: r.headers.value(HttpHeaders.cookieHeader),
+      authorization: r.headers.value(HttpHeaders.authorizationHeader));
+
+  bool _sameOrigin(HttpRequest r) {
+    final origin = r.headers.value('origin');
+    return origin == null || Uri.tryParse(origin)?.authority == r.headers.value('host');
+  }
+
+  /// Applies the LAN auth gate; writes the refusal and returns null when denied.
+  GateDecision? _guard(HttpRequest r, String operation, {bool touch = true}) {
+    final gate = authGate;
+    if (gate == null) return const GateDecision.allow(null);
+    final d = gate.guard(token: _token(r), client: 'personel', operation: operation, touch: touch);
+    if (d.allowed) return d;
+    _json(r.response, d.status, {'error': d.error});
+    return null;
+  }
+
+  Future<void> _handleAuth(HttpRequest request, String path) async {
+    final gate = authGate;
+    if (gate == null) {
+      _json(request.response, 404, {'error': 'not_found'});
+      return;
+    }
+    final addr = request.connectionInfo?.remoteAddress.address ?? '';
+    if (!_privateIp(addr) && addr != '127.0.0.1' && addr != '::1') {
+      _json(request.response, 403, {'error': 'lan_only'});
+      return;
+    }
+    if (!_sameOrigin(request)) {
+      _json(request.response, 403, {'error': 'origin'});
+      return;
+    }
+    Json body = {...request.uri.queryParameters};
+    if (request.method == 'POST') {
+      final chunks = <int>[];
+      await for (final part in request) {
+        chunks.addAll(part);
+        if (chunks.length > 8 * 1024) {
+          _json(request.response, 413, {'error': 'payload_size'});
+          return;
+        }
+      }
+      try {
+        final decoded = chunks.isEmpty ? const {} : jsonDecode(utf8.decode(chunks));
+        if (decoded is! Map) throw const FormatException('invalid');
+        body = Map<String, dynamic>.from(decoded);
+      } on FormatException {
+        _json(request.response, 422, {'error': 'invalid_request'});
+        return;
+      }
+    }
+    final reply = await gate.handle(request.method, path, body,
+        token: _token(request), ip: addr);
+    if (reply.setToken != null) {
+      request.response.headers.add(HttpHeaders.setCookieHeader,
+          LanAuthGate.cookieHeader(reply.setToken!));
+    } else if (reply.clearToken) {
+      request.response.headers.add(HttpHeaders.setCookieHeader, LanAuthGate.clearCookieHeader);
+    }
+    _json(request.response, reply.status, reply.body);
+  }
+
   Future<void> _handle(HttpRequest request) async {
     final uri = request.uri;
     final resource = uri.path;
+    if (resource.startsWith('/api/auth/')) {
+      await _handleAuth(request, resource.substring('/api/auth/'.length));
+      return;
+    }
     if (request.method == 'POST' && resource == '/api/finance/v1') {
       final addr = request.connectionInfo?.remoteAddress.address ?? '';
       if (!_privateIp(addr) && addr != '127.0.0.1') {
@@ -369,6 +440,11 @@ class PosLanServer extends ChangeNotifier {
         'revision': store.read().revision,
         'serverId': pairing.serverId,
       });
+      return;
+    }
+    if (request.method == 'GET' &&
+        (resource == '/api/state' || resource == '/api/bootstrap') &&
+        _guard(request, 'tables.view', touch: false) == null) {
       return;
     }
     if (request.method == 'GET' && resource == '/api/state') {
@@ -481,6 +557,8 @@ class PosLanServer extends ChangeNotifier {
         _json(request.response, 403, {'error': 'origin'});
         return;
       }
+      final platformDecision = _guard(request, 'online.act');
+      if (platformDecision == null) return;
       final chunks = <int>[];
       await for (final part in request) {
         chunks.addAll(part);
@@ -498,7 +576,8 @@ class PosLanServer extends ChangeNotifier {
       try {
         final incoming = jsonDecode(utf8.decode(chunks));
         if (incoming is! Map) throw const FormatException('Geçersiz istek');
-        final result = await handler(Map<String, dynamic>.from(incoming));
+        final result = await handler(LanAuthGate.withIdentity(
+            Map<String, dynamic>.from(incoming), platformDecision.context));
         _json(request.response, 200, result);
       } on FormatException catch (e) {
         _json(request.response, 422, {'error': 'invalid_action',
@@ -533,9 +612,15 @@ class PosLanServer extends ChangeNotifier {
       try {
         final incoming = jsonDecode(utf8.decode(chunks));
         if (incoming is! Map) throw const FormatException('Geçersiz istek');
-        final result = resource == '/api/staff/orders'
-            ? submitStaffOrder(store, Map<String, dynamic>.from(incoming))
-            : submitStaffAction(store, Map<String, dynamic>.from(incoming));
+        final payload = Map<String, dynamic>.from(incoming);
+        final isOrder = resource == '/api/staff/orders';
+        final decision = _guard(request,
+            isOrder ? 'orders.create' : LanAuthGate.operationForAction(payload));
+        if (decision == null) return;
+        final acting = LanAuthGate.withIdentity(payload, decision.context);
+        final result = isOrder
+            ? submitStaffOrder(store, acting)
+            : submitStaffAction(store, acting);
         _json(request.response, 200, result);
       } on StaffConflict {
         _json(request.response, 409, {

@@ -1,0 +1,170 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:nohut_falafel_desktop/lan_auth_gate.dart';
+import 'package:nohut_falafel_desktop/lan_server.dart';
+import 'package:nohut_falafel_desktop/local_accounts.dart';
+import 'package:nohut_falafel_desktop/pos_store.dart';
+
+void main() {
+  late Directory dir;
+  late PosStore store;
+  late LocalAuth auth;
+  late LanAuthGate gate;
+  late PosLanServer server;
+  final received = <Map<String, dynamic>>[];
+  const device = 'phone-device-0001-abcdef';
+
+  setUp(() async {
+    received.clear();
+    dir = Directory.systemTemp.createTempSync('nohut-lan-auth');
+    store = PosStore(databaseFile: '${dir.path}/db');
+    auth = LocalAuth(store.authDatabase, iterations: 1000);
+    await auth.createUser(username: 'sahip', password: 'owner-pass-1', role: 'Yönetici', isOwner: true);
+    final ayse = await auth.createUser(
+        username: 'ayse', password: 'staff-pass-1', role: 'Personel', employeeId: 7);
+    auth.setGrant(ayse, 'online.act', false);
+    gate = LanAuthGate(auth);
+    server = PosLanServer(store, port: 0, staffHtml: '<h1>P</h1>', authGate: gate,
+        platformAction: (r) async {
+          received.add(r);
+          return {'ok': true};
+        });
+    await server.start();
+  });
+  tearDown(() async {
+    await server.stop();
+    server.dispose();
+    store.dispose();
+    dir.deleteSync(recursive: true);
+  });
+
+  Future<(int, Map, String?)> call(String method, String path,
+      {Object? body, String? cookie, String? origin}) async {
+    final client = HttpClient();
+    try {
+      final req = await client.openUrl(method, Uri.parse('http://127.0.0.1:${server.port}$path'));
+      if (cookie != null) req.headers.set(HttpHeaders.cookieHeader, cookie);
+      if (origin != null) req.headers.set('origin', origin);
+      if (body != null) {
+        req.headers.contentType = ContentType.json;
+        req.write(jsonEncode(body));
+      }
+      final res = await req.close();
+      final text = await res.transform(utf8.decoder).join();
+      return (res.statusCode, jsonDecode(text) as Map, res.headers.value(HttpHeaders.setCookieHeader));
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  String cookieOf(String? setCookie) => setCookie!.split(';').first;
+
+  test('legacy mode keeps the shared panel working until the owner opts in', () async {
+    final (status, _, _) = await call('GET', '/api/state');
+    expect(status, 200);
+    final (s, session, _) = await call('GET', '/api/auth/session');
+    expect(s, 200);
+    expect(session['required'], false);
+    expect(session['configured'], true);
+    expect((session['session'] as Map)['status'], 'none');
+  });
+
+  test('required mode: login sets an HttpOnly cookie; state needs a session', () async {
+    auth.setSetting('lan_login_required', '1');
+    expect((await call('GET', '/api/state')).$1, 401);
+
+    final (bad, badBody, _) = await call('POST', '/api/auth/login',
+        body: {'username': 'ayse', 'password': 'wrong-pass', 'deviceId': device});
+    expect(bad, 401);
+    expect(badBody['error'], 'invalid_credentials');
+
+    final (ok, body, setCookie) = await call('POST', '/api/auth/login',
+        body: {'username': 'ayse', 'password': 'staff-pass-1', 'deviceId': device, 'label': 'iPhone'});
+    expect(ok, 200);
+    expect(setCookie, contains('HttpOnly'));
+    expect(setCookie, contains('SameSite=Strict'));
+    expect(jsonEncode(body), isNot(contains(cookieOf(setCookie).split('=').last)),
+        reason: 'token is never in the JSON body');
+    final session = body['session'] as Map;
+    expect(session['username'], 'ayse');
+    expect(session['employeeId'], 7);
+    expect((session['grants'] as List), isNot(contains('sync.view')), reason: 'windows-only hidden');
+
+    final cookie = cookieOf(setCookie);
+    expect((await call('GET', '/api/state', cookie: cookie)).$1, 200);
+
+    // Per-operation check: online.act was removed for this user.
+    final (denied, deniedBody, _) = await call('POST', '/api/staff/platform',
+        cookie: cookie, body: {'packageId': 'p', 'action': 'accept'});
+    expect(denied, 403);
+    expect(deniedBody['error'], 'forbidden');
+    expect(received, isEmpty);
+
+    // Logout revokes the server session and clears the cookie.
+    final (_, _, cleared) = await call('POST', '/api/auth/logout', cookie: cookie);
+    expect(cleared, contains('Max-Age=0'));
+    expect((await call('GET', '/api/state', cookie: cookie)).$1, 401);
+  });
+
+  test('signed-in identity overrides the staffId a phone claims', () async {
+    auth.setSetting('lan_login_required', '1');
+    final (_, _, setCookie) = await call('POST', '/api/auth/login',
+        body: {'username': 'sahip', 'password': 'owner-pass-1', 'deviceId': device});
+    final ownerId = auth.users().firstWhere((u) => u['isOwner'] == true)['userId'] as String;
+    expect(ownerId, isNotEmpty);
+    // Owner has no employee link: payload kept; a linked user is stamped.
+    expect(LanAuthGate.withIdentity({'staffId': 3},
+        const AuthContext(status: 'ok', employeeId: 7)), {'staffId': 7});
+    final (status, _, _) = await call('POST', '/api/staff/platform',
+        cookie: cookieOf(setCookie), body: {'staffId': 3, 'packageId': 'p', 'action': 'accept'});
+    expect(status, 200);
+    expect(received.single['staffId'], 3);
+  });
+
+  test('cross-origin auth requests and repeated failures are refused', () async {
+    final (cross, _, _) = await call('POST', '/api/auth/login', origin: 'http://evil.example',
+        body: {'username': 'ayse', 'password': 'staff-pass-1', 'deviceId': device});
+    expect(cross, 403);
+    for (var i = 0; i < LanAuthGate.maxFailuresPerIp; i++) {
+      await call('POST', '/api/auth/login',
+          body: {'username': 'nobody$i', 'password': 'wrong-pass', 'deviceId': device});
+    }
+    final (throttled, _, _) = await call('POST', '/api/auth/login',
+        body: {'username': 'ayse', 'password': 'staff-pass-1', 'deviceId': device});
+    expect(throttled, 429);
+  });
+
+  test('idle lock: polling does not count as activity; PIN unlocks', () async {
+    var now = DateTime.utc(2026, 11, 27, 12);
+    final a = LocalAuth(store.authDatabase, iterations: 1000, clock: () => now);
+    final g = LanAuthGate(a, clock: () => now);
+    a.setSetting('lan_login_required', '1');
+    final login = await g.handle('POST', 'login',
+        {'username': 'ayse', 'password': 'staff-pass-1', 'deviceId': device}, ip: '10.0.0.2');
+    final token = login.setToken!;
+    expect((await g.handle('POST', 'pin', {'pin': '482915'}, token: token, ip: '10.0.0.2')).status, 200);
+    for (var i = 0; i < 40; i++) {
+      now = now.add(const Duration(minutes: 1));
+      g.guard(token: token, client: 'personel', operation: 'tables.view', touch: false);
+    }
+    final locked = g.guard(token: token, client: 'personel', operation: 'tables.view', touch: false);
+    expect(locked.status, 401);
+    expect(locked.error, 'locked');
+    final wrong = await g.handle('POST', 'unlock', {'pin': '000001'}, token: token, ip: '10.0.0.2');
+    expect(wrong.body['error'], 'invalid_pin');
+    final unlocked = await g.handle('POST', 'unlock', {'pin': '482915'}, token: token, ip: '10.0.0.2');
+    expect(unlocked.status, 200);
+    expect(g.guard(token: token, client: 'personel', operation: 'tables.view').allowed, true);
+  });
+
+  test('action to operation mapping is decided on the server', () {
+    expect(LanAuthGate.operationForAction({'action': 'pay'}), 'payments.take');
+    expect(LanAuthGate.operationForAction({'action': 'move'}), 'orders.move');
+    expect(LanAuthGate.operationForAction({'action': 'printProductPayment'}), 'receipts.print');
+    expect(LanAuthGate.operationForAction({'action': 'whatever'}), 'orders.edit');
+    expect(LanAuthGate.tokenFrom(cookie: 'a=b; nohut_lan=xyz'), 'xyz');
+    expect(LanAuthGate.tokenFrom(authorization: 'Bearer pairing-token'), isNull);
+  });
+}

@@ -128,6 +128,10 @@ class PosStore extends ChangeNotifier {
   late final String filePath;
   late final Database _db;
 
+  /// Same SQLite connection, for the dedicated local account tables
+  /// (`auth_*`, lib/local_accounts.dart). Never part of the state JSON.
+  Database get authDatabase => _db;
+
   /// Phase 1B: true when the database uses per-entity tables.
   bool _normalized = false;
   bool get normalized => _normalized;
