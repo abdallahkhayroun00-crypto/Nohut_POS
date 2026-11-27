@@ -83,6 +83,12 @@ EVIDENCE:
 
 **Blockers / owner actions:** live Trendyol read-only check needs explicit owner authorization (R1); physical iPhone HTTPS/Safari test (L4); any FCM project needs owner approval (N4); KVKK gate unchanged.
 
+## Codex weekly submission checkpoint (2026-11-27)
+
+- QA-09 fourth slice: existing timesheetWeeks event now ingests private typed weeks, immutable submission ordinals and nested historical entry snapshots. Stable source week/shift identities, tenant employee mapping, Istanbul Monday weeks, exact integer-minute totals and current-or-audited historical interval matching are enforced. Changed/omitted snapshots, entry-set changes, invented intervals and inconsistent current headers abort the complete transaction. Shift ingestion precedes submissions; no approvals or planned-hour pay introduced.
+- Validation: **49 migrations / 27 SQL suites** pass under both superuser and non-BYPASSRLS owner. Targeted real Windows weekly/manual/workforce suite **11 passed**; actual HTTP/PostgreSQL passes submit → lost ACK/retry (one snapshot) → corrected/resubmitted → explicit no-work, retaining [480, 510, 0] minutes and all historical entries. Analysis has no errors/warnings (596 style/deprecation infos). Latest full Windows baseline remains the prior **492 passed, 2 skips**; do not count this as a new full-suite run.
+- Registry/data inventory now distinguish the tested PR-only wage/ledger/submission slices from unimplemented planned shifts; nothing merged/deployed. Contract: docs/contracts/v1/timesheet-submissions.md. Planned Vardiya, authorized weekly summaries/read APIs, initial snapshot/reconciliation, remaining eligible domains and runtime command/auth integration remain open. QA-09/O-03 is not closed; PR stays draft.
+
 ## Codex manual Mesai checkpoint (2026-11-27)
 
 - Integrated Claude d22e706 print completion revision-race fix and Q2 settings inventory/navigation into #39 only (merge 44157be). Preserved existing operations, frozen receipt audit and test-only renderer fix. No other agent branch modified.

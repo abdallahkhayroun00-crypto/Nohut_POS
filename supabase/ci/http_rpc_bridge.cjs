@@ -107,6 +107,8 @@ async function main(){
             (select count(*)::integer from nohut_private.payroll_reviews where restaurant_id=$1) as payroll_reviews,
             (select coalesce(sum(extract(epoch from ended_at-started_at)::bigint/60-break_minutes),0)::text from nohut_private.shifts where restaurant_id=$1 and source='manual' and not voided) as manual_minutes,
             (select count(*)::integer from nohut_private.shift_corrections c join nohut_private.shifts s using(restaurant_id,shift_id) where c.restaurant_id=$1 and s.source='manual') as manual_corrections,
+            (select count(*)::integer from nohut_private.timesheet_submissions where restaurant_id=$1) as timesheet_submissions,
+            (select jsonb_agg(minutes::integer order by ordinal) from nohut_private.timesheet_submissions where restaurant_id=$1) as submitted_minutes,
             (select count(*)::integer from nohut_private.agent_enrollment_requests where restaurant_id=$1) as enrollments,
             (select count(*)::integer from nohut_private.windows_agents where restaurant_id=$1 and revoked_at is null) as live_agents,
             (select count(*)::integer from nohut_private.orders where restaurant_id=$1) as orders,

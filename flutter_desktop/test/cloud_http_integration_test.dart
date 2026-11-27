@@ -567,12 +567,20 @@ void main() {
           actorId: 2, actorName: 'Synthetic payroll staff', now: workNow);
         expect(await sync.flush(), greaterThan(0), reason: sync.status().lastError);
         expect((await call('/test/inspect'))['manual_minutes'], '480');
+        submitWeek(store, {'requestId': 'synthetic-submit', 'weekStart': '2026-11-23'}, actorId: 2, now: workNow);
+        await call('/test/lose-next-ingest-ack');
+        expect(await sync.flush(), 0);
+        now = now.add(const Duration(seconds: 4));
+        expect(await sync.flush(), greaterThan(0));
+        expect((await call('/test/inspect'))['timesheet_submissions'], 1);
         final editedWork = applyWorkCommand(store, {'action': 'work_save', 'requestId': 'synthetic-manual-edit',
           'id': manual['id'], 'expectedUpdatedAt': manual['updatedAt'], 'date': '2026-11-23',
           'start': '09:00', 'end': '18:00', 'breakMinutes': 30},
           actorId: 2, actorName: 'Synthetic payroll staff', now: workNow);
         expect(await sync.flush(), greaterThan(0), reason: sync.status().lastError);
         expect((await call('/test/inspect'))['manual_minutes'], '510');
+        submitWeek(store, {'requestId': 'synthetic-resubmit', 'weekStart': '2026-11-23'}, actorId: 2, now: workNow);
+        expect(await sync.flush(), greaterThan(0), reason: sync.status().lastError);
         applyWorkCommand(store, {'action': 'work_void', 'requestId': 'synthetic-manual-void',
           'id': manual['id'], 'expectedUpdatedAt': editedWork['updatedAt'], 'reason': 'Synthetic correction'},
           actorId: 2, actorName: 'Synthetic payroll staff', now: workNow);
@@ -580,6 +588,11 @@ void main() {
         final manualFacts = await call('/test/inspect');
         expect(manualFacts['manual_minutes'], '0');
         expect(manualFacts['manual_corrections'], 2);
+        submitWeek(store, {'requestId': 'synthetic-nowork', 'weekStart': '2026-11-23', 'noWork': true}, actorId: 2, now: workNow);
+        expect(await sync.flush(), greaterThan(0), reason: sync.status().lastError);
+        final submissions = await call('/test/inspect');
+        expect(submissions['timesheet_submissions'], 3);
+        expect(submissions['submitted_minutes'], [480, 510, 0]);
         final payrollNow = DateTime.utc(2026, 11, 30, 10);
         late String partialPayment;
         store.command('synthetic-payroll-partial', {}, (s) {
