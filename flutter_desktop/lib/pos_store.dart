@@ -85,6 +85,12 @@ class PosStore extends ChangeNotifier {
     _db.execute(
       'CREATE TABLE IF NOT EXISTS command_receipts (request_id TEXT PRIMARY KEY, payload TEXT NOT NULL, result TEXT NOT NULL)',
     );
+    _db.execute('''
+      CREATE TABLE IF NOT EXISTS remote_command_receipts(
+        request_id TEXT PRIMARY KEY, envelope_sha256 TEXT NOT NULL,
+        result TEXT NOT NULL
+      )
+    ''');
     _db.execute(
       'CREATE TABLE IF NOT EXISTS deleted_requests (request_id TEXT PRIMARY KEY)',
     );
@@ -405,6 +411,42 @@ class PosStore extends ChangeNotifier {
     }
   }
 
+  (String, String)? _remoteContext;
+
+  /// Bind a cloud envelope to the receipt written by the existing handler.
+  /// Synchronous only: no network call or await may enter this context.
+  T withRemoteCommand<T>(String requestId, String envelopeSha256, T Function() run) {
+    if (_remoteContext != null) throw StateError('Remote command already running');
+    _remoteContext = (requestId, envelopeSha256);
+    try {
+      return run();
+    } finally {
+      _remoteContext = null;
+    }
+  }
+
+  Map<String, dynamic>? remoteCommandReceipt(String requestId, String envelopeSha256) {
+    final rows = _db.select(
+      'SELECT envelope_sha256,result FROM remote_command_receipts WHERE request_id=?',
+      [requestId],
+    );
+    if (rows.isEmpty) return null;
+    if (rows.single['envelope_sha256'] != envelopeSha256) {
+      throw const FormatException('Request ID reused with different payload');
+    }
+    return Map<String, dynamic>.from(jsonDecode(rows.single['result'] as String) as Map);
+  }
+
+  void _recordRemoteReceipt(String requestId, Map<String, dynamic> result) {
+    final context = _remoteContext;
+    if (context == null) return;
+    if (context.$1 != requestId) throw StateError('Remote request identity mismatch');
+    _db.execute(
+      'INSERT INTO remote_command_receipts(request_id,envelope_sha256,result) VALUES(?,?,?)',
+      [requestId, context.$2, jsonEncode(result)],
+    );
+  }
+
   /// Executes a synchronous domain command while holding the SQLite writer lock.
   /// Retries reuse a persisted receipt; the same ID with another payload fails.
   Map<String, dynamic> command(
@@ -439,6 +481,7 @@ class PosStore extends ChangeNotifier {
         result = Map<String, dynamic>.from(
           jsonDecode(receipt.single['result'] as String) as Map,
         );
+        _recordRemoteReceipt(requestId, result);
         _db.execute('COMMIT');
         return result;
       }
@@ -454,6 +497,7 @@ class PosStore extends ChangeNotifier {
         'INSERT INTO command_receipts(request_id,payload,result) VALUES(?,?,?)',
         [requestId, encoded, jsonEncode(result)],
       );
+      _recordRemoteReceipt(requestId, result);
       _db.execute('COMMIT');
       _remember(cached, revision, stamp);
     } catch (_) {
@@ -560,6 +604,7 @@ class PosStore extends ChangeNotifier {
           [id],
         );
       }
+      _recordRemoteReceipt(requestId, {'ok': true, 'revision': revision + 1});
       _db.execute('COMMIT');
       _remember(cached, revision + 1, stamp);
       notifyListeners();

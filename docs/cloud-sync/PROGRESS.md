@@ -124,3 +124,10 @@ Integrated #41 and added narrowly scoped migration-owner RLS policies for the pr
 PR #39: added private Windows agent enrollment, 30-day opaque hashed credential rotation/revocation and tenant/epoch-derived ingest/claim/complete/checkpoint wrappers. Enrollment requires active manager owner session and MFA; changing PC requires a new epoch. The 30-day lifetime is a proposed engineering default, not deployed. TLS API, DPAPI client storage, agent recovery and all new CI results remain pending.
 
 PR #39: previous head 15316b1 all checks passed (PostgreSQL, auth and Windows build). Added typed shift and immutable correction history projections; employee + shift groups can be committed together, with ACK only after both succeed. Latest tests pending; orders/payments/finance and transport remain incomplete.
+
+### PR #39 continuation — 2026-11-27
+
+- Verified baseline `831f7fe`: PostgreSQL run 45973676444, authentication run 45973676528 and Windows run 45973676430 passed. Main remains `dd64f88` (#40/#41 merged).
+- Windows now stores a remote envelope fingerprint and result in the same SQLite transaction as the domain command. Authorized, identical retries return committed receipts even after expiry/restart; changed actor/action/authority cannot reuse that receipt. Failed transactions leave no receipt.
+- Platform responses with `verified=false` now require reconciliation. Stored platform attempts are bound to the immutable envelope and returned after expiry without another provider call.
+- Local targeted validation: `flutter test test/remote_commands_test.dart test/remote_operations_test.dart test/shifts_test.dart --reporter expanded` — 37 passed. This is implemented/tested on the PR branch, **not merged or deployed**. Full synchronization, public transport, lease integration and end-to-end QA remain in progress; this PR must remain draft.

@@ -103,6 +103,39 @@ void main() {
     expect(asMaps(store.read().data['orders']), hasLength(1));
   });
 
+  test('lost ACK after restart and expiry returns the committed receipt', () {
+    final e = envelope('create_order', newOrder());
+    final first = run(e);
+    expect(first.outcome, CommandOutcome.confirmed);
+    store.dispose();
+    store = PosStore(databaseFile: '${dir.path}/db');
+    final retry = run(e, now: t0.add(const Duration(hours: 1)));
+    expect(retry.outcome, CommandOutcome.confirmed);
+    expect(retry.result, first.result);
+    expect(asMaps(store.read().data['orders']), hasLength(1));
+  });
+
+  test('a cached receipt cannot be reused with another action or actor', () {
+    final e = envelope('create_order', newOrder());
+    expect(run(e).outcome, CommandOutcome.confirmed);
+    expect(run({...e, 'actor': {...e['actor'] as Map, 'employee_id': 3}}).code,
+        'idempotency_payload_mismatch');
+    expect(run({...e, 'authority_epoch': 'different'}).code,
+        'idempotency_payload_mismatch');
+  });
+
+  test('authorization is checked before returning a committed receipt', () {
+    final e = envelope('create_order', newOrder());
+    expect(run(e).outcome, CommandOutcome.confirmed);
+    expect(run({...e, 'actor': {...e['actor'] as Map, 'grants': <String>[]}}).code, 'forbidden');
+  });
+
+  test('failed business transaction does not leave a remote receipt', () {
+    final e = envelope('create_order', newOrder()..['expectedRevision'] = -1);
+    expect(run(e).outcome, CommandOutcome.conflict);
+    expect(store.remoteCommandReceipt('${e['request_id']}', envelopeSha256(e)), isNull);
+  });
+
   test('Windows-only operations are refused for every remote client, even the owner', () {
     for (final type in ['sync_manual', 'backup_manual', 'restore_request', 'first_sync', 'full_resync']) {
       for (final client in ['personel', 'yonetici']) {

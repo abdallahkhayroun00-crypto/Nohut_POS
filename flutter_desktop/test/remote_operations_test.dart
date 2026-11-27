@@ -113,6 +113,34 @@ void main() {
       expect(calls, 1);
     });
 
+    test('unverified provider response is uncertain, including after expiry', () async {
+      var calls = 0;
+      Future<bool> unverified(Json o, String a, {int? preparationMinutes}) async {
+        calls++;
+        return false;
+      }
+      final e = accept();
+      expect((await executeRemoteCommandAsync(store, e, platform: unverified, now: now)).outcome,
+          CommandOutcome.reconciliationRequired);
+      expect((await executeRemoteCommandAsync(store, e, platform: unverified,
+          now: t0.add(const Duration(hours: 1)))).outcome, CommandOutcome.reconciliationRequired);
+      expect(calls, 1);
+    });
+
+    test('confirmed platform attempt is returned after expiry without another call', () async {
+      var calls = 0;
+      Future<bool> platform(Json o, String a, {int? preparationMinutes}) async {
+        calls++;
+        return true;
+      }
+      final e = accept();
+      expect((await executeRemoteCommandAsync(store, e, platform: platform, now: now)).outcome,
+          CommandOutcome.confirmed);
+      expect((await executeRemoteCommandAsync(store, e, platform: platform,
+          now: t0.add(const Duration(hours: 1)))).outcome, CommandOutcome.confirmed);
+      expect(calls, 1);
+    });
+
     test('a check that fails before any network call is a plain rejection', () async {
       Future<bool> refuse(Json o, String a, {int? preparationMinutes}) async =>
           throw const FormatException('Yazma erişimi etkin değil.');
