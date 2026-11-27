@@ -1,6 +1,6 @@
 import {makeEdgeDispatcher} from './edge-dispatcher.mjs';
 async function testDispatcher(makeEdgeDispatcher){
- const id="12345678-1234-4234-8234-123456789abc",target="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",sha="a".repeat(40),token="a".repeat(64),body={operation:"publish",commandId:id,leaseGeneration:1,envelopeSha256:"b".repeat(64),expectedRevision:sha,expectedStamp:"c".repeat(16),catalog:{products:[]},activateConfirmed:false};
+ const id="12345678-1234-4234-8234-123456789abc",target="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",sha="a".repeat(40),token="a".repeat(64),body={operation:"publish",commandId:id,leaseGeneration:1,envelopeSha256:"b".repeat(64),expectedRevision:sha,expectedStamp:"c".repeat(16),draftJson:JSON.stringify({products:[]}),activateConfirmed:false};
  const equal=(x,y)=>{if(x!==y)throw Error("assertion "+x+" != "+y)};const results=[];
  function fixture({enabled=true,denied=false}={}){
   let auth=0,dispatch=0,mode=null;
@@ -17,6 +17,8 @@ async function testDispatcher(makeEdgeDispatcher){
  await test("recovery read scope only",async()=>{let m=fixture();equal((await m.run(recovery)).status,409);equal(m.state().mode,"read")});
  await test("cancellation does not construct Git transport",async()=>{let m=fixture();equal((await m.run({...recovery,operation:"cancel_before_attempt"})).body.status,"cancelled_before_attempt");equal(m.state().dispatch,0)});
  await test("fake Git evidence cannot enter recovery",async()=>{let m=fixture();equal((await m.run({...recovery,commit:sha})).status,400);equal(m.state().auth,0)});
+ await test("activation denied until separate authorization",async()=>{let m=fixture();equal((await m.run({...body,activateConfirmed:true})).status,400);equal(m.state().auth,0)});
+ await test("malformed draft rejected",async()=>{let m=fixture();equal((await m.run({...body,draftJson:"{"})).status,400);equal(m.state().auth,0)});
  return results;
 }
 const results=await testDispatcher(makeEdgeDispatcher);console.log(`${results.length} Edge dispatcher checks passed`);
