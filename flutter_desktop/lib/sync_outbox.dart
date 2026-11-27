@@ -22,6 +22,7 @@ import 'sync_field_registry.dart';
 import 'finance_sync_history.dart';
 import 'catalog_sync_history.dart';
 import 'receipt_sync_history.dart' show cloudPrintJobs, privateReceiptText;
+import 'payment_ledger_sync.dart' show paymentLedgerCoreValue;
 import 'pos_logic.dart' show orderTotalCents, orderPaidCents, orderDueCents;
 
 void createSyncTables(Database db) {
@@ -181,12 +182,13 @@ List<OutboxChange> collectOutboxChanges(
   }
   for (final key in {...previous.keys, ...next.keys}) {
     if (entityKeys.contains(key)) continue;
-    if (jsonEquals(previous[key], next[key])) continue;
-    final oldProjection = projectCore(key, previous[key]);
-    final newProjection = projectCore(key, next[key]);
+    final before=paymentLedgerCoreValue(previous,key),after=paymentLedgerCoreValue(next,key);
+    if (jsonEquals(before, after)) continue;
+    final oldProjection = projectCore(key, before);
+    final newProjection = projectCore(key, after);
     if (jsonEquals(oldProjection, newProjection)) continue;
     changes.add(OutboxChange(
-      key, 'core', newProjection == null ? 'delete' : 'upsert', next[key], previousRow: previous[key],
+      key, 'core', newProjection == null ? 'delete' : 'upsert', after, previousRow: before,
     ));
   }
   return changes;

@@ -9,6 +9,9 @@ import 'package:nohut_falafel_desktop/cloud_catalog_serializer.dart';
 import 'package:nohut_falafel_desktop/cloud_order_serializer.dart';
 import 'package:nohut_falafel_desktop/cloud_receipt_serializer.dart';
 import 'package:nohut_falafel_desktop/cloud_platform_serializer.dart';
+import 'package:nohut_falafel_desktop/cloud_payment_ledger_serializer.dart';
+import 'package:nohut_falafel_desktop/card_terminal.dart';
+import 'package:nohut_falafel_desktop/group_payments.dart';
 import 'package:nohut_falafel_desktop/receipt_printer.dart';
 import 'package:nohut_falafel_desktop/operations.dart';
 import 'package:nohut_falafel_desktop/order_actions.dart';
@@ -24,6 +27,7 @@ import 'package:sqlite3/sqlite3.dart';
 
 import 'support/synthetic_agent_secrets.dart';
 import 'support/synthetic_platform_order.dart';
+import 'support/synthetic_inpos_gateway.dart';
 
 void main() {
   final base = Platform.environment['NOHUT_TEST_RPC_URL'];
@@ -100,7 +104,10 @@ void main() {
               identities,
               TypedReceiptTransport(
                 identities,
-                TypedPlatformTransport(identities, transport),
+                TypedPlatformTransport(
+                  identities,
+                  TypedPaymentLedgerTransport(identities, transport),
+                ),
               ),
             ),
           ),
@@ -410,6 +417,103 @@ void main() {
         });
         expect(await sync.flush(), 1, reason: '${sync.status().lastError}');
         expect((await call('/test/inspect'))['platform_records'], 2);
+        final ledgerOrders = <int>[];
+        store.command('synthetic_auxiliary_ledger_sources', {}, (s) {
+          openCash(s, 10000);
+          moveCash(s, -200, 'Synthetic cash movement');
+          for (final price in [10, 20, 10]) {
+            ledgerOrders.add(
+              newLocalOrder(
+                    state: s,
+                    source: 'Gel-Al',
+                    table: null,
+                    cashier: 'Synthetic Employee',
+                    staffId: 1,
+                    productLines: [
+                      {
+                        'name': 'Synthetic ledger item',
+                        'price': price,
+                        'qty': 1,
+                      },
+                    ],
+                    customer: {
+                      'id': 12,
+                      'name': 'Private ledger customer',
+                      'phone': '05559876543',
+                    },
+                  )['id']
+                  as int,
+            );
+          }
+          return {'ok': true};
+        });
+        expect(
+          await sync.flush(),
+          greaterThanOrEqualTo(4),
+          reason: '${sync.status().lastError}',
+        );
+        store.command('synthetic_combined_ledger_payment', {}, (s) {
+          recordCombinedPickupPayment(
+            s,
+            orderIds: ledgerOrders.take(2).toList(),
+            amountCents: 3000,
+            method: 'Karışık',
+            cashCents: 1200,
+            receivedCents: 1500,
+            transactionId: 'synthetic-combined-reference',
+          );
+          closeCash(s, 11000);
+          return {'ok': true};
+        });
+        await call('/test/lose-next-ingest-ack');
+        expect(await sync.flush(), 0);
+        now = now.add(const Duration(minutes: 1));
+        expect(await sync.flush(), 4, reason: '${sync.status().lastError}');
+        final combined = await call('/test/inspect');
+        expect(combined['combined_groups'], 1);
+        expect(combined['combined_members'], 2);
+        expect(combined['combined_amount'], '3000');
+        expect(combined['combined_cash'], '1200');
+        expect(combined['combined_card'], '1800');
+        expect(combined['cash_expected'], '11000');
+        expect(combined['cash_variance'], '0');
+        expect(combined['cash_movements'], 1);
+        final gateway = SyntheticInposGateway();
+        final coordinator = InposPayments(store, gateway);
+        await coordinator.pay(
+          ledgerOrders.last,
+          1000,
+          'synthetic_terminal_reference',
+        );
+        expect(await sync.flush(), 3, reason: '${sync.status().lastError}');
+        await coordinator.pay(
+          ledgerOrders.last,
+          1000,
+          'synthetic_terminal_reference',
+        );
+        expect(gateway.sends, 1);
+        expect(gateway.queries, 1);
+        expect(await sync.flush(), 0);
+        gateway.reply = const TerminalReply(
+          TerminalStatus.approved,
+          transactionId: 'synthetic-terminal-transaction',
+          amountCents: 1000,
+        );
+        await coordinator.reconcile('synthetic_terminal_reference');
+        expect(await sync.flush(), 2, reason: '${sync.status().lastError}');
+        final card = await call('/test/inspect');
+        expect(card['terminal_attempts'], 1);
+        expect(card['terminal_events'], 4);
+        expect(card['terminal_status'], 'approved');
+        expect(card['terminal_payments'], 1);
+        store.deleteOrder(
+          ledgerOrders.last,
+          store.read().revision,
+          'synthetic_terminal_archive',
+          reason: 'Synthetic audit',
+        );
+        expect(await sync.flush(), 2, reason: '${sync.status().lastError}');
+        expect((await call('/test/inspect'))['terminal_events'], 4);
 
         const requestId = '90000000-0000-4000-8000-000000000001';
         final context = <String, Object?>{

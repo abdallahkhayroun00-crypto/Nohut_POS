@@ -81,6 +81,15 @@ List<String> unregisteredFieldPaths(Map state) {
 /// Prefix semantics: listing `orders[].batches[].lines[].removed` allows
 /// that field; a parent is never implicitly allowed by a child.
 const cloudAllowedFieldPaths = <String>{
+  'cashBook','cashBook.sessions','cashBook.sessions[].id','cashBook.sessions[].openedAt','cashBook.sessions[].openedBy',
+  'cashBook.sessions[].openingCents','cashBook.sessions[].closedAt','cashBook.sessions[].closedBy',
+  'cashBook.sessions[].countedCents','cashBook.sessions[].expectedCents','cashBook.sessions[].differenceCents',
+  'cashBook.movements','cashBook.movements[].syncId','cashBook.movements[].sessionId','cashBook.movements[].cents',
+  'cashBook.movements[].note','cashBook.movements[].at','cashBook.movements[].by',
+  'terminalAttempts[].syncHistory','terminalAttempts[].syncHistory[].id','terminalAttempts[].syncHistory[].ordinal',
+  'terminalAttempts[].syncHistory[].observedAt','terminalAttempts[].syncHistory[].origin','terminalAttempts[].syncHistory[].status',
+  'terminalAttempts[].syncHistory[].dispatched','terminalAttempts[].syncHistory[].transactionId',
+  'terminalAttempts[].syncHistory[].amountCents','terminalAttempts[].syncHistory[].orderId',
   'trendyolGoOrders[].totalKnown','trendyolGoOrders[].lineFacts',
   'trendyolGoOrders[].lineFacts[].name','trendyolGoOrders[].lineFacts[].qty',
   'trendyolGoOrders[].lineFacts[].unitPriceCents','trendyolGoOrders[].lineFacts[].options',
