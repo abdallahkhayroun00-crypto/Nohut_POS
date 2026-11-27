@@ -31,8 +31,13 @@ done
 if grep -l "FATAL EXCEPTION" "$out"/*.errors.txt; then echo "::error::An APK crashed on the emulator"; exit 1; fi
 ls -la "$out"
 # Real Flutter screens with synthetic data (integration test on the emulator).
-NOHUT_SHOTS="$out" flutter drive --driver=test_driver/integration_test.dart \
-  --target=integration_test/screens_test.dart -d emulator-5554 || echo "::warning::Flutter screen capture failed"
+# `flutter drive` never reconnected on the API 34 emulator (runs hung for
+# 25+ min), so run the integration test directly, bounded, and collect the
+# PNGs the test prints into the log.
+timeout 900 flutter test integration_test/screens_test.dart -d emulator-5554 --reporter expanded \
+  > "$out/flutter-test.log" 2>&1 || echo "::warning::Flutter screen capture failed or timed out"
+grep -v NOHUT_FLUTTER_SHOT "$out/flutter-test.log" | tail -40 || true
+python3 tool/collect_flutter_shots.py "$out/flutter-test.log" "$out" || true
 ls -la "$out"
 # Small copies in the job log, so reviewers without artifact access can see them.
 python3 tool/print_shots.py "$out"
