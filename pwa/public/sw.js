@@ -1,9 +1,9 @@
 // App-shell cache only (spec V5.1 §8.3): business data is never cached
 // here; on logout the app clears all caches. Network-first for HTML so a
 // new deployment is picked up; cache-first for hashed static assets.
-const CACHE = 'nohut-shell-v1';
+const CACHE = 'nohut-shell-v2';
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(['/', '/manifest.webmanifest', '/icons/icon-192.png'])));
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(["/", "/manifest.webmanifest", "/icons/icon-192.png", "/fonts/Barlow-Regular.ttf", "/fonts/BreeSerif-Regular.ttf"])));
   self.skipWaiting();
 });
 self.addEventListener('activate', (e) => {
@@ -24,7 +24,7 @@ self.addEventListener('fetch', (e) => {
     }).catch(() => caches.match('/')));
     return;
   }
-  if (url.pathname.startsWith('/assets/') || url.pathname.startsWith('/icons/')) {
+  if (url.pathname.startsWith('/assets/') || url.pathname.startsWith('/icons/') || url.pathname.startsWith('/fonts/')) {
     e.respondWith(caches.match(e.request).then((hit) => hit || fetch(e.request).then((r) => {
       const copy = r.clone();
       caches.open(CACHE).then((c) => c.put(e.request, copy));

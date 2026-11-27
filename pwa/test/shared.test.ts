@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { apps, sectionsFor, sharedSections } from '../src/shared/apps';
+import { apps, sectionsFor, setupSteps, sharedSections } from '../src/shared/apps';
+import { iconNames } from '../src/shared/icons';
 import { canPerform, findOperation, operations, operationsFor } from '../src/shared/permissions';
 import { freshness } from '../src/shared/freshness';
 import { probe, readConfig } from '../src/shared/cloud';
@@ -12,7 +13,11 @@ describe('two apps, three shared sections (spec §20.1–20.2)', () => {
     }
     expect(apps.personel.home.title).toBe('Masalar');
     expect(apps.yonetici.home.title).toBe('Genel Bakış');
-    expect(sharedSections.find((s) => s.id === 'sync')!.items).toContain('Şimdi Senkronize Et');
+    expect(sharedSections.find((s) => s.id === 'sync')!.items.map((i) => i.label)).toContain('Şimdi Senkronize Et');
+    for (const s of [...sectionsFor('personel'), ...sectionsFor('yonetici')]) {
+      for (const item of s.items) expect(iconNames).toContain(item.icon);
+      expect(iconNames).toContain(s.icon);
+    }
   });
 });
 
@@ -57,5 +62,12 @@ describe('cloud configuration (publishable key only)', () => {
     expect(await probe(cfg, (async () => new Response('{}', { status: 200 })) as typeof fetch)).toBe('reachable');
     expect(await probe(cfg, (async () => new Response('', { status: 503 })) as typeof fetch)).toBe('unreachable');
     expect(await probe(cfg, (async () => { throw new Error('offline'); }) as typeof fetch)).toBe('unreachable');
+  });
+});
+
+describe('setup steps are honest', () => {
+  it('only the cloud step can be done today; first sync waits; login later', () => {
+    expect(setupSteps(true).map((s) => s.state)).toEqual(['done', 'waiting', 'later']);
+    expect(setupSteps(false).map((s) => s.state)).toEqual(['waiting', 'waiting', 'later']);
   });
 });
