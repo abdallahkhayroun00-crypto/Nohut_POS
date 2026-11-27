@@ -32,6 +32,23 @@ const paths: Record<string, string> = {
   lock: 'M7 11V8a5 5 0 0 1 10 0v3M5 11h14v10H5zM12 15v2',
   home: 'M3 11l9-8 9 8v10h-6v-6H9v6H3z',
   dashboard: 'M4 4h7v9H4zM13 4h7v5h-7zM13 11h7v9h-7zM4 15h7v5H4z',
+  back: 'M15 5l-7 7 7 7',
+  close: 'M6 6l12 12M18 6L6 18',
+  plus: 'M12 5v14M5 12h14',
+  minus: 'M5 12h14',
+  search: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14M20 20l-4-4',
+  more: 'M5 12h.01M12 12h.01M19 12h.01',
+  user: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8M4 21c0-4 4-6 8-6s8 2 8 6',
+  bell: 'M6 16V11a6 6 0 0 1 12 0v5l2 2H4zM10 21h4',
+  receipt: 'M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6M9 16h3',
+  move: 'M4 12h16M14 6l6 6-6 6',
+  edit: 'M4 20h4L19 9l-4-4L4 16zM13 7l4 4',
+  wallet: 'M4 7h15v12H4zM4 7l11-3v3M15 13h2',
+  star: 'M12 3l2.7 5.6 6.3.9-4.5 4.4 1 6.1L12 17l-5.5 3 1-6.1L3 9.5l6.3-.9z',
+  link: 'M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1',
+  play: 'M7 4l12 8-12 8z',
+  stop: 'M6 6h12v12H6z',
+  phone: 'M5 4h4l2 5-3 2a11 11 0 0 0 5 5l2-3 5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2',
 };
 
 export function icon(name: string, size = 24): SVGSVGElement {

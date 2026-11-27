@@ -52,6 +52,18 @@ jobs:
             echo "::error::A privileged Supabase key reached the PWA bundle."
             exit 1
           fi
+      - name: Refuse synthetic fixtures and Windows-only sections in production
+        run: |
+          if grep -rIl -E 'TG-90412|YS-55120|Örnek Müşteri' dist; then
+            echo "::error::Synthetic fixture data reached a production bundle (spec §22.5)."
+            exit 1
+          fi
+          if grep -rIl -E 'Şimdi Yedekle|Şimdi Senkronize Et|Yedekleme & Geri Yükleme|Bulut & Senkronizasyon' dist; then
+            echo "::error::A Windows-only technical section reached a mobile/web bundle (spec §22.3)."
+            exit 1
+          fi
+      - name: Build labelled synthetic preview (not deployed)
+        run: npm run build:fixtures
       - uses: actions/upload-artifact@v4
         with:
           name: nohut-pwa-dist

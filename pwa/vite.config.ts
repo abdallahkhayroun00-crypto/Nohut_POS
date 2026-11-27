@@ -12,26 +12,29 @@ const app = process.env.APP === 'yonetici' ? 'yonetici' : 'personel';
 
 // Shared icons, service worker and headers are copied into each app; the
 // per-app manifest comes from src/<app>/public.
-const sharedPublic = (): Plugin => ({
+// `--mode fixtures` builds the clearly labelled synthetic preview into
+// dist-fixtures/; production builds never contain the fixture module.
+const outRoot = (mode: string) => (mode === 'fixtures' ? 'dist-fixtures' : 'dist');
+
+const sharedPublic = (mode: string): Plugin => ({
   name: 'nohut-shared-public',
   closeBundle() {
-    cpSync(resolve(here, 'public'), resolve(here, 'dist', app), {
+    cpSync(resolve(here, 'public'), resolve(here, outRoot(mode), app), {
       recursive: true,
     });
   },
 });
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   root: resolve(here, 'src', app),
   publicDir: resolve(here, 'src', app, 'public'),
-  plugins: [sharedPublic()],
+  plugins: [sharedPublic(mode)],
   envDir: here,
   base: '/',
   build: {
-    outDir: resolve(here, 'dist', app),
+    outDir: resolve(here, outRoot(mode), app),
     emptyOutDir: true,
     target: 'es2022',
     sourcemap: false,
   },
-  define: { __APP__: JSON.stringify(app) },
-});
+}));

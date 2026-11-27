@@ -33,11 +33,34 @@ Repository: `abdallahkhayroun00-crypto/Nohut_POS` (renamed from `brand-managemen
 | 2 PR-06 SyncWorker (client) | 🔄 PR open (Claude) | `lib/sync_worker.dart`, `test/sync_worker_test.dart` (fake server with #35 rules) |
 | 2 PR-06 first-sync wizard + Bulut & Senkronizasyon UI + Supabase transport | ⏳ needs PR-05B RPCs | — |
 | 3 Accounts, PIN, MFA, permissions, devices | ⏳ | spec §9, §20.3, `contracts/v1/permissions.json` |
-| 4 PWA shell (2 apps, 3 shared sections, gated state) + Cloudflare Pages deploy | 🔄 PR open (Claude) | `pwa/`, `.github/workflows/pwa.yml`; browser-tested at iPhone 13 size |
+| 4 PWA — functional Personel + Yönetici clients (§22), Bulut/Yedek removed, Cloudflare Pages deploy | 🔄 PR #37 (Claude). Screens built on the Windows projection shapes; **live data waits for PR-05B + Phase 3 login**, writes wait for the Phase 5 command channel | `pwa/src/{personel,yonetici}/app.ts`, `pwa/test/shared.test.ts` (28 tests), labelled synthetic preview `npm run build:fixtures` |
 | 4 Android Personel/Yönetici on cloud transport | ⏳ needs Phase 3 auth | — |
 | 5 Remote commands, LAN fallback, recovery | ⏳ | — |
 | 6 Dashboards and parity | ⏳ | — |
 | 7 QA, security, packaging, release | ⏳ | `release.yml` ready; needs signed full build |
+
+## Owner correction 2026-11-27 (spec §22) — applies to every agent
+
+- **Bulut & Senkronizasyon and Yedekleme & Geri Yükleme are Windows-only.** Do not add them to Android or PWA clients. Catalogue `docs/contracts/v1/permissions.json` (`schemaVersion 2`) gives every operation `clients`; `sync.*`/`backup.*` are `["windows"]` and must be rejected from remote clients by the server and the Windows worker, even for the owner.
+- Mobile/web show only read-only indicators: connection, last sync, offline, stale, pending commands, Windows availability.
+- Personel opens on **Masalar** (nav: Masalar · Siparişler · Online · Mesailerim · Daha Fazla); Yönetici on **Genel Bakış** (nav: Genel Bakış · Satışlar · Finans · Personel · Daha Fazla).
+
+### Data the clients already render, and who must produce it
+
+| Projection (cloud, read-only) | Shape source | Status |
+|---|---|---|
+| `staff_state` (tables, open orders with Windows totals, menu, online orders, notices, `platformWritable`) | `lan_server.dart::_staffState` | exists on LAN; cloud projection = PR-05B |
+| `owner_overview(day)` | `finance_sync_server.dart::ownerOverview` | exists on LAN; cloud projection = PR-05B |
+| `month_view(month)` | `finance_sync_server.dart::monthView` | exists on LAN; cloud projection = PR-05B |
+| `sales_daily` + `top_products` + `heatmap` + `platform_sales` (`SalesView` in `pwa/src/shared/model.ts`) | **new — Windows must compute** from orders/payments | ⏳ Phase 6 |
+| `shifts` (Mesai Başlat/Bitir, corrections) | **no Windows shift model exists yet** — payroll stores weekly minutes only | ⏳ Phase 5/6: Windows shift entity + `clockIn`/`clockOut` commands |
+| `menu_status` (QR version, publish state), `integrations` status | Windows QR publisher / integration settings | ⏳ Phase 5 |
+| `users`, grants, devices, `audit` | Phase 3 auth | ⏳ Phase 3 |
+
+### Commands the clients already send (payloads = Windows `submitStaffOrder`/`submitStaffAction`)
+
+`order` (new/ek sipariş, Gel-Al), `action` (`pay`, `payMixed`, `payProducts`, `splitEqual`, `move`, `close`, `status`) — **handlers exist on Windows**.
+New handlers needed on Windows (Phase 5): `print.reprint`, `platform.accept/ready` via the cloud channel, `menu_update`/`stock_update`/`qr_publish`, `shift.clockIn/clockOut`, `finance.managerWrite` over cloud, `admin.*` (Phase 3). Until the cloud command channel exists, clients answer *"Uzaktan işlem kanalı henüz açık değil"* and never show success.
 
 ## Claims (edit when you start or finish)
 
@@ -45,7 +68,9 @@ Repository: `abdallahkhayroun00-crypto/Nohut_POS` (renamed from `brand-managemen
 |---|---|---|---|
 | PR-04 hardening: extra outbox tests; refuse enabling the outbox on a legacy database | Claude Code | 2026-11-27 | this PR |
 | PR-06 client side: `SyncTransport` + `SyncWorker` | Claude Code | 2026-11-27 | this PR |
-| Phase 4: PWA shell + Cloudflare Pages deploy workflow | Claude Code | 2026-11-27 | this PR |
+| Phase 4: PWA functional clients (§22) + Cloudflare Pages deploy workflow | Claude Code | 2026-11-27 | #37 |
+| Phase 6 prerequisite: Windows `sales_daily`/`top_products`/`heatmap` projection functions (pure Dart, tested against `order_reporting.dart`) | **open** | — | — |
+| Phase 5 prerequisite: Windows shift entity + clock-in/out commands | **open** | — | — |
 | PR-05B: server RPCs (ingest transaction, reconcile, checkpoint), typed serializers, minimal grants | **open — suggested: ChatGPT** (continues #35) | — | — |
 
 ## Owner-configured services (2026-11-27, per owner)

@@ -326,7 +326,7 @@ class _OwnerHomeState extends State<OwnerHome> {
       case 'settings':return [
         line(managementOwnerName,'Yetkili yönetici · Personel seçimi yok'),
         line('Windows bağlantısı',api.host??'—'),
-        OutlinedButton.icon(onPressed:()=>finance.sync(force:true),icon:const Icon(Icons.sync),label:const Text('Finans Senkronize Et')),
+        OutlinedButton.icon(onPressed:()=>finance.sync(force:true),icon:const Icon(Icons.sync),label:const Text('Finansı Yenile')),
         title('Personel kayıtları · Windows'),
         for(final p in entries('employees'))line((p['name']??'').toString(),(p['role']??'').toString()),
         notice('Yazıcı, terminal, API anahtarları ve personel ayarları Windows üzerinde kalır.'),
