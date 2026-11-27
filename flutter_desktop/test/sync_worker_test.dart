@@ -17,7 +17,7 @@ class FakeServer implements SyncTransport {
   final appliedEvents = <String>[]; // event ids, in order
   int lastSeq = 0;
   int calls = 0;
-  bool loseNextAck = false, offline = false;
+  bool loseNextAck = false, offline = false, omitWatermark = false;
 
   @override
   Future<IngestResult> ingest(SyncTransaction tx) async {
@@ -43,7 +43,8 @@ class FakeServer implements SyncTransport {
       loseNextAck = false;
       throw const SyncNetworkException('yanıt kayboldu'); // committed!
     }
-    return IngestResult(IngestStatus.accepted, ackedThroughSeq: lastSeq);
+    return IngestResult(IngestStatus.accepted,
+        ackedThroughSeq: omitWatermark ? null : lastSeq);
   }
 }
 
@@ -149,6 +150,32 @@ void main() {
     expect(await worker.flush(), 0);
     expect(worker.status().stopped, true);
     expect(worker.status().lastError, startsWith('gap'));
+  });
+
+  test('batch target never cuts a transaction even when it is first', () {
+    final snap = store.read();
+    for (final order in (snap.data['orders'] as List).cast<Map>()) {
+      order['serviceStatus'] = 'Hazır';
+    }
+    store.replace(snap.data, snap.revision);
+    final expected = pendingOutbox(db).length;
+    expect(expected, greaterThan(1));
+    final group = groupPending(db, limitEvents: 1).single;
+    expect(group.events.length, expected);
+    expect(group.lastSeq - group.firstSeq + 1, expected);
+    expect(group.events.first.toJson()['payload_json'],
+        group.events.first.payloadJson);
+  });
+
+  test('success without a durable watermark must not acknowledge', () async {
+    change(0);
+    server.omitWatermark = true;
+    expect(await worker.flush(), 0);
+    expect(pendingOutbox(db), hasLength(1));
+    expect(worker.status().stopped, true);
+    expect(worker.status().lastError, contains('checkpoint'));
+    expect(await worker.flush(manual: true), 1);
+    expect(server.appliedEvents, hasLength(1));
   });
 
   test('transaction ids and hashes are deterministic across retries', () {
