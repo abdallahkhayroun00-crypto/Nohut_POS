@@ -1007,3 +1007,11 @@ One button **Hızlı Gider Ekle** in Windows Finans › Giderler, Yönetici Fina
 
 ### 24.9 Ownership, data and acceptance
 Claude: UX, auth/activation, LAN apps, notifications, Windows UI. ChatGPT Codex (#39): typed DB/ledger, projections, cloud commands and first sync for the new records. New schedule, attendance, submission, rate, payroll-payment and activation records get stable IDs and join the sync registry, backup/restore and audit. Windows stays authoritative and offline-first; Bulut & Yedek stay Windows-only; QR menu unchanged; free services only; no real payments or real data migration during development. Tests use synthetic data and cover the acceptance lists in the five source comments (Monday/Sunday rollover, late/revised submission, missing and historical rates, partial/mixed payments, paid-hours edits, duplicate/lost ACK, offline/reconnect, permission isolation, 21:30 and changed hours, late orders, refunds, stale data, dedup). Physical-device checks stay owner gates.
+
+## Premium UI/UX release gate (owner, 2026-11-27, relay 7227699704)
+Premium UI/UX is mandatory on every page, option, control and workflow of the Windows POS, the Android Personel and Yönetici APKs, the iPhone PWAs, and the cloud and LAN browser apps. Release requires both:
+- **Visual acceptance:** the owner approves the direction and Antigravity's visual and accessibility audit passes.
+- **Functional acceptance:** tests and the QA matrix.
+
+The two are tracked separately. The design system, the per-surface checklist and the review status live in `docs/design/PREMIUM_UI_INVENTORY.md`. Design work never changes business rules, authorization, financial correctness, offline-first behaviour or the public QR visitor site (that needs separate approval), and it never shows fake live data.
+
