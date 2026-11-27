@@ -83,6 +83,13 @@ EVIDENCE:
 
 **Blockers / owner actions:** live Trendyol read-only check needs explicit owner authorization (R1); physical iPhone HTTPS/Safari test (L4); any FCM project needs owner approval (N4); KVKK gate unchanged.
 
+## Codex workforce integration and wage checkpoint (2026-11-27)
+
+- Integrated Claude #44 actual head 735d8e9 into #39 only (f5614fe), preserving native applications, ownerPayroll, PIN compatibility, manual workforce/payroll handlers, notifications, quick expenses and no daily staffHours. Merge keeps both durable remote receipts and indexed local receipts. Removed duplicate constant field entries from the automatic registry merge; retained every field. No other agent branch changed.
+- Combined full Windows regression: **488 passed, 2 skips**. New wage/privacy/payroll targeted suite **24 passed**; real synthetic HTTP/PostgreSQL passes rate history, explicit owner exclusion and lost ACK recovery alongside prior financial/command flows. Analysis: no errors/warnings (592 style/deprecation infos). All **42 migrations / 24 SQL suites** pass under superuser and plain non-BYPASSRLS owner, including Claude's existing five-digit PIN migration.
+- QA-09 first slice: employee eligibility/current wage and immutable effective-dated history now use the existing atomic employees event, tenant source identities and strict private tables. Explicit owner eligibility changes and departed employees' rates survive. Contract: docs/contracts/v1/employee-wages.md. Payroll payment/review, planned shifts, manual-attendance extensions, weekly submissions and authorized reads remain incomplete; O-03 is not closed.
+- Audit fix abbcf31 CI: PostgreSQL 46043308865, auth 46043308605, HTTP 46043308571, PWA 46043308550 and both Android builds 46043308616/46043308668 passed; Windows still running at this check. New integrated-head CI follows push. PR stays draft; no production sync or deployment.
+
 ## Codex resume checkpoint — QA-07 / QA-08 / QA-12 (2026-11-27)
 
 - Read all coordination on #39/#44/#45 since e826e06; inspected actual main ed7ccce, Claude 7455259 and Gemini a2cc234. Integrated merged N1 notification work; active agent branches remain untouched. Payroll/workforce parity (QA-09/O-03), quick commands, authorized notifications/daily reads and full snapshot/runtime work remain open. Daily projections must omit staffHours; Claude's five-digit PIN migration and O-11 are reused, not recreated.

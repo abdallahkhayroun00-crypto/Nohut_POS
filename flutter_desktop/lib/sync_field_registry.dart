@@ -248,6 +248,10 @@ const cloudAllowedFieldPaths = <String>{
   // Staff and money records.
   'employees', 'employees[].id', 'employees[].name', 'employees[].role',
   'employees[].active',
+  'employees[].payrollEligible', 'employees[].payType', 'employees[].payRateCents',
+  'employees[].payHistory', 'employees[].payHistory[].effectiveFrom',
+  'employees[].payHistory[].payType', 'employees[].payHistory[].rateCents',
+  'employees[].payHistory[].setAt', 'employees[].payHistory[].setBy',
   'combinedPayments', 'combinedPayments[].id', 'combinedPayments[].orderIds',
   'combinedPayments[].amount', 'combinedPayments[].cash',
   'combinedPayments[].card', 'combinedPayments[].received',

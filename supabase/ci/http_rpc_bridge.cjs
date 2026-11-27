@@ -100,6 +100,8 @@ async function main(){
         if(req.url==='/test/concurrent-enrollment'){res.end(JSON.stringify(await verifySetupConcurrency(db)));return;}
         if(req.url==='/test/inspect'){
           const result=(await db.query(`select (select count(*)::integer from nohut_private.expenses where restaurant_id=$1) as expenses,
+            (select jsonb_agg(rate_kurus::integer order by effective_from,set_at) from nohut_private.employee_wage_history where restaurant_id=$1) as wage_rates,
+            (select payroll_eligible from nohut_private.employees where restaurant_id=$1 limit 1) as payroll_eligible,
             (select count(*)::integer from nohut_private.agent_enrollment_requests where restaurant_id=$1) as enrollments,
             (select count(*)::integer from nohut_private.windows_agents where restaurant_id=$1 and revoked_at is null) as live_agents,
             (select count(*)::integer from nohut_private.orders where restaurant_id=$1) as orders,

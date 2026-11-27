@@ -17,6 +17,7 @@ import 'package:nohut_falafel_desktop/operations.dart';
 import 'package:nohut_falafel_desktop/order_actions.dart';
 import 'package:nohut_falafel_desktop/pos_logic.dart';
 import 'package:nohut_falafel_desktop/finance_logic.dart';
+import 'package:nohut_falafel_desktop/payroll.dart';
 import 'package:nohut_falafel_desktop/pos_store.dart';
 import 'package:nohut_falafel_desktop/remote_commands.dart';
 import 'package:nohut_falafel_desktop/supabase_agent_transport.dart';
@@ -134,6 +135,11 @@ void main() {
         enableOutbox(db);
         store.command('synthetic_finance_delta', {}, (s) {
           (s['employees'] as List).first['name'] = 'Synthetic Employee';
+          (s['employees'] as List).first['payrollEligible'] = false;
+          setEmployeeRate(s, employeeId: 1, payType: 'Saatlik', rateCents: 10000,
+              effectiveFrom: '2026-10-01', by: 'Synthetic manager', now: DateTime.utc(2026, 9, 30));
+          setEmployeeRate(s, employeeId: 1, payType: 'Saatlik', rateCents: 12000,
+              effectiveFrom: '2026-10-02', by: 'Synthetic manager', now: DateTime.utc(2026, 10, 1));
           saveOtherExpense(
             s,
             day: '2026-10-01',
@@ -554,6 +560,9 @@ void main() {
         expect(await sync.flush(), greaterThan(0));
         expect(pendingOutbox(db), isEmpty);
         final rotated = await agentSetup.enrollOrRotate(permissionVersion: 1);
+        final wageFacts = await call('/test/inspect');
+        expect(wageFacts['wage_rates'], [10000, 12000]);
+        expect(wageFacts['payroll_eligible'], false);
         expect(rotated.token, isNot(credentials.token));
         await expectLater(
           transport.checkpoint(),

@@ -21,8 +21,6 @@ const knownStateFieldPaths = <String>{
   'printJobs[].syncPrintHistory','printJobs[].syncPrintHistory[].id','printJobs[].syncPrintHistory[].ordinal',
   'printJobs[].syncPrintHistory[].observedAt','printJobs[].syncPrintHistory[].origin',
   'printJobs[].syncPrintHistory[].state','printJobs[].syncPrintHistory[].attempts','printJobs[].syncPrintHistory[].spooledAt',
-  'orders[].payments[].staffId',
-  'orders[].payments[].productPaymentId',
   'orders[].syncEventIds',
   'orders[].batches[].lines[].syncId',
   'orders[].batches[].lines[].syncOriginalQty',
