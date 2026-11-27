@@ -6,11 +6,11 @@ export function makeSqlPorts({query,validateCatalog}){
  const scopes=new WeakMap();
  const hex=(x,n)=>typeof x==="string"&&x.length===n&&/^[a-f0-9]+$/.test(x);
  const sql={
-  bind:"select nohut_private.qr_publish_bind_draft($1::text,$2::text,$3::bigint,$4::text,$5::text,$6::text,$7::text) as value",
-  recovery:"select (nohut_private.qr_recovery_authority($1::text,$2::text,$3::bigint,$4::text)).restaurant_id::text as value",
-  claim:"select nohut_private.qr_publish_claim($1::text,$2::text,$3::bigint,$4::text,$5::text,$6::text) as value",
-  transition:"select nohut_private.qr_publish_transition($1::text,$2::text,$3::bigint,$4::text,$5::text,$6::uuid,$7::text,$8::text,$9::text,$10::text,$11::text) as value",
-  recover:"select nohut_private.qr_publish_recover($1::text,$2::text,$3::bigint,$4::text,$5::text,$6::text,$7::text,$8::text) as value"
+  bind:"select nohut_qr_edge.qr_publish_bind_draft($1::text,$2::text,$3::bigint,$4::text,$5::text,$6::text,$7::text) as value",
+  recovery:"select nohut_qr_edge.qr_recovery_authority($1::text,$2::text,$3::bigint,$4::text) as value",
+  claim:"select nohut_qr_edge.qr_publish_claim($1::text,$2::text,$3::bigint,$4::text,$5::text,$6::text,$7::text,$8::text) as value",
+  transition:"select nohut_qr_edge.qr_publish_transition($1::text,$2::text,$3::bigint,$4::text,$5::text,$6::uuid,$7::text,$8::text,$9::text,$10::text,$11::text,$12::text,$13::text,$14::text) as value",
+  recover:"select nohut_qr_edge.qr_publish_recover($1::text,$2::text,$3::bigint,$4::text,$5::text,$6::text,$7::text,$8::text) as value"
  };
  const base=x=>[x.token,x.commandId,x.leaseGeneration,x.envelopeSha256];
  const get=s=>{const x=scopes.get(s);if(!x)throw Error("untrusted_scope");return x};
@@ -45,7 +45,7 @@ export function makeSqlPorts({query,validateCatalog}){
  const fingerprintFor=s=>async input=>{const x=get(s);if(x.operation!=="publish"||input.requestId!==x.commandId||input.expectedRevision!==x.expectedRevision||input.activateConfirmed!==false||JSON.stringify(input.catalog)!==JSON.stringify(JSON.parse(x.draftJson)))throw Error("draft_mismatch");return x.identity.digest};
  function publishBinding(s,b){const x=get(s);if(x.operation!=="publish"||b.requestId!==x.commandId||b.digest!==x.identity.digest)throw Error("binding_mismatch");return x}
  async function transition(s,b,step,v={}){
-  const x=publishBinding(s,b);return query(sql.transition,[...base(x),b.digest,b.fence,step,v.parent??null,v.commit??null,v.tree??null,v.revision??null]);
+  const x=publishBinding(s,b);return query(sql.transition,[...base(x),b.digest,b.fence,step,v.parent??null,v.commit??null,v.tree??null,v.revision??null,x.expectedStamp,x.expectedRevision,x.draftJson]);
  }
  async function recover(s,id,step,v={}){
   const x=get(s);if(!["reconcile","cancel_before_attempt"].includes(x.operation)||x.targetRequestId!==id)throw Error("scope_mismatch");
@@ -54,7 +54,7 @@ export function makeSqlPorts({query,validateCatalog}){
   return query(sql.recover,[...base(x),id,step,v.commit??null,v.revision??null]);
  }
  const receipts={
-  async claim(s,b){const x=publishBinding(s,b);if(b.expectedRevision!==x.expectedRevision)throw Error("binding_mismatch");return query(sql.claim,[...base(x),b.digest,b.expectedRevision])},
+  async claim(s,b){const x=publishBinding(s,b);if(b.expectedRevision!==x.expectedRevision)throw Error("binding_mismatch");return query(sql.claim,[...base(x),b.digest,b.expectedRevision,x.expectedStamp,x.draftJson])},
   async savePrepared(s,b,p){const x=publishBinding(s,b);if(p.requestId!==b.requestId||p.expectedRevision!==x.expectedRevision)throw Error("binding_mismatch");const v=await transition(s,b,"prepare",p);if(v?.status!=="prepared")throw Error("prepare_not_persisted")},
   async markAttempt(s,b){return transition(s,b,"attempt")},
   async finish(s,b,v){if(v.requestId!==b.requestId)throw Error("binding_mismatch");const step=v.status==="reconciliation_required"?"unknown":v.status;if(!["unknown","committed","no_change"].includes(step))throw Error("invalid_finish");const saved=await transition(s,b,step,v);if(saved?.requestId!==v.requestId||saved.status!==v.status)throw Error("finish_not_persisted")},
