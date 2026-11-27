@@ -35,6 +35,8 @@ Both repositories were verified as **Public** during the architecture review:
 
 **V5.1 baseline correction (Phase 0, verified 2026-11-27):** PR #27 was merged into `main` (`cbbb130`), followed by PR #30 (`dbd809b`: receipt margins, 57 mm paper, order slips print again). The first Gel-Al receipt defect (§11.1) was still present on `main` after #27 and is fixed in PR-01 with tests. PRs #15, #16 and #17 are fully contained in `main` (0 commits ahead); #2, #14 and #19 contain unmerged commits — see `docs/cloud-sync/data-inventory.md` §8.
 
+**Repository renamed (2026-11-27):** `brand-management-proposal` → **`Nohut_POS`** (`https://github.com/abdallahkhayroun00-crypto/Nohut_POS`, same repository ID 1407169594). Links below keep the historical name; GitHub redirects them. GitHub Pages URLs do **not** redirect.
+
 **Other Open PRs requiring reconciliation before editing (do not overwrite or assume merged):**
 - PR #19 (*Windows Ctrl+P-style receipt dialog*), PR #17 (*Gel-Al müşteri rehberi, açık hesaplar, kurye ve yönetim analitiği*), PR #16 (*Online Alarm 2.0, reviews cache, integration safety and reporting*), PR #15 (*Windows 0.6.7: online orders, reports and Google Business Profile*), PR #14 (*Trendyol Go read-only live orders, secure Ayarlar*), PR #2 (*Draft: Native Windows POS staff sessions*).
 

@@ -35,7 +35,7 @@ The mascot now includes a completely simulated operating-day rule engine in [day
 - [Actual 20-expression C++ face renderer](firmware/src/main.cpp) — 320x240 multicolor eyes for the selected SPI ILI9341 panel, with old ST7789V2 build retained.
 - [Portable C++ character state machine](firmware/include/character.hpp) — 20 moods, hello cooldown, touch gestures and photo hold.
 - [Host C++ tests](firmware/tests/character_test.cpp) — 20 emotion roundtrips, 30-second hello debounce, photo lock, sleep, quiet mode, uint32 clock rollover.
-- [Firmware build CI](https://github.com/abdallahkhayroun00-crypto/brand-management-proposal/actions/workflows/nohutcuk-firmware.yml) — checks native logic and attempts an actual PlatformIO ESP32-S3 compilation.
+- [Firmware build CI](https://github.com/abdallahkhayroun00-crypto/Nohut_POS/actions/workflows/nohutcuk-firmware.yml) — checks native logic and attempts an actual PlatformIO ESP32-S3 compilation.
 
 **Selected color face:** **3.2-inch ILI9341 240×320 SPI TFT (320×240 landscape)** with Espressif ESP32-S3-DevKitC-1. The previously considered 1.9-inch and 2.4-inch displays are **not to be purchased**. The CAD prototype head **has now been resized to 116×80×58mm** to accommodate the approximately 89.3×55mm MZK-6 board envelope; the screen carrier and face opening have also been updated, but exact PCB mounting holes and connector clearance remain unverified. Validate the specific supplier breakout and dimensions before print.
 
@@ -43,7 +43,7 @@ The mascot now includes a completely simulated operating-day rule engine in [day
 
 ## 🌈 Multicolor Eye & Sound Studio — live browser simulator
 
-**Live preview:** https://abdallahkhayroun00-crypto.github.io/brand-management-proposal/nohutcuk/
+**Live preview:** https://abdallahkhayroun00-crypto.github.io/Nohut_POS/nohutcuk/
 
 Built with [index.html](index.html), [styles.css](styles.css), [app.js](app.js), the original [Web Audio synthesizer](audio.js) and a separate [selective voice engine](voice.js) in HTML, CSS, JavaScript and SVG. No additional build tools or external song libraries are necessary.
 
@@ -68,7 +68,7 @@ Built with [index.html](index.html), [styles.css](styles.css), [app.js](app.js),
 
 ## 🖨️ Published 3D CAD prototype files — GitHub verified
 
-**Regenerated 2026-10-27 for the selected 3.2-inch ILI9341:** all 16 modular STLs, all 16 slicer-oriented STLs, the two merged STL references, both STEP models, the new ZIP and 18 geometry report entries. CI [successful regeneration](https://github.com/abdallahkhayroun00-crypto/brand-management-proposal/actions/runs/40422211886). These are mesh/manifold checks, NOT actual printed/motor/PCB-fitting tests.
+**Regenerated 2026-10-27 for the selected 3.2-inch ILI9341:** all 16 modular STLs, all 16 slicer-oriented STLs, the two merged STL references, both STEP models, the new ZIP and 18 geometry report entries. CI [successful regeneration](https://github.com/abdallahkhayroun00-crypto/Nohut_POS/actions/runs/40422211886). These are mesh/manifold checks, NOT actual printed/motor/PCB-fitting tests.
 
 
 **All the following are now committed and verified in this repository:**

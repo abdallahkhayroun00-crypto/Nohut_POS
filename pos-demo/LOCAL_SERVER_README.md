@@ -4,7 +4,7 @@
 
 ## Windows quick start
 
-1. On the always-on restaurant laptop, get the full repository from GitHub → Code → Download ZIP, and extract the entire brand-management-proposal folder. Do not copy only pos-demo; it needs the nohut-menu assets too.
+1. On the always-on restaurant laptop, get the full repository from GitHub → Code → Download ZIP, and extract the entire Nohut_POS folder (the ZIP folder is named Nohut_POS-main). Do not copy only pos-demo; it needs the nohut-menu assets too.
 2. Install Python 3 for Windows, if not already installed. There is no pip or Node dependency.
 3. Connect the laptop and worker phones to the **same trusted staff Wi-Fi** (not guest Wi-Fi). Make sure client/AP isolation is disabled.
 4. Double-click **pos-demo/start-local-server.bat** on the laptop. Keep the black terminal window open. If Windows Firewall asks, enable **Private networks only**.
