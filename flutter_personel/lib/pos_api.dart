@@ -130,6 +130,8 @@ class NohutApi {
           'invalid_credentials' => 'Kullanıcı adı veya şifre hatalı.',
           'locked_out' || 'too_many_attempts' => 'Çok fazla hatalı deneme. Biraz sonra tekrar deneyin.',
           'invalid_pin' => 'PIN hatalı.',
+          'weak_pin' => 'PIN 5 haneli olmalı ve kolay tahmin edilmemeli.',
+          'password_required' => 'Mevcut şifrenizi girin.',
           'inactive' => 'Hesap devre dışı.',
           'device_revoked' || 'revoked' => 'Bu cihazın oturumu kaldırıldı. Yeniden giriş yapın.',
           _ => 'Giriş yapılamadı.',
@@ -147,6 +149,12 @@ class NohutApi {
   Future<void> unlock({String? pin, String? password}) async {
     await _auth('POST', 'unlock', pin != null ? {'pin': pin} : {'password': password ?? ''});
     await refreshSession();
+  }
+
+  /// Sets or replaces this device's 5-digit PIN. The account password is
+  /// always sent and checked on Windows (LocalAuth.setPin).
+  Future<void> setPin(String pin, String password) async {
+    await _auth('POST', 'pin', {'pin': pin, 'password': password});
   }
 
   Future<void> logout() async {

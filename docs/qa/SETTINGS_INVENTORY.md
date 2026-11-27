@@ -46,6 +46,7 @@ There is no Bulut & Senkronizasyon page yet. It will be added when Codex's sync 
 |---|---|---|---|---|---|
 | Hesabım | Pairing (server id, host, session) | Device | Secure storage | Never | Covered by `session_login_test` |
 | Daha Fazla › Çalışmam | Mesailerim, Vardiyalarım, Maaş & Avans, Giderler (when drafts exist) | Account | Server session | — | Links only; covered by `personel_test` |
+| Hesabım | PIN Değiştir (password + new 5-digit PIN, sent to Windows `/api/auth/pin`) | Account and device | Windows auth DB | Never | `session_login_test` (wrong password stays on the sheet, right one saves) |
 | Hesabım | Theme | Device | Follows the system light or dark setting | — | Rendered in both modes |
 | Hesabım | Sign out / forget pairing | Device | Secure storage | — | Not yet audited |
 

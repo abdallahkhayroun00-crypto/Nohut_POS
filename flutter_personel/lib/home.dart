@@ -159,6 +159,52 @@ class _StaffHomeState extends State<StaffHome> {
   void _openWork([int initialTab = 0]) => Navigator.of(context).push(MaterialPageRoute<void>(
       builder: (_) => WorkPage(api: c.api, initialTab: initialTab)));
 
+  /// PIN for this phone. Windows checks the password and the PIN rules.
+  Future<void> _changePin() async {
+    final password = TextEditingController(), pin = TextEditingController();
+    String? error;
+    var busy = false;
+    final ok = await showModalBottomSheet<bool>(context: context, isScrollControlled: true,
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setSheet) => Padding(
+        padding: EdgeInsets.fromLTRB(20, 4, 20, MediaQuery.viewInsetsOf(ctx).bottom + 22),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Text('PIN Değiştir', style: Theme.of(ctx).textTheme.headlineSmall),
+          const SizedBox(height: 6),
+          Text('Güvenlik için hesap şifreniz de istenir.', style: TextStyle(color: ctx.nohut.muted)),
+          const SizedBox(height: 14),
+          TextField(key: const ValueKey('pin-password'), controller: password, obscureText: true,
+            autofillHints: const [AutofillHints.password],
+            decoration: const InputDecoration(labelText: 'Şifre')),
+          const SizedBox(height: 10),
+          TextField(key: const ValueKey('pin-new'), controller: pin, obscureText: true, maxLength: 5,
+            keyboardType: TextInputType.number, inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            decoration: const InputDecoration(labelText: 'Yeni PIN (5 hane)')),
+          if (error != null) Padding(padding: const EdgeInsets.only(bottom: 8),
+            child: Text(error!, style: TextStyle(color: ctx.nohut.danger))),
+          FilledButton(onPressed: busy ? null : () async {
+            if (password.text.isEmpty || pin.text.length != 5) {
+              setSheet(() => error = 'Şifrenizi ve 5 haneli yeni PIN’i girin.');
+              return;
+            }
+            setSheet(() { busy = true; error = null; });
+            try {
+              await c.api.setPin(pin.text, password.text);
+              if (ctx.mounted) Navigator.pop(ctx, true);
+            } on FormatException catch (e) {
+              setSheet(() { busy = false; error = e.message; });
+            } catch (_) {
+              setSheet(() { busy = false; error = 'Windows POS’a ulaşılamadı.'; });
+            }
+          }, child: const Text('PIN Kaydet')),
+        ]),
+      )));
+    // Let the sheet finish closing before its fields go away.
+    await Future<void>.delayed(const Duration(milliseconds: 350));
+    password.dispose();
+    pin.dispose();
+    if (ok == true && mounted) _message('PIN kaydedildi.');
+  }
+
   Widget _homePage() {
     final busy = {for (final o in c.orders) if (o['source'] == 'Masa') o['table']}.length;
     return PersonelDashboard(
@@ -714,6 +760,12 @@ class _StaffHomeState extends State<StaffHome> {
             subtitle: Text(c.api.signedIn ? 'Kimliğiniz oturumdan gelir · ${c.api.sessionUser}'
                 : 'Mesai ve maaş için kendi hesabınızla giriş yapın.'),
           ),
+          if (c.api.signedIn) ...[
+            const Divider(),
+            ListTile(key: const ValueKey('change-pin'), leading: const Icon(Icons.pin_outlined),
+              title: const Text('PIN Değiştir'), subtitle: const Text('Kilit açmak için 5 haneli PIN · şifreniz istenir'),
+              trailing: const Icon(Icons.chevron_right), onTap: _changePin),
+          ],
           const Divider(),
           if (c.api.signedIn)
             ListTile(leading: const Icon(Icons.logout), title: const Text('Çıkış Yap'),
