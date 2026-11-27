@@ -35,10 +35,18 @@ jobs:
           PGPORT: '5432'
           PGUSER: postgres
           PGPASSWORD: disposable-ci-only
+          NOHUT_TEST_HTTP_PORT: '0'
+          NOHUT_TEST_READY_FILE: ${{ runner.temp }}/nohut-http-url.txt
         run: |
           node supabase/ci/http_rpc_bridge.cjs > "$RUNNER_TEMP/nohut-http.log" 2>&1 &
           for i in $(seq 1 30); do
-            if curl -fsS -o /dev/null -X POST http://127.0.0.1:55440/test/setup; then exit 0; fi
+            if test -s "$NOHUT_TEST_READY_FILE"; then
+              url=$(cat "$NOHUT_TEST_READY_FILE")
+              if curl -fsS -o /dev/null -X POST "$url/test/setup"; then
+                echo "NOHUT_TEST_RPC_URL=$url" >> "$GITHUB_ENV"
+                exit 0
+              fi
+            fi
             sleep 1
           done
           cat "$RUNNER_TEMP/nohut-http.log"
@@ -46,8 +54,6 @@ jobs:
       - run: flutter pub get
         working-directory: flutter_desktop
       - name: Real serializers, atomic ingest, lost ACK, Windows execution and app confirmation
-        env:
-          NOHUT_TEST_RPC_URL: http://127.0.0.1:55440
         run: flutter test test/cloud_http_integration_test.dart --reporter expanded
         working-directory: flutter_desktop
       - name: Synthetic integration diagnostics

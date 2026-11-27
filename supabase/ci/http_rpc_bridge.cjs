@@ -173,7 +173,13 @@ async function main(){
       }catch(e){res.writeHead(e.code==='42501'?403:400).end(JSON.stringify({code:e.code||'test_error'}));console.error('RPC test error',e.code,e.message);}
     }).catch(e=>{console.error(e);res.destroy();});
   });
-  server.listen(Number(process.env.NOHUT_TEST_HTTP_PORT||55440),'127.0.0.1',()=>console.log('Synthetic HTTP bridge ready on localhost'));
+  server.listen(Number(process.env.NOHUT_TEST_HTTP_PORT||55440),'127.0.0.1',()=>{
+    const url=`http://127.0.0.1:${server.address().port}`;
+    // CI asks the OS for an unused port; publish only after this exact
+    // disposable database has migrated and this server owns the listener.
+    if(process.env.NOHUT_TEST_READY_FILE) fs.writeFileSync(process.env.NOHUT_TEST_READY_FILE,url,'utf8');
+    console.log(`Synthetic HTTP bridge ready on ${url}`);
+  });
   async function stop(){server.close();await tail;await db.end();await admin.end();process.exit(0);}
   process.on('SIGINT',stop);process.on('SIGTERM',stop);
 }

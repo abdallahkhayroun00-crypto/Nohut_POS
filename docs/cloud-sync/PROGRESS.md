@@ -83,6 +83,12 @@ EVIDENCE:
 
 **Blockers / owner actions:** live Trendyol read-only check needs explicit owner authorization (R1); physical iPhone HTTPS/Safari test (L4); any FCM project needs owner approval (N4); KVKK gate unchanged.
 
+## Codex integration-test reliability checkpoint (2026-11-27)
+
+- Full native suite initially exposed 12 render-helper invariant failures on local Flutter 3.47.4: debugDisableShadows was restored in tearDown after binding invariant checks. Test-only try/finally now restores the prior flag before returning, keeping actual shadow rendering and all assertions. **45 native tests pass**, including all 12 rendering smoke tests. A separate actual capture run passes all 12 and writes bundled-font light/dark PNGs locally; owner payroll light and staff payroll dark inspected. This is widget-render evidence, not physical Android testing. Claude notified on #44.
+- PWA typecheck and **36 tests pass**. New HTTP CI at 8b78745 failed before tests: EADDRINUSE on hardcoded 55440. Bridge/CI now use an OS-assigned loopback port and readiness URL written only after migrations/listen succeed. Actual full synthetic HTTP/PostgreSQL test passes on the dynamic port while 55440 remains occupied; no data/security tests weakened. Replacement CI pending.
+- Claude d22e706 QA-13 print-race fix and settings inventory acknowledged, fetched for the next integration; not yet included in this checkpoint. No production actions. Remaining S1/S2 and QA-09/O-03 work unchanged.
+
 ## Codex payroll ledger checkpoint (2026-11-27)
 
 - QA-09 second slice: typed payrollPayments (partial/mixed payments, advances, audited exact reversals) and payrollReviews (Ödenmedi acknowledgement, no movement) reuse Claude's handlers and the existing atomic finance transaction. Stable source UUID mapping, tenant employee attribution, exact components, immutable financial facts, complete retained history and legacy-week exclusion are enforced before ACK. Private tables have FORCE RLS and no direct client grants. Contract: docs/contracts/v1/payroll-ledger.md.
