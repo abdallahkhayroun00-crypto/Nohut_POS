@@ -638,6 +638,8 @@ class _MaasTab extends StatelessWidget {
           _Stat('Ödenen', money(pay['paidCents'] is int ? pay['paidCents'] as int : 0), icon: Icons.check_circle_outline),
           _Stat(emp['payType'] == 'Haftalık Sabit' ? 'Haftalık ücret' : 'Saatlik ücret',
               rate is int ? money(rate) : 'Henüz belirlenmedi', icon: Icons.sell_outlined),
+          _Stat('Çalışma süresi', WorkFormat.hours(pay['minutes'] ?? (w['status'] as Map?)?['minutes']),
+              icon: Icons.timer_outlined),
         ]),
         if (pay['overdue'] == true) Padding(padding: EdgeInsets.only(top: 10),
             child: Text('Ödeme günü geçti.', style: TextStyle(color: context.nohut.danger))),
