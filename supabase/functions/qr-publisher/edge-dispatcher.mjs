@@ -25,19 +25,21 @@ export function makeEdgeDispatcher({enabled,authenticate,createCoordinator,recov
   if(!hex(token,64))return out(401,{error:"unauthorized"});
   const common=["operation","commandId","leaseGeneration","envelopeSha256"];
   const op=body?.operation;
-  const keys=op==="publish"?[...common,"expectedRevision","expectedStamp","catalog","activateConfirmed"]:op==="reconcile"||op==="cancel_before_attempt"?[...common,"targetRequestId"]:null;
+  const keys=op==="publish"?[...common,"expectedRevision","expectedStamp","draftJson","activateConfirmed"]:op==="reconcile"||op==="cancel_before_attempt"?[...common,"targetRequestId"]:null;
   if(!keys||!exact(body,keys)||!uuid(body.commandId)||!Number.isSafeInteger(body.leaseGeneration)||body.leaseGeneration<1||!hex(body.envelopeSha256,64))return out(400,{error:"invalid_request"});
-  if(op==="publish"&&(!hex(body.expectedRevision,40)||!hex(body.expectedStamp,16)||typeof body.activateConfirmed!=="boolean"||!body.catalog||typeof body.catalog!=="object"||Array.isArray(body.catalog)))return out(400,{error:"invalid_request"});
+  if(op==="publish"&&(!hex(body.expectedRevision,40)||!hex(body.expectedStamp,16)||body.activateConfirmed!==false||typeof body.draftJson!=="string"||body.draftJson.length>800000))return out(400,{error:"invalid_request"});
   if(op!=="publish"&&!uuid(body.targetRequestId))return out(400,{error:"invalid_request"});
+  let catalog;
+  if(op==="publish"){try{catalog=JSON.parse(body.draftJson)}catch{return out(400,{error:"invalid_request"})}if(!catalog||typeof catalog!=="object"||Array.isArray(catalog))return out(400,{error:"invalid_request"})}
   let scope;
-  try{scope=await authenticate({token,commandId:body.commandId,leaseGeneration:body.leaseGeneration,envelopeSha256:body.envelopeSha256,operation:op,expectedStamp:body.expectedStamp,expectedRevision:body.expectedRevision,catalog:body.catalog,activateConfirmed:body.activateConfirmed,targetRequestId:body.targetRequestId})}catch{return out(403,{error:"forbidden"})}
+  try{scope=await authenticate({token,commandId:body.commandId,leaseGeneration:body.leaseGeneration,envelopeSha256:body.envelopeSha256,operation:op,expectedStamp:body.expectedStamp,expectedRevision:body.expectedRevision,draftJson:body.draftJson,activateConfirmed:body.activateConfirmed,targetRequestId:body.targetRequestId})}catch{return out(403,{error:"forbidden"})}
   if(!scope)return out(403,{error:"forbidden"});
   try{
    if(op==="cancel_before_attempt")return safe(await recoverBeforeAttempt(scope,body.targetRequestId),body.targetRequestId);
    // Only construct the server Git transport AFTER authenticated authority.
    // Recovery must use a read-only installation token.
    const coordinator=await createCoordinator(scope,op==="publish"?"write":"read");
-   if(op==="publish")return safe(await coordinator.execute({requestId:body.commandId,expectedRevision:body.expectedRevision,catalog:body.catalog,activateConfirmed:body.activateConfirmed},scope),body.commandId);
+   if(op==="publish")return safe(await coordinator.execute({requestId:body.commandId,expectedRevision:body.expectedRevision,catalog,activateConfirmed:false},scope),body.commandId);
    return safe(await coordinator.reconcile({requestId:body.targetRequestId},scope),body.targetRequestId);
   }catch{return out(503,{error:"publisher_unavailable"})}
  };
