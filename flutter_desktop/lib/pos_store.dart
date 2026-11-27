@@ -114,6 +114,8 @@ class PosStore extends ChangeNotifier {
     ''');
     createSyncTables(_db);
     _normalized = isNormalized(_db);
+    // Entity kinds added after a database was normalized get their table here.
+    if (_normalized) createEntityTables(_db);
     if (!_normalized) _normalize();
     final old = read();
     final migrated = copyJson(old.data);

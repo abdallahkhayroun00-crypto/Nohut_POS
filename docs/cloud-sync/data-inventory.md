@@ -75,6 +75,10 @@ Every key below is registered in `lib/sync_registry.dart`. CI fails if a new key
 | `tgoOperationAudit` | `trendyol_go_readonly.dart` | `{platform, packageId, orderNumber, action, result, at}`. | INTERNAL | `audit_logs` | Operational audit. | VERIFIED_EXISTING |
 | `tgoReviewStoreId` | `trendyol_go_ui.dart` | Store ID for reviews (not a secret). | INTERNAL | `restaurant_settings` | — | VERIFIED_EXISTING |
 | `tgoReviewCache` | `trendyol_go_ui.dart` | Cached reviews, including reviewer names. | TRANSIENT_API, PERSONAL_PII | — | Refreshable cache. No CRM. | VERIFIED_EXISTING |
+| `platformReviews` | `review_sync_service.dart`, `review_repository.dart` (table `pos_platform_reviews`) | Persistent review repository: platform, supplier, store, reviewId, rating, comment, product names, reply + moderation, firstSeen/lastVerified, read, notification state. No reviewer identity, no raw payloads. | INTERNAL | — (reviews read contract pending) | Kept; never deleted by sync. | PROPOSED_V5 |
+| `tgoReviewSync` | `review_sync_service.dart` | Review sync status, diagnostics and window checkpoints. | INTERNAL | — | Local cursor. | PROPOSED_V5 |
+| `tgoStoreIdentity` | `review_sync_service.dart`, `tgo_store_identity.dart` | Verified Trendyol store {supplierId, storeId, name, source, verifiedAt}; replaces the hard-coded fallback. | INTERNAL | `restaurant_settings` | — | PROPOSED_V5 |
+| `notifications` | `notification_center.dart` | Durable Windows notification history (eventId dedup, read state). No payroll or customer contact data. | INTERNAL | — (contract N1 pending) | Capped at 500; unread kept. | PROPOSED_V5 |
 | `mobileDevices` | `mobile_pairing.dart` | `{id, name, hash(token), createdAt, revoked}`. | SECRET (token verifier), DEVICE_LOCAL | — (control plane) | Never in the business projection. | VERIFIED_EXISTING |
 | `mobileServerId` | `mobile_pairing.dart` | This POS's LAN identity. | DEVICE_LOCAL | — | — | VERIFIED_EXISTING |
 
