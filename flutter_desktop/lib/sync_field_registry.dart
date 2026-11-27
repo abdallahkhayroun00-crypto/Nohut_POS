@@ -79,6 +79,8 @@ List<String> unregisteredFieldPaths(Map state) {
 /// Prefix semantics: listing `orders[].batches[].lines[].removed` allows
 /// that field; a parent is never implicitly allowed by a child.
 const cloudAllowedFieldPaths = <String>{
+  // Phase 5C shifts (employee hours; no contact data).
+  'shifts', 'shifts[]', 'shifts[].id', 'shifts[].employeeId', 'shifts[].employeeName', 'shifts[].start', 'shifts[].end', 'shifts[].source', 'shifts[].corrections', 'shifts[].corrections[]', 'shifts[].corrections[].at', 'shifts[].corrections[].byId', 'shifts[].corrections[].by', 'shifts[].corrections[].before', 'shifts[].corrections[].before.start', 'shifts[].corrections[].before.end', 'shifts[].corrections[].after', 'shifts[].corrections[].after.start', 'shifts[].corrections[].after.end', 'shifts[].corrections[].reason',
   // Orders: commercial and financial facts, no customer contact data.
   'orders', 'orders[].id', 'orders[].dailyNumber', 'orders[].numberDay',
   'orders[].source', 'orders[].table', 'orders[].pickupChannel',
