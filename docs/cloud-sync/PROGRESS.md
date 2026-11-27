@@ -89,6 +89,11 @@ EVIDENCE:
 
 - ChatGPT — PR #47 (stacked on #44): **Implemented / CI pending**. Removed duplicate Ayarlar > Menü & QR navigation and product list. QR Menü Yönetimi owns the POS sync status, last successful check, Eşitleme Ayarları and Şimdi Eşitle; local-only prices remain editable only with auto-sync disabled. Existing auto-sync service, historical order snapshots and public QR publication are unchanged. Added widget regression. Claude to integrate after CI; Gemini to independently verify. No production data or public menu edits.
 
+### Owner-approved portable Windows installation and secure migration (2026-11-28 01:39 TRT)
+
+- ChatGPT — #48 (stacked on #47): **Implemented / CI pending**. Bundle pinned Node.js 22.23.5 Windows x64 runtime and license, verify official archive SHA-256, prefer private runtime, run lifecycle with no global Node in PATH and verify install/upgrade/uninstall. No secrets in installer. Physical clean-PC and upgrade while publisher running remain mandatory.
+- Secure credential migration — **Requested / not implemented**: owner-approved GitHub PEM and Trendyol credentials in an explicitly owner-authorized versioned encrypted backup, recover on a new PC and re-protect with local DPAPI, regenerate local publisher token, no copied device sessions/MFA/cloud admin secrets, atomic rollback and v1 compatibility. Gemini temporary backend owner asked on #46 comment 7229517102; Claude owns UI and coordinates with backend. No public QR edits, production credentials, live restore or cloud upload. See acceptance criteria in the linked comment.
+
 ## Phase status
 
 | Phase | Status | Evidence |
