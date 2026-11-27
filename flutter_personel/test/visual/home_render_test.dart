@@ -1,6 +1,6 @@
-// Personel Ana Sayfa: two alternatives for the owner (relay 7226986975),
-// each at 320/360/390/430 dp, a tablet, light/dark, large text and a long
-// Turkish name. Same actions and numbers in both; no overflow anywhere.
+// Personel Ana Sayfa (owner chose option A "Özet kartı", 2026-11-27) at
+// 320/360/390/430 dp, a tablet, light/dark, large text and a long Turkish
+// name: no overflow, week near the top, nav labels, every action reachable.
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -8,7 +8,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:nohut_personel/home.dart';
-import 'package:nohut_personel/personel_dashboard.dart';
 import 'package:nohut_personel/pos_api.dart';
 import 'package:nohut_personel/style.dart';
 
@@ -29,23 +28,23 @@ NohutApi api(String name) {
   return a;
 }
 
-Widget app(PersonelHomeStyle style, String name, {double scale = 1, bool online = true}) {
+Widget app(String name, {double scale = 1, bool online = true}) {
   final c = PersonelController(api(name), StaffNotifications())..state = staffController().state..online = online;
   c.state['orders'] = [{'id': 1, 'source': 'Masa', 'table': 2}, {'id': 2, 'source': 'Gel-Al'}];
   return MaterialApp(debugShowCheckedModeBanner: false, theme: NohutStyle.theme, darkTheme: NohutStyle.darkTheme,
       builder: (ctx, child) => MediaQuery(data: MediaQuery.of(ctx).copyWith(textScaler: TextScaler.linear(scale)), child: child!),
-      home: StaffHome(controller: c, onUnpair: () {}, homeStyle: style));
+      home: StaffHome(controller: c, onUnpair: () {}));
 }
 
 void main() {
   setUpAll(loadNohutFonts);
-  for (final style in PersonelHomeStyle.values) {
-    final s = style == PersonelHomeStyle.summary ? 'a' : 'b';
+  {
+    const s = 'a';
     for (final (w, h) in [(320.0, 640.0), (360.0, 740.0), (390.0, 844.0), (430.0, 932.0)]) {
       for (final mode in Brightness.values) {
         final m = mode == Brightness.light ? 'light' : 'dark';
         testWidgets('home $s ${w.toInt()} $m', (t) async {
-          await renderScreen(t, 'home-$s-${w.toInt()}-$m', app(style, 'Test Personel A'),
+          await renderScreen(t, 'home-$s-${w.toInt()}-$m', app('Test Personel A'),
               size: Size(w, h), brightness: mode);
           expect(t.takeException(), isNull);
           // The week is above the fold, nav labels visible, every action reachable.
@@ -56,16 +55,16 @@ void main() {
           for (final l in ['Ana Sayfa', 'Masalar', 'Sipariş', 'Siparişler', 'Daha Fazla']) {
             expect(find.descendant(of: nav, matching: find.text(l)), findsOneWidget, reason: 'nav label $l');
           }
-          final list = find.descendant(of: find.byKey(ValueKey('home-${style.name}')), matching: find.byType(Scrollable)).first;
+          final list = find.descendant(of: find.byKey(const ValueKey('home-summary')), matching: find.byType(Scrollable)).first;
           for (final label in ['Masalar', 'Sipariş Al', 'Siparişler', 'Mesai Ekle', 'Vardiya Ekle', 'Maaş & Avans']) {
-            await t.scrollUntilVisible(find.descendant(of: find.byKey(ValueKey('home-${style.name}')),
+            await t.scrollUntilVisible(find.descendant(of: find.byKey(const ValueKey('home-summary')),
                 matching: find.text(label)), 120, scrollable: list);
           }
         });
       }
     }
     testWidgets('home $s long name, 1.3× text, offline', (t) async {
-      await renderScreen(t, 'home-$s-320-long-name-large-text', app(style, longName, scale: 1.3, online: false),
+      await renderScreen(t, 'home-$s-320-long-name-large-text', app(longName, scale: 1.3, online: false),
           size: const Size(320, 640));
       expect(t.takeException(), isNull);
       final g = t.widget<Text>(find.byKey(const ValueKey('home-greeting')));
@@ -73,7 +72,7 @@ void main() {
       expect(find.text('Laptop çevrimdışı · Sepet korunuyor'), findsOneWidget);
     });
     testWidgets('home $s tablet', (t) async {
-      await renderScreen(t, 'home-$s-tablet', app(style, longName), size: const Size(1100, 800));
+      await renderScreen(t, 'home-$s-tablet', app(longName), size: const Size(1100, 800));
       expect(t.takeException(), isNull);
     });
   }

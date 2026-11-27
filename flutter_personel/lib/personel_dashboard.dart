@@ -2,18 +2,14 @@
 // plan, pay) from the server session, today's floor at a glance and the
 // quick actions. Nothing here selects or shows another employee.
 //
-// Two layouts for the owner to choose from (relay 7226986975), both sans-serif,
-// one-line greeting, the week near the top, the same actions and numbers:
-//  * [PersonelHomeStyle.summary]: a week card first, then compact action tiles.
-//  * [PersonelHomeStyle.agenda]: next shift first, a week strip, then grouped
-//    action lists with live counts.
+// Layout chosen by the owner (2026-11-27, option A "Özet kartı"): sans-serif,
+// one-line greeting, the week card with the next shift first, then compact
+// action tiles and the restaurant strip.
 import 'package:flutter/material.dart';
 
 import 'pos_api.dart';
 import 'style.dart';
 import 'work_page.dart' show WorkFormat;
-
-enum PersonelHomeStyle { summary, agenda }
 
 class PersonelDashboard extends StatefulWidget {
   const PersonelDashboard({
@@ -29,11 +25,9 @@ class PersonelDashboard extends StatefulWidget {
     required this.onWork,
     required this.onLogin,
     this.online = true,
-    this.style = PersonelHomeStyle.summary,
   });
   final NohutApi api;
   final bool online;
-  final PersonelHomeStyle style;
   final String? name;
   final int busyTables, openPickups, openOrders;
   final VoidCallback onTables, onNewOrder, onOrders, onLogin;
@@ -136,8 +130,8 @@ class _PersonelDashboardState extends State<PersonelDashboard> {
     child: LayoutBuilder(builder: (context, c) {
       // Tablets: a readable column, centred.
       final side = c.maxWidth > 720 ? (c.maxWidth - 680) / 2 : 16.0;
-      final children = widget.style == PersonelHomeStyle.summary ? _summary(context, c.maxWidth) : _agenda(context);
-      return ListView(key: ValueKey('home-${widget.style.name}'),
+      final children = _summary(context, c.maxWidth);
+      return ListView(key: const ValueKey('home-summary'),
           padding: EdgeInsets.fromLTRB(side, 10, side, 24), children: children);
     }),
   );
@@ -270,100 +264,4 @@ class _PersonelDashboardState extends State<PersonelDashboard> {
         style: TextStyle(fontFamily: 'Barlow', fontSize: 12.5, color: context.nohut.muted)),
   ])));
   Widget _divider(BuildContext context) => Container(width: 1, height: 30, color: context.nohut.outline);
-
-  // ------------------------------------------------------- B: Gündem
-  List<Widget> _agenda(BuildContext context) {
-    final nc = context.nohut;
-    final name = _name;
-    final initials = (name ?? '?').trim().split(RegExp(r'\s+')).where((w) => w.isNotEmpty).take(2)
-        .map((w) => w.characters.first.toUpperCase()).join();
-    final placeholder = _weekPlaceholder(context);
-    final pay = _pay;
-    final n = _nextPlan;
-    return [
-      Row(children: [
-        CircleAvatar(radius: 21, backgroundColor: nc.brandPanel, foregroundColor: Colors.white,
-            child: Text(initials.isEmpty ? '?' : initials, style: const TextStyle(fontFamily: 'Barlow',
-                fontWeight: FontWeight.w700, fontSize: 16))),
-        const SizedBox(width: 12),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(name ?? 'Hoş geldiniz', key: const ValueKey('home-greeting'), maxLines: 1, overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontFamily: 'Barlow', fontSize: 19, fontWeight: FontWeight.w700, color: nc.heading)),
-          Text(_dateLabel, maxLines: 1, style: TextStyle(fontFamily: 'Barlow', fontSize: 13.5, color: nc.muted)),
-        ])),
-      ]),
-      const SizedBox(height: 14),
-      if (placeholder != null) Card(child: placeholder)
-      else ...[
-        Card(key: const ValueKey('home-next-shift'), child: InkWell(
-          borderRadius: BorderRadius.circular(12),
-          onTap: () => widget.onWork(1),
-          child: Padding(padding: const EdgeInsets.all(12), child: Row(children: [
-            Container(width: 54, padding: const EdgeInsets.symmetric(vertical: 6),
-              decoration: BoxDecoration(color: nc.warningSoft, borderRadius: BorderRadius.circular(12)),
-              child: Column(children: [
-                Text(n == null ? '—' : '${DateTime.tryParse('${n['date']}')?.day ?? ''}',
-                    style: TextStyle(fontFamily: 'Barlow', fontSize: 21, fontWeight: FontWeight.w700, color: nc.warning)),
-                Text(n == null ? '' : WorkFormat.day('${n['date']}').split(' ').last,
-                    style: TextStyle(fontFamily: 'Barlow', fontSize: 12, fontWeight: FontWeight.w700, color: nc.warning)),
-              ])),
-            const SizedBox(width: 12),
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('SIRADAKİ VARDİYA', style: _label(context)),
-              const SizedBox(height: 2),
-              Text(n == null ? 'Planlı vardiya yok' : '${WorkFormat.day('${n['date']}').split(' ').first} · ${n['start']}–${n['end']}',
-                  maxLines: 1, overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontFamily: 'Barlow', fontSize: 18, fontWeight: FontWeight.w700, color: nc.heading)),
-            ])),
-            Icon(Icons.chevron_right, color: nc.muted),
-          ])),
-        )),
-        const SizedBox(height: 8),
-        Card(key: const ValueKey('home-week'), child: Padding(padding: const EdgeInsets.symmetric(vertical: 12),
-          child: LayoutBuilder(builder: (context, c) {
-            final hours = [_inline(context, 'Çalışılan', WorkFormat.hours(_status['minutes'])), _divider(context),
-              _inline(context, 'Plan', WorkFormat.hours(week?['plannedMinutes']))];
-            final money = pay == null ? <Widget>[] : [_inline(context, 'Kazanılan', _m(pay['earnedCents'])),
-              _divider(context), _inline(context, 'Kalan', _m(pay['remainingCents']))];
-            if (money.isEmpty || c.maxWidth >= 480) {
-              return Row(children: [...hours, if (money.isNotEmpty) _divider(context), ...money]);
-            }
-            return Column(children: [Row(children: hours), Divider(height: 20, color: nc.outline), Row(children: money)]);
-          }))),
-      ],
-      const SizedBox(height: 14),
-      Text('SERVİS', style: _label(context)),
-      const SizedBox(height: 6),
-      _group(context, _service),
-      if (_canWork) ...[
-        const SizedBox(height: 14),
-        Text('MESAİ VE MAAŞ', style: _label(context)),
-        const SizedBox(height: 6),
-        _group(context, _work),
-      ],
-    ];
-  }
-
-  Widget _group(BuildContext context, List<(IconData, String, VoidCallback, String?)> items) {
-    final nc = context.nohut;
-    final scheme = Theme.of(context).colorScheme;
-    return Card(child: Column(children: [
-      for (var i = 0; i < items.length; i++) ...[
-        if (i > 0) Divider(height: 1, indent: 56, color: nc.outline),
-        ListTile(
-          minVerticalPadding: 10,
-          leading: Container(width: 34, height: 34, decoration: BoxDecoration(color: scheme.secondaryContainer,
-              borderRadius: BorderRadius.circular(10)),
-            child: Icon(items[i].$1, size: 19, color: scheme.onSecondaryContainer)),
-          title: Text(items[i].$2, maxLines: 1, overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontFamily: 'Barlow', fontSize: 16, fontWeight: FontWeight.w700, color: nc.ink)),
-          trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-            if (items[i].$4 != null) NohutPill(items[i].$4!),
-            Icon(Icons.chevron_right, color: nc.muted),
-          ]),
-          onTap: items[i].$3,
-        ),
-      ],
-    ]));
-  }
 }

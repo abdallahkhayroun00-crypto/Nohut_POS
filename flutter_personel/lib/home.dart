@@ -17,11 +17,8 @@ class StaffHome extends StatefulWidget {
     required this.onUnpair,
     this.ownerMode = false,
     this.ownerName,
-    this.homeStyle = PersonelHomeStyle.summary,
   });
   final PersonelController controller;
-  /// Ana Sayfa layout; two alternatives await the owner's choice (relay 7226986975).
-  final PersonelHomeStyle homeStyle;
   final VoidCallback onUnpair;
   final bool ownerMode;
   final String? ownerName;
@@ -224,7 +221,6 @@ class _StaffHomeState extends State<StaffHome> {
       onWork: _openWork,
       onLogin: _login,
       online: c.online,
-      style: widget.homeStyle,
     );
   }
 

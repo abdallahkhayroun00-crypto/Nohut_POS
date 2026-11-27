@@ -60,7 +60,7 @@ The Functional column records test coverage.
 | Surface | Code | Visual | Functional | Notes |
 |---|---|---|---|---|
 | Pairing, login, PIN, unlock | `pair_page.dart`, `home.dart` | ⬜ | ✓ | |
-| Ana Sayfa | `personel_dashboard.dart` | 🟡 A/B (e0ac71d) | 20 render + suite ✓ | The owner rejected the old version; waiting for the choice |
+| Ana Sayfa | `personel_dashboard.dart` | ✅ A "Özet kartı" (owner 2026-11-27) | 10 render + suite ✓ | Antigravity accessibility audit pending |
 | Masalar, Sipariş/Ürünler, Sepet, Siparişler | `home.dart` | ⬜ | ✓ | |
 | Mesai ve Maaşım (Mesai, Vardiya, Maaş) | `work_page.dart` | 🔄 | ✓ | |
 | Menü Yönetimi | `menu_admin_page.dart` | 🔄 | 8 ✓ | Full parity incl. publish (ea4b42b) |
@@ -93,7 +93,7 @@ The Functional column records test coverage.
 
 1. Shared components and tokens, in Flutter (`style.dart` for both apps) and in the browser CSS.
 2. The highest-traffic screens: Windows Masalar, the order composer and payment; Personel Masalar, Sipariş and Siparişler.
-3. Owner-review screens with pending alternatives: Ana Sayfa (🟡) and QR Menü (🔄).
+3. Owner review of the redesigned Windows QR Menü (🔄). Ana Sayfa A is approved; its patterns (week card, compact tiles, metric strip) set the direction for the other dashboards.
 4. Dashboards and reports with data visualization.
 5. Ayarlar, notifications, finance, market and the remaining screens.
 6. Browser and PWA alignment.
