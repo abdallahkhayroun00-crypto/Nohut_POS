@@ -115,7 +115,7 @@ Fields:
 - **Full nested field list:** `flutter_desktop/lib/sync_field_paths.g.dart` (628 declared paths). It comes from runtime observation of every write in the test suite plus code reading, and every write in CI is validated against it.
 
 ### 3.3 Payments, refunds and guest checks
-- **Payment:** `{createdAt, method (Nakit/Kart/Platform), amount (TL decimal), received, change, time, by, guestCheckId?, guestAllocations[], refunds[{amount, reason, createdAt}], reversed, combinedPaymentId?}`. No payment ID exists today; payments are addressed by list index. PR-04 must assign stable IDs.
+- **Payment:** `{createdAt, method (Nakit/Kart/Platform), amount (TL decimal), received, change, time, by, staffId? (employee id of whoever collected it; set by staff `pay`/`payMixed`/`payProducts`, absent on Windows-cashier rows), guestCheckId?, guestAllocations[], refunds[{amount, reason, createdAt}], reversed, combinedPaymentId?}`. No payment ID exists today; payments are addressed by list index. PR-04 must assign stable IDs.
 - **Money storage:** stored as decimal TL `num` and converted with `cents()` everywhere. The cloud should use integer kuruş (spec §11.2).
 - **`guestChecks`:** `{id, name, allocations[{key, cents}]}`.
 

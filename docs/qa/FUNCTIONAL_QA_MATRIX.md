@@ -63,6 +63,15 @@ Found by the independent Gemini review on PR #44 (comment 7223333964) and fixed 
 | D-21 | Mid-week pay-type change | Manager | A switch between Saatlik and Haftalık Sabit could start mid-week and pay both | Such a switch starts on a Monday; a fixed week pays once | Medium (financial) | `setEmployeeRate`, `weeklyEarnings` | `payroll_test` "a switch to or from Haftalık Sabit…" | — |
 | D-22 | LAN reads | Personel | `/api/state`, `/api/bootstrap`, `/api/mobile/bootstrap`, `/api/staff/*` answered any address; Android bootstrap ignored *Bireysel giriş zorunlu* | Restaurant network only; Android bootstrap needs a session when login is required (the APK then shows Giriş Yap) | Medium (security) | `lan_server.dart`, `pos_api.dart` | `lan_auth_gate_test` "Android bootstrap follows required login…" | — |
 
+Gemini review pass 2 (comment 7223539958):
+
+| ID | Feature | Intended user | Actual behavior (before) | Expected | Severity | Fix | Automated evidence | Rendered evidence |
+|---|---|---|---|---|---|---|---|---|
+| D-23 | Card terminal reconciliation (QA-10) | Cashier | A declined/cancelled attempt became "unknown" when a later inquiry got no answer, blocking new card payments and deletion of the order | Declined and cancelled are final, like approved | Medium (financial) | `InposPayments._apply` | `terminal_delete_guard_test` "QA-10…" | — |
+| D-24 | Collection attribution (QA-11) | Manager | Staff `pay` and `payMixed` rows had no `staffId` (only the display name) | Every staff payment row carries the collector's employee id | Medium (attribution) | `staff_commands.dart`; field `orders[].payments[].staffId` registered | `terminal_delete_guard_test` "QA-11…" | — |
+| D-25 | Order deletion speed (QA-12, part) | Cashier | `deleteOrder` decoded every command receipt inside the write lock (O(N)) | Indexed lookup by order id; old databases backfilled once | Medium (performance) | `command_receipts.order_id/result_order_id` + indexes | `terminal_delete_guard_test` "QA-12…", full suite | — |
+| D-26 | Personel browser polling (QA-12, part) | Personel | State refresh every 5 s even when the tab is hidden | Paused while hidden; refreshes on return | Low | `staff.html` | — | — |
+
 Owner acceptance example (8 h × 100 TL + 8 h × 120 TL = 1.760 TL; pay 800 → Kısmen Ödendi, kalan 960; pay 960 → Ödendi; later raise not retroactive): **Verified** in `payroll_test` and in a rendered LAN run (Yönetici records 800 TL Nakit → Kısmen Ödendi, kalan 960,00 ₺; Personel sees the same numbers).
 
 ## 3. Open findings (not yet fixed)
@@ -77,6 +86,8 @@ Owner acceptance example (8 h × 100 TL + 8 h × 120 TL = 1.760 TL; pay 800 → 
 | O-06 | Independent review: Gemini reviewed PR #44 (comment 7223333964); findings fixed as D-15…D-22 | — | Re-review after the fix commit |
 | O-07 | Android Personel APK has no individual login yet; it still shows an employee picker (legacy shared mode). With *Bireysel giriş zorunlu* on, its writes are now refused (401) until it signs in | High (parity) | Native login + 5-digit PIN in the APK (W6/A2) |
 | O-09 | Android Personel APK has no Mesai, Vardiya or own-pay screens yet (browser app has them) | High (parity) | Native screens |
+| O-10 | `sync_outbox` partial index on pending rows (QA-12, part) | Low (performance) | Codex (sync owner, #39) |
+| O-11 | Staff `payProducts` has no automated test; its `productPaymentId`/`productReceipt` fields are not in the field registry | Medium (coverage) | Add test + register fields |
 | O-08 | An old Yönetici APK compares the owner name with "Ömer Yılmaz"; after linking the owner account to a differently named profile it needs the new APK from CI | Medium (upgrade) | Install the APK built from #44 |
 
 ## 4. Physical-device tests required from the owner

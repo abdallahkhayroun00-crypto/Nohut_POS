@@ -98,4 +98,46 @@ void main() {
     terminal.inquireReply = const TerminalReply(TerminalStatus.approved, transactionId: 'tx-2', amountCents: 14000);
     expect(() => payments.reconcile('ref_missing_1'), throwsFormatException);
   });
+
+  group('independent review pass 2 (Gemini, 2026-11-27)', () {
+    test('QA-10: a declined or cancelled outcome stays final when a later inquiry gets no answer', () async {
+      terminal.payReply = const TerminalReply(TerminalStatus.declined);
+      expect((await payments.pay(orderId, 14000, 'ref_declined_1')).status, TerminalStatus.declined);
+      terminal.inquireReply = const TerminalReply(TerminalStatus.unknown);
+      expect((await payments.reconcile('ref_declined_1')).status, TerminalStatus.declined);
+      expect(asMaps(store.read().data['terminalAttempts']).single['status'], 'declined');
+      // The order is not blocked: a new card attempt and ordinary deletion work.
+      terminal.payReply = const TerminalReply(TerminalStatus.cancelled);
+      expect((await payments.pay(orderId, 14000, 'ref_cancel_01')).status, TerminalStatus.cancelled);
+      expect((await payments.reconcile('ref_cancel_01')).status, TerminalStatus.cancelled);
+      delete('del_req_qa10_1');
+      expect(mutableOrder(store.read().data, orderId), isNull);
+    });
+
+    Json act(String id, String action, Json fields) => submitStaffAction(store, {
+      'requestId': id, 'expectedRevision': store.read().revision, 'staffId': 2,
+      'action': action, 'orderId': orderId, ...fields,
+    });
+
+    test('QA-11: pay and payMixed record who collected (staffId), like payProducts', () {
+      act('staff_qa11_pay1', 'pay', {'amountCents': 4000, 'method': 'Nakit', 'receivedCents': 4000, 'confirmed': true, 'printReceipt': false});
+      act('staff_qa11_mix1', 'payMixed', {'amountCents': 6000, 'cashCents': 2000, 'receivedCents': 2000, 'confirmed': true, 'printReceipt': false});
+      final rows = asMaps(mutableOrder(store.read().data, orderId)!['payments']);
+      expect(rows, hasLength(3));
+      expect(rows.map((p) => p['staffId']), everyElement(2));
+    });
+
+    test('QA-12: deleting an order fences its receipts through the indexed lookup', () {
+      final indexes = store.authDatabase.select("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='command_receipts'")
+          .map((r) => r['name']).toSet();
+      expect(indexes, containsAll(['command_receipts_order', 'command_receipts_result_order']));
+      delete('del_req_qa12_1');
+      // The order-creation receipt links the order only through its result.
+      expect(() => submitStaffOrder(store, {
+        'requestId': 'staff_td_0001', 'expectedRevision': store.read().revision,
+        'staffId': 2, 'source': 'Masa', 'table': 1,
+        'lines': [{'productId': 0, 'qty': 1, 'removed': <String>[], 'note': ''}],
+      }), throwsFormatException);
+    });
+  });
 }

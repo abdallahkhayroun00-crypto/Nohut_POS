@@ -470,6 +470,7 @@ const knownStateFieldPaths = <String>{
   'orders[].payments[].refunds[].createdAt',
   'orders[].payments[].refunds[].reason',
   'orders[].payments[].reversed',
+  'orders[].payments[].staffId',
   'orders[].payments[].terminalReference',
   'orders[].payments[].time',
   'orders[].payments[].transactionId',
