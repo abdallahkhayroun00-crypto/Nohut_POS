@@ -12,6 +12,7 @@ import 'owner_api.dart';
 import 'owner_payroll.dart';
 import 'pos_api.dart';
 import 'style.dart';
+import 'work_page.dart' show WorkFormat;
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -130,7 +131,8 @@ class _OwnerHomeState extends State<OwnerHome> {
   ];
   String section='dashboard';
   String day=ReportPeriod.day(ReportPeriod.today());
-  Json? data,google;
+  Json? data,google,payroll;
+  String? payrollError;
   bool loading=false,offline=true,googleBusy=false;
   String? error,googleError;
   Timer? timer;
@@ -156,9 +158,78 @@ class _OwnerHomeState extends State<OwnerHome> {
       if(day==selected)setState((){data=cached??data;offline=true;});
       final fresh=await api.overview(selected);
       if(mounted && day==selected)setState((){data=fresh;offline=false;});
+      unawaited(loadPayroll());
     } catch(_){
       if(mounted)setState((){offline=true;error='Windows bağlantısı yok. Varsa son yerel kopya gösterilir.';});
     } finally {if(mounted)setState(()=>loading=false);}
+  }
+  /// The weekly payroll panel (§24.6) on Ana Sayfa: last week's Windows
+  /// rows, read-only here; payments are recorded on the payroll page.
+  Future<void> loadPayroll() async {
+    try {
+      final p=await api.request({'operation':'ownerPayroll'});
+      if(mounted)setState((){payroll=p;payrollError=null;});
+    } catch(_){
+      if(mounted)setState(()=>payrollError='Maaş durumu alınamadı.');
+    }
+  }
+  void openPayroll()=>Navigator.of(context).push(MaterialPageRoute<void>(
+    builder:(_)=>OwnerPayrollPage(request:api.request))).then((_)=>loadPayroll());
+  Widget payrollPanel(){
+    final nc=context.nohut;
+    final people=rows(payroll?['rows']).where((r)=>r['financialStatus']!='Çalışma kaydı yok').toList();
+    final open=people.where((r)=>r['financialStatus']!='Ödendi').toList();
+    final overdue=open.where((r)=>r['overdue']==true).length;
+    final missing=people.where((r)=>r['rate']==null).length;
+    final known=open.every((r)=>r['remainingCents'] is int);
+    final left=open.fold<int>(0,(n,r)=>n+((r['remainingCents'] as int?)??0));
+    final week=payroll?['weekStart'];
+    return Card(key:const ValueKey('dash-payroll'),child:InkWell(onTap:openPayroll,borderRadius:BorderRadius.circular(18),child:Padding(
+      padding:const EdgeInsets.all(14),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+        Row(children:[
+          Icon(Icons.payments_outlined,color:nc.heading),const SizedBox(width:8),
+          Expanded(child:Text(week is String?'Hafta ${WorkFormat.day(week)}':'Haftalık Maaş Ödemeleri',
+            style:const TextStyle(fontWeight:FontWeight.w700,fontSize:15.5))),
+          const Icon(Icons.chevron_right),
+        ]),
+        const SizedBox(height:8),
+        if(payroll==null)Text(payrollError??'Yükleniyor…',style:TextStyle(color:nc.muted))
+        else if(people.isEmpty)Text('Bu hafta için çalışma kaydı yok.',style:TextStyle(color:nc.muted))
+        else Wrap(spacing:8,runSpacing:8,crossAxisAlignment:WrapCrossAlignment.center,children:[
+          Text(open.isEmpty?'Tüm ödemeler kaydedildi':known?'Kalan ${money(left)}':'Kalan: ücreti eksik kişiler var',
+            style:TextStyle(fontWeight:FontWeight.w800,fontSize:18,color:nc.heading)),
+          if(open.isNotEmpty)NohutPill('${open.length} kişi bekliyor',tone:NohutTone.warning),
+          if(overdue>0)NohutPill('$overdue gecikti',tone:NohutTone.danger),
+          if(missing>0)NohutPill('$missing ücret belirlenmedi',tone:NohutTone.neutral),
+        ]),
+      ]))));
+  }
+  Widget teamPanel(){
+    final nc=context.nohut;
+    final team=data?['team'] is Map?data!['team'] as Map:const {};
+    final planned=rows(team['planned']);
+    final worked=rows(team['worked']);
+    return Card(child:Padding(padding:const EdgeInsets.all(14),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+      Text(data==null?'—':'Planlı ${planned.length} kişi · Çalışılan ${WorkFormat.hours(team['actualMinutes'])}',
+        style:const TextStyle(fontWeight:FontWeight.w700,fontSize:15.5)),
+      const SizedBox(height:6),
+      if(data!=null&&planned.isEmpty)Text('Bu gün için planlı vardiya yok.',style:TextStyle(color:nc.muted)),
+      for(final p in planned)Padding(padding:const EdgeInsets.symmetric(vertical:3),child:Row(children:[
+        Icon(Icons.schedule,size:17,color:nc.muted),const SizedBox(width:8),
+        Expanded(child:Text('${p['employeeName']??''}',overflow:TextOverflow.ellipsis)),
+        Text('${p['start']}–${p['end']}${p['endsNextDay']==true?' (+1)':''}',style:const TextStyle(fontWeight:FontWeight.w600)),
+      ])),
+      if(worked.isNotEmpty)...[
+        const Divider(height:18),
+        for(final w in worked)Padding(padding:const EdgeInsets.symmetric(vertical:3),child:Row(children:[
+          Icon(Icons.timer_outlined,size:17,color:nc.muted),const SizedBox(width:8),
+          Expanded(child:Text('${w['name']??''}',overflow:TextOverflow.ellipsis)),
+          Text(WorkFormat.hours(w['minutes']),style:const TextStyle(fontWeight:FontWeight.w600)),
+        ])),
+      ],
+      const SizedBox(height:4),
+      Text('Çalışılan saat personelin kendi Mesai kayıtlarından gelir.',style:TextStyle(color:nc.muted,fontSize:12.5)),
+    ])));
   }
   Future<void> pickDay() async {
     final d=await showDatePicker(context:context,initialDate:ReportPeriod.parse(day),
@@ -341,7 +412,12 @@ class _OwnerHomeState extends State<OwnerHome> {
           NohutMetric(label:'Kart',value:amount(card),icon:Icons.credit_card),
           NohutMetric(label:'Sipariş',value:data?['orderCount']?.toString()??'—',icon:Icons.receipt_long_outlined),
           NohutMetric(label:'Açık hesap',value:data==null?'—':'${entries('openAccounts').length}',icon:Icons.pending_actions_outlined),
+          NohutMetric(label:'Aktif masa',value:data?['activeTables'] is int?'${data!['activeTables']} / 5':'—',icon:Icons.table_restaurant_outlined),
         ]),
+        title('Haftalık Maaş Ödemeleri'),
+        payrollPanel(),
+        title(day==ReportPeriod.day(ReportPeriod.today())?'Bugün ekip':'Ekip · ${dayLabel(day)}'),
+        teamPanel(),
         title('Saatlik yoğunluk'),
         hourly(),
         NohutSection('Son siparişler',action:TextButton(onPressed:()=>setState(()=>section='tables'),child:const Text('Tümü'))),

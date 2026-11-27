@@ -65,7 +65,19 @@ class FakeOwnerApi extends OwnerApi {
       {'source': 'Trendyol Go', 'orderNumber': 'T-1001', 'status': 'Teslim edildi', 'totalCents': 31000},
     ],
     'openAccounts': [{'source': 'Masa', 'table': 2, 'dueCents': 12000}],
+    'activeTables': 2,
+    'team': {
+      'planned': [
+        {'employeeName': 'Test Personel A', 'start': '10:00', 'end': '18:00'},
+        {'employeeName': 'Test Personel B', 'start': '16:00', 'end': '00:30', 'endsNextDay': true},
+      ],
+      'worked': [{'employeeId': 7, 'name': 'Test Personel A', 'minutes': 450}],
+      'actualMinutes': 450,
+    },
   };
+  @override
+  Future<Json> request(Json payload) async =>
+      payload['operation'] == 'ownerPayroll' ? payrollReply(paid: 80000) : throw const FormatException('?');
   @override
   Future<Json?> cachedOverview(String day) async => overviewData;
   @override
@@ -117,6 +129,10 @@ void main() {
           home: OwnerHome(controller: PersonelController(api, StaffNotifications()), api: api, onUnpair: () {})),
           brightness: mode);
       expect(t.takeException(), isNull);
+      // §24.3: payroll panel and today's team on Ana Sayfa.
+      expect(find.byKey(const ValueKey('dash-payroll')), findsOneWidget);
+      expect(find.text('1 gecikti'), findsOneWidget);
+      expect(find.textContaining('Planlı 2 kişi'), findsOneWidget);
       await t.pumpWidget(const SizedBox()); // stop the 30 s refresh timer
     });
     testWidgets('owner payroll $m', (t) async {
