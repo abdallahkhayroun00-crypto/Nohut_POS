@@ -26,7 +26,7 @@ class PayrollReminderSettings {
     final raw = settings is Map ? settings['payrollReminders'] : null;
     if (raw is! Map) return const PayrollReminderSettings();
     List<String> times(Object? v, List<String> d) {
-      final l = v is List ? [for (final t in v) if (_hm.hasMatch('$t')) '$t'] : d;
+      final l = v is List ? [for (final t in v) if (_hm.hasMatch('$t')) '$t'] : [...d];
       return (l..sort()).take(4).toList();
     }
     final off = raw['paydayOffset'];

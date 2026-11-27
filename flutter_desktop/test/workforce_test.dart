@@ -6,7 +6,9 @@ import 'package:nohut_falafel_desktop/lan_auth_gate.dart';
 import 'package:nohut_falafel_desktop/lan_server.dart';
 import 'package:nohut_falafel_desktop/local_accounts.dart';
 import 'package:nohut_falafel_desktop/pos_logic.dart';
+import 'package:nohut_falafel_desktop/payroll.dart' show payrollStatus;
 import 'package:nohut_falafel_desktop/pos_store.dart';
+import 'package:nohut_falafel_desktop/shifts.dart' show correctShift;
 import 'package:nohut_falafel_desktop/workforce.dart';
 
 void main() {
@@ -102,6 +104,27 @@ void main() {
   });
 
   group('Mesai', () {
+    test('a stale employee form cannot overwrite a manager correction (Codex #39)', () {
+      final r = work('work-corr-1', {'action': 'work_save', 'date': '2026-11-18', 'start': '09:00', 'end': '17:00', 'breakMinutes': 30});
+      final version = r['updatedAt'];
+      final id = r['id'];
+      correctShift(store, {'requestId': 'fix_stale_00000001', 'staffId': mehmet, 'shiftId': id,
+        'end': asMaps(store.read().data['shifts']).single['end'], 'reason': 'Kontrol'});
+      final after = asMaps(store.read().data['shifts']).single;
+      expect(after['updatedAt'], isNot(version));
+      expect(() => work('work-corr-2', {'action': 'work_save', 'id': id, 'expectedUpdatedAt': version,
+          'date': '2026-11-18', 'start': '09:00', 'end': '18:00', 'breakMinutes': 30}),
+          throwsA(isA<WorkforceConflict>()));
+    });
+
+    test('payday follows the configured offset, the same one reminders use', () {
+      final s = store.read();
+      final data = {...s.data, 'settings': {...(s.data['settings'] as Map? ?? {}), 'payrollReminders': {'paydayOffset': 8}}};
+      store.replace(data, s.revision);
+      expect(payrollStatus(store.read().data, ayse, '2026-11-16', today: '2026-11-25')['dueDate'], '2026-11-24');
+      expect(payrollStatus(store.read().data, ayse, '2026-11-16', today: '2026-11-25', paydayOffset: 7)['dueDate'], '2026-11-23');
+    });
+
     test('manual own entry incl. past day, overnight, break; no future, no overlap', () {
       work('work-0001', {'action': 'work_save', 'date': '2026-11-18', 'start': '17:00', 'end': '01:30', 'breakMinutes': 30});
       final s = store.read().data;
