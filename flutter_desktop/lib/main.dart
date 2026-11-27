@@ -3629,7 +3629,8 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     staffPanel: _staff(db),
     wifiPanel: _wifi(db),
     backupPanel: BackupPanel(service: backups, restore: restorer),
-    accountsPanel: AccountsPanel(auth: localAuth, employees: asMaps(db['employees'])),
+    accountsPanel: AccountsPanel(auth: localAuth, employees: asMaps(db['employees']),
+        yoneticiUrl: lan.staffUrl.replaceFirst('/personel', '/yonetici')),
   );
 
   Widget _notice(String text) => Container(

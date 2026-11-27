@@ -91,9 +91,10 @@ class LanAuthGate {
     required String client,
     required String operation,
     bool touch = true,
+    bool forceRequired = false,
   }) {
     final ctx = token == null ? null : auth.check(token, client, touch: touch);
-    if (!required) {
+    if (!required && !forceRequired) {
       // Legacy shared panel: allowed; an ok session still identifies the user.
       if (ctx != null && ctx.ok && auth.authorize(ctx, operation) != 'ok') {
         return const GateDecision.deny(403, 'forbidden');

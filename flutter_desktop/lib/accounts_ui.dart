@@ -25,9 +25,11 @@ const _sectionNames = {
 };
 
 class AccountsPanel extends StatefulWidget {
-  const AccountsPanel({super.key, required this.auth, required this.employees});
+  const AccountsPanel({super.key, required this.auth, required this.employees, this.yoneticiUrl});
   final LocalAuth auth;
   final List<Json> employees;
+  /// Address of the local Yönetici browser app, shown to the owner.
+  final String? yoneticiUrl;
   @override
   State<AccountsPanel> createState() => _AccountsPanelState();
 }
@@ -291,6 +293,24 @@ class _AccountsPanelState extends State<AccountsPanel> {
               return;
             }
             auth.setSetting('lan_login_required', v ? '1' : '0', actor: actor);
+            setState(() {});
+          },
+        ),
+        SwitchListTile(
+          key: const ValueKey('local-finance-http'),
+          contentPadding: EdgeInsets.zero,
+          value: auth.setting('local_finance_http') == '1',
+          title: const Text('Yönetici uygulamasında finans verileri'),
+          subtitle: Text('Kapalıyken /yonetici siparişleri ve menüyü gösterir; satış tutarları, aylık finans, '
+              'bordro ve raporlar gizlenir. Yerel HTTPS bir iPhone’da doğrulanana kadar kapalı tutun.'
+              '${widget.yoneticiUrl == null ? '' : '\nAdres: ${widget.yoneticiUrl}'}'),
+          onChanged: (v) async {
+            if (v && !await _confirm('Finans verilerini aç',
+                'Restoran Wi-Fi ağı şifresiz HTTP kullanır. Aynı ağdaki biri trafiği izleyebilirse tutarları görebilir. '
+                'Yalnızca çalışan ağı misafir ağından ayrıysa açın.')) {
+              return;
+            }
+            auth.setSetting('local_finance_http', v ? '1' : '0', actor: actor);
             setState(() {});
           },
         ),

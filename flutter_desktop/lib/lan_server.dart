@@ -15,12 +15,15 @@ import 'mobile_pairing.dart';
 import 'finance_sync_server.dart';
 import 'google_business.dart';
 import 'lan_auth_gate.dart';
+import 'yonetici_api.dart';
 
 /// Native Flutter Windows HTTP server for employee phones. No Python process.
 class PosLanServer extends ChangeNotifier {
-  PosLanServer(this.store, {this.port = 8787, String? staffHtml, this.googleProvider,
-      this.platformAction, this.platformWritable, this.authGate})
-    : _staffHtml = staffHtml;
+  PosLanServer(this.store, {this.port = 8787, String? staffHtml, String? yoneticiHtml,
+      this.googleProvider, this.platformAction, this.platformWritable, this.authGate})
+    : _staffHtml = staffHtml, _yoneticiHtml = yoneticiHtml;
+  String? _yoneticiHtml;
+  late final YoneticiApi? yonetici = authGate == null ? null : YoneticiApi(store, authGate!);
   /// Individual LAN logins (spec §23.4). Null = legacy shared panel only.
   final LanAuthGate? authGate;
   final PosStore store;
@@ -121,6 +124,13 @@ class PosLanServer extends ChangeNotifier {
       await discover();
       if (_disposed || generation != _generation) return;
       _staffHtml ??= await rootBundle.loadString('assets/staff.html');
+      if (authGate != null && _yoneticiHtml == null) {
+        try {
+          _yoneticiHtml = await rootBundle.loadString('assets/yonetici.html');
+        } catch (e) {
+          debugPrint('Yönetici page unavailable: $e'); // Personel keeps working.
+        }
+      }
       if (_disposed || generation != _generation) return;
       final bound = await HttpServer.bind(InternetAddress.anyIPv4, port);
       if (_disposed || generation != _generation) {
@@ -320,29 +330,26 @@ class PosLanServer extends ChangeNotifier {
     return null;
   }
 
-  Future<void> _handleAuth(HttpRequest request, String path) async {
-    final gate = authGate;
-    if (gate == null) {
-      _json(request.response, 404, {'error': 'not_found'});
-      return;
-    }
+  /// LAN-only, same-origin JSON body for the authenticated browser APIs.
+  /// Writes the refusal and returns null when the request is not acceptable.
+  Future<Json?> _lanJsonBody(HttpRequest request, int limit) async {
     final addr = request.connectionInfo?.remoteAddress.address ?? '';
     if (!_privateIp(addr) && addr != '127.0.0.1' && addr != '::1') {
       _json(request.response, 403, {'error': 'lan_only'});
-      return;
+      return null;
     }
     if (!_sameOrigin(request)) {
       _json(request.response, 403, {'error': 'origin'});
-      return;
+      return null;
     }
     Json body = {...request.uri.queryParameters};
     if (request.method == 'POST') {
       final chunks = <int>[];
       await for (final part in request) {
         chunks.addAll(part);
-        if (chunks.length > 8 * 1024) {
+        if (chunks.length > limit) {
           _json(request.response, 413, {'error': 'payload_size'});
-          return;
+          return null;
         }
       }
       try {
@@ -351,11 +358,13 @@ class PosLanServer extends ChangeNotifier {
         body = Map<String, dynamic>.from(decoded);
       } on FormatException {
         _json(request.response, 422, {'error': 'invalid_request'});
-        return;
+        return null;
       }
     }
-    final reply = await gate.handle(request.method, path, body,
-        token: _token(request), ip: addr);
+    return body;
+  }
+
+  void _reply(HttpRequest request, GateReply reply) {
     if (reply.setToken != null) {
       request.response.headers.add(HttpHeaders.setCookieHeader,
           LanAuthGate.cookieHeader(reply.setToken!));
@@ -365,11 +374,52 @@ class PosLanServer extends ChangeNotifier {
     _json(request.response, reply.status, reply.body);
   }
 
+  Future<void> _handleYonetici(HttpRequest request, String path) async {
+    final api = yonetici;
+    if (api == null) {
+      _json(request.response, 404, {'error': 'not_found'});
+      return;
+    }
+    final body = await _lanJsonBody(request, 64 * 1024);
+    if (body == null) return;
+    _reply(request, await api.handle(request.method, path,
+        request.uri.queryParameters, body, token: _token(request)));
+  }
+
+  Future<void> _handleAuth(HttpRequest request, String path) async {
+    final gate = authGate;
+    if (gate == null) {
+      _json(request.response, 404, {'error': 'not_found'});
+      return;
+    }
+    final body = await _lanJsonBody(request, 8 * 1024);
+    if (body == null) return;
+    final addr = request.connectionInfo?.remoteAddress.address ?? '';
+    final reply = await gate.handle(request.method, path, body,
+        token: _token(request), ip: addr);
+    _reply(request, reply);
+  }
+
   Future<void> _handle(HttpRequest request) async {
     final uri = request.uri;
     final resource = uri.path;
     if (resource.startsWith('/api/auth/')) {
       await _handleAuth(request, resource.substring('/api/auth/'.length));
+      return;
+    }
+    if (resource.startsWith('/api/yonetici/')) {
+      await _handleYonetici(request, resource.substring('/api/yonetici/'.length));
+      return;
+    }
+    if (request.method == 'GET' && ['/yonetici', '/yonetici/'].contains(resource) &&
+        _yoneticiHtml != null && authGate != null) {
+      request.response.headers.contentType = ContentType.html;
+      request.response.headers.set('Cache-Control', 'no-store');
+      request.response.headers.set('X-Content-Type-Options', 'nosniff');
+      request.response.headers.set('X-Frame-Options', 'DENY');
+      request.response.headers.set('Referrer-Policy', 'no-referrer');
+      request.response.write(_yoneticiHtml);
+      await request.response.close();
       return;
     }
     if (request.method == 'POST' && resource == '/api/finance/v1') {
