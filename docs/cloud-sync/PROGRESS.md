@@ -29,7 +29,7 @@ Repository: `abdallahkhayroun00-crypto/Nohut_POS` (renamed from `brand-managemen
 | 1B Per-entity tables, soft delete, no ceiling | ✅ merged (#33) | `storage-benchmark.md` (before/after, 1k–100k) |
 | 2 PR-04 Transactional outbox | ✅ merged (#34, ChatGPT) | `test/sync_outbox_transaction_test.dart` |
 | 2 PR-05A PostgreSQL foundation (private schema, deny-all RLS) | ✅ merged (#35, ChatGPT) | `supabase/tests/*`, `nohut-postgres-foundation.yml` |
-| 2 PR-05B Ingest/reconcile RPCs, typed serializers, client grants | ⏳ | — |
+| 2 PR-05B Ingest/reconcile RPCs, typed serializers, client grants | 🔄 claimed (ChatGPT) | `chatgpt/pr-05b-cloud-rpcs` |
 | 2 PR-06 SyncWorker (client) | ✅ merged (#37) | `lib/sync_worker.dart`, `test/sync_worker_test.dart` (fake server with #35 rules) |
 | 2 PR-06 first-sync wizard + Bulut & Senkronizasyon UI + Supabase transport | ⏳ needs PR-05B RPCs | — |
 | 3 Accounts, PIN, MFA, permissions, devices | ⏳ | spec §9, §20.3, `contracts/v1/permissions.json` |
@@ -74,10 +74,10 @@ New handlers needed on Windows (Phase 5): `print.reprint`, `platform.accept/read
 | PR-06 client side: `SyncTransport` + `SyncWorker` | Claude Code | 2026-11-27 | this PR |
 | Phase 4: PWA functional clients (§22) + Cloudflare Pages deploy workflow | Claude Code | done | #37 |
 | Phase 5A: Windows remote command worker | Claude Code | 2026-11-27 | this PR |
-| Phase 5B: cloud command-queue RPCs (`nohut_private.commands`, claim with lease, complete) | **open — suggested: ChatGPT** (continues PR-05B) | — | — |
+| Phase 5B: cloud command-queue RPCs (`nohut_private.commands`, claim with lease, complete) | ChatGPT | 2026-11-27 | `chatgpt/pr-05b-cloud-rpcs` |
 | Phase 6 prerequisite: Windows `sales_daily`/`top_products`/`heatmap` projection functions (pure Dart, tested against `order_reporting.dart`) | **open** | — | — |
 | Phase 5 prerequisite: Windows shift entity + clock-in/out commands | Claude Code | done | #38 |
-| PR-05B: server RPCs (ingest transaction, reconcile, checkpoint), typed serializers, minimal grants | **open — suggested: ChatGPT** (continues #35) | — | — |
+| PR-05B: server RPCs (ingest transaction, reconcile, checkpoint), typed serializers, minimal grants | ChatGPT | 2026-11-27 | `chatgpt/pr-05b-cloud-rpcs` |
 
 ## Owner-configured services (2026-11-27, per owner)
 
