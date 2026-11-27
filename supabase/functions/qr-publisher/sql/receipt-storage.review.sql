@@ -34,7 +34,8 @@ create table nohut_private.qr_publish_receipts (
  check ((state<>'completed' or (
    jsonb_typeof(result)='object' and result->>'requestId'=request_id and
    ((result->>'status'='committed' and attempted_at is not null and result->>'commit'=commit_sha and result->>'revision'=revision)
-   or (result->>'status'='no_change' and commit_sha is null and result->>'revision'=expected_revision)))) is true)
+   or (result->>'status'='no_change' and commit_sha is null and result->>'revision'=expected_revision)
+   or (result->>'status'='cancelled_before_attempt' and attempted_at is null)))) is true)
 );
 -- Only one unresolved operation across ALL tenants because there is exactly
 -- one fixed QR GitHub repository. No TTL releases an ambiguous operation.
@@ -158,7 +159,83 @@ revoke all on function nohut_private.qr_publish_authority(text,text,bigint,text)
  nohut_private.qr_publish_claim(text,text,bigint,text,text,text),
  nohut_private.qr_publish_transition(text,text,bigint,text,text,uuid,text,text,text,text,text)
  from public,anon,authenticated,service_role;
--- Reconciliation after lease expiry, abandoned pre-attempt release, server-only
--- wrapper grants and cross-epoch recovery are intentionally NOT implemented.
--- In this draft unresolved operations remain locked rather than replayed.
+-- A NEW, currently authorized reconcile command is required, independently
+-- of the original publish actor/session/lease. This permits recovery after
+-- expiry or PC replacement within the same restaurant, not cross-tenant access.
+-- The private Edge adapter must never forward client-supplied Git evidence.
+create function nohut_private.qr_recovery_authority(
+ p_token text,p_reconcile_request text,p_generation bigint,p_envelope_sha256 text
+) returns nohut_private.windows_agents language plpgsql security invoker set search_path=''
+as $
+declare a nohut_private.windows_agents; c nohut_private.commands;
+begin
+ a:=nohut_private.authenticate_windows_agent(p_token);
+ select * into c from nohut_private.commands q where q.restaurant_id=a.restaurant_id
+  and q.authority_epoch=a.authority_epoch and q.request_id=p_reconcile_request for update;
+ if not found or p_generation is null or c.lease_generation<>p_generation
+  or c.state<>'processing' or c.lease_until<=clock_timestamp() or c.expires_at<=clock_timestamp()
+  or nohut_private.command_envelope_sha256(c.envelope) is distinct from p_envelope_sha256
+  or c.envelope->>'action_type' is distinct from 'qr_menu_reconcile'
+  or c.envelope->>'operation' is distinct from 'menu.qr.publish'
+  or nohut_private.command_still_authorized(a.restaurant_id,c.envelope) is not true then
+   raise exception 'reconciliation authority denied' using errcode='42501';
+ end if;
+ return a;
+end $;
+
+-- Private recovery port. A row lock serializes it against markAttempt.
+-- Recover only a named receipt owned by the authenticated restaurant.
+-- Before-ref cancellation never releases an attempted or uncertain write.
+-- Positive evidence is accepted solely from the reviewed Git transport.
+create function nohut_private.qr_publish_recover(
+ p_token text,p_reconcile_request text,p_generation bigint,p_envelope_sha256 text,
+ p_target text,p_step text,p_commit text default null,p_revision text default null
+) returns jsonb language plpgsql security invoker set search_path=''
+as $
+declare a nohut_private.windows_agents; q nohut_private.qr_publish_receipts;
+ c nohut_private.commands; v_result jsonb;
+begin
+ a:=nohut_private.qr_recovery_authority(p_token,p_reconcile_request,p_generation,p_envelope_sha256);
+ if p_target is null or p_target !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}
+ then
+   raise exception 'invalid receipt target' using errcode='22023';
+ end if;
+ select * into q from nohut_private.qr_publish_receipts x where x.restaurant_id=a.restaurant_id and x.request_id=p_target for update;
+ if not found then return jsonb_build_object('status','not_found'); end if;
+ if q.state='completed' then return jsonb_build_object('status','completed','requestId',q.request_id,'result',q.result); end if;
+ if p_step='inspect' then
+   if q.state in ('attempted','unknown') then
+     return jsonb_build_object('status',q.state,'requestId',q.request_id,'prepared',jsonb_build_object(
+       'requestId',q.request_id,'parent',q.parent_sha,'commit',q.commit_sha,'tree',q.tree_sha,
+       'revision',q.revision,'expectedRevision',q.expected_revision));
+   end if;
+   return jsonb_build_object('status',q.state,'requestId',q.request_id);
+ elsif p_step='cancel_before_attempt' and q.state in ('new','prepared') and q.attempted_at is null then
+   -- Original authority row is already fenced for the current epoch.
+   -- A superseded/expired generation cannot consume the attempt after cancellation.
+   select * into c from nohut_private.commands x where x.restaurant_id=q.restaurant_id and x.request_id=q.request_id;
+   if not found then raise exception 'missing original command' using errcode='42501'; end if;
+   if c.state='processing' and c.lease_until>clock_timestamp() and c.expires_at>clock_timestamp()
+      and c.lease_generation=q.lease_generation and q.authority_epoch=a.authority_epoch
+      and q.agent_id=a.agent_id and nohut_private.command_still_authorized(q.restaurant_id,c.envelope) is true then
+     return jsonb_build_object('status','busy','requestId',q.request_id);
+   end if;
+   v_result:=jsonb_build_object('requestId',q.request_id,'status','cancelled_before_attempt');
+ elsif p_step='confirm_reachable' and q.state in ('attempted','unknown') and q.attempted_at is not null
+    and p_commit=q.commit_sha and p_revision=q.revision then
+   -- A trusted server adapter has verified exact commit reachability. Merely
+   -- failing to find the commit NEVER proves the write did not happen.
+   v_result:=jsonb_build_object('requestId',q.request_id,'status','committed','commit',q.commit_sha,'revision',q.revision,'pages','unverified');
+ else
+   raise exception 'invalid recovery transition' using errcode='22023';
+ end if;
+ update nohut_private.qr_publish_receipts x set state='completed',result=v_result,updated_at=clock_timestamp()
+ where x.restaurant_id=q.restaurant_id and x.request_id=q.request_id;
+ return v_result;
+end $;
+revoke all on function nohut_private.qr_recovery_authority(text,text,bigint,text),
+ nohut_private.qr_publish_recover(text,text,bigint,text,text,text,text,text)
+ from public,anon,authenticated,service_role;
+-- No public/Edge wrapper grants yet. Record trusted recovery actor/command
+-- evidence in an append-only audit before release. No negative-evidence unlock.
 commit;
