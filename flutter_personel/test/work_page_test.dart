@@ -121,6 +121,17 @@ void main() {
     expect(writes, 1);
   });
 
+  testWidgets('Mesai Ekle opens the native form; a save without times is refused locally', (t) async {
+    await pump(t, api());
+    await t.tap(find.text('Mesai Ekle'));
+    await t.pumpAndSettle();
+    expect(find.text('Başlangıç'), findsOneWidget);
+    await t.tap(find.text('Kaydet'));
+    await t.pumpAndSettle();
+    expect(find.text('Başlangıç ve bitiş saatini seçin.'), findsOneWidget);
+    expect(writes, 0);
+  });
+
   testWidgets('Vardiya: my plans and the team schedule', (t) async {
     await pump(t, api(), tab: 1);
     expect(find.textContaining('Cmt 28 Kas · 10:00–18:00'), findsOneWidget);
@@ -156,6 +167,10 @@ void main() {
   });
 
   test('formatting helpers', () {
+    expect(money(447500), '4.475,00 ₺');
+    expect(money(176000), '1.760,00 ₺');
+    expect(money(-5), '-0,05 ₺');
+    expect(money(123456789), '1.234.567,89 ₺');
     expect(WorkFormat.addDays('2026-11-30', 1), '2026-12-01');
     expect(WorkFormat.day('2026-11-23'), 'Pzt 23 Kas');
     expect(WorkFormat.hours(450), '7 sa 30 dk');

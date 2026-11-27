@@ -17,7 +17,12 @@ List<Json> rows(Object? value) {
   return value.whereType<Map>().map((m) => Map<String, dynamic>.from(m)).toList();
 }
 
-String money(int cents) => (cents / 100).toStringAsFixed(2).replaceAll('.', ',') + ' ₺';
+/// Turkish lira from exact kuruş, e.g. 447500 → "4.475,00 ₺" (integer math).
+String money(int cents) {
+  final a = cents.abs();
+  final lira = '${a ~/ 100}'.replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (_) => '.');
+  return '${cents < 0 ? '-' : ''}$lira,${(a % 100).toString().padLeft(2, '0')} ₺';
+}
 int asCents(Object? amount) => amount is num ? (amount * 100).round() : 0;
 
 class NohutApi {

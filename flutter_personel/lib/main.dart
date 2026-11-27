@@ -61,6 +61,7 @@ class _NohutPersonelAppState extends State<NohutPersonelApp>
     debugShowCheckedModeBanner: false,
     title: 'Nohut Personel',
     theme: NohutStyle.theme,
+    darkTheme: NohutStyle.darkTheme,
     home: !initialized
         ? const Scaffold(body: Center(child: CircularProgressIndicator()))
         : controller.api.paired

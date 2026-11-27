@@ -50,7 +50,7 @@ class _NohutOwnerAppState extends State<NohutOwnerApp> with WidgetsBindingObserv
   }
   @override
   Widget build(BuildContext context)=>MaterialApp(
-    title:'Nohut Yönetim',debugShowCheckedModeBanner:false,theme:NohutStyle.theme,
+    title:'Nohut Yönetim',debugShowCheckedModeBanner:false,theme:NohutStyle.theme,darkTheme:NohutStyle.darkTheme,
     home: !ready ? const Scaffold(body:Center(child:CircularProgressIndicator())) :
       api.paired ? OwnerHome(controller:controller,api:api,onUnpair:()=>setState((){})) :
       _OwnerPair(api:api,onPaired:() async {
@@ -193,43 +193,81 @@ class _OwnerHomeState extends State<OwnerHome> {
       await loadGoogle();
     } catch(_){if(mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Yanıt doğrulanamadı.')));}
   }
-  Widget menu(bool drawer)=>ColoredBox(color:NohutStyle.green,child:SafeArea(child:Column(children:[
-    Padding(padding:const EdgeInsets.all(14),child:Row(children:[
-      Image.asset('assets/nohut-logo.webp',width:42,height:42),
-      const SizedBox(width:10),
-      const Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-        Text('Nohut Falafel',style:TextStyle(color:Colors.white,fontFamily:'Bree',fontSize:19)),
-        Text('İŞLETME PANELİ',style:TextStyle(color:Colors.white70,fontSize:11)),
+  static const _groups=<(String,List<String>)>[
+    ('Operasyon',['dashboard','tables','online','open-accounts','payments']),
+    ('Müşteri',['reviews','google','qr-menu']),
+    ('Yönetim',['reports','finance','market-prices','settings']),
+  ];
+  Widget menu(bool drawer){
+    final nc=context.nohut,scheme=Theme.of(context).colorScheme;
+    Widget item(int i){
+      final id=managementSections[i].$1,selected=section==id;
+      return Padding(padding:const EdgeInsets.symmetric(horizontal:10,vertical:1),child:ListTile(
+        key:ValueKey('owner-nav-'+id),dense:true,selected:selected,
+        selectedTileColor:scheme.secondaryContainer,selectedColor:scheme.onSecondaryContainer,
+        shape:RoundedRectangleBorder(borderRadius:BorderRadius.circular(14)),
+        leading:Icon(icons[i],color:selected?scheme.onSecondaryContainer:nc.muted),
+        title:Text(managementSections[i].$2,style:TextStyle(fontSize:14.5,
+          fontWeight:selected?FontWeight.w700:FontWeight.w500,color:selected?scheme.onSecondaryContainer:nc.ink)),
+        onTap:(){
+          if(drawer)Navigator.pop(context);
+          setState(()=>section=id);
+          if(section=='google'||section=='reviews')unawaited(loadGoogle());
+        }));
+    }
+    return ColoredBox(color:nc.card,child:SafeArea(child:Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[
+      Container(margin:const EdgeInsets.all(12),padding:const EdgeInsets.all(14),
+        decoration:BoxDecoration(color:nc.brandPanel,borderRadius:BorderRadius.circular(20)),
+        child:Row(children:[
+          Container(decoration:BoxDecoration(shape:BoxShape.circle,border:Border.all(color:NohutStyle.gold,width:1.5)),
+            child:ClipOval(child:Image.asset('assets/nohut-logo.webp',width:44,height:44))),
+          const SizedBox(width:12),
+          Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+            const Text('Nohut Falafel',style:TextStyle(color:Colors.white,fontFamily:'Bree',fontSize:19)),
+            Text(api.ownerName??'İşletme sahibi',maxLines:1,overflow:TextOverflow.ellipsis,
+              style:const TextStyle(color:Color(0xffe2c47e),fontSize:13,fontWeight:FontWeight.w600)),
+          ])),
+        ])),
+      Expanded(child:ListView(padding:const EdgeInsets.only(bottom:12),children:[
+        for(final (label,ids) in _groups)...[
+          Padding(padding:const EdgeInsets.fromLTRB(24,14,24,6),child:Text(label.toUpperCase(),
+            style:TextStyle(fontSize:11.5,letterSpacing:1.1,fontWeight:FontWeight.w700,color:nc.muted))),
+          for(final id in ids)
+            if(managementSections.indexWhere((x)=>x.$1==id)>=0)item(managementSections.indexWhere((x)=>x.$1==id)),
+        ],
       ])),
-    ])),
-    Expanded(child:ListView(children:[
-      for(var i=0;i<managementSections.length;i++)
-        ListTile(key:ValueKey('owner-nav-'+managementSections[i].$1),
-          selected:section==managementSections[i].$1,selectedTileColor:Colors.white24,
-          leading:Icon(icons[i],color:Colors.white),
-          title:Text(managementSections[i].$2,style:const TextStyle(color:Colors.white,fontSize:14)),
-          onTap:(){
-            if(drawer)Navigator.pop(context);
-            setState(()=>section=managementSections[i].$1);
-            if(section=='google'||section=='reviews')unawaited(loadGoogle());
-          }),
-    ])),
-    Padding(padding:const EdgeInsets.all(12),child:Text(api.ownerName??'İşletme sahibi',style:const TextStyle(color:Colors.white70))),
-  ])));
+      Padding(padding:const EdgeInsets.fromLTRB(16,4,16,14),child:Row(children:[
+        Icon(offline?Icons.cloud_off_outlined:Icons.lan_outlined,size:16,color:offline?nc.warning:nc.success),
+        const SizedBox(width:6),
+        Expanded(child:Text(offline?'Çevrimdışı kopya':'Windows bağlı',style:TextStyle(color:nc.muted,fontSize:13))),
+      ])),
+    ])));
+  }
   String amount(Object? v)=>v is int?money(v):'—';
   List<Json> entries(String key)=>rows(data?[key]);
-  Widget title(String text)=>Padding(padding:const EdgeInsets.only(top:14,bottom:6),
-    child:Text(text,style:const TextStyle(fontFamily:'Bree',fontSize:21)));
+  Widget title(String text)=>NohutSection(text);
   Widget line(String label,String subtitle,[String? trailing])=>Card(child:ListTile(
-    title:Text(label),subtitle:Text(subtitle),trailing:trailing==null?null:Text(trailing)));
-  Widget notice(String text)=>Padding(padding:const EdgeInsets.all(8),child:Text(text));
+    title:Text(label,style:const TextStyle(fontWeight:FontWeight.w600)),subtitle:Text(subtitle),
+    trailing:trailing==null?null:Text(trailing,style:const TextStyle(fontWeight:FontWeight.w700,fontSize:15))));
+  Widget notice(String text)=>Padding(padding:const EdgeInsets.symmetric(vertical:10,horizontal:4),child:Row(
+    crossAxisAlignment:CrossAxisAlignment.start,children:[
+      Icon(Icons.info_outline,size:17,color:context.nohut.muted),const SizedBox(width:8),
+      Expanded(child:Text(text,style:TextStyle(color:context.nohut.muted,fontSize:13.5))),
+    ]));
+  IconData sourceIcon(Json o)=>switch('${o['source']}'){
+    'Masa'=>Icons.table_restaurant_outlined,'Gel-Al'=>Icons.takeout_dining_outlined,_=>Icons.delivery_dining_outlined};
+  Widget orderTile(Json o)=>Card(child:ListTile(
+    leading:CircleAvatar(backgroundColor:Theme.of(context).colorScheme.secondaryContainer,
+      foregroundColor:Theme.of(context).colorScheme.onSecondaryContainer,child:Icon(sourceIcon(o),size:20)),
+    title:Text(orderName(o),style:const TextStyle(fontWeight:FontWeight.w700)),
+    subtitle:Text([if('${o['status']??o['serviceStatus']??''}'.isNotEmpty)'${o['status']??o['serviceStatus']}',
+      if('${o['owner']??''}'.isNotEmpty)'${o['owner']}'].join(' · ')),
+    trailing:Text(amount(o['totalCents']),style:const TextStyle(fontWeight:FontWeight.w700,fontSize:15))));
   String orderName(Json o)=>o['source']=='Masa'?'Masa '+o['table'].toString():
     (o['source']??'').toString()+' #'+(o['dailyNumber']??o['orderNumber']??o['id']??'').toString();
   List<Widget> orderList(String key)=>[
-    if(entries(key).isEmpty)notice('Kayıt yok veya henüz eşitlenmedi.'),
-    for(final o in entries(key))line(orderName(o),
-      (o['status']??o['serviceStatus']??'').toString()+' · '+(o['owner']??'').toString(),
-      amount(o['totalCents'])),
+    if(entries(key).isEmpty)const Card(child:NohutEmpty(icon:Icons.receipt_long_outlined,message:'Kayıt yok veya henüz eşitlenmedi.')),
+    for(final o in entries(key))orderTile(o),
   ];
   List<Widget> stats()=>[
     title('Personel performansı'),
@@ -237,14 +275,40 @@ class _OwnerHomeState extends State<OwnerHome> {
       'Masa: '+p['tableOrders'].toString()+' · Gel-Al: '+p['pickupOrders'].toString()+
       ' · Ek: '+p['extraBatches'].toString(),amount(p['ownedCents'])),
     title('Saatlik yoğunluk'),
-    for(var h=0;h<rowsHours.length;h++)Row(children:[
-      SizedBox(width:42,child:Text(h.toString().padLeft(2,'0')+':00')),
-      Expanded(child:LinearProgressIndicator(value:rowsHours[h]/maxHour)),
-      SizedBox(width:28,child:Text(rowsHours[h].toString(),textAlign:TextAlign.end)),
-    ]),
+    hourly(),
   ];
   List<int> get rowsHours=>data?['hourly'] is List?(data!['hourly'] as List).whereType<int>().toList():[];
   int get maxHour=>rowsHours.fold<int>(1,(a,b)=>a>b?a:b);
+  static const _months=['Oca','Şub','Mar','Nis','May','Haz','Tem','Ağu','Eyl','Eki','Kas','Ara'];
+  String dayLabel(String d){final x=ReportPeriod.parse(d);return '${x.day} ${_months[x.month-1]} ${x.year}';}
+  /// Orders per hour from the Windows record; an empty day says so instead
+  /// of drawing a flat chart.
+  Widget hourly(){
+    final h=rowsHours;
+    if(h.isEmpty||h.every((v)=>v==0)){
+      return const Card(child:NohutEmpty(icon:Icons.bar_chart_outlined,message:'Bu gün için saatlik sipariş kaydı yok.'));
+    }
+    final first=h.indexWhere((v)=>v>0),last=h.lastIndexWhere((v)=>v>0);
+    final from=(first-1).clamp(0,23),to=(last+1).clamp(0,23);
+    final peak=h.indexOf(maxHour);
+    final nc=context.nohut,scheme=Theme.of(context).colorScheme;
+    return Card(child:Padding(padding:const EdgeInsets.fromLTRB(14,14,14,10),child:Column(
+      crossAxisAlignment:CrossAxisAlignment.start,children:[
+        Text('En yoğun saat ${peak.toString().padLeft(2,'0')}:00 · $maxHour sipariş',
+          style:TextStyle(color:nc.muted,fontSize:13,fontWeight:FontWeight.w600)),
+        const SizedBox(height:12),
+        SizedBox(height:120,child:Row(crossAxisAlignment:CrossAxisAlignment.end,children:[
+          for(var i=from;i<=to;i++)Expanded(child:Padding(padding:const EdgeInsets.symmetric(horizontal:2),
+            child:Column(mainAxisAlignment:MainAxisAlignment.end,children:[
+              Flexible(child:FractionallySizedBox(heightFactor:h[i]==0?0.02:h[i]/maxHour,child:Container(
+                decoration:BoxDecoration(color:i==peak?scheme.secondary:scheme.primary.withValues(alpha:.75),
+                  borderRadius:const BorderRadius.vertical(top:Radius.circular(6)))))),
+              const SizedBox(height:4),
+              Text(i.toString().padLeft(2,'0'),style:TextStyle(fontSize:10.5,color:nc.muted)),
+            ]))),
+        ])),
+      ])));
+  }
   List<Widget> googleContent()=>[
     OutlinedButton.icon(onPressed:googleBusy?null:()=>loadGoogle(),icon:const Icon(Icons.refresh),label:const Text('Google Yenile')),
     if(googleBusy)const LinearProgressIndicator(),
@@ -265,13 +329,22 @@ class _OwnerHomeState extends State<OwnerHome> {
   ];
   List<Widget> body(){
     switch(section){
-      case 'dashboard':return [
-        title('Günlük'),
-        line('Toplam yerel tahsilat','Nakit + kart',data==null?'—':amount((data?['cashCents'] as int? ??0)+(data?['cardCents'] as int? ??0))),
-        line('Nakit','Net tahsilat',amount(data?['cashCents'])),
-        line('Kart','Net tahsilat',amount(data?['cardCents'])),
-        line('Sipariş','Kayıtlı sipariş',data?['orderCount']?.toString()),
-        title('Son siparişler'),...orderList('orders'),
+      case 'dashboard':
+        final cash=data?['cashCents'],card=data?['cardCents'];
+        return [
+        NohutMetric(label:'Toplam yerel tahsilat',emphasis:true,icon:Icons.account_balance_wallet_outlined,
+          value:cash is int&&card is int?money(cash+card):'—',caption:'Nakit + kart · Windows POS kaydı'),
+        const SizedBox(height:10),
+        NohutMetricGrid(minTileWidth:150,children:[
+          NohutMetric(label:'Nakit',value:amount(cash),icon:Icons.payments_outlined),
+          NohutMetric(label:'Kart',value:amount(card),icon:Icons.credit_card),
+          NohutMetric(label:'Sipariş',value:data?['orderCount']?.toString()??'—',icon:Icons.receipt_long_outlined),
+          NohutMetric(label:'Açık hesap',value:data==null?'—':'${entries('openAccounts').length}',icon:Icons.pending_actions_outlined),
+        ]),
+        title('Saatlik yoğunluk'),
+        hourly(),
+        NohutSection('Son siparişler',action:TextButton(onPressed:()=>setState(()=>section='tables'),child:const Text('Tümü'))),
+        ...orderList('orders').take(6),
       ];
       case 'tables':return [
         FilledButton.icon(onPressed:widget.controller.online?()=>Navigator.of(context).push(MaterialPageRoute<void>(
@@ -347,6 +420,7 @@ class _OwnerHomeState extends State<OwnerHome> {
     final wide=MediaQuery.sizeOf(context).width>=900;
     return Scaffold(
       appBar:AppBar(title:Text(managementSections.firstWhere((p)=>p.$1==section).$2),
+        actionsPadding:const EdgeInsets.only(right:6),
         actions:[IconButton(tooltip:'Yenile',onPressed:loading?null:()async{
           await widget.controller.refresh();await refresh();
         },icon:const Icon(Icons.refresh))]),
@@ -354,11 +428,16 @@ class _OwnerHomeState extends State<OwnerHome> {
       body:Row(children:[
         if(wide)SizedBox(width:244,child:menu(false)),
         Expanded(child:Center(child:ConstrainedBox(constraints:const BoxConstraints(maxWidth:1100),
-          child:ListView(padding:const EdgeInsets.all(12),children:[
-            Text((api.ownerName??'İşletme sahibi')+' · '+(offline?'Çevrimdışı kopya / bağlantı bekleniyor':'Windows bağlı')),
-            if(loading)const LinearProgressIndicator(),
+          child:ListView(padding:const EdgeInsets.fromLTRB(16,8,16,24),children:[
+            Wrap(spacing:8,runSpacing:8,crossAxisAlignment:WrapCrossAlignment.center,children:[
+              ActionChip(avatar:const Icon(Icons.calendar_today,size:17),onPressed:loading?null:pickDay,
+                label:Text(day==ReportPeriod.day(ReportPeriod.today())?'Bugün':dayLabel(day))),
+              NohutPill(offline?'Çevrimdışı kopya':'Windows bağlı',
+                tone:offline?NohutTone.warning:NohutTone.success,icon:offline?Icons.cloud_off_outlined:Icons.lan_outlined),
+            ]),
+            const SizedBox(height:8),
+            if(loading)const Padding(padding:EdgeInsets.only(bottom:8),child:LinearProgressIndicator()),
             if(error!=null)notice(error!),
-            OutlinedButton.icon(onPressed:loading?null:pickDay,icon:const Icon(Icons.calendar_today),label:Text(day)),
             ...body(),
           ])))),
       ]),

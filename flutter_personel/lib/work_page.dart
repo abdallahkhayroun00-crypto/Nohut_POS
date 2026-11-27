@@ -147,9 +147,20 @@ class _WorkPageState extends State<WorkPage> {
     return DefaultTabController(
       length: 3,
       initialIndex: widget.initialTab,
-      child: Scaffold(
+      child: Builder(builder: (context) => Scaffold(
+        floatingActionButton: data == null ? null : AnimatedBuilder(
+          animation: DefaultTabController.of(context),
+          builder: (context, _) => switch (DefaultTabController.of(context).index) {
+            0 => FloatingActionButton.extended(heroTag: 'add-work',
+                onPressed: () => WorkForm.open(context, this),
+                icon: const Icon(Icons.more_time), label: const Text('Mesai Ekle')),
+            1 when WorkFormat.addDays(weekStart!, 6).compareTo(today) >= 0 => FloatingActionButton.extended(
+                heroTag: 'add-plan', onPressed: () => PlanForm.open(context, this),
+                icon: const Icon(Icons.edit_calendar_outlined), label: const Text('Vardiya Ekle')),
+            _ => const SizedBox.shrink(),
+          }),
         appBar: AppBar(
-          title: const Text('Mesai ve Maaşım', style: TextStyle(fontFamily: 'Bree')),
+          title: const Text('Mesai ve Maaşım'),
           actions: [
             IconButton(tooltip: 'Yenile', onPressed: loading ? null : _load, icon: const Icon(Icons.sync)),
           ],
@@ -168,7 +179,7 @@ class _WorkPageState extends State<WorkPage> {
                     onPrev: () => _shiftWeek(-7), onNext: () => _shiftWeek(7)),
                 if (error != null)
                   MaterialBanner(
-                    backgroundColor: const Color(0xffffe9c8),
+                    backgroundColor: context.nohut.warningSoft,
                     content: Text(error!),
                     actions: [TextButton(onPressed: _load, child: const Text('Tekrar dene'))]),
                 Expanded(child: TabBarView(children: [
@@ -177,7 +188,7 @@ class _WorkPageState extends State<WorkPage> {
                   _MaasTab(state: this),
                 ])),
               ]),
-      ),
+      )),
     );
   }
 }
@@ -190,7 +201,7 @@ class _ErrorState extends StatelessWidget {
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.all(24),
     child: Column(mainAxisSize: MainAxisSize.min, children: [
-      const Icon(Icons.cloud_off_outlined, size: 40, color: NohutStyle.muted),
+      Icon(Icons.cloud_off_outlined, size: 40, color: context.nohut.muted),
       const SizedBox(height: 12),
       Text(message, textAlign: TextAlign.center),
       const SizedBox(height: 12),
@@ -206,13 +217,13 @@ class _WeekHeader extends StatelessWidget {
   final VoidCallback onPrev, onNext;
   @override
   Widget build(BuildContext context) => Material(
-    color: NohutStyle.card,
+    color: context.nohut.card,
     child: Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
       child: Row(children: [
         IconButton(tooltip: 'Önceki hafta', onPressed: loading ? null : onPrev, icon: const Icon(Icons.chevron_left)),
         Expanded(child: Text('${WorkFormat.day(weekStart)} – ${WorkFormat.day(WorkFormat.addDays(weekStart, 6))}',
-            textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.w600, color: NohutStyle.green))),
+            textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.w600, color: context.nohut.heading))),
         IconButton(tooltip: 'Sonraki hafta', onPressed: loading ? null : onNext, icon: const Icon(Icons.chevron_right)),
       ]),
     ),
@@ -220,38 +231,18 @@ class _WeekHeader extends StatelessWidget {
 }
 
 class _Stat extends StatelessWidget {
-  const _Stat(this.label, this.value);
+  const _Stat(this.label, this.value, {this.icon});
   final String label, value;
+  final IconData? icon;
   @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-    decoration: BoxDecoration(color: NohutStyle.card, borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: NohutStyle.outline)),
-    child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-      Text(label, style: const TextStyle(fontSize: 12, color: NohutStyle.muted)),
-      const SizedBox(height: 2),
-      Text(value, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: NohutStyle.green)),
-    ]),
-  );
+  Widget build(BuildContext context) => NohutMetric(label: label, value: value, icon: icon);
 }
 
 class _StatusChip extends StatelessWidget {
   const _StatusChip(this.text);
   final String text;
   @override
-  Widget build(BuildContext context) {
-    final (bg, fg) = switch (text) {
-      'Gönderildi' || 'Ödendi' => (const Color(0xffdcefe2), NohutStyle.green),
-      'Değişti' || 'Kısmen Ödendi' => (const Color(0xfffff0cf), const Color(0xff7a5200)),
-      'Ödenmedi' => (const Color(0xfffde2dc), const Color(0xff8a2414)),
-      _ => (const Color(0xffeceee6), NohutStyle.muted),
-    };
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(20)),
-      child: Text(text, style: TextStyle(color: fg, fontWeight: FontWeight.w600, fontSize: 13)),
-    );
-  }
+  Widget build(BuildContext context) => NohutPill(text, tone: NohutPill.toneFor(text));
 }
 
 // ------------------------------------------------------------------ Mesai
@@ -275,13 +266,13 @@ class _MesaiTab extends StatelessWidget {
           _StatusChip(status),
           if (st['submittedAt'] != null)
             Text('gönderim: ${_stamp('${st['submittedAt']}')}',
-                style: const TextStyle(color: NohutStyle.muted, fontSize: 13)),
+                style: TextStyle(color: context.nohut.muted, fontSize: 13)),
         ]),
         const SizedBox(height: 12),
-        Wrap(spacing: 8, runSpacing: 8, children: [
-          _Stat('Gerçek çalışma', WorkFormat.hours(st['minutes'])),
-          _Stat('Çalışılan gün', '${st['daysWorked'] ?? 0}'),
-          _Stat('Planlanan', WorkFormat.hours(w['plannedMinutes'])),
+        NohutMetricGrid(minTileWidth: 105, children: [
+          _Stat('Çalışılan', WorkFormat.hours(st['minutes']), icon: Icons.timer_outlined),
+          _Stat('Gün', '${st['daysWorked'] ?? 0}', icon: Icons.event_available_outlined),
+          _Stat('Plan', WorkFormat.hours(w['plannedMinutes']), icon: Icons.calendar_month_outlined),
         ]),
         const SizedBox(height: 16),
         for (final d in days) ...[
@@ -290,7 +281,7 @@ class _MesaiTab extends StatelessWidget {
             ListTile(dense: true, contentPadding: EdgeInsets.zero,
               title: Text(WorkFormat.day(d)),
               trailing: Text(d.compareTo(state.today) > 0 ? '' : 'Kayıt yok',
-                  style: const TextStyle(color: NohutStyle.muted))),
+                  style: TextStyle(color: context.nohut.muted))),
         ],
         const SizedBox(height: 12),
         if (sendable && hasWork)
@@ -301,8 +292,8 @@ class _MesaiTab extends StatelessWidget {
         if (sendable && !hasWork)
           OutlinedButton(onPressed: () => _submit(context, noWork: true), child: const Text('Bu hafta çalışmadım')),
         const SizedBox(height: 8),
-        const Text('Gönderim bilgilendirmedir, onay beklemez. Gönderdikten sonra da düzeltme yapabilirsiniz.',
-            style: TextStyle(color: NohutStyle.muted, fontSize: 12)),
+        Text('Gönderim bilgilendirmedir, onay beklemez. Gönderdikten sonra da düzeltme yapabilirsiniz.',
+            style: TextStyle(color: context.nohut.muted, fontSize: 12)),
       ]),
     );
   }
@@ -472,13 +463,10 @@ class _VardiyaTab extends StatelessWidget {
     return RefreshIndicator(
       onRefresh: state._load,
       child: ListView(padding: const EdgeInsets.fromLTRB(16, 12, 16, 96), children: [
-        Wrap(alignment: WrapAlignment.spaceBetween, crossAxisAlignment: WrapCrossAlignment.center, children: [
-          const Text('Vardiyalarım', style: TextStyle(fontFamily: 'Bree', fontSize: 20, color: NohutStyle.green)),
-          if (canPlan) TextButton.icon(icon: const Icon(Icons.copy_all_outlined), label: const Text('Geçen haftayı kopyala'),
-              onPressed: () => _copy(context)),
-        ]),
-        if (plans.isEmpty) const Padding(padding: EdgeInsets.symmetric(vertical: 8),
-            child: Text('Bu hafta vardiya planınız yok.', style: TextStyle(color: NohutStyle.muted))),
+        NohutSection('Vardiyalarım', action: canPlan ? TextButton.icon(icon: const Icon(Icons.copy_all_outlined),
+            label: const Text('Geçen haftayı kopyala'), onPressed: () => _copy(context)) : null),
+        if (plans.isEmpty) Padding(padding: EdgeInsets.symmetric(vertical: 8),
+            child: Text('Bu hafta vardiya planınız yok.', style: TextStyle(color: context.nohut.muted))),
         for (final p in plans)
           Card(margin: const EdgeInsets.only(bottom: 8), child: ListTile(
             title: Text('${WorkFormat.day('${p['date']}')} · ${label(p)}', style: const TextStyle(fontWeight: FontWeight.w600)),
@@ -491,10 +479,8 @@ class _VardiyaTab extends StatelessWidget {
                 PopupMenuItem(value: 'cancel', child: Text('Sil')),
               ]) : null,
           )),
-        const SizedBox(height: 16),
-        const Text('Ekip programı', style: TextStyle(fontFamily: 'Bree', fontSize: 20, color: NohutStyle.green)),
-        const SizedBox(height: 4),
-        if (state.shared.isEmpty) const Text('Bu hafta plan yok.', style: TextStyle(color: NohutStyle.muted)),
+        const NohutSection('Ekip programı'),
+        if (state.shared.isEmpty) Text('Bu hafta plan yok.', style: TextStyle(color: context.nohut.muted)),
         for (final d in days)
           if (state.shared.any((p) => p['date'] == d))
             ListTile(contentPadding: EdgeInsets.zero, dense: true,
@@ -626,12 +612,12 @@ class _MaasTab extends StatelessWidget {
     final pay = w['pay'] is Map ? Map<String, dynamic>.from(w['pay'] as Map) : null;
     final payments = rows(w['payments']);
     if (pay == null) {
-      return const Center(child: Text('Maaş bilgisi gösterilemiyor.', style: TextStyle(color: NohutStyle.muted)));
+      return Center(child: Text('Maaş bilgisi gösterilemiyor.', style: TextStyle(color: context.nohut.muted)));
     }
     if (pay['payrollEligible'] == false) {
-      return const Padding(padding: EdgeInsets.all(24), child: Text(
+      return Padding(padding: EdgeInsets.all(24), child: Text(
           'Haftalık maaş bordrosuna dahil değilsiniz. Mesai kayıtlarınız yine de tutulur.',
-          textAlign: TextAlign.center, style: TextStyle(color: NohutStyle.muted)));
+          textAlign: TextAlign.center, style: TextStyle(color: context.nohut.muted)));
     }
     String m(Object? c) => c is int ? money(c) : '—';
     final rate = emp['payRateCents'];
@@ -641,32 +627,33 @@ class _MaasTab extends StatelessWidget {
         Wrap(spacing: 8, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
           _StatusChip('${pay['financialStatus'] ?? '—'}'),
           if (pay['lastPaidOn'] != null)
-            Text('son ödeme: ${WorkFormat.day('${pay['lastPaidOn']}')}', style: const TextStyle(color: NohutStyle.muted)),
+            Text('son ödeme: ${WorkFormat.day('${pay['lastPaidOn']}')}', style: TextStyle(color: context.nohut.muted)),
         ]),
         const SizedBox(height: 12),
-        Wrap(spacing: 8, runSpacing: 8, children: [
+        NohutMetric(label: 'Kalan', value: m(pay['remainingCents']), icon: Icons.account_balance_wallet_outlined,
+            emphasis: true, caption: 'Bu hafta için ödenmesi gereken'),
+        const SizedBox(height: 10),
+        NohutMetricGrid(children: [
+          _Stat('Kazanılan', m(pay['earnedCents']), icon: Icons.trending_up),
+          _Stat('Ödenen', money(pay['paidCents'] is int ? pay['paidCents'] as int : 0), icon: Icons.check_circle_outline),
           _Stat(emp['payType'] == 'Haftalık Sabit' ? 'Haftalık ücret' : 'Saatlik ücret',
-              rate is int ? money(rate) : 'Henüz belirlenmedi'),
-          _Stat('Kazanılan', m(pay['earnedCents'])),
-          _Stat('Ödenen', money(pay['paidCents'] is int ? pay['paidCents'] as int : 0)),
-          _Stat('Kalan', m(pay['remainingCents'])),
+              rate is int ? money(rate) : 'Henüz belirlenmedi', icon: Icons.sell_outlined),
         ]),
-        if (pay['overdue'] == true) const Padding(padding: EdgeInsets.only(top: 10),
-            child: Text('Ödeme günü geçti.', style: TextStyle(color: Color(0xff8a2414)))),
-        const SizedBox(height: 20),
-        const Text('Ödeme geçmişim', style: TextStyle(fontFamily: 'Bree', fontSize: 20, color: NohutStyle.green)),
-        if (payments.isEmpty) const Padding(padding: EdgeInsets.symmetric(vertical: 8),
-            child: Text('Bu hafta için ödeme kaydı yok.', style: TextStyle(color: NohutStyle.muted))),
+        if (pay['overdue'] == true) Padding(padding: EdgeInsets.only(top: 10),
+            child: Text('Ödeme günü geçti.', style: TextStyle(color: context.nohut.danger))),
+        const NohutSection('Ödeme geçmişim'),
+        if (payments.isEmpty) Padding(padding: EdgeInsets.symmetric(vertical: 8),
+            child: Text('Bu hafta için ödeme kaydı yok.', style: TextStyle(color: context.nohut.muted))),
         for (final p in payments)
           ListTile(contentPadding: EdgeInsets.zero,
-            leading: Icon(p['reverses'] != null ? Icons.undo : Icons.payments_outlined, color: NohutStyle.green),
+            leading: Icon(p['reverses'] != null ? Icons.undo : Icons.payments_outlined, color: context.nohut.heading),
             title: Text('${p['kind']} · ${p['method']}'),
             subtitle: Text(WorkFormat.day('${p['paidOn']}')),
             trailing: Text(p['amountCents'] is int ? money(p['amountCents'] as int) : '—',
                 style: const TextStyle(fontWeight: FontWeight.w700))),
         const SizedBox(height: 12),
-        const Text('Yalnızca kendi ücret ve ödemelerinizi görürsünüz.',
-            style: TextStyle(color: NohutStyle.muted, fontSize: 12)),
+        Text('Yalnızca kendi ücret ve ödemelerinizi görürsünüz.',
+            style: TextStyle(color: context.nohut.muted, fontSize: 12)),
       ]),
     );
   }
