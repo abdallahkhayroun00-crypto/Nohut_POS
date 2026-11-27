@@ -21,6 +21,7 @@ part 'sync_field_paths.g.dart';
 /// same field rules as live ones: `deletedOrders[].order.x` → `orders[].x`,
 /// `deletedOrders[].related.printJobs[].x` → `printJobs[].x`.
 String normalizeFieldPath(String path) => path
+    .replaceFirst(RegExp(r'^internalMenu(?=\[|$)'), 'localMenu')
     .replaceFirstMapped(
       RegExp(r'^integrations\.(menu|stores)\.[^.\[]+'),
       (m) => 'integrations.${m[1]}.{platform}',
@@ -79,6 +80,24 @@ List<String> unregisteredFieldPaths(Map state) {
 /// Prefix semantics: listing `orders[].batches[].lines[].removed` allows
 /// that field; a parent is never implicitly allowed by a child.
 const cloudAllowedFieldPaths = <String>{
+  // Existing published catalog and cashier-only custom products. This is
+  // replication only; unpublished QR drafts and publisher state stay local.
+  'localMenu', 'localMenu[].id', 'localMenu[].qrStableId', 'localMenu[].name',
+  'localMenu[].price', 'localMenu[].category', 'localMenu[].active', 'localMenu[].available',
+  'localMenu[].names', 'localMenu[].names.tr', 'localMenu[].names.en', 'localMenu[].names.ar',
+  'localMenu[].displayName', 'localMenu[].displayName.tr', 'localMenu[].displayName.en', 'localMenu[].displayName.ar',
+  'localMenu[].description', 'localMenu[].description.tr', 'localMenu[].description.en', 'localMenu[].description.ar',
+  'localMenu[].image',
+  'qrCategories', 'qrCategories[].id', 'qrCategories[].name', 'qrCategories[].name.tr',
+  'qrCategories[].name.en', 'qrCategories[].name.ar', 'qrCategories[].description',
+  'qrCategories[].description.tr', 'qrCategories[].description.en', 'qrCategories[].description.ar',
+  'qrCategories[].active', 'qrCategories[].order',
+  'qrCampaigns', 'qrCampaigns[].id', 'qrCampaigns[].title', 'qrCampaigns[].title.tr',
+  'qrCampaigns[].title.en', 'qrCampaigns[].title.ar', 'qrCampaigns[].description',
+  'qrCampaigns[].description.tr', 'qrCampaigns[].description.en', 'qrCampaigns[].description.ar',
+  'qrCampaigns[].price', 'qrCampaigns[].active', 'qrCampaigns[].startsAt', 'qrCampaigns[].endsAt',
+  'qrCampaigns[].items', 'qrCampaigns[].items[].tr', 'qrCampaigns[].items[].en', 'qrCampaigns[].items[].ar',
+  'qrCampaigns[].poster', 'qrCampaigns[].thumbnail',
   // Typed finance records; all money is integer kuruş. Business notes and
   // immutable correction facts are retained; device/customer fields are not.
   'finance', 'finance.materials', 'finance.materials[].id', 'finance.materials[].date',

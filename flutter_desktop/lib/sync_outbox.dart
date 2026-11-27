@@ -20,6 +20,7 @@ import 'package:sqlite3/sqlite3.dart';
 import 'entity_storage.dart';
 import 'sync_field_registry.dart';
 import 'finance_sync_history.dart';
+import 'catalog_sync_history.dart';
 
 void createSyncTables(Database db) {
   db.execute('''
@@ -183,6 +184,7 @@ int writeOutboxEvents(
   try {
     for (final change in changes) {
       Object? payload;
+      var operation=change.op;
       if (change.op == 'delete') {
         payload = null;
       } else {
@@ -195,13 +197,18 @@ int writeOutboxEvents(
           payload = captureFinanceReversals(db,change.previousRow,payload,createdAt);
         }
       }
+      if(catalogSyncSources.contains(change.entityType)){
+        payload=captureCatalogRemovals(db,change.entityType,
+            projectCore(change.entityType,change.previousRow),payload,createdAt);
+        operation='upsert';
+      }
       final body = canonicalJson(payload);
       insert.execute([
         '$epoch:$revision:${change.entityType}:${change.entityId}',
         revision,
         change.entityType,
         change.entityId,
-        change.op,
+        operation,
         body,
         hash.sha256.convert(utf8.encode(body)).toString(),
         createdAt,

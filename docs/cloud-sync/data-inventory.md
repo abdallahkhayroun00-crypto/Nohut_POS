@@ -26,9 +26,12 @@ Classes: `PUBLIC`, `INTERNAL`, `PERSONAL_PII`, `FINANCIAL`, `SECRET`, `DEVICE_LO
 | `remote_command_report_acks` | Durable acknowledgement of each receipt fingerprint (`INTERNAL`) | Local bookkeeping only |
 | `cloud_source_ids` | Stable source kind/key → UUID allocated once; included in SQLite backups (`INTERNAL`) | IDs referenced by typed rows; never derive them from list positions or display labels |
 | `finance_sync_reversals` | Original fixed-payment month, template, amount and payment time plus explicit reversal time (`FINANCIAL`) | Typed reversal retains undo/repay history; captured atomically with the local mutation/outbox |
+| `catalog_sync_removals` | Source catalog key, last allowlisted product/category/campaign definition and removal time (`PUBLIC`, `INTERNAL`) | Explicit tombstones; commercial versions are retained when a product disappears or returns |
 | PostgreSQL `typed_record_versions`, `typed_record_history` | Typed current finance facts and immutable prior versions (`FINANCIAL`, payroll `PERSONAL_PII`) | Private FORCE RLS; trusted migration owner only, no direct client grants |
 
 Finance's nested allowlist now explicitly covers purchases, quantity/price/discount and quick-receipt arrays, all existing purchase corrections, fixed-expense active/amount histories, payments/reversals, payroll/advances, expenses and manual platform gross/net history. Detailed-purchase history fields `previousDiscountCents`, `previousUnitPriceCents`, `previousQuantityMilli`, `referencePriceCents` and manual-platform history fields were verified against the actual writers and declared in the runtime registry. Undeclared nested fields remain excluded.
+
+Published `localMenu`, `qrCategories` and `qrCampaigns` now use typed versioned projections. `internalMenu` has the same declared product fields (`normalizeFieldPath` maps its schema to `localMenu`) and a distinct identity namespace/internal-only flag. Campaign component translations are validated field by field in the immutable version. Unpublished QR drafts, publisher bookkeeping, credentials and device settings remain local. The QR publishing flow itself is unchanged.
 
 ---
 

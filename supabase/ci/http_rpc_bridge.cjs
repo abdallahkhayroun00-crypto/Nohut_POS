@@ -62,6 +62,9 @@ async function main(){
           const result=(await db.query(`select (select count(*)::integer from nohut_private.expenses where restaurant_id=$1) as expenses,
             (select coalesce(sum(amount_kurus),0)::text from nohut_private.expenses where restaurant_id=$1) as expense_kurus,
             (select count(*)::integer from nohut_private.sync_transactions where restaurant_id=$1) as transactions,
+            (select count(*)::integer from nohut_private.product_versions where restaurant_id=$1) as product_versions,
+            (select count(*)::integer from nohut_private.products where restaurant_id=$1 and deleted_at is null) as active_products,
+            (select jsonb_agg(price_kurus::integer order by price_kurus) from nohut_private.product_versions where restaurant_id=$1) as product_prices,
             (select last_acked_seq::integer from nohut_private.sync_checkpoints where restaurant_id=$1) as checkpoint`,[ids.restaurantId])).rows[0];
           res.end(JSON.stringify(result));return;
         }

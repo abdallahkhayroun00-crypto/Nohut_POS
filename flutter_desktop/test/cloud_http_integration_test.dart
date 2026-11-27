@@ -5,6 +5,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nohut_falafel_desktop/cloud_finance_serializer.dart';
+import 'package:nohut_falafel_desktop/cloud_catalog_serializer.dart';
 import 'package:nohut_falafel_desktop/finance_logic.dart';
 import 'package:nohut_falafel_desktop/pos_store.dart';
 import 'package:nohut_falafel_desktop/remote_commands.dart';
@@ -39,7 +40,8 @@ void main() {
       restaurantId:setup['restaurantId'] as String,authorityEpoch:setup['authorityEpoch'] as String),
       allowLoopbackHttpForTests:true);
     var now=DateTime.now().toUtc();
-    final sync=SyncWorker(db,TypedFinanceTransport(CloudIdentityMap(db),transport),clock:()=>now);
+    final identities=CloudIdentityMap(db);
+    final sync=SyncWorker(db,TypedFinanceTransport(identities,TypedCatalogTransport(identities,transport)),clock:()=>now);
     try {
       final initial=emptyPosState()..['employees']=[{'id':1,'name':'Synthetic Initial','role':'Yönetici','active':true}];
       expect(store.replace(initial,store.read().revision).ok,true);
@@ -48,20 +50,43 @@ void main() {
       store.command('synthetic_finance_delta',{},(s){
         (s['employees'] as List).first['name']='Synthetic Employee';
         saveOtherExpense(s,day:'2026-10-01',category:'Diğer',name:'Synthetic expense',amountCents:12345,paymentMethod:'Nakit');
+        s['localMenu']=[{'id':1,'name':'Synthetic falafel','price':12.34,'category':'wrap','active':true,'available':true}];
+        s['qrCategories']=[{'id':'wrap','name':{'tr':'Dürümler','ar':'لفائف'},'active':true,'order':1}];
+        s['qrCampaigns']=[{'id':'synthetic-offer','title':{'tr':'Örnek Menü'},'price':25,'active':true,'items':[{'tr':'1 Synthetic falafel'}]}];
         return {'ok':true};
       });
-      expect(groupPending(db).single.events,hasLength(2));
+      expect(groupPending(db).single.events,hasLength(5));
       await call('/test/lose-next-ingest-ack');
       expect(await sync.flush(),0);
-      expect(pendingOutbox(db),hasLength(2));
+      expect(pendingOutbox(db),hasLength(5));
       final committed=await call('/test/inspect');
       expect(committed['expenses'],1);
       expect(committed['expense_kurus'],'12345');
       expect(committed['transactions'],1);
       now=now.add(const Duration(minutes:1));
-      expect(await sync.flush(),2);
+      expect(await sync.flush(),5);
       expect(pendingOutbox(db),isEmpty);
       expect((await call('/test/inspect'))['transactions'],1,reason:'lost ACK must not duplicate finance');
+      store.command('synthetic_catalog_reprice',{},(s){
+        (s['localMenu'] as List).first['price']=23.45;
+        (s['localMenu'] as List).first['name']='Synthetic renamed falafel';
+        return {'ok':true};
+      });
+      expect(await sync.flush(),1);
+      final catalog=await call('/test/inspect');
+      expect(catalog['product_versions'],2);
+      expect(catalog['product_prices'],[1234,2345],reason:'catalog edits must retain old prices');
+      store.command('synthetic_catalog_remove',{},(s){s['localMenu']=<dynamic>[];return {'ok':true};});
+      expect(await sync.flush(),1);
+      final removed=await call('/test/inspect');
+      expect(removed['active_products'],0);
+      expect(removed['product_versions'],2);
+      store.command('synthetic_catalog_return',{},(s){
+        s['localMenu']=[{'id':1,'name':'Synthetic renamed falafel','price':23.45,'category':'wrap','active':true,'available':true}];
+        return {'ok':true};
+      });
+      expect(await sync.flush(),1);
+      expect((await call('/test/inspect'))['active_products'],1);
 
       const requestId='90000000-0000-4000-8000-000000000001';
       final context=<String,Object?>{'p_device_id':setup['deviceId'],'p_client':'yonetici','p_permission_version':1,'p_request_id':requestId};
