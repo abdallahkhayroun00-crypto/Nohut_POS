@@ -1,6 +1,6 @@
 # Nohut Falafel QR menu
 
-Live page: https://abdallahkhayroun00-crypto.github.io/brand-management-proposal/nohut-menu/
+Live page: https://abdallahkhayroun00-crypto.github.io/Nohut_POS/nohut-menu/
 
 A static, view-only Turkish/English restaurant menu. The five contact/delivery links point to the existing Maps, Instagram, phone, Trendyol Go and Yemeksepeti destinations. No ordering form or backend is added.
 

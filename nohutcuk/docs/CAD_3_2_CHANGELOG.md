@@ -39,7 +39,7 @@ Other affected CAD geometry: head screw posts/countersinks, neck clearance, leaf
 
 **Verified by GitHub CI:** all 16 individual meshes and all 16 oriented meshes are watertight, winding-consistent and connected; the one-piece decorative statue is connected and watertight; STEP and ZIP outputs exist; the new dimensions match the validation report. The **assembled reference STL contains intentionally independent overlapping parts**, so it is **not itself a watertight single print** — not a failure.
 
-Build and mesh validation can be rerun from [CAD_Source/build_nohutcuk.py](../CAD_Source/build_nohutcuk.py) and [prepare_print_and_verify.py](../CAD_Source/prepare_print_and_verify.py). Automatic GitHub workflow [Nohutçuk 3.2-inch CAD regenerate and validate](https://github.com/abdallahkhayroun00-crypto/brand-management-proposal/actions/workflows/nohutcuk-cad-32.yml) compiles and checks these and republishes STLs/STEPs/ZIP on source changes.
+Build and mesh validation can be rerun from [CAD_Source/build_nohutcuk.py](../CAD_Source/build_nohutcuk.py) and [prepare_print_and_verify.py](../CAD_Source/prepare_print_and_verify.py). Automatic GitHub workflow [Nohutçuk 3.2-inch CAD regenerate and validate](https://github.com/abdallahkhayroun00-crypto/Nohut_POS/actions/workflows/nohutcuk-cad-32.yml) compiles and checks these and republishes STLs/STEPs/ZIP on source changes.
 
 ## Not validated — hold final printing until these are measured
 

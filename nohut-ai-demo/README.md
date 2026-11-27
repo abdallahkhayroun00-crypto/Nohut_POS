@@ -1,7 +1,7 @@
 # Nohut AI Lab — isolated GitHub Pages experiment
 
 Test page (after GitHub Pages deployment):
-https://abdallahkhayroun00-crypto.github.io/brand-management-proposal/nohut-ai-demo/
+https://abdallahkhayroun00-crypto.github.io/Nohut_POS/nohut-ai-demo/
 
 This is a separate folder. The existing official QR menu, POS, SQLite and payment systems remain untouched.
 
