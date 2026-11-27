@@ -123,6 +123,16 @@ void main() {
     expect((await auth.unlockWithPassword(l.token, 'yonetici', 'sentetik-sifre-2')).status, 'revoked');
   });
 
+  test('QA-17: a first PIN later than 5 minutes after sign-in also needs the password', () async {
+    await seed();
+    final l = await auth.login(username: 'deniz', password: 'sentetik-sifre-2',
+        deviceId: dev1, client: 'personel');
+    now = now.add(const Duration(minutes: 6)); // PIN step skipped, phone left unlocked
+    await expectLater(auth.setPin(l.token, 'personel', '47302'),
+        throwsA(isA<LocalAuthException>().having((e) => e.code, 'code', 'password_required')));
+    await auth.setPin(l.token, 'personel', '47302', password: 'sentetik-sifre-2');
+  });
+
   test('changing an existing PIN needs the password (an unlocked phone is not enough)', () async {
     await seed();
     final l = await auth.login(username: 'deniz', password: 'sentetik-sifre-2',

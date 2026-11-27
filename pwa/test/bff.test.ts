@@ -40,7 +40,7 @@ function fakeSupabase() {
     if (path === '/rest/v1/rpc/nohut_register_device' || path === '/rest/v1/rpc/nohut_logout') return new Response(null, { status: 204 });
     if (path === '/rest/v1/rpc/nohut_whoami') return ok({ status: 'ok', username: 'deniz', role: 'Personel', has_pin: pin != null, grants: ['orders.create'] });
     if (path === '/rest/v1/rpc/nohut_set_pin') {
-      if (pin != null && !fresh.has(bearer)) return new Response('{"message":"password_required"}', { status: 403 });
+      if (!fresh.has(bearer)) return new Response('{"message":"password_required"}', { status: 403 });
       pin = body.p_pin; return new Response(null, { status: 204 });
     }
     if (path === '/rest/v1/rpc/nohut_verify_pin') {

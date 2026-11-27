@@ -502,7 +502,7 @@ class LocalAuth {
     return ctx.isOwner || ctx.grants.contains(operation) ? 'ok' : 'forbidden';
   }
 
-  /// Sets this device's PIN. Replacing an existing PIN later than 5 minutes
+  /// Sets this device's PIN. Setting or replacing a PIN later than 5 minutes
   /// after the password sign-in needs the account password again (same
   /// lockout as unlock), so an unlocked phone left on a table cannot have its
   /// PIN changed by someone else.
@@ -510,12 +510,13 @@ class LocalAuth {
     final ctx = check(token, client);
     if (!ctx.ok) throw LocalAuthException(ctx.status);
     _checkPin(pin);
-    final existing = db.select('SELECT pin_hash FROM auth_devices WHERE device_id=?', [ctx.deviceId]);
     // The PIN step right after a password sign-in needs nothing more.
     final created = DateTime.tryParse('${_session(token)?['created_at'] ?? ''}');
     final fresh = created != null && _clock().toUtc().difference(created) < const Duration(minutes: 5);
     // A password that was sent is always checked, even in that step.
-    if (password != null || (!fresh && existing.isNotEmpty && existing.single['pin_hash'] != null)) {
+    // Outside it, a password is needed even for a first PIN (QA-17): an
+    // unlocked phone must not get a PIN its owner never chose.
+    if (password != null || !fresh) {
       if (password == null || password.isEmpty) throw const LocalAuthException('password_required');
       final again = await unlockWithPassword(token, client, password);
       if (!again.ok) throw LocalAuthException(again.status);
