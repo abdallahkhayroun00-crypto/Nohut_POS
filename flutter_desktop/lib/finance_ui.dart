@@ -1046,7 +1046,7 @@ class _FinancePanelState extends State<FinancePanel> {
         }
         return AlertDialog(
           title: Text(existing == null ?
-            'Hızlı Günlük Gider Ekle' : 'Hızlı Gider Düzenle'),
+            'Hızlı Gider Ekle' : 'Hızlı Gider Düzenle'),
           content: SizedBox(width: 490, child: SingleChildScrollView(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1190,22 +1190,16 @@ class _FinancePanelState extends State<FinancePanel> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _heading('Günlük Malzeme Alımı'),
-        Wrap(spacing: 8, runSpacing: 8, children: [
-          FilledButton.icon(
-            key: const ValueKey('finance-new-material'),
-            onPressed: () => _materialForm(),
-            icon: const Icon(Icons.add),
-            label: const Text('Malzeme Ekle')),
-          OutlinedButton.icon(
+        // §24.8: new daily purchases use only the quick form. Itemized
+        // (product) records from before stay readable and editable below.
+        Align(
+          alignment: Alignment.centerLeft,
+          child: FilledButton.icon(
             key: const ValueKey('finance-new-quick-material'),
             onPressed: () => _quickMaterialForm(),
-            icon: const Icon(Icons.bolt_outlined),
-            label: const Text('Hızlı Günlük Gider')),
-        ]),
-        const SizedBox(height: 8),
-        _notice('Market Fiyat Takibi fiyatları referanstır. '
-          'Gerçek satın alma tutarı ve miktarı kaydedilir; '
-          'takip edilen fiyatlar değişmez.'),
+            icon: const Icon(Icons.add),
+            label: const Text('Hızlı Gider Ekle')),
+        ),
         const SizedBox(height: 10),
         Row(
           children: [

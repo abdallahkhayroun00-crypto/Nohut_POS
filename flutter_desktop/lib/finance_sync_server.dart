@@ -169,7 +169,7 @@ class FinanceSyncServer {
         'id', 'recordType', 'date', 'title', 'market', 'storeBrand',
         'quantityMilli', 'unit', 'pricePerUnitCents', 'discountCents',
         'totalCents', 'paymentMethod', 'voided', 'updatedAt', 'note',
-        'discountType', 'discountValue',
+        'discountType', 'discountValue', 'amountsCents',
       ]),
       'weeklyPayroll': pick('weeklyPayroll', (r) => matches(r, 'weekEnd'), [
         'id', 'employeeId', 'employeeName', 'weekStart', 'weekEnd',
@@ -293,6 +293,33 @@ class FinanceSyncServer {
           if (current == null) throw const FinanceVersionConflict();
           check(current);
           voidManualPlatformIncome(state, str('source'), str('month'));
+        case 'quick_save':
+          // §24.8 Hızlı Gider Ekle from Yönetici (LAN + Android): same rules
+          // as the Windows quick form; edits need the exact prior version.
+          int? editId;
+          if (d['id'] != null) {
+            editId = num('id');
+            final current = row('materials', (r) => r['id'] == editId);
+            if (current == null || current['voided'] == true || !isQuickMaterial(current)) {
+              throw const FinanceVersionConflict();
+            }
+            check(current);
+          }
+          final amounts = d['amountsCents'];
+          if (amounts is! List || !amounts.every((x) => x is int)) {
+            throw const FormatException('Tutarlar geçersiz.');
+          }
+          saveQuickMaterialPurchase(state, id: editId, date: str('date'),
+            storeBrand: str('storeBrand'), amountsCents: amounts.cast<int>(),
+            market: str('market'), paymentMethod: str('paymentMethod'),
+            note: str('note'));
+        case 'quick_void':
+          final current = row('materials', (r) => r['id'] == num('id'));
+          if (current == null || current['voided'] == true || !isQuickMaterial(current)) {
+            throw const FinanceVersionConflict();
+          }
+          check(current);
+          voidMaterialPurchase(state, num('id'), str('reason'));
         case 'material_save':
           Json? current;
           if (d['id'] != null) {

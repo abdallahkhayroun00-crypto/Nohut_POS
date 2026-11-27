@@ -235,6 +235,18 @@ class _ManagerFinancePageState extends State<ManagerFinancePage> {
         await _queue('manual_save', {'source': v['Platform'], 'month': month,
           'expectedVersion': version, 'kind': v['Tür'],
           'amountCents': parseExpenseCents(v['Tutar (₺)']!), 'note': v['Not']});
+      } else if (type == 'quick') {
+        // §24.8: the only way to add a new daily purchase.
+        final v = await showDialog<Map<String, dynamic>>(context: context,
+          builder: (_) => QuickExpenseDialog(previous: row,
+            title: row == null ? 'Hızlı Gider Ekle' : 'Hızlı Gider Düzenle',
+            saveLabel: 'Kaydet'));
+        if (v == null || !mounted) return;
+        await _queue('quick_save', {if (row != null) 'id': row['id'],
+          'expectedVersion': version, 'date': v['date'],
+          'storeBrand': v['storeBrand'], 'market': v['market'],
+          'amountsCents': v['amountsCents'], 'paymentMethod': v['paymentMethod'],
+          'note': v['note']});
       } else if (type == 'material') {
         final v = await _form('Detaylı Malzeme', {
           'Tarih (YYYY-MM-DD)': (row?['date'] ?? _day(selected)).toString(),
@@ -354,16 +366,22 @@ class _ManagerFinancePageState extends State<ManagerFinancePage> {
                   ' · Brüt ' + _money(p['grossCents']) +
                   ' · Kesinti ' + _money(p['deductionCents'])),
           ]),
-          _section('Günlük Malzeme · ' + _money(summary['materialsCents']), [
-            _add('Detaylı Malzeme Ekle', 'material'),
+          _section('Giderler · Günlük Malzeme · ' + _money(summary['materialsCents']), [
+            _add('Hızlı Gider Ekle', 'quick'),
             for (final p in _rows(data['materials']))
               _line((p['title'] ?? 'Malzeme').toString() +
                 (p['voided'] == true ? ' · İPTAL' : ''), p['totalCents'],
-                onTap: busy || p['voided'] == true || p['recordType'] == 'quick' ? null : () => _edit('material', p),
-                onAction: busy || p['voided'] == true || p['recordType'] == 'quick' ? null : () => _confirm('Malzeme iptal edilsin mi?', 'material_void', {'id': p['id'], 'expectedVersion': p['updatedAt'], 'reason': 'Android yönetici iptali'}),
+                // Quick rows edit in the quick form; older itemized rows keep
+                // their readable details and audited edit/void.
+                onTap: busy || p['voided'] == true ? null :
+                  () => _edit(p['recordType'] == 'quick' ? 'quick' : 'material', p),
+                onAction: busy || p['voided'] == true ? null : () => _confirm(
+                  'Gider iptal edilsin mi?',
+                  p['recordType'] == 'quick' ? 'quick_void' : 'material_void',
+                  {'id': p['id'], 'expectedVersion': p['updatedAt'], 'reason': 'Android yönetici iptali'}),
                 subtitle: (p['date'] ?? '').toString() + ' · ' +
                   (p['market'] ?? '').toString() +
-                  (p['recordType'] == 'quick' ? ' · Hızlı gider' : '')),
+                  (p['recordType'] == 'quick' ? ' · Hızlı gider' : ' · Ürünlü kayıt')),
           ]),
           _section('Haftalık Maaşlar · ' + _money(summary['payrollCents']), [
             _add('Haftalık Maaş Ekle', 'payroll'),

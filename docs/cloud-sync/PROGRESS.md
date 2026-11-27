@@ -68,6 +68,14 @@ EVIDENCE:
 | R4 | Yorum Merkezi in Yönetici, Google/other platforms, Android review notifications | Claude | ⏸ paused by owner 2026-11-27 (reviews deprioritized; Windows notifications + reply states already done in R3) | R3, N1 | — |
 | S1 | PR-05B typed sync, snapshot/first sync, reconciliation, read projections (incl. reviews/notifications projections when contracts exist) | ChatGPT Codex | 🔄 #39 | A1 | #39 |
 | S2 | Phase 5B command queue RPCs | ChatGPT Codex | 🔄 #39 | — | #39 |
+| G1 | §24.8 Simplified Giderler: only **Hızlı Gider Ekle** on Windows, Yönetici, Personel (history kept) | Claude | 🔄 Windows Finans › Günlük Malzeme: itemized *Malzeme Ekle* removed, one **Hızlı Gider Ekle**; old itemized rows still listed/editable. Manager actions `quick_save` / `quick_void` (versioned, idempotent request id) serve LAN `/yonetici` (new Giderler card: date, market, Tutar 1 + Tutar Ekle, method, note, live Toplam) and Android Yönetici (shared `QuickExpenseDialog`; *Detaylı Malzeme Ekle* removed, quick rows now editable/voidable). Remaining: Personel own-submission view with explicit create grant (W5 dashboards) | — | `finance_sync_test` (create/retry/stale/edit/void/legacy untouched), `finance_store_picker_test`; LAN smoke on iPhone 13 viewport |
+| D1 | §24.7 Gün Sonu Raporu: 21:30 notification (configurable, deduped) + green/cream Yönetici report | Claude (cloud projection: Codex) | ⏳ | N1 | — |
+| W1 | §24.4 Vardiya (own planned shifts, shared schedule, no approvals) | Claude UI / Codex sync | ⏳ | — | — |
+| W2 | §24.4 Mesai (own actual hours, manual only) + weekly Taslak/Gönderildi submission | Claude UI / Codex sync | ⏳ | W1 | — |
+| W3 | §24.5 Hourly rates with effective dates + payroll payment ledger (Nakit/Havale/Karma, derived status) | Codex ledger / Claude UI | ⏳ | W2 | — |
+| W4 | §24.6 Haftalık Maaş Ödemeleri panel + Sunday/Monday reminders | Claude | ⏳ | W2, W3, N1 | — |
+| W5 | §24.3 Ana Sayfa dashboards (Personel, Yönetici) + personal performance | Claude | ⏳ | W1–W3 | — |
+| W6 | §24.2 Activation invites, pending approval, 5-digit trusted-device PIN | Claude (cloud: A2) | ⏳ | A2 | — |
 | P6 | Windows sales/top products/heatmap projections (Phase 6) | open | ⏳ | — | — |
 | P7 | Phase 7 acceptance incl. spec §23.7 | all | ⏳ | all | — |
 
