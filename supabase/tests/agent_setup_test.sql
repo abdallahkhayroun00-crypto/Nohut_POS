@@ -11,8 +11,11 @@ begin
   insert into nohut_private.app_users(user_id,restaurant_id,username,role_template,is_owner) values(u,r,'synthetic-agent-setup','Yönetici',true);
   perform nohut_private.enroll_device(u,phone,ps,'yonetici','Synthetic phone');
   perform set_config('request.jwt.claims',jsonb_build_object('sub',u,'session_id',s,'aal','aal2')::text,true);
+  set local role service_role;
+  perform set_config('nohut.synthetic_ticket',public.nohut_issue_windows_bootstrap(r),true);
+  reset role;
   set local role authenticated;
-  perform public.nohut_register_device(d,'windows','Synthetic Windows');
+  perform public.nohut_register_windows_device(d,'Synthetic Windows',current_setting('nohut.synthetic_ticket'));
   first_info:=public.nohut_enroll_agent(d,1,e,req,encode(sha256(convert_to(token,'UTF8')),'hex'));
   again:=public.nohut_enroll_agent(d,1,e,req,encode(sha256(convert_to(token,'UTF8')),'hex'));
   if first_info is distinct from again or first_info->>'status'<>'enrolled' or first_info ? 'token' then raise exception 'enrollment ACK not recoverable'; end if;

@@ -49,7 +49,7 @@ jobs:
         run: |
           set -euo pipefail
           run_pg() { docker exec -i "$PG_CONTAINER" psql -X -v ON_ERROR_STOP=1 "$@"; }
-          run_pg -U postgres -d nohut_synthetic -c 'create role cloud_migrator login nosuperuser nobypassrls; grant authenticated, anon to cloud_migrator;'
+          run_pg -U postgres -d nohut_synthetic -c 'create role cloud_migrator login nosuperuser nobypassrls; grant authenticated, anon, service_role to cloud_migrator;'
           run_pg -U postgres -d nohut_synthetic -c 'create database nohut_cloud_plain owner cloud_migrator'
           run_pg -U postgres -d nohut_cloud_plain < supabase/ci/supabase_auth_stub.sql
           for f in supabase/migrations/*.sql; do run_pg -U cloud_migrator -d nohut_cloud_plain < "$f"; done

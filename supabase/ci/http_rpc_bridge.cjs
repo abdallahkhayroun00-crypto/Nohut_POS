@@ -26,6 +26,19 @@ const methods={
   nohut_revoke_agent:['p_device_id','p_permission_version','p_agent_id'],
 };
 let loseAck=false,loseEnrollAck=false;
+// Trusted bootstrap exists only in this disposable fixture, never in a client.
+async function registerSyntheticWindows(db,restaurant,user,device,session){
+  await db.query('begin');
+  try{
+    await db.query('set local role service_role');
+    const ticket=(await db.query('select public.nohut_issue_windows_bootstrap($1) as ticket',[restaurant])).rows[0].ticket;
+    await db.query('reset role');
+    await db.query('set local role authenticated');
+    await db.query("select set_config('request.jwt.claims',$1,true)",[JSON.stringify({sub:user,session_id:session,aal:'aal2'})]);
+    await db.query("select public.nohut_register_windows_device($1,'Synthetic Windows',$2)",[device,ticket]);
+    await db.query('commit');
+  }catch(err){await db.query('rollback');throw err;}
+}
 // Real independent database connections, including concurrent session_status
 // updates. The HTTP request queue itself deliberately remains serialized.
 async function verifySetupConcurrency(db){
@@ -33,7 +46,7 @@ async function verifySetupConcurrency(db){
   await db.query('insert into nohut_private.restaurants(restaurant_id) values($1)',[r]);
   await db.query('insert into nohut_private.authority_epochs(restaurant_id,authority_epoch) values($1,$2)',[r,e]);
   await db.query("insert into nohut_private.app_users(user_id,restaurant_id,username,role_template,is_owner) values($1,$2,$3,'Yönetici',true)",[u,r,'synthetic-concurrent-owner']);
-  await db.query("select nohut_private.enroll_device($1,$2,$3,'windows','Synthetic concurrency')",[u,d,s]);
+  await registerSyntheticWindows(db,r,u,d,s);
   const args=[d,1,e,q,require('node:crypto').createHash('sha256').update(randomUUID()+randomUUID()).digest('hex')];
   async function run(sessionOnly){
     const c=new Client({...cfg,database:dbname});await c.connect();
@@ -56,7 +69,7 @@ async function main(){
     'create role service_role nologin bypassrls',`create role ${role} nologin nosuperuser nobypassrls`]){
     try{await admin.query(sql)}catch(e){if(e.code!=='42710')throw e;}
   }
-  await admin.query(`grant anon,authenticated to ${role}`);
+  await admin.query(`grant anon,authenticated,service_role to ${role}`);
   await admin.query(`create database ${dbname} owner ${role}`);
   const db=new Client({...cfg,database:dbname});await db.connect();
   await db.query(fs.readFileSync(path.join(base,'ci/supabase_auth_stub.sql'),'utf8'));
@@ -72,11 +85,7 @@ async function main(){
   await db.query(`insert into nohut_private.app_users(user_id,restaurant_id,username,pos_employee_id,role_template,is_owner)
     values($1,$2,'synthetic-http-owner',1,'Yönetici',true)`,[ids.userId,ids.restaurantId]);
   await db.query(`select nohut_private.enroll_device($1,$2,$3,'yonetici','Synthetic HTTP')`,[ids.userId,ids.deviceId,ids.sessionId]);
-  await db.query('begin');
-  await db.query('set local role authenticated');
-  await db.query("select set_config('request.jwt.claims',$1,true)",[JSON.stringify({sub:ids.userId,session_id:ids.windowsSessionId,aal:'aal2'})]);
-  await db.query("select public.nohut_register_device($1,'windows','Synthetic Windows')",[ids.windowsDeviceId]);
-  await db.query('commit');
+  await registerSyntheticWindows(db,ids.restaurantId,ids.userId,ids.windowsDeviceId,ids.windowsSessionId);
   // Serialize test requests on one connection so SET LOCAL ROLE is isolated.
   let tail=Promise.resolve();
   const server=http.createServer((req,res)=>{

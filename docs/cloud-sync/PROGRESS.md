@@ -28,7 +28,7 @@ All owner messages are **cumulative requirements**, not competing tasks. Require
 
 **Connectivity decision (owner, verified on a physical iPhone):** Windows POS authoritative · Android native = cloud + LAN · iPhone in the restaurant = local browser apps served by Windows, no VPN · iPhone outside = existing Cloudflare PWAs (via VPN; `pages.dev` blocked in Türkiye). Keep Cloudflare + Supabase. No hosting change, no domain purchase.
 
-**Ownership:** PR #39 / `chatgpt/pr-05b-cloud-rpcs` belongs to **ChatGPT Codex** (has uncommitted local work) — nobody else pushes there. Claude owns auth, local browser UI, notifications, reviews and Windows analytics; Codex consumes those contracts and does not duplicate them.
+**Ownership:** PR #39 / `chatgpt/pr-05b-cloud-rpcs` belongs to **ChatGPT Codex** — nobody else pushes there. Claude owns auth, local browser UI, notifications, reviews and Windows analytics; Codex consumes those contracts and does not duplicate them.
 
 ### Agent-to-agent protocol (GitHub, mandatory)
 
@@ -72,6 +72,14 @@ EVIDENCE:
 | P7 | Phase 7 acceptance incl. spec §23.7 | all | ⏳ | all | — |
 
 **Blockers / owner actions:** live Trendyol read-only check needs explicit owner authorization (R1); physical iPhone HTTPS/Safari test (L4); any FCM project needs owner approval (N4); KVKK gate unchanged.
+
+## Integration checkpoint — Codex, 2026-11-27
+
+- Integrated main PR #42 (90e284) without conflicts, preserving Claude's accounts, LAN apps, reviews and terminal deletion guards alongside typed cloud synchronization.
+- Combined validation: **432 Flutter tests passed, 2 skips** (HTTP integration executed separately); analysis has no errors/warnings (587 existing style/deprecation infos). **39 migrations / 23 SQL suites** pass as superuser and a plain owner without BYPASSRLS. Real HTTP/PostgreSQL integration passes approved installation, concurrent enrollment, lost setup/ingest ACK, typed domain ingestion and authoritative command recovery.
+- Previous 6dc0343 Windows/PWA/both Android CI passed; SQL/auth/HTTP CI failed because the PR merge test included main's new ticket requirement while fixtures still used old registration. Fixtures and explicit trusted-bootstrap test-role grants are now corrected; replacement CI remains to verify after push. No security check was bypassed.
+- Connectivity remains the owner's final strategy: Windows authority; Android cloud + LAN; local iPhone apps inside without VPN; existing Cloudflare PWAs outside via VPN. No hosting or infrastructure change.
+- PR #39 remains draft. Remaining eligible domains, initial snapshot/staging/reconciliation, authorized reads, runtime/auth integration and Phase 7 gates remain incomplete; nothing deployed or uploaded to production.
 
 ## Phase status
 
@@ -118,7 +126,7 @@ EVIDENCE:
 - **Setup checkpoint:** `810614eb673dc3db9126d30e52bd0e27fe6b272f` all seven workflows passed: Windows 46004071388, Android Personel 46004071027, Android Yönetim 46004071253, PWA 46004071031, auth 46004071283, PostgreSQL 46004070951, HTTP integration 46004071137. Claude's newer review commits remain his; notification/review projections still await his agreed contracts.
 
 - **A1 dependency integrated:** Claude's PR #42 head `53259d722f35284aee1b3fdd3c1f1b4e8c410aec` is merged into this branch without conflict; Claude's branch was not changed. Windows owner-session/MFA SQL contract is available. Added Windows-only scoped setup RPCs and `WindowsAgentSetup` consuming that interface: DPAPI-before-network pending tokens, hash-only enrollment, durable request receipts, lost-ACK recovery, one-time rotation and idempotent revocation. Full Flutter **384 passed, 2 skips**; setup/transport/HTTP tests passed; analysis no errors/warnings (567 infos). Combined SQL **30 migrations / 20 suites** passed in both privilege modes. API: `docs/contracts/v1/windows-agent-setup.md`.
-- **Production security dependency (requested from Claude on #39):** A1 proves a registered Windows device/session but currently allows a fresh device ID to be registered as `windows` using any owner `aal2` JWT. Approved Windows installation/bootstrap binding is still required for strict physical Windows-only enforcement; user-agent strings are insufficient. Windows login UI remains Claude-owned. Setup and first sync remain unactivated; continue independent serializers/migration/read work.
+- **A1 dependency resolved in main #42 (`f90e284`), integrated into #39:** approved installation/bootstrap tickets replace unrestricted Windows device registration. The SQL and HTTP agent fixtures now consume the public approval contract; the disposable plain migration owner may explicitly assume `service_role` only for trusted bootstrap fixtures. Its normal identity remains NOSUPERUSER/NOBYPASSRLS. This proves approved installation, not physical OS attestation. Windows login/setup UI remains Claude-owned; first sync and legal/configuration activation remain gated.
 - **Receipt checkpoint:** `872787ad5a614c10fa3645f0488e22fd587ab1e9` all seven CI workflows passed: Windows 46001566674, Android Personel 46001566679, Android Yönetim 46001566619, PWA 46001566629, auth 46001566636, PostgreSQL 46001566715 and HTTP integration 46001566631. Receipt audit increment is implemented/tested/pushed, not merged/deployed.
 
 - **Receipt validation checkpoint:** full Flutter suite **379 passed, 2 skips**, with real HTTP integration executed separately and passing. Final targeted receipt tests 3 passed. All **28 migrations / 18 SQL suites** pass as superuser and plain owner; direct `authenticated` table reads are refused. Analysis has no errors/warnings (558 existing/style infos). Receipt source identity is bound to order/batch/kind, frozen content is hash-checked and immutable, and print events have unique persistent IDs and contiguous ordinals. Not merged/deployed; pending CI is verified after push.
