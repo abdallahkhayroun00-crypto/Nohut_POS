@@ -159,6 +159,31 @@ revoke all on function nohut_private.qr_publish_authority(text,text,bigint,text)
  nohut_private.qr_publish_claim(text,text,bigint,text,text,text),
  nohut_private.qr_publish_transition(text,text,bigint,text,text,uuid,text,text,text,text,text)
  from public,anon,authenticated,service_role;
+-- Terminal recovery audit, private and written atomically with the receipt.
+create table nohut_private.qr_publish_recovery_audit (
+ restaurant_id uuid not null,
+ request_id text not null,
+ reconcile_request_id text not null,
+ recovery_epoch uuid not null,
+ recovery_agent_id uuid not null references nohut_private.windows_agents(agent_id),
+ recovery_generation bigint not null check(recovery_generation>0),
+ recovery_envelope_sha256 text not null check(recovery_envelope_sha256 ~ '^[0-9a-f]{64}$'),
+ outcome text not null check(outcome in ('committed','cancelled_before_attempt')),
+ observed_commit text check(observed_commit ~ '^[0-9a-f]{40}$'),
+ created_at timestamptz not null default clock_timestamp(),
+ primary key(restaurant_id,request_id),
+ foreign key(restaurant_id,request_id) references nohut_private.qr_publish_receipts(restaurant_id,request_id),
+ foreign key(restaurant_id,reconcile_request_id) references nohut_private.commands(restaurant_id,request_id),
+ foreign key(restaurant_id,recovery_epoch) references nohut_private.authority_epochs(restaurant_id,authority_epoch),
+ check ((outcome='committed')=(observed_commit is not null))
+);
+alter table nohut_private.qr_publish_recovery_audit enable row level security;
+alter table nohut_private.qr_publish_recovery_audit force row level security;
+do $$ begin
+ execute format('create policy qr_recovery_owner on nohut_private.qr_publish_recovery_audit for all to %I using (true) with check (true)',current_user);
+end $$;
+revoke all on nohut_private.qr_publish_recovery_audit from public,anon,authenticated,service_role;
+
 -- A NEW, currently authorized reconcile command is required, independently
 -- of the original publish actor/session/lease. This permits recovery after
 -- expiry or PC replacement within the same restaurant, not cross-tenant access.
@@ -166,7 +191,7 @@ revoke all on function nohut_private.qr_publish_authority(text,text,bigint,text)
 create function nohut_private.qr_recovery_authority(
  p_token text,p_reconcile_request text,p_generation bigint,p_envelope_sha256 text
 ) returns nohut_private.windows_agents language plpgsql security invoker set search_path=''
-as $
+as $$
 declare a nohut_private.windows_agents; c nohut_private.commands;
 begin
  a:=nohut_private.authenticate_windows_agent(p_token);
@@ -181,7 +206,7 @@ begin
    raise exception 'reconciliation authority denied' using errcode='42501';
  end if;
  return a;
-end $;
+end $$;
 
 -- Private recovery port. A row lock serializes it against markAttempt.
 -- Recover only a named receipt owned by the authenticated restaurant.
@@ -191,13 +216,12 @@ create function nohut_private.qr_publish_recover(
  p_token text,p_reconcile_request text,p_generation bigint,p_envelope_sha256 text,
  p_target text,p_step text,p_commit text default null,p_revision text default null
 ) returns jsonb language plpgsql security invoker set search_path=''
-as $
+as $$
 declare a nohut_private.windows_agents; q nohut_private.qr_publish_receipts;
  c nohut_private.commands; v_result jsonb;
 begin
  a:=nohut_private.qr_recovery_authority(p_token,p_reconcile_request,p_generation,p_envelope_sha256);
- if p_target is null or p_target !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}
- then
+ if p_target is null or p_target !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
    raise exception 'invalid receipt target' using errcode='22023';
  end if;
  select * into q from nohut_private.qr_publish_receipts x where x.restaurant_id=a.restaurant_id and x.request_id=p_target for update;
@@ -229,13 +253,16 @@ begin
  else
    raise exception 'invalid recovery transition' using errcode='22023';
  end if;
+ insert into nohut_private.qr_publish_recovery_audit(restaurant_id,request_id,reconcile_request_id,recovery_epoch,recovery_agent_id,recovery_generation,recovery_envelope_sha256,outcome,observed_commit)
+ values(q.restaurant_id,q.request_id,p_reconcile_request,a.authority_epoch,a.agent_id,p_generation,p_envelope_sha256,v_result->>'status',
+ case when v_result->>'status'='committed' then q.commit_sha else null end);
  update nohut_private.qr_publish_receipts x set state='completed',result=v_result,updated_at=clock_timestamp()
  where x.restaurant_id=q.restaurant_id and x.request_id=q.request_id;
  return v_result;
-end $;
+end $$;
 revoke all on function nohut_private.qr_recovery_authority(text,text,bigint,text),
  nohut_private.qr_publish_recover(text,text,bigint,text,text,text,text,text)
  from public,anon,authenticated,service_role;
--- No public/Edge wrapper grants yet. Record trusted recovery actor/command
--- evidence in an append-only audit before release. No negative-evidence unlock.
+-- No public/Edge wrapper grants yet. Recovery evidence is stored atomically.
+-- No negative-evidence unlock.
 commit;
