@@ -1,0 +1,205 @@
+{
+  "schemaVersion": 1,
+  "spec": "NOHUT POS 2.0 Master Specification V5.1 §23.5",
+  "status": "PROPOSED_V5 — Windows history + LAN feed implemented; cloud transport pending (N3, #39)",
+  "authority": "Notifications are never confirmation of an order or payment. Clients always fetch committed state from the Windows POS.",
+  "event": {
+    "required": [
+      "eventId",
+      "category",
+      "severity",
+      "createdAt",
+      "title"
+    ],
+    "fields": {
+      "eventId": "stable, unique deduplication key: '<source>:<entity key>[:<transition>]'",
+      "category": "one of categories[].id",
+      "severity": "low | normal | high",
+      "createdAt": "ISO-8601 UTC",
+      "title": "short text, safe for a lock screen",
+      "body": "optional detail; never payroll amounts, customer names, phone numbers or addresses",
+      "ref": "{kind, key} of the source entity (order, packageId, review, printJob, terminalAttempt, user)",
+      "permission": "operation id a recipient must hold (null = every signed-in user of the listed clients)",
+      "read": "per-recipient read state (Windows: global for the POS operator)",
+      "windows": "Windows popup state: pending | shown | dismissed | later"
+    }
+  },
+  "lockScreen": "title only; body is shown only inside the unlocked app",
+  "severities": [
+    "low",
+    "normal",
+    "high"
+  ],
+  "categories": [
+    {
+      "id": "order.table",
+      "label": "Yeni masa siparişi",
+      "severity": "normal",
+      "permission": "tables.view",
+      "clients": [
+        "windows",
+        "personel",
+        "yonetici"
+      ],
+      "windowsOnly": false
+    },
+    {
+      "id": "order.pickup",
+      "label": "Yeni Gel-Al siparişi",
+      "severity": "normal",
+      "permission": "tables.view",
+      "clients": [
+        "windows",
+        "personel",
+        "yonetici"
+      ],
+      "windowsOnly": false
+    },
+    {
+      "id": "order.platform",
+      "label": "Yeni online sipariş (Trendyol Go / Yemeksepeti / Migros)",
+      "severity": "high",
+      "permission": "online.view",
+      "clients": [
+        "windows",
+        "personel",
+        "yonetici"
+      ],
+      "windowsOnly": false
+    },
+    {
+      "id": "order.status",
+      "label": "Sipariş durumu değişti",
+      "severity": "low",
+      "permission": "tables.view",
+      "clients": [
+        "windows",
+        "personel",
+        "yonetici"
+      ],
+      "windowsOnly": false
+    },
+    {
+      "id": "payment.error",
+      "label": "Ödeme sonucu belirsiz / hata",
+      "severity": "high",
+      "permission": "payments.take",
+      "clients": [
+        "windows",
+        "personel",
+        "yonetici"
+      ],
+      "windowsOnly": false
+    },
+    {
+      "id": "print.error",
+      "label": "Yazdırma hatası",
+      "severity": "high",
+      "permission": "receipts.print",
+      "clients": [
+        "windows",
+        "personel",
+        "yonetici"
+      ],
+      "windowsOnly": false
+    },
+    {
+      "id": "menu.availability",
+      "label": "Ürün stok durumu değişti",
+      "severity": "low",
+      "permission": "menu.view",
+      "clients": [
+        "windows",
+        "personel",
+        "yonetici"
+      ],
+      "windowsOnly": false
+    },
+    {
+      "id": "shift",
+      "label": "Vardiya başladı/bitti, düzeltme",
+      "severity": "normal",
+      "permission": "shifts.manage",
+      "clients": [
+        "windows",
+        "yonetici"
+      ],
+      "windowsOnly": false
+    },
+    {
+      "id": "payroll",
+      "label": "Maaş, prim, avans, ödeme",
+      "severity": "normal",
+      "permission": "payroll.view",
+      "clients": [
+        "windows",
+        "yonetici"
+      ],
+      "windowsOnly": false
+    },
+    {
+      "id": "review",
+      "label": "Yeni platform / Google yorumu",
+      "severity": "normal",
+      "permission": "reviews.reply",
+      "clients": [
+        "windows",
+        "yonetici"
+      ],
+      "windowsOnly": false
+    },
+    {
+      "id": "pos.unavailable",
+      "label": "Windows POS erişilemiyor",
+      "severity": "high",
+      "permission": null,
+      "clients": [
+        "personel",
+        "yonetici"
+      ],
+      "windowsOnly": false
+    },
+    {
+      "id": "command.failed",
+      "label": "Uzak komut başarısız / bekliyor",
+      "severity": "high",
+      "permission": "online.act",
+      "clients": [
+        "windows",
+        "yonetici"
+      ],
+      "windowsOnly": false
+    },
+    {
+      "id": "security",
+      "label": "Güvenlik ve hesap olayı",
+      "severity": "high",
+      "permission": "users.manage",
+      "clients": [
+        "windows",
+        "yonetici"
+      ],
+      "windowsOnly": false
+    },
+    {
+      "id": "sync",
+      "label": "Bulut senkronizasyon uyarısı",
+      "severity": "normal",
+      "permission": "sync.view",
+      "clients": [
+        "windows"
+      ],
+      "windowsOnly": true
+    },
+    {
+      "id": "backup",
+      "label": "Yedekleme uyarısı",
+      "severity": "high",
+      "permission": "backup.view",
+      "clients": [
+        "windows"
+      ],
+      "windowsOnly": true
+    }
+  ]
+}

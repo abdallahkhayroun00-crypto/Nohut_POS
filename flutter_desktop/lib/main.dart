@@ -59,6 +59,8 @@ import 'tgo_review_api.dart';
 import 'local_accounts.dart';
 import 'lan_auth_gate.dart';
 import 'accounts_ui.dart';
+import 'notification_events.dart';
+import 'notifications_ui.dart';
 
 part 'order_composer.dart';
 
@@ -172,7 +174,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
   late final MarketPriceClient marketApi;
   Timer? _marketPriceTimer;
   Timer? _midnightTimer;
-  Timer? _serviceTimer;
+  Timer? _serviceTimer, _notificationTimer;
   final Set<String> seenNotices = {};
   Json? latestNotice;
   final Queue<Json> _staffPopupQueue = Queue<Json>();
@@ -308,6 +310,17 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       });
     }
     _scheduleIstanbulMidnight();
+    if (widget.startServer) {
+      // Operational notification history (§23.5): derived from committed
+      // state with stable ids, so repeated runs never duplicate.
+      _notificationTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+        try {
+          recordOperationalNotifications(store);
+        } catch (e) {
+          debugPrint('Notification history: $e');
+        }
+      });
+    }
     _serviceTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (mounted) setState(() {});
     });
@@ -450,6 +463,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     _midnightTimer?.cancel();
     _marketPriceTimer?.cancel();
     _serviceTimer?.cancel();
+    _notificationTimer?.cancel();
     backups.dispose();
     marketApi.close();
     tgo.dispose();
@@ -3629,6 +3643,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     staffPanel: _staff(db),
     wifiPanel: _wifi(db),
     backupPanel: BackupPanel(service: backups, restore: restorer),
+    notificationHistory: NotificationHistoryPanel(store: store),
     accountsPanel: AccountsPanel(auth: localAuth, employees: asMaps(db['employees']),
         yoneticiUrl: lan.staffUrl.replaceFirst('/personel', '/yonetici')),
   );

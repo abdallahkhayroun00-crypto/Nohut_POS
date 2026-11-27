@@ -127,4 +127,33 @@ void main() {
     expect(w, 403);
     expect((wb as Map)['error'], 'forbidden');
   });
+
+  test('fixed monthly cost can be marked paid and unpaid with version checks', () async {
+    auth.setSetting('local_finance_http', '1');
+    final cookie = await login('sahip', 'owner-pass-1');
+    final month = day.substring(0, 7);
+    Future<(int, Object?)> write(String id, String action, Map<String, Object?> data) async {
+      final (st, b, _) = await call('POST', '/api/yonetici/write', cookie: cookie,
+          body: {'requestId': id, 'action': action, 'data': data});
+      return (st, b);
+    }
+    final (s1, b1) = await write('yonetici_fixed_0000001', 'fixed_save', {'id': null, 'category': 'Kira',
+      'name': 'Dükkan kirası', 'amountCents': 2500000, 'startMonth': month, 'dueDay': 5, 'active': true});
+    expect(s1, 200, reason: '$b1');
+    Future<Map> monthView() async =>
+        ((await call('GET', '/api/yonetici/month?month=$month', cookie: cookie)).$2 as Map)['view'] as Map;
+    final fixed = ((await monthView())['monthlyFixed'] as List).single as Map;
+    final (s2, b2) = await write('yonetici_fixed_0000002', 'fixed_paid', {'id': fixed['id'], 'month': month,
+      'paid': true, 'expectedVersion': fixed['updatedAt'], 'expectedPaidAt': null});
+    expect(s2, 200, reason: '$b2');
+    final pay = ((await monthView())['fixedPayments'] as List).single as Map;
+    expect(pay['paidAt'], isNotNull);
+    // A stale client (still thinks it is unpaid) is refused, not applied twice.
+    final (s3, _) = await write('yonetici_fixed_0000003', 'fixed_paid', {'id': fixed['id'], 'month': month,
+      'paid': true, 'expectedVersion': fixed['updatedAt'], 'expectedPaidAt': null});
+    expect(s3, 409);
+    final (s4, b4) = await write('yonetici_fixed_0000004', 'fixed_paid', {'id': fixed['id'], 'month': month,
+      'paid': false, 'expectedVersion': fixed['updatedAt'], 'expectedPaidAt': pay['paidAt']});
+    expect(s4, 200, reason: '$b4');
+  });
 }

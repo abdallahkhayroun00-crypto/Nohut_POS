@@ -16,6 +16,7 @@ import 'finance_sync_server.dart';
 import 'google_business.dart';
 import 'lan_auth_gate.dart';
 import 'yonetici_api.dart';
+import 'notification_events.dart';
 
 /// Native Flutter Windows HTTP server for employee phones. No Python process.
 class PosLanServer extends ChangeNotifier {
@@ -24,6 +25,8 @@ class PosLanServer extends ChangeNotifier {
     : _staffHtml = staffHtml, _yoneticiHtml = yoneticiHtml;
   String? _yoneticiHtml;
   late final YoneticiApi? yonetici = authGate == null ? null : YoneticiApi(store, authGate!);
+  late final LanNotificationsApi? notifications =
+      authGate == null ? null : LanNotificationsApi(store, authGate!.auth);
   /// Individual LAN logins (spec §23.4). Null = legacy shared panel only.
   final LanAuthGate? authGate;
   final PosStore store;
@@ -386,6 +389,29 @@ class PosLanServer extends ChangeNotifier {
         request.uri.queryParameters, body, token: _token(request)));
   }
 
+  Future<void> _handleNotifications(HttpRequest request, bool markRead) async {
+    final api = notifications, gate = authGate;
+    if (api == null || gate == null) {
+      _json(request.response, 404, {'error': 'not_found'});
+      return;
+    }
+    final body = await _lanJsonBody(request, 16 * 1024);
+    if (body == null) return;
+    if ((request.method == 'POST') != markRead) {
+      _json(request.response, 405, {'error': 'method_not_allowed'});
+      return;
+    }
+    final client = body['client'] == 'yonetici' ? 'yonetici' : 'personel';
+    final d = gate.guard(token: _token(request), client: client,
+        operation: client == 'yonetici' ? 'dashboard.view' : 'tables.view',
+        touch: markRead, forceRequired: true);
+    if (!d.allowed) {
+      _json(request.response, d.status, {'error': d.error});
+      return;
+    }
+    _json(request.response, 200, markRead ? api.markRead(d.context!, body) : api.list(d.context!));
+  }
+
   Future<void> _handleAuth(HttpRequest request, String path) async {
     final gate = authGate;
     if (gate == null) {
@@ -405,6 +431,10 @@ class PosLanServer extends ChangeNotifier {
     final resource = uri.path;
     if (resource.startsWith('/api/auth/')) {
       await _handleAuth(request, resource.substring('/api/auth/'.length));
+      return;
+    }
+    if (resource == '/api/notifications' || resource == '/api/notifications/read') {
+      await _handleNotifications(request, resource.endsWith('/read'));
       return;
     }
     if (resource.startsWith('/api/yonetici/')) {
