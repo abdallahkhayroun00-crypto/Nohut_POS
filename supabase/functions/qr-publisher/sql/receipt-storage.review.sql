@@ -211,7 +211,8 @@ begin
  or not ((c.envelope->'payload') ?& array['targetRequestId','mode'])
  or (select count(*) from jsonb_object_keys(c.envelope->'payload'))<>2
  or jsonb_typeof(c.envelope->'payload'->'targetRequestId') is distinct from 'string'
- or coalesce(c.envelope->'payload'->>'targetRequestId','') !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}
+ or length(coalesce(c.envelope->'payload'->>'targetRequestId',''))<>36
+ or coalesce(c.envelope->'payload'->>'targetRequestId','') !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
  or jsonb_typeof(c.envelope->'payload'->'mode') is distinct from 'string'
  or coalesce(c.envelope->'payload'->>'mode','') not in ('reconcile','cancel_before_attempt')
  or c.envelope->>'payload_sha256' is distinct from encode(sha256(convert_to(nohut_private.canonical_command_json(c.envelope->'payload'),'UTF8')),'hex') then
