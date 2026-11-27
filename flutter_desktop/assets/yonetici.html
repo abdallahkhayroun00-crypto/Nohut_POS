@@ -67,7 +67,9 @@ nav button{flex:1;border:0;border-radius:0;background:transparent;font-size:13px
 <div class="card"><h2>Açık hesaplar</h2><ul class="list" id="open"></ul></div>
 <div class="card"><h2>Online siparişler</h2><ul class="list" id="online"></ul></div></section>
 <section data-screen="siparis" hidden><div class="card"><h2>Bugünün siparişleri</h2><ul class="list" id="orders"></ul></div></section>
-<section data-screen="personel" hidden><div class="card"><h2>Personel performansı</h2><p class="muted">Seçili gün · Masa ve Gel-Al siparişleri.</p><ul class="list" id="staff"></ul></div></section>
+<section data-screen="personel" hidden><div class="card" id="team-card" hidden><div class="row spread wrap"><button type="button" id="tw-prev" class="ghost" aria-label="Önceki hafta">‹</button><h2 id="tw-title" style="flex:1;text-align:center">Mesai Takibi</h2><button type="button" id="tw-next" class="ghost" aria-label="Sonraki hafta">›</button></div><p class="muted">Mesai ve vardiyaları personel kendisi girer; onay gerekmez. “Gönderildi” onay değildir.</p><ul class="list" id="team"></ul></div>
+<div class="card" id="sched-card" hidden><h2>Vardiya Planlama · ekip programı</h2><ul class="list" id="sched"></ul></div>
+<div class="card"><h2>Personel performansı</h2><p class="muted">Seçili gün · Masa ve Gel-Al siparişleri.</p><ul class="list" id="staff"></ul></div></section>
 <section data-screen="finans" hidden><div class="row spread wrap"><h2>Aylık finans</h2><label class="row"><span class="sr-only">Ay</span><input type="month" id="month" style="width:auto"></label></div>
 <div id="finance-locked" class="notice" hidden></div>
 <div id="finance-body" hidden><div class="grid" id="fin-stats"></div>
@@ -110,13 +112,13 @@ $('auth-alt').onclick=()=>showAuth('password','');$('auth-skip').onclick=()=>{$(
 $('logout').onclick=async()=>{if(!confirm('Bu cihazda oturum kapatılsın mı?'))return;await auth('logout',{}).catch(()=>{});session=null;showAuth('login','')};
 document.addEventListener('pointerdown',()=>{const n=Date.now();if(!session||n-lastActivity<60000)return;lastActivity=n;auth('activity',{}).catch(()=>{})},{passive:true});
 const can=op=>!!session&&(session.isOwner||(session.grants||[]).includes(op));
-function setView(v){view=v;for(const s of document.querySelectorAll('[data-screen]'))s.hidden=s.dataset.screen!==v;for(const b of document.querySelectorAll('nav button'))b.setAttribute('aria-selected',String(b.dataset.view===v));if(v==='finans')loadMonth()}
+function setView(v){view=v;for(const s of document.querySelectorAll('[data-screen]'))s.hidden=s.dataset.screen!==v;for(const b of document.querySelectorAll('nav button'))b.setAttribute('aria-selected',String(b.dataset.view===v));if(v==='finans')loadMonth();if(v==='personel')loadTeam()}
 for(const b of document.querySelectorAll('nav button'))b.onclick=()=>setView(b.dataset.view);
 function list(id,items,render,empty){$(id).innerHTML=items.length?items.map(render).join(''):`<li class="empty">${empty}</li>`}
 function li(title,sub,right){return`<li><div><div>${title}</div>${sub?`<div class="sub">${sub}</div>`:''}</div><div class="num">${right??''}</div></li>`}
 async function load(poll){const day=$('day').value||localDay();const[st,b]=await call('GET','/api/yonetici/overview?day='+encodeURIComponent(day)+(poll?'&poll=1':''));if(st===403){$('who').textContent=MESSAGES[b.error]||'Erişim yok';return}if(st!==200){if(st!==401)$('who').textContent='Bağlantı yok · yeniden deneniyor';return}
 session=b.session;if(authMode!=='setpin')$('auth-gate').hidden=true;$('who').textContent=`${session.username} · ${session.isOwner?'İşletme sahibi':session.role} · ${time(new Date())}`;
-const v=b.view,money='cashCents'in v;$('nav-personel').hidden=!('staff'in v);$('nav-finans').hidden=!can('finance.view');
+const v=b.view,money='cashCents'in v;$('nav-personel').hidden=!('staff'in v)&&!can('shifts.manage');$('nav-finans').hidden=!can('finance.view');
 $('money-note').hidden=money;$('money-note').textContent=b.financeAllowed?'Satış tutarlarını görme yetkiniz yok.':'Satış tutarları ve finans bu ağda kapalı. İşletme sahibi, yerel HTTPS bir iPhone’da doğrulandıktan sonra Windows › Ayarlar › Güvenlik’ten açabilir.';
 const open=v.openAccounts||[];
 $('stats').innerHTML=[['Sipariş',v.orderCount],...(money?[['Nakit',tl(v.cashCents)],['Kart',tl(v.cardCents)]]:[]),['Açık hesap',open.length+' · '+tl(open.reduce((n,o)=>n+(o.dueCents||0),0))],['Online',(v.online||[]).length]].map(([k,x])=>`<div class="stat"><small>${k}</small><strong>${esc(x)}</strong></div>`).join('');
@@ -188,6 +190,16 @@ async function loadDailyMini(day){const[st,b]=await call('GET','/api/yonetici/da
 $('rep-back').onclick=()=>setView('ozet');$('rep-day').onchange=()=>openReport($('rep-day').value);
 function openFromHash(){const m=/^#gunsonu(?:=(\d{4}-\d{2}-\d{2}))?$/.exec(location.hash);if(m&&session)openReport(m[1])}
 window.addEventListener('hashchange',openFromHash);
+
+// ---- Mesai Takibi + ekip programı (spec §24.4); view only, no approvals.
+let twWeek=null;
+const twAdd=(d,n)=>{const x=new Date(d+'T12:00:00Z');x.setUTCDate(x.getUTCDate()+n);return x.toISOString().slice(0,10)};
+const twDay=d=>new Date(d+'T12:00:00Z').toLocaleDateString('tr-TR',{weekday:'short',day:'numeric',month:'short',timeZone:'UTC'});
+const twH=m=>{m=Number(m||0);return Math.floor(m/60)+' sa'+(m%60?' '+(m%60)+' dk':'')};
+async function loadTeam(){const q='?client=yonetici'+(twWeek?'&weekStart='+twWeek:'');const[[st,b],[st2,b2]]=await Promise.all([call('GET','/api/work/team'+q),call('GET','/api/work/schedule'+q)]);
+$('team-card').hidden=st!==200;$('sched-card').hidden=st2!==200;if(st===200){twWeek=b.weekStart;$('tw-title').textContent=twDay(b.weekStart)+' – '+twDay(twAdd(b.weekStart,6));list('team',b.team,t=>li(esc(t.name),`${esc(t.status)}${t.submittedAt?' · '+esc(new Date(t.submittedAt).toLocaleDateString('tr-TR')):''} · ${esc(t.daysWorked)} gün · plan ${twH(t.plannedMinutes)}${t.openRecords?' · açık kayıt':''}`,twH(t.minutes)),'Personel yok.')}
+if(st2===200){const days=[...Array(7)].map((_,i)=>twAdd(b2.weekStart,i));const rows=days.map(d=>[d,b2.plans.filter(p=>p.date===d)]).filter(([,r])=>r.length);list('sched',rows,([d,r])=>li(twDay(d),r.map(p=>esc(p.employeeName)+' '+(p.dayOff?'izinli':esc(p.start)+'–'+esc(p.end)+(p.endsNextDay?' (+1)':''))).join(' · '),''),'Bu hafta plan yok.')}}
+$('tw-prev').onclick=()=>{twWeek=twAdd(twWeek,-7);loadTeam()};$('tw-next').onclick=()=>{twWeek=twAdd(twWeek,7);loadTeam()};
 $('day').value=localDay();$('month').value=localDay().slice(0,7);$('day').onchange=()=>load();$('month').onchange=loadMonth;
 $('auth-gate').hidden=true;load();setInterval(()=>{if($('auth-gate').hidden&&!document.hidden)load(true)},15000);
 
