@@ -6,8 +6,8 @@ do $$
 declare
  r uuid:=gen_random_uuid(); e uuid:=gen_random_uuid(); u uuid:=gen_random_uuid();
  d uuid:=gen_random_uuid(); s uuid:=gen_random_uuid(); wd uuid:=gen_random_uuid(); ws uuid:=gen_random_uuid();
- q uuid:=gen_random_uuid(); q2 uuid:=gen_random_uuid(); q3 uuid:=gen_random_uuid();
- token text; envhash text; envhash2 text; recovery_hash text; fence uuid; result jsonb;
+ q uuid:=gen_random_uuid(); q2 uuid:=gen_random_uuid(); q3 uuid:=gen_random_uuid(); q4 uuid:=gen_random_uuid();
+ token text; envhash text; envhash2 text; recovery_hash text; cancel_hash text; recovery_payload jsonb; fence uuid; result jsonb;
  draft_json text:='{"categories":[],"products":[],"campaigns":[]}';
  draft_digest text; draft_stamp text; tx uuid:=gen_random_uuid();
  digest text:=repeat('a',64); revision text:=repeat('b',40);
@@ -89,13 +89,26 @@ begin
  perform nohut_private.enqueue_command(u,s,d,'yonetici',1,q3,'qr_menu_reconcile','{}');
  perform public.nohut_agent_claim(token,20);
  select nohut_private.command_envelope_sha256(envelope) into strict recovery_hash from nohut_private.commands where restaurant_id=r and request_id=q3::text;
+ -- The current upstream enqueue accepts only {}. Test rejection, then
+ -- synthesize the proposed future envelope under the fixture owner only.
+ begin
+  perform nohut_private.qr_publish_recover(token,q3::text,1,recovery_hash,q::text,'inspect');
+  raise exception 'legacy unscoped recovery accepted';
+ exception when insufficient_privilege then null; end;
+ recovery_payload:=jsonb_build_object('targetRequestId',q::text,'mode','reconcile');
+ update nohut_private.commands set envelope=envelope||jsonb_build_object('payload',recovery_payload,'payload_sha256',encode(sha256(convert_to(nohut_private.canonical_command_json(recovery_payload),'UTF8')),'hex')) where restaurant_id=r and request_id=q3::text;
+ select nohut_private.command_envelope_sha256(envelope) into strict recovery_hash from nohut_private.commands where restaurant_id=r and request_id=q3::text;
+ begin
+  perform nohut_private.qr_publish_recover(token,q3::text,1,recovery_hash,q2::text,'inspect');
+  raise exception 'substituted target accepted';
+ exception when insufficient_privilege then null; end;
  update nohut_private.commands set lease_until=clock_timestamp()-interval '1 second' where restaurant_id=r and request_id=q::text;
  result:=nohut_private.qr_publish_recover(token,q3::text,1,recovery_hash,q::text,'inspect');
  if result->'prepared'->>'commit' is distinct from gitcommit then raise exception 'missing recovery evidence'; end if;
  begin
   perform nohut_private.qr_publish_recover(token,q3::text,1,recovery_hash,q::text,'cancel_before_attempt');
-  raise exception 'ambiguous operation cancelled';
- exception when invalid_parameter_value then null; end;
+  raise exception 'reconcile command changed to cancellation';
+ exception when insufficient_privilege then null; end;
  begin
   perform nohut_private.qr_publish_recover(token,q3::text,1,recovery_hash,q::text,'confirm_reachable',parent,newrev);
   raise exception 'wrong commit evidence accepted';
@@ -107,12 +120,21 @@ begin
  if result->>'status' is distinct from 'new' then raise exception 'confirmed recovery did not release lock'; end if;
  fence:=(result->>'fence')::uuid;
  perform nohut_private.qr_publish_transition(token,q2::text,1,envhash2,digest,fence,'prepare',parent,gitcommit,tree,newrev);
- if nohut_private.qr_publish_recover(token,q3::text,1,recovery_hash,q2::text,'cancel_before_attempt')->>'status' is distinct from 'busy' then raise exception 'active claim cancelled'; end if;
+ perform nohut_private.enqueue_command(u,s,d,'yonetici',1,q4,'qr_menu_reconcile','{}');
+ perform public.nohut_agent_claim(token,20);
+ recovery_payload:=jsonb_build_object('targetRequestId',q2::text,'mode','cancel_before_attempt');
+ update nohut_private.commands set envelope=envelope||jsonb_build_object('payload',recovery_payload,'payload_sha256',encode(sha256(convert_to(nohut_private.canonical_command_json(recovery_payload),'UTF8')),'hex')) where restaurant_id=r and request_id=q4::text;
+ select nohut_private.command_envelope_sha256(envelope) into strict cancel_hash from nohut_private.commands where restaurant_id=r and request_id=q4::text;
+ begin
+  perform nohut_private.qr_publish_recover(token,q4::text,1,cancel_hash,q2::text,'inspect');
+  raise exception 'cancellation command changed to reconciliation';
+ exception when insufficient_privilege then null; end;
+ if nohut_private.qr_publish_recover(token,q4::text,1,cancel_hash,q2::text,'cancel_before_attempt')->>'status' is distinct from 'busy' then raise exception 'active claim cancelled'; end if;
  update nohut_private.commands set lease_until=clock_timestamp()-interval '1 second' where restaurant_id=r and request_id=q2::text;
- if nohut_private.qr_publish_recover(token,q3::text,1,recovery_hash,q2::text,'cancel_before_attempt')->>'status' is distinct from 'cancelled_before_attempt' then raise exception 'abandoned claim not released'; end if;
+ if nohut_private.qr_publish_recover(token,q4::text,1,cancel_hash,q2::text,'cancel_before_attempt')->>'status' is distinct from 'cancelled_before_attempt' then raise exception 'abandoned claim not released'; end if;
  if has_function_privilege('anon','nohut_private.qr_publish_recover(text,text,bigint,text,text,text,text,text)','EXECUTE') or
  has_function_privilege('service_role','nohut_private.qr_publish_recover(text,text,bigint,text,text,text,text,text)','EXECUTE') then raise exception 'recovery exposed'; end if;
- if (select count(*) from nohut_private.qr_publish_recovery_audit where restaurant_id=r and reconcile_request_id=q3::text)<>2 then raise exception 'recovery audit missing'; end if;
+ if (select count(*) from nohut_private.qr_publish_recovery_audit where restaurant_id=r and reconcile_request_id in (q3::text,q4::text))<>2 then raise exception 'recovery audit missing'; end if;
  if has_table_privilege('authenticated','nohut_private.qr_publish_recovery_audit','INSERT') then raise exception 'audit exposed'; end if;
  update nohut_private.sessions set revoked_at=clock_timestamp() where session_id=s;
  begin
