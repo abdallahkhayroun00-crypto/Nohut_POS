@@ -94,6 +94,19 @@ void main() {
           home: StaffHome(controller: staffController(), onUnpair: () {})), brightness: mode);
       expect(t.takeException(), isNull);
     });
+    testWidgets('staff home signed in $m', (t) async {
+      final api = workApi()..sessionInfo = {'session': {'status': 'ok', 'employeeId': 7, 'username': 'personela'}};
+      final c = PersonelController(api, StaffNotifications())
+        ..state = staffController().state
+        ..online = true;
+      c.state['orders'] = [{'id': 1, 'source': 'Masa', 'table': 2}, {'id': 2, 'source': 'Gel-Al'}];
+      await renderScreen(t, 'staff-home-signed-in-$m', MaterialApp(debugShowCheckedModeBanner: false,
+          theme: NohutStyle.theme, darkTheme: NohutStyle.darkTheme,
+          home: StaffHome(controller: c, onUnpair: () {})), brightness: mode);
+      expect(find.text('Mesai Ekle'), findsOneWidget);
+      expect(find.text('Kazanılan'), findsOneWidget);
+      expect(t.takeException(), isNull);
+    });
   }
   for (final mode in [Brightness.light, Brightness.dark]) {
     final m = mode == Brightness.light ? 'light' : 'dark';

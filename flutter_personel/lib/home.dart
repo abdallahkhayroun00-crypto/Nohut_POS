@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 
 import 'expense_drafts.dart';
+import 'personel_dashboard.dart';
 import 'models.dart';
 import 'pos_api.dart';
 import 'style.dart';
@@ -45,7 +46,14 @@ class _StaffHomeState extends State<StaffHome> {
   void initState() {
     super.initState();
     selectedStaff = int.tryParse(c.api.employeeId ?? '');
+    // §24.3: Personel opens on Ana Sayfa. Owner mode keeps Masalar.
+    if (!widget.ownerMode) tab = _home;
   }
+
+  /// Page ids. The staff bottom bar shows Ana Sayfa / Masalar / Sipariş /
+  /// Siparişler / Daha Fazla; Ürünler sits under Sipariş and Gider under
+  /// Daha Fazla.
+  static const _home = 6;
 
   @override
   void dispose() {
@@ -148,8 +156,25 @@ class _StaffHomeState extends State<StaffHome> {
     removed.dispose();
   }
 
-  void _openWork() => Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) => WorkPage(api: c.api)));
+  void _openWork([int initialTab = 0]) => Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => WorkPage(api: c.api, initialTab: initialTab)));
+
+  Widget _homePage() {
+    final busy = {for (final o in c.orders) if (o['source'] == 'Masa') o['table']}.length;
+    return PersonelDashboard(
+      key: ValueKey('home-${c.api.sessionEmployeeId}'),
+      api: c.api,
+      name: c.api.signedIn ? _signedInLabel() : null,
+      busyTables: busy,
+      openPickups: c.orders.where((o) => o['source'] == 'Gel-Al').length,
+      openOrders: c.orders.length,
+      onTables: () => setState(() => tab = 0),
+      onNewOrder: () => setState(() => tab = 1),
+      onOrders: () => setState(() => tab = 3),
+      onWork: _openWork,
+      onLogin: _login,
+    );
+  }
 
   String _signedInLabel() {
     final id = c.api.sessionEmployeeId;
@@ -424,6 +449,19 @@ class _StaffHomeState extends State<StaffHome> {
           _heading('Ürünler', source == 'Masa'
               ? 'Masa $tableNumber ${targetOrderId == null ? '· Yeni' : '· Ek sipariş'}'
               : 'Gel-Al · Yeni sipariş'),
+          // Staff reach Ürünler and Sepet from one Sipariş tab.
+          if (!widget.ownerMode && count > 0) ...[
+            const SizedBox(height: 8),
+            SizedBox(width: double.infinity, child: FilledButton.tonal(
+              key: const ValueKey('go-cart'),
+              onPressed: () => setState(() => tab = 2),
+              child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                const Icon(Icons.shopping_cart_outlined, size: 18),
+                const SizedBox(width: 8),
+                Flexible(child: Text('Sepete Git · $count ürün · ${money(total)}',
+                    overflow: TextOverflow.ellipsis)),
+              ]))),
+          ],
           const SizedBox(height: 11),
           TextField(
             decoration: const InputDecoration(
@@ -495,7 +533,12 @@ class _StaffHomeState extends State<StaffHome> {
 
   Widget _cartPage(double width) {
     return ListView(padding: const EdgeInsets.all(15), children: [
-      _heading('Sipariş Sepeti', '$count ürün'),
+      Row(children: [
+        Expanded(child: _heading('Sipariş Sepeti', '$count ürün')),
+        if (!widget.ownerMode && cart.isNotEmpty)
+          TextButton.icon(key: const ValueKey('add-more'), onPressed: () => setState(() => tab = 1),
+            icon: const Icon(Icons.add), label: const Text('Ürün Ekle')),
+      ]),
       const SizedBox(height: 14),
       SegmentedButton<String>(
         showSelectedIcon: false,
@@ -582,10 +625,10 @@ class _StaffHomeState extends State<StaffHome> {
                   _dirty();
                   line.qty++;
                 }), icon: const Icon(Icons.add)),
-              const Spacer(),
-              TextButton.icon(onPressed: () => _edit(line),
+              Expanded(child: Align(alignment: Alignment.centerRight, child: TextButton.icon(
+                onPressed: () => _edit(line),
                 icon: const Icon(Icons.edit_note_outlined),
-                label: const Text('Not / Malzeme')),
+                label: const Text('Not / Malzeme', overflow: TextOverflow.ellipsis)))),
             ]),
           ]),
         )),
@@ -641,9 +684,27 @@ class _StaffHomeState extends State<StaffHome> {
     ]);
   }
 
-  Widget _settingsPage() {
+  Widget _settingsPage({required bool hasDrafts}) {
+    final canWork = c.api.signedIn && c.api.sessionEmployeeId != null;
     return ListView(padding: const EdgeInsets.all(16), children: [
-      _heading('Hesap ve Bağlantı', 'Android yerel uygulama'),
+      _heading(widget.ownerMode ? 'Hesap ve Bağlantı' : 'Daha Fazla', 'Android yerel uygulama'),
+      if (!widget.ownerMode && (canWork || hasDrafts)) ...[
+        const NohutSection('Çalışmam'),
+        Card(child: Column(children: [
+          if (canWork) ...[
+            ListTile(leading: const Icon(Icons.timer_outlined), title: const Text('Mesailerim'),
+              trailing: const Icon(Icons.chevron_right), onTap: () => _openWork(0)),
+            ListTile(leading: const Icon(Icons.calendar_month_outlined), title: const Text('Vardiyalarım'),
+              trailing: const Icon(Icons.chevron_right), onTap: () => _openWork(1)),
+            ListTile(leading: const Icon(Icons.payments_outlined), title: const Text('Maaş & Avans'),
+              trailing: const Icon(Icons.chevron_right), onTap: () => _openWork(2)),
+          ],
+          if (hasDrafts)
+            ListTile(leading: const Icon(Icons.account_balance_wallet_outlined), title: const Text('Giderler'),
+              subtitle: const Text('Hızlı Gider Ekle'),
+              trailing: const Icon(Icons.chevron_right), onTap: () => setState(() => tab = 5)),
+        ])),
+      ],
       if (!widget.ownerMode) ...[
         const NohutSection('Hesabım'),
         Card(child: Column(children: [
@@ -653,11 +714,6 @@ class _StaffHomeState extends State<StaffHome> {
             subtitle: Text(c.api.signedIn ? 'Kimliğiniz oturumdan gelir · ${c.api.sessionUser}'
                 : 'Mesai ve maaş için kendi hesabınızla giriş yapın.'),
           ),
-          if (c.api.signedIn && c.api.sessionEmployeeId != null) ...[
-            const Divider(),
-            ListTile(leading: const Icon(Icons.badge_outlined), title: const Text('Mesai ve Maaşım'),
-              trailing: const Icon(Icons.chevron_right), onTap: _openWork),
-          ],
           const Divider(),
           if (c.api.signedIn)
             ListTile(leading: const Icon(Icons.logout), title: const Text('Çıkış Yap'),
@@ -742,25 +798,32 @@ class _StaffHomeState extends State<StaffHome> {
         final hasDrafts = !widget.ownerMode && c.api.serverId != null;
         final selected = c.employees.any((e) => e['id'] == selectedStaff)
             ? selectedStaff : null;
-        final destinations = <NavigationDestination>[
-          const NavigationDestination(icon: Icon(Icons.table_restaurant_outlined),
-            selectedIcon: Icon(Icons.table_restaurant), label: 'Masalar'),
-          const NavigationDestination(icon: Icon(Icons.restaurant_menu),
-            label: 'Ürünler'),
-          NavigationDestination(icon: Badge(
-            isLabelVisible: count > 0, label: Text('$count'),
-            child: const Icon(Icons.shopping_cart_outlined)),
-            label: 'Sepet'),
-          const NavigationDestination(icon: Icon(Icons.receipt_long_outlined),
-            label: 'Siparişler'),
+        final cartIcon = Badge(isLabelVisible: count > 0, label: Text('$count'),
+            child: const Icon(Icons.shopping_cart_outlined));
+        // Each entry: (page id, destination). Owner mode keeps the old bar.
+        final nav = <(int, NavigationDestination)>[
           if (!widget.ownerMode)
-            const NavigationDestination(icon: Icon(Icons.settings_outlined),
-              label: 'Bağlantı'),
-          if (hasDrafts)
-            const NavigationDestination(icon: Icon(Icons.account_balance_wallet_outlined),
-              label: 'Gider'),
+            (_home, const NavigationDestination(icon: Icon(Icons.home_outlined),
+              selectedIcon: Icon(Icons.home), label: 'Ana Sayfa')),
+          (0, const NavigationDestination(icon: Icon(Icons.table_restaurant_outlined),
+            selectedIcon: Icon(Icons.table_restaurant), label: 'Masalar')),
+          if (widget.ownerMode) ...[
+            (1, const NavigationDestination(icon: Icon(Icons.restaurant_menu), label: 'Ürünler')),
+            (2, NavigationDestination(icon: cartIcon, label: 'Sepet')),
+          ] else
+            (2, NavigationDestination(icon: cartIcon, label: 'Sipariş')),
+          (3, const NavigationDestination(icon: Icon(Icons.receipt_long_outlined), label: 'Siparişler')),
+          if (!widget.ownerMode)
+            (4, const NavigationDestination(icon: Icon(Icons.more_horiz), label: 'Daha Fazla')),
         ];
+        final destinations = [for (final n in nav) n.$2];
+        // Ürünler belongs to Sipariş and Gider to Daha Fazla on the staff bar.
+        final shown = widget.ownerMode ? tab
+            : tab == 1 ? 2 : tab == 5 ? 4 : tab;
+        final selectedIndex = nav.indexWhere((n) => n.$1 == shown).clamp(0, nav.length - 1);
+        void go(int i) => setState(() => tab = nav[i].$1);
         final screen = switch (tab) {
+          _home when !widget.ownerMode => _homePage(),
           0 => _tablePage(contentWidth),
           1 => _menuPage(contentWidth),
           2 => _cartPage(contentWidth),
@@ -768,7 +831,7 @@ class _StaffHomeState extends State<StaffHome> {
           5 when hasDrafts => ExpenseDraftPage(
             key: ValueKey(c.api.serverId),
             store: ExpenseDraftStore.forServer(c.api.serverId!)),
-          _ => _settingsPage(),
+          _ => _settingsPage(hasDrafts: hasDrafts),
         };
         return Scaffold(
           appBar: AppBar(
@@ -781,7 +844,7 @@ class _StaffHomeState extends State<StaffHome> {
                   child: Center(child: Text(widget.ownerName ?? 'İşletme sahibi', overflow: TextOverflow.ellipsis)))
               else if (c.api.signedIn) ...[
                 if (c.api.sessionEmployeeId != null)
-                  IconButton(tooltip: 'Mesai ve Maaşım', onPressed: _openWork,
+                  IconButton(tooltip: 'Mesai ve Maaşım', onPressed: () => _openWork(),
                     icon: const Icon(Icons.badge_outlined)),
                 PopupMenuButton<String>(
                   tooltip: 'Hesabım',
@@ -844,8 +907,8 @@ class _StaffHomeState extends State<StaffHome> {
           body: Row(children: [
             if (wide)
               NavigationRail(
-                selectedIndex: tab,
-                onDestinationSelected: (n) => setState(() => tab = n),
+                selectedIndex: selectedIndex,
+                onDestinationSelected: go,
                 labelType: height < 760 ? NavigationRailLabelType.selected : NavigationRailLabelType.all,
                 destinations: [
                   for (final d in destinations)
@@ -862,16 +925,18 @@ class _StaffHomeState extends State<StaffHome> {
                   actions: [TextButton(
                     onPressed: c.refresh, child: const Text('Yenile'))],
                 ),
-              Expanded(child: screen),
+              // Keyed so each tab starts at its own top instead of inheriting
+              // the previous tab's scroll offset.
+              Expanded(child: KeyedSubtree(key: ValueKey('page-$tab'), child: screen)),
             ])),
           ]),
           bottomNavigationBar: wide ? null : NavigationBar(
             height: height < 500 ? 56 : width < 380 ? 65 : 72,
-            labelBehavior: (width < 360 || (hasDrafts && width < 600))
+            labelBehavior: width < 360
               ? NavigationDestinationLabelBehavior.onlyShowSelected
               : NavigationDestinationLabelBehavior.alwaysShow,
-            selectedIndex: tab,
-            onDestinationSelected: (n) => setState(() => tab = n),
+            selectedIndex: selectedIndex,
+            onDestinationSelected: go,
             destinations: destinations,
           ),
         );

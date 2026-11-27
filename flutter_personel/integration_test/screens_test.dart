@@ -61,8 +61,8 @@ void main() {
       home: StaffHome(controller: c, onUnpair: () {}),
     )));
     await tester.pump(const Duration(seconds: 1));
-    await shot(tester, 'personel-masalar');
-    for (final (tab, name) in [('Ürünler', 'urunler'), ('Sepet', 'sepet'), ('Siparişler', 'siparisler')]) {
+    await shot(tester, 'personel-ana-sayfa');
+    for (final (tab, name) in [('Masalar', 'masalar'), ('Sipariş', 'sepet'), ('Siparişler', 'siparisler'), ('Daha Fazla', 'daha-fazla')]) {
       await tester.tap(find.text(tab).last);
       await tester.pump(const Duration(seconds: 1));
       await shot(tester, 'personel-$name');
