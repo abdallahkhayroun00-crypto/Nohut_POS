@@ -19,8 +19,8 @@ Status words: Verified · Implemented (not yet verified end-to-end) · Partial �
 | Payroll reminders | Verified (domain) | Not yet audited | Not yet audited | Not yet audited | Not yet audited | Verified (feed) | Verified (feed) | Push (FCM) not approved. |
 | Hızlı Gider Ekle | Verified | — | Implemented | — | Not yet audited | — | Verified | |
 | Gün Sonu Raporu | Verified (domain) | — | Not yet audited | — | Not yet audited | — | Verified | |
-| Masalar, orders, Ek Sipariş, Gel-Al | Not yet audited | Not yet audited | — | Not yet audited | — | Not yet audited | — | Existing tests: `full_logic_audit_test`, `staff_*`, `remote_commands_test`. Fresh audit pending. |
-| Payments, refunds, split, receipts | Not yet audited | — | — | — | — | — | — | Existing tests present; fresh audit pending. |
+| Masalar, orders, Ek Sipariş, Gel-Al | Verified (domain) | Not yet audited | — | Not yet audited | — | Partial (identity fix D-01) | — | Table transfer refuses occupied tables (`owner_money_scenarios_test`); stale revisions conflict, retries idempotent (`remote_commands_test`, SQLite optimistic revisions); extra order credited to original owner. UI walkthrough per platform still pending. |
+| Payments, refunds, split, receipts | Verified (domain) | — | — | — | — | — | — | `owner_money_scenarios_test`: partial cash + change, overpay/short cash refused, Karma atomic, equal split 100,01 → 33,34+33,34+33,33, refund ≤ collected with reason, cancel refused while money held, closed account takes no money. Terminal: unknown outcome blocks deletion, retry does not charge twice (`updates16_test`). Receipt/reprint guard tests exist. Physical printer and card terminal: owner device test. |
 | Online orders, campaigns, menu | Not yet audited | — | — | — | — | — | — | |
 | Fixed costs, market prices, open accounts | Not yet audited | — | Not yet audited | — | Not yet audited | — | Not yet audited | |
 | Sales analytics, Yoğunluk | Not yet audited | — | Not yet audited | — | Not yet audited | — | Not yet audited | |
