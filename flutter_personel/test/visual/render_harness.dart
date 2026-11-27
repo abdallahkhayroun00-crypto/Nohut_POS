@@ -27,8 +27,19 @@ Future<void> loadNohutFonts() async {
 /// Pumps [child] at a phone size and, if requested, saves a PNG.
 Future<void> renderScreen(WidgetTester t, String name, Widget child,
     {Size size = const Size(412, 915), double ratio = 2, Brightness brightness = Brightness.light}) async {
+  // Real shadows while rendering; restored before the test ends, because
+  // newer SDKs check painting debug flags before tear-downs run.
+  final shadows = debugDisableShadows;
   debugDisableShadows = false;
-  addTearDown(() => debugDisableShadows = true);
+  try {
+    await _render(t, name, child, size: size, ratio: ratio, brightness: brightness);
+  } finally {
+    debugDisableShadows = shadows;
+  }
+}
+
+Future<void> _render(WidgetTester t, String name, Widget child,
+    {required Size size, required double ratio, required Brightness brightness}) async {
   t.view.physicalSize = size * ratio;
   t.view.devicePixelRatio = ratio;
   t.platformDispatcher.platformBrightnessTestValue = brightness;
