@@ -217,10 +217,17 @@ class LocalAuth {
     }
   }
 
-  static const _weakPins = {'000000', '111111', '123456', '654321', '222222', '999999', '012345', '123123'};
+  /// Spec §24.1: new trusted-device PINs have 5 digits. PINs already set
+  /// with 6 digits keep verifying (hash compare) until the user changes them.
+  static bool _weakPin(String pin) {
+    if (pin.split('').toSet().length == 1) return true; // 00000, 11111…
+    const runs = '0123456789', back = '9876543210';
+    if (runs.contains(pin) || back.contains(pin)) return true; // 12345, 54321…
+    return const {'12121', '10101', '11211', '12321', '69696', '13579', '24680'}.contains(pin);
+  }
   static void _checkPin(String pin) {
-    if (!RegExp(r'^[0-9]{6}$').hasMatch(pin) || _weakPins.contains(pin)) {
-      throw const LocalAuthException('weak_pin', 'PIN 6 haneli olmalı ve tahmin edilmesi kolay olmamalı.');
+    if (!RegExp(r'^[0-9]{5}$').hasMatch(pin) || _weakPin(pin)) {
+      throw const LocalAuthException('weak_pin', 'PIN 5 haneli olmalı ve tahmin edilmesi kolay olmamalı.');
     }
   }
 
@@ -527,13 +534,30 @@ class LocalAuth {
   }
 
   /// Password re-entry on a locked session (no PIN or PIN cleared).
+  /// Same protections as [login]: active account, live device for this
+  /// client, and the 5-failure / 15-minute lockout with an audit entry.
   Future<AuthContext> unlockWithPassword(String token, String client, String password) async {
     final sess = _session(token);
     if (sess == null || sess['revoked_at'] != null) return const AuthContext(status: 'revoked');
     final u = _user(sess['user_id'] as String)!;
-    if (!await _verify(password, u['password_hash'] as String)) {
-      return const AuthContext(status: 'invalid_credentials');
+    if (u['active'] != 1) return const AuthContext(status: 'revoked');
+    final d = db.select('SELECT * FROM auth_devices WHERE device_id=?', [sess['device_id']]);
+    if (d.isEmpty || d.single['revoked_at'] != null || d.single['client'] != client) {
+      return const AuthContext(status: 'revoked');
     }
+    final now = _clock().toUtc();
+    final lockedUntil = DateTime.tryParse('${u['locked_until'] ?? ''}');
+    if (lockedUntil != null && now.isBefore(lockedUntil)) return const AuthContext(status: 'locked_out');
+    if (!await _verify(password, u['password_hash'] as String)) {
+      final failed = (u['failed_logins'] as int) + 1;
+      db.execute('UPDATE auth_users SET failed_logins=?, locked_until=? WHERE user_id=?', [
+        failed >= 5 ? 0 : failed,
+        failed >= 5 ? now.add(const Duration(minutes: 15)).toIso8601String() : null,
+        u['user_id']]);
+      _audit('unlock.failed', target: u['user_id'] as String);
+      return AuthContext(status: failed >= 5 ? 'locked_out' : 'invalid_credentials');
+    }
+    db.execute('UPDATE auth_users SET failed_logins=0, locked_until=NULL WHERE user_id=?', [u['user_id']]);
     db.execute('UPDATE auth_sessions SET last_seen_at=? WHERE token_sha256=?', [_now(), sess['token_sha256']]);
     return check(token, client);
   }

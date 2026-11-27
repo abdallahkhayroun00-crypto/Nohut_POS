@@ -14,7 +14,7 @@ library;
 import 'daily_report.dart';
 import 'finance_logic.dart' show financeRows;
 import 'payroll.dart';
-import 'workforce.dart' show addDays, istanbulDayOfInstant, weekStartOf;
+import 'workforce.dart' show addDays, isCalendarDay, istanbulDayOfInstant, weekStartOf;
 import 'finance_sync_server.dart';
 import 'lan_auth_gate.dart';
 import 'local_accounts.dart';
@@ -92,7 +92,7 @@ class YoneticiApi {
           final state = store.read().data;
           final today = istanbulDayOfInstant(DateTime.now());
           final raw = '${query['weekStart'] ?? ''}';
-          final week = RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(raw) ? weekStartOf(raw) : addDays(weekStartOf(today), -7);
+          final week = isCalendarDay(raw) ? weekStartOf(raw) : addDays(weekStartOf(today), -7);
           return GateReply(200, {'weekStart': week, 'today': today,
             'rows': payrollWeek(state, week, today: today),
             'payments': [for (final p in financeRows(state, 'payrollPayments')) if (p['weekStart'] == week) p],

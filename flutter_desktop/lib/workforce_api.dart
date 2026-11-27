@@ -29,7 +29,7 @@ class WorkforceApi {
     final today = dayOf(istanbulNow(now));
     String week(Object? raw) {
       final w = '${raw ?? ''}';
-      return RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(w) ? weekStartOf(w) : weekStartOf(today);
+      return isCalendarDay(w) ? weekStartOf(w) : weekStartOf(today);
     }
     try {
       switch ((method, path)) {

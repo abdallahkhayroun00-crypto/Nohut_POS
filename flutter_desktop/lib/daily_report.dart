@@ -22,6 +22,7 @@ import 'operations.dart' show ledger;
 import 'order_reporting.dart' show istanbulDay;
 import 'platform_net.dart';
 import 'pos_logic.dart';
+import 'workforce.dart' show isCalendarDay, istanbulDayOfInstant, workMinutes;
 import 'trendyol_go_readonly.dart' show tgoOrders, tgoCountsAsSale;
 import 'package:nohut_core/report_period.dart';
 
@@ -111,7 +112,7 @@ int _sum<T>(Iterable<T> rows, int Function(T) f) => rows.fold<int>(0, (n, r) => 
 
 /// Builds the report for [day]. [now] decides whether it is still preliminary.
 Json buildDailyReport(Json state, String day, {DateTime? now, bool withComparison = true}) {
-  if (!_date.hasMatch(day)) throw const FormatException('Tarih geçersiz.');
+  if (!_date.hasMatch(day) || !isCalendarDay(day)) throw const FormatException('Tarih geçersiz.');
   final clock = (now ?? DateTime.now()).toUtc();
   final period = ReportPeriod(day, day);
   final schedule = DailyReportSchedule.of(state);
@@ -254,9 +255,23 @@ Json buildDailyReport(Json state, String day, {DateTime? now, bool withCompariso
     'topProduct': top.isEmpty ? null :
         {'name': top.first.key, 'qty': top.first.value['qty'], 'cents': top.first.value['amount']},
     'peakHour': peak < 0 ? null : peak,
-    // Manual Mesai records arrive with task W2; never estimated from shifts.
-    'staffHours': null,
+    // §24.7: manual Mesai records that started this business day (never
+    // estimated from planned Vardiya). Totals only, no per-person pay.
+    'staffHours': _staffHours(state, day),
   };
+}
+
+Json? _staffHours(Json state, String day) {
+  var minutes = 0;
+  final people = <Object?>{};
+  for (final w in asMaps(state['shifts'])) {
+    if (w['voided'] == true || w['end'] == null || w['start'] == null) continue;
+    final start = DateTime.tryParse('${w['start']}');
+    if (start == null || istanbulDayOfInstant(start) != day) continue;
+    minutes += workMinutes(w);
+    people.add(w['employeeId']);
+  }
+  return people.isEmpty ? null : {'totalMinutes': minutes, 'people': people.length};
 }
 
 /// Removes amounts the viewer may not see (kept: counts, hours, product name).

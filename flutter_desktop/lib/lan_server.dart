@@ -537,6 +537,16 @@ class PosLanServer extends ChangeNotifier {
       });
       return;
     }
+    // Restaurant state and staff APIs are for the restaurant network only,
+    // and follow Bireysel giriş zorunlu like every other staff read.
+    if (resource == '/api/state' || resource == '/api/bootstrap' ||
+        resource == '/api/mobile/bootstrap' || resource.startsWith('/api/staff/')) {
+      final addr = request.connectionInfo?.remoteAddress.address ?? '';
+      if (!_privateIp(addr) && addr != '127.0.0.1' && addr != '::1') {
+        _json(request.response, 403, {'error': 'lan_only'});
+        return;
+      }
+    }
     if (request.method == 'GET' &&
         (resource == '/api/state' || resource == '/api/bootstrap') &&
         _guard(request, 'tables.view', touch: false) == null) {
@@ -576,6 +586,7 @@ class PosLanServer extends ChangeNotifier {
         _json(request.response, 401, {'error': 'pairing_required'});
         return;
       }
+      if (_guard(request, 'tables.view', touch: false) == null) return;
       final snapshot = store.read();
       final state = _staffState(snapshot.data);
       state['staffNotices'] = [

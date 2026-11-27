@@ -199,4 +199,19 @@ void main() {
     expect(DailyReportSchedule.of(s).enabled, false);
     expect(tester.takeException(), isNull);
   });
+
+  test('staff hours come from that day\'s ended, non-voided Mesai records; impossible dates refused', () {
+    final s = state();
+    expect(buildDailyReport(s, day, now: DateTime.parse(ist(day, 23)))['staffHours'], isNull);
+    s['shifts'] = [
+      {'id': 'mw_a', 'employeeId': 1, 'start': ist(day, 10), 'end': ist(day, 18), 'breakMinutes': 30},
+      {'id': 'mw_b', 'employeeId': 2, 'start': ist(day, 12), 'end': ist(day, 16)},
+      {'id': 'mw_c', 'employeeId': 2, 'start': ist(day, 17), 'end': ist(day, 19), 'voided': true},
+      {'id': 'mw_d', 'employeeId': 3, 'start': ist(day, 20)}, // still open
+      {'id': 'mw_e', 'employeeId': 3, 'start': ist(prev, 10), 'end': ist(prev, 12)},
+    ];
+    final r = buildDailyReport(s, day, now: DateTime.parse(ist(day, 23)));
+    expect(r['staffHours'], {'totalMinutes': 450 + 240, 'people': 2});
+    expect(() => buildDailyReport(s, '2026-02-31'), throwsFormatException);
+  });
 }

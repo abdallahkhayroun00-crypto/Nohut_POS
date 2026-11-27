@@ -29,7 +29,6 @@ const payTypes = ['Saatlik', 'Haftalık Sabit'];
 const payrollMethods = ['Nakit', 'Havale/EFT', 'Karma'];
 const payrollKinds = ['Ödeme', 'Avans'];
 
-final _dayRe = RegExp(r'^\d{4}-\d{2}-\d{2}$');
 
 class PayrollConflict implements Exception {
   const PayrollConflict(this.message);
@@ -71,9 +70,16 @@ void setEmployeeRate(Json state, {required int employeeId, required String payTy
     required int rateCents, required String effectiveFrom, required String by, DateTime? now}) {
   if (!payTypes.contains(payType)) throw const FormatException('Ücret türü geçersiz');
   if (rateCents < 1 || rateCents > 100000000) throw const FormatException('Ücret geçersiz');
-  if (!_dayRe.hasMatch(effectiveFrom)) throw const FormatException('Geçerlilik tarihi geçersiz');
+  if (!isCalendarDay(effectiveFrom)) throw const FormatException('Geçerlilik tarihi geçersiz');
   final clock = (now ?? DateTime.now()).toUtc();
   final e = _employeeRow(state, employeeId);
+  // A week has one pay type: Haftalık Sabit, or a switch away from it,
+  // starts on a Monday (no hourly + weekly amount in the same week).
+  final previous = payRateOn(e, effectiveFrom);
+  if ((payType == 'Haftalık Sabit' || previous?.$1 == 'Haftalık Sabit') &&
+      previous?.$1 != payType && weekStartOf(effectiveFrom) != effectiveFrom) {
+    throw const FormatException('Ücret türü değişikliği bir Pazartesi başlamalı.');
+  }
   // Never rewrite a week that already has recorded payments or a legacy
   // payroll row: a new rate may start only after the last settled week.
   final settled = [
@@ -110,26 +116,28 @@ Json weeklyEarnings(Json state, int employeeId, String weekStart) {
   final st = weekStatus(state, employeeId, weekStart);
   final end = addDays(weekStart, 7);
   var minutes = 0, missingMinutes = 0, numerator = 0; // kuruş × minutes
-  int? fixed;
+  // The week's type is the one in force on Monday (type switches start on
+  // a Monday). A fixed week pays the weekly amount once if any work exists.
+  final monday = payRateOn(e, weekStart);
+  final fixedWeek = monday?.$1 == 'Haftalık Sabit';
   for (final w in asMaps(state['shifts'])) {
     if (w['employeeId'] != employeeId || w['voided'] == true || w['end'] == null) continue;
     final day = istanbulDayOfInstant(DateTime.parse('${w['start']}'));
     if (day.compareTo(weekStart) < 0 || day.compareTo(end) >= 0) continue;
     final m = workMinutes(w);
     minutes += m;
+    if (fixedWeek) continue;
     final rate = payRateOn(e, day);
-    if (rate == null) {
-      missingMinutes += m;
-    } else if (rate.$1 == 'Saatlik') {
-      numerator += rate.$2 * m;
+    if (rate == null || rate.$1 != 'Saatlik') {
+      missingMinutes += m; // no hourly rate for that day: amount unknown
     } else {
-      fixed = rate.$2;
+      numerator += rate.$2 * m;
     }
   }
-  final weeklyRate = payRateOn(e, weekStart);
-  if (minutes > 0 && fixed == null && weeklyRate?.$1 == 'Haftalık Sabit') fixed = weeklyRate!.$2;
   final hourlyPart = (numerator + 30) ~/ 60; // half-up, once per week
-  final earned = missingMinutes > 0 ? null : hourlyPart + (fixed ?? 0);
+  final earned = fixedWeek
+      ? (minutes > 0 ? monday!.$2 : 0)
+      : missingMinutes > 0 ? null : hourlyPart;
   return {'minutes': minutes, 'missingRateMinutes': missingMinutes,
     'earnedCents': earned, 'rateComplete': missingMinutes == 0,
     'submission': st['status'], 'submittedAt': st['submittedAt']};
@@ -205,8 +213,8 @@ Json recordPayrollPayment(Json state, Json d, {required String by, DateTime? now
   final kind = '${d['kind'] ?? 'Ödeme'}';
   if (employeeId is! int) throw const FormatException('Personel seçin');
   final e = _employeeRow(state, employeeId);
-  if (!_dayRe.hasMatch(week) || weekStartOf(week) != week) throw const FormatException('Hafta geçersiz');
-  if (!_dayRe.hasMatch(paidOn) || paidOn.compareTo(istanbulDayOfInstant(clock)) > 0) {
+  if (!isCalendarDay(week) || weekStartOf(week) != week) throw const FormatException('Hafta geçersiz');
+  if (!isCalendarDay(paidOn) || paidOn.compareTo(istanbulDayOfInstant(clock)) > 0) {
     throw const FormatException('Ödeme tarihi geçersiz (gelecek olamaz)');
   }
   if (!payrollMethods.contains(method)) throw const FormatException('Ödeme yöntemi geçersiz');
@@ -228,8 +236,19 @@ Json recordPayrollPayment(Json state, Json d, {required String by, DateTime? now
   final rows = (book['payrollPayments'] ??= <dynamic>[]) as List;
   final note = '${d['note'] ?? ''}'.trim();
   if (note.length > 300) throw const FormatException('Not çok uzun');
+  final id = 'pp_${d['requestId'] ?? clock.microsecondsSinceEpoch}';
+  // A retried request returns the recorded row; a different payment under
+  // the same request id is refused. Never two rows with one id.
+  final existing = rows.cast<Map>().where((p) => p['id'] == id).firstOrNull;
+  if (existing != null) {
+    final same = existing['employeeId'] == employeeId && existing['weekStart'] == week &&
+        existing['method'] == method && existing['kind'] == kind &&
+        existing['cashCents'] == cash && existing['bankCents'] == bank && existing['paidOn'] == paidOn;
+    if (!same) throw const PayrollConflict('Bu istek kimliği farklı bir ödeme için kullanıldı.');
+    return Map<String, dynamic>.from(existing);
+  }
   final row = {
-    'id': 'pp_${d['requestId'] ?? clock.microsecondsSinceEpoch}',
+    'id': id,
     'employeeId': employeeId, 'employeeName': e['name'], 'weekStart': week,
     'kind': kind, 'method': method, 'cashCents': cash, 'bankCents': bank, 'amountCents': amount,
     'paidOn': paidOn, 'note': note, 'createdAt': _stamp(clock), 'createdBy': by,
@@ -262,7 +281,7 @@ Json reversePayrollPayment(Json state, Json d, {required String by, DateTime? no
 void acknowledgeUnpaid(Json state, Json d, {required String by, DateTime? now}) {
   final employeeId = d['employeeId'];
   final week = '${d['weekStart']}';
-  if (employeeId is! int || !_dayRe.hasMatch(week) || weekStartOf(week) != week) {
+  if (employeeId is! int || !isCalendarDay(week) || weekStartOf(week) != week) {
     throw const FormatException('Personel ve hafta gerekli');
   }
   _employeeRow(state, employeeId);
@@ -272,6 +291,15 @@ void acknowledgeUnpaid(Json state, Json d, {required String by, DateTime? now}) 
 }
 
 /// "Haftalık Maaş Ödemeleri" panel rows for [weekStart].
+bool _inPayrollWeek(Json state, Map e, String weekStart) {
+  final id = e['id'] as int;
+  if (payrollPaymentsFor(state, id, weekStart).isNotEmpty) return true;
+  if (!isPayrollEligible(e)) return false;
+  if (e['active'] != false) return true;
+  return (weeklyEarnings(state, id, weekStart)['minutes'] as int) > 0 ||
+      financeRows(state, 'weeklyPayroll').any((r) => r['employeeId'] == id && r['weekStart'] == weekStart);
+}
+
 /// Payroll covers people who are paid as employees. The owner (or anyone
 /// marked `payrollEligible: false`) is excluded unless explicitly enabled.
 bool isPayrollEligible(Map e) => e['payrollEligible'] != false;
@@ -303,9 +331,11 @@ void setPayrollEligible(Json state, int employeeId, bool eligible) =>
 List<Json> payrollWeek(Json state, String weekStart, {required String today}) => [
   // Eligible active people, plus anyone who already has payments that week
   // (history stays visible after a change of eligibility or deactivation).
-  for (final e in asMaps(state['employees']).where((e) =>
-      (e['active'] != false && isPayrollEligible(e)) ||
-      payrollPaymentsFor(state, e['id'] as int, weekStart).isNotEmpty))
+  // Eligible people who are active or still have something that week
+  // (worked hours, a legacy row, payments) — a person who left keeps
+  // appearing until their money is settled. Anyone with payments that week
+  // stays visible as history.
+  for (final e in asMaps(state['employees']).where((e) => _inPayrollWeek(state, e, weekStart)))
     {'name': e['name'], 'rate': () {
       final r = payRateOn(e, weekStart);
       return r == null ? null : {'payType': r.$1, 'rateCents': r.$2};

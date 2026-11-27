@@ -142,7 +142,7 @@ void main() {
   });
 
   test('explicit Ödenmedi is review, not money; reminders keep running while owed', () {
-    mgr('rate-00000301', 'payroll_rate', {'employeeId': ayse, 'payType': 'Haftalık Sabit', 'rateCents': 500000, 'effectiveFrom': '2026-11-01'});
+    mgr('rate-00000301', 'payroll_rate', {'employeeId': ayse, 'payType': 'Haftalık Sabit', 'rateCents': 500000, 'effectiveFrom': '2026-11-02'});
     work(ayse, 'w-0301', '2026-11-17', '10:00', '12:00');
     expect(status(ayse)['earnedCents'], 500000);
     mgr('ack-000000001', 'payroll_unpaid', {'employeeId': ayse, 'weekStart': week});
@@ -265,6 +265,60 @@ void main() {
       final forMehmet = visibleNotifications(rows, auth, m.context).where((e) => e['category'] == 'personal');
       expect(forAyse, isEmpty, reason: 'Ayşe already sent her week');
       expect(forMehmet.single['title'], 'Haftalık mesainizi gönderin');
+    });
+  });
+
+  group('independent review fixes (Gemini, 2026-11-27)', () {
+    test('a retried payment request records one row; a different payment under the same id is refused', () {
+      final s = store.read();
+      setEmployeeRate(s.data, employeeId: ayse, payType: 'Saatlik', rateCents: 10000, effectiveFrom: '2026-11-02', by: 'x');
+      final pay = {'requestId': 'req-dup-000000001', 'employeeId': ayse, 'weekStart': week,
+        'method': 'Nakit', 'cashCents': 5000, 'paidOn': '2026-11-20'};
+      final a = recordPayrollPayment(s.data, pay, by: 'x', now: friday);
+      final b = recordPayrollPayment(s.data, Map<String, dynamic>.from(pay), by: 'x', now: friday);
+      expect(b['id'], a['id']);
+      expect(payrollPaymentsFor(s.data, ayse, week), hasLength(1));
+      expect(() => recordPayrollPayment(s.data, {...pay, 'cashCents': 6000}, by: 'x', now: friday),
+        throwsA(isA<PayrollConflict>()));
+      expect(payrollPaymentsFor(s.data, ayse, week), hasLength(1));
+    });
+
+    test('someone who left with unpaid hours stays in payroll and in payday reminders', () {
+      mgr('rate-00000901', 'payroll_rate', {'employeeId': mehmet, 'payType': 'Saatlik', 'rateCents': 10000, 'effectiveFrom': '2026-11-02'});
+      work(mehmet, 'w-0901', '2026-11-17', '10:00', '14:00');
+      final s = store.read();
+      for (final e in (s.data['employees'] as List).cast<Map>()) {
+        if (e['id'] == mehmet) e['active'] = false;
+      }
+      store.replace(s.data, s.revision);
+      final rows = payrollWeek(store.read().data, week, today: '2026-11-24');
+      final row = rows.firstWhere((r) => r['employeeId'] == mehmet);
+      expect(row['remainingCents'], 40000);
+      final payday = payrollReminderEvents(store.read().data, DateTime.utc(2026, 11, 23, 20));
+      expect(payday.where((e) => '${e['eventId']}'.startsWith('payday:$week:')), isNotEmpty);
+    });
+
+    test('a switch to or from Haftalık Sabit starts on a Monday; a fixed week pays once', () {
+      final s = store.read();
+      setEmployeeRate(s.data, employeeId: ayse, payType: 'Saatlik', rateCents: 10000, effectiveFrom: '2026-11-02', by: 'x');
+      expect(() => setEmployeeRate(s.data, employeeId: ayse, payType: 'Haftalık Sabit', rateCents: 500000,
+        effectiveFrom: '2026-11-18', by: 'x'), throwsFormatException);
+      setEmployeeRate(s.data, employeeId: ayse, payType: 'Haftalık Sabit', rateCents: 500000, effectiveFrom: week, by: 'x');
+      store.replace(s.data, s.revision);
+      work(ayse, 'w-0911', '2026-11-17', '10:00', '18:00');
+      work(ayse, 'w-0912', '2026-11-19', '10:00', '18:00');
+      expect(status(ayse)['earnedCents'], 500000);
+    });
+
+    test('impossible calendar days are refused', () {
+      expect(isCalendarDay('2026-02-31'), false);
+      expect(isCalendarDay('2026-02-28'), true);
+      final s = store.read();
+      expect(() => setEmployeeRate(s.data, employeeId: ayse, payType: 'Saatlik', rateCents: 10000,
+        effectiveFrom: '2026-02-31', by: 'x'), throwsFormatException);
+      expect(() => recordPayrollPayment(s.data, {'requestId': 'req-bad-day-0000001', 'employeeId': ayse,
+        'weekStart': week, 'method': 'Nakit', 'cashCents': 100, 'paidOn': '2026-11-31'}, by: 'x', now: friday),
+        throwsFormatException);
     });
   });
 }

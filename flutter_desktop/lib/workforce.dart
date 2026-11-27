@@ -31,6 +31,14 @@ DateTime istanbulNow(DateTime now) => now.toUtc().add(_ist);
 String dayOf(DateTime istanbulWall) => istanbulWall.toIso8601String().substring(0, 10);
 String istanbulDayOfInstant(DateTime instant) => dayOf(instant.toUtc().add(_ist));
 
+/// `YYYY-MM-DD` that is a real calendar day (rejects 2026-02-31, which
+/// DateTime.parse would silently roll over to March).
+bool isCalendarDay(Object? v) {
+  if (v is! String || !_day.hasMatch(v)) return false;
+  final d = DateTime.tryParse(v);
+  return d != null && dayOf(d) == v;
+}
+
 /// Monday of the Istanbul week that contains [day].
 String weekStartOf(String day) {
   final d = DateTime.parse(day);
@@ -143,7 +151,7 @@ Json applyPlanCommand(PosStore store, Json payload, {required int? actorId,
     switch (payload['action']) {
       case 'plan_save':
         final date = '${payload['date']}';
-        if (!_day.hasMatch(date)) throw const FormatException('Tarih geçersiz');
+        if (!isCalendarDay(date)) throw const FormatException('Tarih geçersiz');
         if (!manager && date.compareTo(today) < 0) throw const FormatException('Vardiya bugün veya ileri bir tarih için girilir');
         if (date.compareTo(addDays(today, 400)) > 0) throw const FormatException('Tarih çok ileri');
         final dayOff = payload['dayOff'] == true;
@@ -197,7 +205,7 @@ Json applyPlanCommand(PosStore store, Json payload, {required int? actorId,
         return {'ok': true, 'id': p['id']};
       case 'plan_copy_week':
         final from = '${payload['fromWeekStart']}', to = '${payload['toWeekStart']}';
-        if (!_day.hasMatch(from) || !_day.hasMatch(to) || weekStartOf(from) != from || weekStartOf(to) != to || from == to) {
+        if (!isCalendarDay(from) || !isCalendarDay(to) || weekStartOf(from) != from || weekStartOf(to) != to || from == to) {
           throw const FormatException('Hafta geçersiz');
         }
         if (!manager && addDays(to, 6).compareTo(today) < 0) throw const FormatException('Geçmiş haftaya kopyalanamaz');
@@ -280,7 +288,7 @@ Json applyWorkCommand(PosStore store, Json payload, {required int? actorId,
     switch (payload['action']) {
       case 'work_save':
         final date = '${payload['date']}', start = '${payload['start']}', end = '${payload['end']}';
-        if (!_day.hasMatch(date) || !_hm.hasMatch(start) || !_hm.hasMatch(end)) {
+        if (!isCalendarDay(date) || !_hm.hasMatch(start) || !_hm.hasMatch(end)) {
           throw const FormatException('Tarih ve saat gerekli');
         }
         final a = instantOf(date, start);
@@ -374,7 +382,7 @@ Json submitWeek(PosStore store, Json payload, {required int? actorId, DateTime? 
     if (actorId == null) throw const FormatException('Hesabınız bir personele bağlı değil');
     final emp = _employee(s, actorId);
     final week = '${payload['weekStart']}';
-    if (!_day.hasMatch(week) || weekStartOf(week) != week) throw const FormatException('Hafta geçersiz');
+    if (!isCalendarDay(week) || weekStartOf(week) != week) throw const FormatException('Hafta geçersiz');
     if (week.compareTo(dayOf(istanbulNow(clock))) > 0) throw const FormatException('Gelecek hafta gönderilemez');
     final work = _weekWork(s, emp['id'] as int, week).where((x) => x['voided'] != true).toList();
     final noWork = payload['noWork'] == true;

@@ -50,6 +50,19 @@ Native Android architecture check (2026-11-27): `flutter_personel/pubspec.yaml` 
 | D-13 | Android Personel orders/actions (`/api/mobile/*`) | Personel | A paired device sent any `staffId`; the path ignored *Bireysel giriş zorunlu* | Same gate as the browser app: individual session required when enforced; session fixes the employee | Critical (security) | `lan_server.dart` mobile branch uses `_guard` + `withIdentity` | `lan_auth_gate_test` "Android paired-device writes…" | — |
 | D-14 | Android Yönetici owner identity | Owner | Owner found by the hardcoded name "Ömer Yılmaz" (Windows, server and APK) | Owner = profile linked to the owner account; name from that profile; legacy name accepted only while no owner is linked (upgrade safety) | High (data integrity) | `FinanceSyncServer.owner(ownerIds:)`, APK shows `ownerName` from Windows, Windows labels say "İşletme sahibi" | `owner_identity_test` | — |
 
+Found by the independent Gemini review on PR #44 (comment 7223333964) and fixed in the follow-up commit:
+
+| ID | Feature | Intended user | Actual behavior (before) | Expected | Severity | Fix | Automated evidence | Rendered evidence |
+|---|---|---|---|---|---|---|---|---|
+| D-15 | Payroll payment retry | Manager | A payment retried after a lost connection could be stored twice under one id | Same request → the recorded row; a different payment under that id → refused | High (financial) | `recordPayrollPayment` checks `pp_<requestId>` | `payroll_test` "a retried payment request…" | — |
+| D-16 | Staff who left | Manager | Deactivated staff with unpaid hours dropped out of the payroll list and payday reminders | They stay until settled; Sunday Mesai reminders stay for active staff only | High (financial) | `_inPayrollWeek`, reminders use all eligible staff | `payroll_test` "someone who left…" | — |
+| D-17 | Trusted-device PIN | Everyone | 6-digit PIN, weak PINs accepted | 5 digits; repeated digits, runs and common PINs refused; existing 6-digit PINs still unlock | Medium (security) | `LocalAuth._checkPin`, browser apps say "5 haneli" | `local_accounts_test` "5-digit PIN rules…" | — |
+| D-18 | Password unlock | Everyone | No attempt limit on unlock with password | Same 5 tries / 15 min lockout as login, audited | High (security) | `unlockWithPassword` | `local_accounts_test` | — |
+| D-19 | Gün Sonu Raporu | Owner | No staff hours | Total minutes and people from that day's ended, non-voided Mesai | Low | `daily_report.dart` `staffHours` | `daily_report_test` "staff hours…" | — |
+| D-20 | Date validation | Everyone | `2026-02-31` passed the format check (silently became 3 March) | Real calendar days only | Medium (data integrity) | `isCalendarDay` in payroll, workforce, daily report, Yönetici | `payroll_test`, `workforce_test`, `daily_report_test` | — |
+| D-21 | Mid-week pay-type change | Manager | A switch between Saatlik and Haftalık Sabit could start mid-week and pay both | Such a switch starts on a Monday; a fixed week pays once | Medium (financial) | `setEmployeeRate`, `weeklyEarnings` | `payroll_test` "a switch to or from Haftalık Sabit…" | — |
+| D-22 | LAN reads | Personel | `/api/state`, `/api/bootstrap`, `/api/mobile/bootstrap`, `/api/staff/*` answered any address; Android bootstrap ignored *Bireysel giriş zorunlu* | Restaurant network only; Android bootstrap needs a session when login is required (the APK then shows Giriş Yap) | Medium (security) | `lan_server.dart`, `pos_api.dart` | `lan_auth_gate_test` "Android bootstrap follows required login…" | — |
+
 Owner acceptance example (8 h × 100 TL + 8 h × 120 TL = 1.760 TL; pay 800 → Kısmen Ödendi, kalan 960; pay 960 → Ödendi; later raise not retroactive): **Verified** in `payroll_test` and in a rendered LAN run (Yönetici records 800 TL Nakit → Kısmen Ödendi, kalan 960,00 ₺; Personel sees the same numbers).
 
 ## 3. Open findings (not yet fixed)
@@ -61,8 +74,9 @@ Owner acceptance example (8 h × 100 TL + 8 h × 120 TL = 1.760 TL; pay 800 → 
 | O-03 | Payroll on Android Yönetici and cloud PWAs not yet projected | High (parity) | Codex: cloud projection of `payHistory`, `payrollPayments`, `payrollReviews`, `payrollEligible` |
 | O-04 | Order, payment, refund, receipt, analytics modules not re-audited in this cycle | — | Next audit pass |
 | O-05 | No emulator/APK screenshots in this cycle | — | Android audit pass |
-| O-06 | No independent review yet | — | Request on PR #44 |
+| O-06 | Independent review: Gemini reviewed PR #44 (comment 7223333964); findings fixed as D-15…D-22 | — | Re-review after the fix commit |
 | O-07 | Android Personel APK has no individual login yet; it still shows an employee picker (legacy shared mode). With *Bireysel giriş zorunlu* on, its writes are now refused (401) until it signs in | High (parity) | Native login + 5-digit PIN in the APK (W6/A2) |
+| O-09 | Android Personel APK has no Mesai, Vardiya or own-pay screens yet (browser app has them) | High (parity) | Native screens |
 | O-08 | An old Yönetici APK compares the owner name with "Ömer Yılmaz"; after linking the owner account to a differently named profile it needs the new APK from CI | Medium (upgrade) | Install the APK built from #44 |
 
 ## 4. Physical-device tests required from the owner

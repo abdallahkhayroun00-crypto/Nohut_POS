@@ -154,6 +154,22 @@ void main() {
     expect(asMaps(store.read().data['orders']), isEmpty);
   });
 
+  test('Android bootstrap follows required login; staff session opens it', () async {
+    final (_, pb, _) = await call('POST', '/api/mobile/pair',
+        body: {'pin': server.pairing.pin, 'deviceName': 'Test Android'});
+    final token = pb['token'] as String;
+    final (open, _, _) = await call('GET', '/api/mobile/bootstrap', bearer: token);
+    expect(open, 200);
+    auth.setSetting('lan_login_required', '1');
+    final (closed, cb, _) = await call('GET', '/api/mobile/bootstrap', bearer: token);
+    expect(closed, 401);
+    expect(cb['error'], 'auth_required');
+    final (_, _, setCookie) = await call('POST', '/api/auth/login',
+        body: {'username': 'ayse', 'password': 'staff-pass-1', 'deviceId': device});
+    final (signed, sb, _) = await call('GET', '/api/mobile/bootstrap', bearer: token, cookie: cookieOf(setCookie));
+    expect(signed, 200, reason: '$sb');
+  });
+
   test('cross-origin auth requests and repeated failures are refused', () async {
     final (cross, _, _) = await call('POST', '/api/auth/login', origin: 'http://evil.example',
         body: {'username': 'ayse', 'password': 'staff-pass-1', 'deviceId': device});
@@ -175,7 +191,7 @@ void main() {
     final login = await g.handle('POST', 'login',
         {'username': 'ayse', 'password': 'staff-pass-1', 'deviceId': device}, ip: '10.0.0.2');
     final token = login.setToken!;
-    expect((await g.handle('POST', 'pin', {'pin': '482915'}, token: token, ip: '10.0.0.2')).status, 200);
+    expect((await g.handle('POST', 'pin', {'pin': '48291'}, token: token, ip: '10.0.0.2')).status, 200);
     for (var i = 0; i < 40; i++) {
       now = now.add(const Duration(minutes: 1));
       g.guard(token: token, client: 'personel', operation: 'tables.view', touch: false);
@@ -183,9 +199,9 @@ void main() {
     final locked = g.guard(token: token, client: 'personel', operation: 'tables.view', touch: false);
     expect(locked.status, 401);
     expect(locked.error, 'locked');
-    final wrong = await g.handle('POST', 'unlock', {'pin': '000001'}, token: token, ip: '10.0.0.2');
+    final wrong = await g.handle('POST', 'unlock', {'pin': '00001'}, token: token, ip: '10.0.0.2');
     expect(wrong.body['error'], 'invalid_pin');
-    final unlocked = await g.handle('POST', 'unlock', {'pin': '482915'}, token: token, ip: '10.0.0.2');
+    final unlocked = await g.handle('POST', 'unlock', {'pin': '48291'}, token: token, ip: '10.0.0.2');
     expect(unlocked.status, 200);
     expect(g.guard(token: token, client: 'personel', operation: 'tables.view').allowed, true);
   });

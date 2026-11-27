@@ -236,4 +236,11 @@ void main() {
     expect(o, 409);
     expect(ob['error'], 'overlap');
   });
+
+  test('impossible calendar days are refused for Vardiya and Mesai', () {
+    expect(() => plan('plan-bad-day-01', {'date': '2026-02-31', 'start': '10:00', 'end': '12:00'}), throwsFormatException);
+    expect(() => work('work-bad-day-01', {'action': 'work_save', 'date': '2026-11-31', 'start': '10:00', 'end': '12:00'}),
+        throwsFormatException);
+    expect(shiftPlansOf(store.read().data), isEmpty);
+  });
 }

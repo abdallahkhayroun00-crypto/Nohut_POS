@@ -395,6 +395,11 @@ class PersonelController extends ChangeNotifier {
     } catch (e) {
       online = false;
       error = '$e';
+      // With Bireysel giriş zorunlu the server refuses the bootstrap until
+      // someone signs in: learn that, so the Giriş Yap button appears.
+      if (e is FormatException && e.message.startsWith('Giriş gerekli')) {
+        try { await api.refreshSession(); } catch (_) {}
+      }
     }
     if (!_disposed) notifyListeners();
   }
