@@ -50,7 +50,7 @@ EVIDENCE:
 
 | # | Task | Owner | Status | Depends on | PR / evidence |
 |---|---|---|---|---|---|
-| A1 | Windows owner session + MFA contract for Windows agent enrollment (`client=windows`, `sync.*` allowed only there) — open request from Codex on #39 | Claude | ⏳ next | #40/#41 | #39 comment 2026-11-27 12:18Z |
+| A1 | Windows owner session + MFA contract for Windows agent enrollment (`client=windows`, `sync.*` allowed only there) — open request from Codex on #39 | Claude | ✅ SQL contract (#42): migration `20261127200000_nohut_windows_owner_session.sql`, `public.nohut_windows_owner_session(device)`, tests `windows_owner_session_test.sql` (superuser + plain owner; also green on top of #39 locally). Windows login UI = A2/A3 | #40/#41 | #39 comment 2026-11-27 12:18Z |
 | A2 | Login BFF (3B-2), PWA + Android login, trusted devices, 6-digit PIN, 30-min configurable lock, biometrics where secure, owner TOTP | Claude | ⏳ | A1 | — |
 | A3 | Windows Kullanıcılar & Yetkiler, Bağlı Cihazlar, password/PIN reset, deactivation, session revocation (3C) | Claude | ⏳ | A2 | — |
 | A4 | Bounded offline local sessions for LAN apps (no plaintext passwords, no cloud refresh tokens over HTTP) | Claude | ⏳ | A2 | — |
