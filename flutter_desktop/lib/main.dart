@@ -54,6 +54,11 @@ import 'backup_service.dart';
 import 'backup_ui.dart';
 import 'platform_ui.dart';
 import 'platform_workflows.dart';
+import 'review_sync_service.dart';
+import 'tgo_review_api.dart';
+import 'local_accounts.dart';
+import 'lan_auth_gate.dart';
+import 'accounts_ui.dart';
 
 part 'order_composer.dart';
 
@@ -155,8 +160,12 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
   bool terminalBusy = false;
   late final ReceiptPrinter receiptPrinter;
   late final PosLanServer lan;
+  late final LocalAuth localAuth;
   late final QrMenuAutoSync qrSync;
   late final TrendyolGoReadonly tgo;
+  late final ReviewSyncService reviewSync;
+  final List<Json> _pendingReviewPopups = [];
+  Timer? _reviewPopupTimer;
   late final OnlineOrderSoundPlayer onlineSound;
   late final OnlineOrderAlarm onlineAlarm;
   late final GoogleBusiness google;
@@ -237,8 +246,10 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     );
     onlineAlarm.setAudioEnabled(settings['onlineOrderSound'] != false);
     inpos = InposPayments(store, widget.inposGateway ?? UnavailableInpos());
+    localAuth = LocalAuth(store.authDatabase)..loadSettings();
     lan = PosLanServer(
       store,
+      authGate: LanAuthGate(localAuth),
       googleProvider: () => google,
       platformWritable: () => tgo.canWrite && !tgo.writing,
       platformAction: _staffPlatformAction,
@@ -260,6 +271,18 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
             order['supplierId'] == tgo.credentials?.supplierId).toList(),
       ),
     );
+    // Background review sync (spec §23.6.4): independent of the open screen.
+    reviewSync = ReviewSyncService(
+      store,
+      apiFactory: () {
+        final c = tgo.credentials;
+        if (!TrendyolGoReadonly.liveSyncEnabled || c == null || !c.valid) {
+          return null;
+        }
+        return TgoReviewApi(c.supplierId, tgoHttpGet(c));
+      },
+      onNewReviews: _queueReviewPopups,
+    );
     google = GoogleBusiness(
       store.filePath,
       onNewReviews: (count) {
@@ -267,7 +290,11 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       },
     );
     if (widget.startServer) {
-      unawaited(tgo.start());
+      unawaited(tgo.start().then((_) {
+        if (mounted) reviewSync.start();
+      }));
+      _reviewPopupTimer = Timer.periodic(
+          const Duration(seconds: 15), (_) => _showReviewPopups());
       unawaited(google.load());
     }
     if (widget.startServer) {
@@ -426,6 +453,8 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     backups.dispose();
     marketApi.close();
     tgo.dispose();
+    _reviewPopupTimer?.cancel();
+    reviewSync.dispose();
     onlineAlarm.dispose();
     google.dispose();
     qrSync.dispose();
@@ -502,6 +531,65 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
           ),
       ],
     );
+  }
+
+  /// New reviews: durable notification already stored by ReviewSyncService.
+  /// The popup is non-blocking and waits while a dialog (payment, order
+  /// entry, printing) is open.
+  void _queueReviewPopups(List<Json> events) {
+    _pendingReviewPopups.addAll(events);
+    final settings = store.read().data['settings'];
+    final sound = settings is! Map || settings['reviewNotificationSound'] != false;
+    if (sound) unawaited(onlineSound.play('Trendyol Go', 0).catchError((Object _) {}));
+    _showReviewPopups();
+  }
+
+  void _showReviewPopups() {
+    if (!mounted || _pendingReviewPopups.isEmpty) return;
+    final route = ModalRoute.of(context);
+    if (Navigator.of(context).canPop() || (route != null && !route.isCurrent)) {
+      return; // a dialog or page is open: retry later, never interrupt it
+    }
+    final events = List<Json>.from(_pendingReviewPopups);
+    _pendingReviewPopups.clear();
+    final ids = {for (final e in events) '${e['eventId']}'};
+    final high = events.any((e) => e['severity'] == 'high');
+    final first = events.first;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.clearMaterialBanners();
+    messenger.showMaterialBanner(MaterialBanner(
+      backgroundColor: high ? const Color(0xfffbeaea) : const Color(0xffeef5ec),
+      leading: Icon(Icons.rate_review_outlined,
+          color: high ? const Color(0xffa63831) : NohutBrand.green),
+      content: Text(events.length == 1
+          ? '${first['title']}\n${first['body']}'
+          : 'Yeni Yorum · Trendyol Go\n${events.length} yeni değerlendirme'),
+      actions: [
+        TextButton(
+          onPressed: () {
+            messenger.hideCurrentMaterialBanner();
+            reviewSync.markDelivered(ids, 'shown');
+            setState(() => page = 'reviews');
+          },
+          child: const Text('Yorumu Gör'),
+        ),
+        TextButton(
+          onPressed: () {
+            messenger.hideCurrentMaterialBanner();
+            reviewSync.markDelivered(ids, 'later');
+          },
+          child: const Text('Daha Sonra'),
+        ),
+        IconButton(
+          tooltip: 'Kapat',
+          onPressed: () {
+            messenger.hideCurrentMaterialBanner();
+            reviewSync.markDelivered(ids, 'dismissed');
+          },
+          icon: const Icon(Icons.close),
+        ),
+      ],
+    ));
   }
 
   void _notify(String message, {bool error = false}) {
@@ -1818,6 +1906,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
         return FeedbackPanel(
           orders: tgoOrders(db),
           integration: tgo,
+          reviewSync: reviewSync,
           onOpenGoogle: () => setState(() => page = 'google'),
         );
       case 'qr-menu':
@@ -3540,6 +3629,8 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     staffPanel: _staff(db),
     wifiPanel: _wifi(db),
     backupPanel: BackupPanel(service: backups, restore: restorer),
+    accountsPanel: AccountsPanel(auth: localAuth, employees: asMaps(db['employees']),
+        yoneticiUrl: lan.staffUrl.replaceFirst('/personel', '/yonetici')),
   );
 
   Widget _notice(String text) => Container(

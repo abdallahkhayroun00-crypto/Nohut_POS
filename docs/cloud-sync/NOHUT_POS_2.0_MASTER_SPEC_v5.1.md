@@ -4,6 +4,7 @@
 **Target Audience:** Claude Code / Implementation Engineer  
 **Status:** Architecture specification for staged, branch-isolated implementation; **not** yet a deployed production cloud service  
 **Review evidence:** V2 and V3 were compared as supplied; earlier connector inspection confirmed the PR #27 first-ticket defect at `fcc6ffc`. Provider corrections use official sources checked on 2026-11-27. Repository baseline below is inherited from Gemini’s report, not a new full repository audit. Actual production database, physical devices, legal arrangements and deployment were not inspected. Treat assumptions as gates, not verified implementation.
+**Cumulative owner requirements 2026-11-27:** Section 23 (connectivity, GitHub agent coordination, unified auth, local browser apps, notifications, Trendyol review rework, Phase 6/7 additions) is binding and adds to every earlier section.
 **V5 owner clarification:** Do not create or expand a customer CRM/directory for Trendyol or other delivery-platform customers. Customer details come from authorized platform APIs for operational use only. Keep all necessary and permitted business history, with explicit data-minimization exceptions. Retain minimal local Gel-Al pickup details where needed; preserve any existing open-account obligations. Section 19 is binding and supersedes conflicting inherited examples. No new production measurement, repository audit or API-policy verification was performed for this revision.
 **V5.1 owner update (2026-11-27):** Maintain two separate applications — `Nohut Personel` and `Nohut Yönetici` — each as a native Flutter Android APK **and** a dedicated iPhone PWA URL. `Menü & Kampanya Yönetimi`, `Bulut & Senkronizasyon` and `Yedekleme & Geri Yükleme` exist in BOTH applications on BOTH platforms; the owner grants/revokes each operation individually; sensitive actions require explicit authorization, owner confirmation and server-side enforcement. No duplicated business logic. Section 20.  
 **Primary UI Language:** Turkish (Specification written in English for engineering precision)  
@@ -854,3 +855,112 @@ Development screenshots and visual tests use clearly labelled synthetic fixtures
 4. Personel lands on Masalar and Yönetici on Genel Bakış after login; Menü & Kampanya is reachable in both apps according to grants.
 5. With Windows offline, every write control that needs live authority is disabled with *"Kasa Çevrimdışı"*, and no unconfirmed operation is shown as successful.
 
+
+---
+
+## 23. Cumulative Owner Requirements 2026-11-27 (Binding; adds to §1–§22, supersedes only where stated)
+
+The owner's messages of 2026-11-27 are **cumulative requirements, not competing tasks**. Nothing earlier is dropped. Execution status and owners live in `PROGRESS.md` (task board); this section is the requirement of record.
+
+### 23.0 Priority order
+1. Unified authentication and Windows account management (§23.3).
+2. Local Personel and Yönetici browser applications served by the Windows POS (§23.4).
+3. Unified notification system (§23.5).
+4. Trendyol review synchronization and dynamic store identification (§23.6).
+5. Remaining Phase 6 and Phase 7 requirements, including §23.7.
+
+Standing constraints (unchanged): 0 TL recurring cost; no Nohut AI; no secrets, credentials, tokens, passwords or private restaurant data in GitHub; synthetic data in tests; no production migration or data upload without owner authorization; preserve every existing Windows POS feature, the public QR menu, Supabase configuration and both Cloudflare deployments; Bulut & Senkronizasyon and Yedekleme & Geri Yükleme stay Windows-only (§22.3).
+
+### 23.1 Connectivity decision (owner-verified on a physical iPhone)
+| Client | Path |
+|---|---|
+| **Windows POS** | Primary, single transactional authority (§22.4). |
+| **Android** (native Personel / Yönetici) | Cloud (Supabase) **and** authenticated local LAN. |
+| **iPhone inside the restaurant** | Upgraded **local browser applications served by the Windows POS**, no VPN, no Cloudflare dependency (§23.4). |
+| **iPhone outside the restaurant** | Existing Cloudflare PWAs (`nohut-personel.pages.dev`, `nohut-yonetici.pages.dev`); currently reachable through VPN because `pages.dev` is blocked on the owner's network in Türkiye. |
+
+Keep Cloudflare Pages and Supabase. **No hosting change, no domain purchase.**
+
+### 23.2 Agent-to-agent coordination via GitHub (mandatory)
+Claude and ChatGPT Codex coordinate on GitHub so the owner does not relay routine technical messages.
+
+Before every implementation iteration each agent: reads `PROGRESS.md`; reads relevant open PR comments and issues; answers pending requests addressed to it; reviews recent commits, CI results and shared contracts (`docs/contracts/v1/*`, migrations, `PROGRESS.md` auth contract).
+
+Requests and answers use this format in PR comments:
+```
+FROM: Claude | ChatGPT Codex
+TO: Claude | ChatGPT Codex
+STATUS: REQUEST | RESPONSE | BLOCKER | COMPLETED
+TASK:
+DEPENDENCY:
+EXPECTED INTERFACE:
+ACCEPTANCE CRITERIA:
+RELATED PR:
+EVIDENCE:
+```
+Rules: the receiving agent answers in its next execution; a completed dependency is reported with commit SHA, PR link, API contract, test evidence and remaining limitations; `PROGRESS.md` is the durable task board, PR comments carry technical discussion; no agent modifies another agent's branch without an explicit ownership transfer (PR #39 / `chatgpt/pr-05b-cloud-rpcs` belongs to ChatGPT Codex); no agent starts a task claimed by the other; when a dependency is unavailable, continue independent work and record the blocker. Continue until Phase 7 is complete.
+
+### 23.3 Unified authentication and Windows account management (extends §9, §20.3; Phase 3)
+- One individual account per employee, manager and owner, created and managed on Windows in **Kullanıcılar & Yetkiler**. The same identity works in native Android, local browser applications and cloud PWAs.
+- Username + password for first login and new devices; **trusted-device enrollment**; persistent secure sessions (no login on every open); **six-digit PIN** for re-entry after inactivity; optional biometrics where securely supported; **inactivity lock 30 min (owner-configurable)**.
+- Password reset, PIN reset, deactivation, trusted-device management, single and all-session revocation; individual per-operation permissions (catalogue `docs/contracts/v1/permissions.json`); **owner MFA (aal2)** for sensitive administration.
+- **Windows owner session / agent enrollment** (requested by PR #39): a Windows owner session with MFA that can enroll the scoped Windows agent and run `sync.*`/`backup.*` with `client = windows`, while phones remain unable to enroll or manage sync/backup.
+- **Offline local authentication:** local apps keep working without internet using securely enrolled, time-bounded local sessions verified by the Windows POS. No plaintext passwords anywhere; cloud refresh tokens are never sent or reused over plain HTTP.
+
+### 23.4 Local Personel and Yönetici browser applications (Phase 4 extension)
+Upgrade, do not rebuild. Reuse `flutter_desktop/assets/staff.html`, `lib/lan_server.dart`, `lib/finance_sync_server.dart`, the existing staff commands and mobile pairing, and the PWA design/components/navigation in `pwa/src/*`.
+1. Preserve and upgrade the local Personel interface, keeping the real restaurant floor plan and every working function; add the missing §22.2 Personel features.
+2. Add a complete local Yönetici interface at **`/yonetici`**, reusing existing management and finance functions.
+3. Accessible from Safari on iPhone and other browsers on the restaurant LAN; consistent with the native Android apps.
+4. All assets bundled in the Windows installer; works with no internet.
+5. Business logic and SQLite on Windows stay authoritative.
+6. **Secure every browser endpoint** with individual authentication, sessions and server-enforced permissions. The legacy unauthenticated endpoints (`/api/state`, `/api/bootstrap`, `/api/staff/orders`, `/api/staff/actions`, `/api/staff/platform`, manager finance routes) must not remain a production bypass.
+7. **Verify trusted local HTTPS and Safari compatibility on a physical iPhone** before sensitive credentials or financial data are allowed on the local apps.
+8. No Bulut/Yedek in local apps. No unnecessary change to the Windows POS design. Public QR menu unchanged.
+
+### 23.5 Unified notification system (all clients)
+- **Event contract** (`docs/contracts/v1/notifications.json`, to be added): stable `event_id`, `category`, `severity`, `created_at`, source entity ref, recipient permission (operation id), per-recipient read/unread and delivery status, dedup key. Notifications are **never** authoritative confirmation of an order or payment; clients fetch the committed state from Windows.
+- Reuse the existing Windows sound, `online_order_alarm.dart`, `staffNotices` and operational events.
+- Categories: new table orders; new Gel-Al orders; new Trendyol / Yemeksepeti / Migros orders; order status changes; payment and printing errors; product availability changes; shift start/end and authorized corrections; salary, bonus, advance and payout; Google Business Profile and platform reviews where authorized; Windows POS unavailable; failed or pending remote commands; security and account events. Technical sync/backup alerts stay Windows-only.
+- **Bildirimler** in both mobile apps: unread counters, history, mark-as-read, category preferences, sound and vibration settings.
+- Transport: foreground LAN events (local apps, Android on LAN) and Supabase Realtime (cloud). **Evaluate** Firebase Cloud Messaging + `flutter_local_notifications` for Android background/lock-screen; **free services only; owner approval before any new external project or credential.**
+- Tokens bound to authorized users and trusted devices; removed on logout, device revocation, deactivation or permission loss. **No payroll, customer or other sensitive content on lock-screen previews.**
+- Local iPhone browser: foreground only. No promise of background/lock-screen push over plain HTTP; any Web Push needs secure context, permission and Home Screen install, verified separately.
+- Tests: foreground, background, locked screen, duplicate delivery, reconnect, offline, permission revocation.
+
+### 23.6 Trendyol review rework and dynamic store identification
+Symptom: newest shown review ≈ 200 days old, recent reviews missing, no notification, manual opening needed. **Fix the data source before any visual change.** Milestone 1 findings: `docs/cloud-sync/trendyol-review-investigation.md`.
+
+23.6.1 **Root cause first.** Compare, before changing behaviour: configured supplier ID; store IDs in recent authorized orders; the store of the operating restaurant; the store ID used by the review API; whether the saved ID or the hard-coded `316490` is an old record; multiple stores under one supplier; Uber Eats migration; review API availability. Do not assume `316490` is right or that it is the cause. Live verification only when explicitly authorized, read-only, no reply submissions; credentials never in logs, screenshots, commits or chat.
+
+23.6.2 **Official API facts** (documentation read 2026-11-27): see the investigation file §1. Use only documented endpoints: store discovery `GET /integrator/store/meal/suppliers/{supplierId}/stores`; review list with `startDate`/`endDate`; answer endpoint; handle 403 `endpoint.not-available.error` and plain-text 404 for migrated stores. No invented endpoints, no auth bypass, no partner-panel scraping, never present old cached reviews as recent.
+
+23.6.3 **Store identity service.** Remove the hard-coded fallback. Discover stores through the official API; cross-check with recent order `storeId`s and review `restaurantId`; verify supplier ownership; auto-select when exactly one valid store exists; selector when several; persist `{supplierId, storeId, name, verifiedAt, source}`; revalidate on credential/configuration change; detect mismatches; never silently pick an unrelated restaurant; no manual Store ID entry in normal operation. Diagnostics: supplier ID, verified store ID, restaurant name (if returned), integration status, last verification, review API availability, latest review date.
+
+23.6.4 **ReviewSyncService** (UI-independent): starts with the Windows POS whenever the integration is enabled, runs on every screen, uses the verified store, fetches latest reviews automatically with supported date filters and overlapping windows, all needed pages, bounded historical backfill, detects new and updated reviews (including reply moderation), dedups on `platform + supplierId + storeId + reviewId`, persists checkpoints, single-flight, rate-limit/network backoff, **never reports a failed sync as successful**. Default interval 5 min subject to official limits (none documented). Manual refresh exists but is not needed.
+
+23.6.5 **Persistent review repository** replacing the page cache. Fields: platform, supplier, store, stable review ID, rating + breakdown, comment, review created date, authorized product names, reply text, reply moderation status (+ rejection reason), first detected, last verified, read/unread, notification delivery state. Keep all authorized history, separated per verified store; survives paging, restarts, network failure, API outage and configuration changes. No raw payloads, credentials or unnecessary personal data in sync.
+
+23.6.6 **Yorum Merkezi** in Windows POS and Nohut Yönetici (Trendyol Go by Uber Eats, Google Business Profile, Yemeksepeti, Migros Yemek — only platforms/actions with verified official integrations). Overview: Ortalama Puan, Toplam Yorum, Yeni, Okunmamış, Yanıt Bekleyen, Yanıtlanan, Onay Bekleyen, Reddedilen; distribution, trends, platform comparison, positive/negative stats. Filters over the **entire local dataset**: platform, location, date range, stars, read state, reply status, with/without text, search, newest/oldest. Official platform-wide statistics are labelled separately from locally computed ones. Cards: platform logo, rating, date/time, relative age, text, product names, reply status, Yanıtla, Okundu İşaretle. Keep Nohut branding, fonts, colours, light/dark.
+
+23.6.7 **Windows notifications:** a durable notification for every genuinely new review on any screen; non-blocking popup (platform + icon, *Yeni Yorum*, stars, authorized preview, date, *Yorumu Gör*, *Daha Sonra*, dismiss); sound, unread badge, history, low-rating priority, preferences. Never interrupt payments, order entry or print dialogs. **No storm on first import; exactly one notification per new review across polling, reconnect and restart.**
+
+23.6.8 **Android Yönetici and local browser:** reviews join §23.5 (foreground, background, lock screen, sound/vibration, history, counters, deep link, mark-as-read sync, preferences); only users holding the review permission receive them. Local `/yonetici` gets foreground review notifications over the LAN event channel.
+
+23.6.9 **Reply workflow:** Draft → Preview → Send confirmation → Submitted → Waiting for moderation → Approved / Rejected (+ reason) / **Unknown outcome — verify**. A reply is shown as published only after the list API confirms it; duplicate replies prevented; **never auto-resend an uncertain request**; no AI-generated replies, no auto-publishing.
+
+23.6.10 **Integration diagnostics:** configured supplier, verified store, restaurant identity, API availability, migration compatibility, last attempted and last successful sync, latest review date, records retrieved, pagination completeness, new reviews detected, cache freshness, sanitized error, manual retry. Unusually old latest review → explicit stale warning. API unavailable → clear Turkish explanation + official Partner Panel link. Never display old reviews as if sync were healthy.
+
+23.6.11 **Architecture:** Windows authoritative; repository and events integrate with SQLite, Supabase sync (allowlisted fields only), per-user permissions, trusted devices, local apps, Android and cloud PWAs. API credentials stay in the Windows vault or approved backend storage.
+
+23.6.12 **Tests (synthetic data):** wrong/outdated store ID; correct auto-discovery; multiple stores; supplier/store mismatch; store change; recent reviews on later pages; out-of-order results; date filtering; pagination completeness; duplicates; history preserved; sync with review screen closed; startup/restart; offline; reconnect; rate limiting; 403 and plain-text 404 migration errors; stale warning; exactly one notification per new review; no historical storm; delivery and deep links; reply moderation and uncertain outcomes; rating statistics; permission enforcement; secure Android and local browser integration.
+
+23.6.13 **Done means verified:** the review system is not complete until correct store identity, recent review retrieval, automatic sync and notification behaviour are verified. The full rework is part of Phase 6 and Phase 7 acceptance.
+
+### 23.7 Phase 6 / Phase 7 acceptance additions (added to §16, §20.6, §22.6)
+1. Local Personel and `/yonetici` on the restaurant LAN: login with individual account, full Personel/Yönetici function set, offline from the internet, assets from the installer, Safari on a physical iPhone over trusted HTTPS.
+2. Every legacy LAN endpoint rejects unauthenticated and under-privileged requests (route-table test).
+3. Auth: trusted-device enrollment, PIN re-entry, 30-min lock, password/PIN reset, deactivation and revocation take effect on Android, local browser and cloud PWA; owner MFA for administration; Windows owner session can enroll the agent, phones cannot run `sync.*`/`backup.*`.
+4. Notifications: §23.5 test list, including no sensitive lock-screen content and token revocation.
+5. Reviews: §23.6.12 list and §23.6.13 verification.
+6. Regression: existing Windows POS functions, public QR menu, Cloudflare deployments and Supabase configuration unchanged.

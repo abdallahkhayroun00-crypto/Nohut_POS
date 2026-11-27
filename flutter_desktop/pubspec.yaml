@@ -32,6 +32,7 @@ flutter:
   assets:
     - assets/menu.json
     - assets/staff.html
+    - assets/yonetici.html
     - assets/printing/
     - assets/brand/
     - assets/notifications/

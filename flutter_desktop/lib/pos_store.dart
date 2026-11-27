@@ -114,6 +114,8 @@ class PosStore extends ChangeNotifier {
     ''');
     createSyncTables(_db);
     _normalized = isNormalized(_db);
+    // Entity kinds added after a database was normalized get their table here.
+    if (_normalized) createEntityTables(_db);
     if (!_normalized) _normalize();
     final old = read();
     final migrated = copyJson(old.data);
@@ -125,6 +127,10 @@ class PosStore extends ChangeNotifier {
 
   late final String filePath;
   late final Database _db;
+
+  /// Same SQLite connection, for the dedicated local account tables
+  /// (`auth_*`, lib/local_accounts.dart). Never part of the state JSON.
+  Database get authDatabase => _db;
 
   /// Phase 1B: true when the database uses per-entity tables.
   bool _normalized = false;
@@ -499,7 +505,12 @@ class PosStore extends ChangeNotifier {
       final state = snap.data, order = mutableOrder(state, orderId);
       if (order == null) throw const FormatException('Sipariş yok');
       requireLocal(order);
+      // An in-flight or unknown card-terminal outcome must keep its order as
+      // the reconciliation target, even if `terminalPending` was lost.
       if (order['terminalPending'] != null ||
+          asMaps(state['terminalAttempts']).any((a) =>
+              a['orderId'] == orderId &&
+              const {'waiting', 'unknown', 'unavailable'}.contains(a['status'])) ||
           asMaps(
             state['printJobs'],
           ).any((j) => j['orderId'] == orderId && j['state'] == 'Gönderiliyor'))

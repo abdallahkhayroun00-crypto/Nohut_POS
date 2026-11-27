@@ -158,8 +158,9 @@ void main() {
       expect(find.textContaining('Platform no: PLATFORM-99'), findsNothing);
       await t.tap(find.byKey(const ValueKey('navigation-reviews')));
       await t.pumpAndSettle();
-      expect(find.byTooltip('Yenile'), findsOneWidget);
-      expect(find.text('Şube ID (Store ID)'), findsOneWidget);
+      // Spec §23.6: reviews come from the background sync; no manual Store ID.
+      expect(find.textContaining('Entegrasyon durumu'), findsOneWidget);
+      expect(find.text('Şube ID (Store ID)'), findsNothing);
       await t.tap(find.text('Google Maps'));
       await t.pumpAndSettle();
       await t.tap(find.widgetWithText(Card, 'Google İşletme Profili'));

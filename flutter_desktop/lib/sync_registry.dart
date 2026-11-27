@@ -202,6 +202,33 @@ const syncEntityRegistry = <String, SyncEntity>{
     cloudTarget: 'restaurant_settings',
     policy: 'Trendyol review store id (not a secret)',
   ),
+  'platformReviews': SyncEntity(
+    classes: {DataClass.internal},
+    cloudTarget: null,
+    policy: 'Persistent platform review repository (spec §23.6.5): permitted '
+        'fields only, keyed platform:supplier:store:reviewId, never deleted '
+        'by sync; cloud projection waits for the reviews read contract',
+    status: InventoryStatus.proposedV5,
+  ),
+  'tgoReviewSync': SyncEntity(
+    classes: {DataClass.internal},
+    cloudTarget: null,
+    policy: 'ReviewSyncService status, diagnostics and window checkpoints (local)',
+    status: InventoryStatus.proposedV5,
+  ),
+  'tgoStoreIdentity': SyncEntity(
+    classes: {DataClass.internal},
+    cloudTarget: 'restaurant_settings',
+    policy: 'Verified Trendyol store {supplierId, storeId, name, source, verifiedAt}',
+    status: InventoryStatus.proposedV5,
+  ),
+  'notifications': SyncEntity(
+    classes: {DataClass.internal},
+    cloudTarget: null,
+    policy: 'Durable Windows notification history (spec §23.5); stable eventId '
+        'dedup; no payroll/customer contact in bodies; contract pending (N1)',
+    status: InventoryStatus.proposedV5,
+  ),
   'tgoReviewCache': SyncEntity(
     classes: {DataClass.transientApi, DataClass.personalPii},
     cloudTarget: null,

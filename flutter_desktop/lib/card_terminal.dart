@@ -111,7 +111,13 @@ class InposPayments {
         transactionId: attempt['transactionId'] as String?,
         amountCents: attempt['amountCents'] as int,
       );
-    final o = mutableOrder(s, attempt['orderId'] as int)!;
+    final o = mutableOrder(s, attempt['orderId'] as int);
+    // Never apply a terminal outcome to a missing order (deleteOrder refuses
+    // unresolved attempts; this keeps an old database fail-closed too).
+    if (o == null) {
+      throw const FormatException(
+          'Terminal işleminin siparişi bulunamadı; ödemeyi elle kontrol edin');
+    }
     if (reply.status == TerminalStatus.approved &&
         (reply.transactionId == null ||
             reply.transactionId!.isEmpty ||

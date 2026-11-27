@@ -9,6 +9,7 @@
 /// | `printJobs`        | `pos_print_jobs`      | `orderId:batchId:kind`           |
 /// | `trendyolGoOrders` | `pos_platform_orders` | supplier:store:packageId         |
 /// | `deletedOrders`    | `pos_deleted_orders`  | `orderId`                        |
+/// | `platformReviews`  | `pos_platform_reviews`| platform:supplier:store:reviewId |
 ///
 /// `state_snapshot` keeps the small core (settings, menu, finance, …) and the
 /// revision that fences every write. A commit writes only rows whose content
@@ -57,6 +58,13 @@ final entityKinds = <EntityKind>[
           '${package.isNotEmpty ? package : _str(r['orderNumber'])}';
     },
     {'status': (r) => r['status'], 'created_at': (r) => r['createdAt']},
+  ),
+  EntityKind(
+    'platformReviews',
+    'pos_platform_reviews',
+    (r) => '${_str(r['platform'])}:${_str(r['supplierId'])}:'
+        '${_str(r['storeId'])}:${_str(r['reviewId'])}',
+    {'created_at': (r) => r['createdAt'], 'read': (r) => r['read'] == true ? 1 : 0},
   ),
   EntityKind('deletedOrders', 'pos_deleted_orders', (r) => _str(r['orderId']), {
     'deleted_at': (r) => r['deletedAt'],
