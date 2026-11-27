@@ -18,6 +18,7 @@ import 'package:nohut_falafel_desktop/order_actions.dart';
 import 'package:nohut_falafel_desktop/pos_logic.dart';
 import 'package:nohut_falafel_desktop/finance_logic.dart';
 import 'package:nohut_falafel_desktop/payroll.dart';
+import 'package:nohut_falafel_desktop/workforce.dart';
 import 'package:nohut_falafel_desktop/pos_store.dart';
 import 'package:nohut_falafel_desktop/remote_commands.dart';
 import 'package:nohut_falafel_desktop/supabase_agent_transport.dart';
@@ -560,6 +561,25 @@ void main() {
         expect((store.read().data['shifts'] as List), hasLength(1));
         expect(await sync.flush(), greaterThan(0));
         expect(pendingOutbox(db), isEmpty);
+        final workNow = DateTime.utc(2026, 11, 24, 12);
+        final manual = applyWorkCommand(store, {'action': 'work_save', 'requestId': 'synthetic-manual',
+          'date': '2026-11-23', 'start': '09:00', 'end': '18:00', 'breakMinutes': 60},
+          actorId: 2, actorName: 'Synthetic payroll staff', now: workNow);
+        expect(await sync.flush(), greaterThan(0), reason: sync.status().lastError);
+        expect((await call('/test/inspect'))['manual_minutes'], '480');
+        final editedWork = applyWorkCommand(store, {'action': 'work_save', 'requestId': 'synthetic-manual-edit',
+          'id': manual['id'], 'expectedUpdatedAt': manual['updatedAt'], 'date': '2026-11-23',
+          'start': '09:00', 'end': '18:00', 'breakMinutes': 30},
+          actorId: 2, actorName: 'Synthetic payroll staff', now: workNow);
+        expect(await sync.flush(), greaterThan(0), reason: sync.status().lastError);
+        expect((await call('/test/inspect'))['manual_minutes'], '510');
+        applyWorkCommand(store, {'action': 'work_void', 'requestId': 'synthetic-manual-void',
+          'id': manual['id'], 'expectedUpdatedAt': editedWork['updatedAt'], 'reason': 'Synthetic correction'},
+          actorId: 2, actorName: 'Synthetic payroll staff', now: workNow);
+        expect(await sync.flush(), greaterThan(0), reason: sync.status().lastError);
+        final manualFacts = await call('/test/inspect');
+        expect(manualFacts['manual_minutes'], '0');
+        expect(manualFacts['manual_corrections'], 2);
         final payrollNow = DateTime.utc(2026, 11, 30, 10);
         late String partialPayment;
         store.command('synthetic-payroll-partial', {}, (s) {

@@ -83,6 +83,14 @@ EVIDENCE:
 
 **Blockers / owner actions:** live Trendyol read-only check needs explicit owner authorization (R1); physical iPhone HTTPS/Safari test (L4); any FCM project needs owner approval (N4); KVKK gate unchanged.
 
+## Codex manual Mesai checkpoint (2026-11-27)
+
+- Integrated Claude d22e706 print completion revision-race fix and Q2 settings inventory/navigation into #39 only (merge 44157be). Preserved existing operations, frozen receipt audit and test-only renderer fix. No other agent branch modified.
+- QA-09 third slice: existing atomic shifts event now supports source=manual, exact break minutes, notes, created/update timestamps, retained void facts and before/after break history. Stable shift IDs/correction ordinals, tenant employee/actor mapping, immutable historical labels/creation, complete append-only correction chains and audited voids are validated before ACK. Legacy explicit clock records retain compatibility. No planned hours become actual attendance or wages; no approvals added. Contract: docs/contracts/v1/manual-attendance.md.
+- Validation: **46 migrations / 26 SQL suites** pass as superuser and non-BYPASSRLS owner, including break rewrites, broken chains, omitted history, historical attribution changes and void undo rejection. Targeted manual/workforce/receipt/print suite **20 passed**. Actual HTTP/PostgreSQL manual create → edit → void retains 480 → 510 → 0 active minutes and two immutable corrections. Full Windows **492 passed, 2 skips**; analysis has no errors/warnings (594 style/deprecation infos).
+- Dependency request #44 comment 7225045679: correctShift must include unchanged nonzero breakMinutes in exceptional manual correction snapshots; Codex does not guess missing historical breaks or duplicate Claude's handler. Continue independent schedules/submission/read work. QA-09/O-03 remains open.
+- CI at a6f35c8: dynamic-port HTTP 46046252798, PostgreSQL 46046252927, auth 46046252795, PWA 46046252641 and both Android builds 46046252833/46046252759 pass. Windows still running at that check; latest-head CI pending. PR remains draft, production/legal/physical-device gates unchanged.
+
 ## Codex integration-test reliability checkpoint (2026-11-27)
 
 - Full native suite initially exposed 12 render-helper invariant failures on local Flutter 3.47.4: debugDisableShadows was restored in tearDown after binding invariant checks. Test-only try/finally now restores the prior flag before returning, keeping actual shadow rendering and all assertions. **45 native tests pass**, including all 12 rendering smoke tests. A separate actual capture run passes all 12 and writes bundled-font light/dark PNGs locally; owner payroll light and staff payroll dark inspected. This is widget-render evidence, not physical Android testing. Claude notified on #44.
