@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -9,6 +10,7 @@ import 'package:nohut_falafel_desktop/local_accounts.dart';
 import 'package:nohut_falafel_desktop/operations.dart';
 import 'package:nohut_falafel_desktop/pos_logic.dart';
 import 'package:nohut_falafel_desktop/pos_store.dart';
+import 'package:nohut_falafel_desktop/qr_publisher_client.dart';
 import 'package:nohut_falafel_desktop/staff_commands.dart';
 
 /// Independent QA & security regression suite maintained on `gemini/independent-qa`.
@@ -388,6 +390,71 @@ void main() {
       } finally {
         dir.deleteSync(recursive: true);
       }
+    });
+  });
+
+  group('P1 QR Menu Publisher Security & Conflict Handling (Synthetic)', () {
+    test('QrPublisherClient sends Bearer token, surfaces 409 revision conflict, and refuses 302 redirects', () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      const token = 'synthetic_qr_publisher_token_32chars_min_ok';
+      String? seenAuth;
+      Map<String, dynamic>? seenBody;
+      server.listen((req) async {
+        seenAuth = req.headers.value(HttpHeaders.authorizationHeader);
+        if (req.uri.path == '/publish') {
+          final raw = await utf8.decoder.bind(req).join();
+          seenBody = jsonDecode(raw) as Map<String, dynamic>;
+          if (seenBody?['revision'] == 'rev-stale') {
+            req.response.statusCode = 409;
+            req.response.headers.contentType = ContentType.json;
+            req.response.write(jsonEncode({'error': 'Sürüm çakışması: katalog güncellendi.'}));
+          } else {
+            req.response.statusCode = 200;
+            req.response.headers.contentType = ContentType.json;
+            req.response.write(jsonEncode({'revision': 'rev-2', 'commit': 'synthetic123'}));
+          }
+        } else if (req.uri.path == '/catalog') {
+          req.response.statusCode = 302;
+          req.response.headers.set('location', 'https://evil.example/redirect');
+        }
+        await req.response.close();
+      });
+
+      final client = QrPublisherClient('/tmp/synthetic.db', testToken: token);
+      final endpoint = 'http://127.0.0.1:${server.port}';
+      try {
+        // 1. Stale revision -> HTTP 409 surfaces explicit conflict message.
+        await expectLater(
+          client.publish(endpoint, 'rev-stale', {'products': <dynamic>[], 'categories': <dynamic>[], 'campaigns': <dynamic>[]}),
+          throwsA(isA<FormatException>().having((e) => e.message, 'message', contains('Sürüm çakışması'))),
+        );
+        expect(seenAuth, 'Bearer $token');
+
+        // 2. Matching revision -> succeeds with new revision & commit.
+        final ok = await client.publish(endpoint, 'rev-1', {'products': <dynamic>[], 'categories': <dynamic>[], 'campaigns': <dynamic>[]});
+        expect(ok['revision'], 'rev-2');
+        expect(ok['commit'], 'synthetic123');
+
+        // 3. HTTP 302 redirect -> refused (never follows redirects with Bearer token).
+        await expectLater(
+          client.catalog(endpoint),
+          throwsA(isA<FormatException>().having((e) => e.message, 'message', contains('Yönlendirme'))),
+        );
+      } finally {
+        await server.close(force: true);
+      }
+    });
+
+    test('QrPublisherClient enforces 6 MB image upload cap and rejects empty payloads', () {
+      final client = QrPublisherClient('/tmp/synthetic.db', testToken: 'synthetic_qr_publisher_token_32chars_min_ok');
+      expect(
+        () => client.uploadImage('http://127.0.0.1:18787', 'image/png', <int>[]),
+        throwsFormatException,
+      );
+      expect(
+        () => client.uploadImage('http://127.0.0.1:18787', 'image/png', List<int>.filled(6000001, 1)),
+        throwsFormatException,
+      );
     });
   });
 }
