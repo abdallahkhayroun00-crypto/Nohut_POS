@@ -34,7 +34,7 @@ create table nohut_private.qr_publish_receipts (
  check ((state<>'completed' or (
    jsonb_typeof(result)='object' and result->>'requestId'=request_id and
    ((result->>'status'='committed' and attempted_at is not null and result->>'commit'=commit_sha and result->>'revision'=revision)
-   or (result->>'status'='no_change' and commit_sha is null and result->>'revision'=expected_revision))) is true)
+   or (result->>'status'='no_change' and commit_sha is null and result->>'revision'=expected_revision)))) is true)
 );
 -- Only one unresolved operation across ALL tenants because there is exactly
 -- one fixed QR GitHub repository. No TTL releases an ambiguous operation.
