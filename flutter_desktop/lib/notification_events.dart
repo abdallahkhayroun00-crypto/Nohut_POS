@@ -8,6 +8,7 @@
 library;
 
 import 'daily_report.dart' show dailyReportEvent;
+import 'payroll_reminders.dart' show payrollReminderEvents;
 import 'local_accounts.dart';
 import 'notification_center.dart';
 import 'pos_logic.dart';
@@ -28,6 +29,7 @@ const Map<String, NotificationCategory> notificationCategories = {
   'shift': (label: 'Vardiya başladı/bitti, düzeltme', severity: 'normal', permission: 'shifts.manage', clients: ['windows', 'yonetici'], windowsOnly: false),
   'payroll': (label: 'Maaş, prim, avans, ödeme', severity: 'normal', permission: 'payroll.view', clients: ['windows', 'yonetici'], windowsOnly: false),
   'report.daily': (label: 'Gün sonu raporu hazır', severity: 'normal', permission: 'sales.view', clients: ['windows', 'yonetici'], windowsOnly: false),
+  'personal': (label: 'Kişisel: mesai hatırlatması, maaş ödemesi kaydı', severity: 'normal', permission: null, clients: ['personel', 'yonetici'], windowsOnly: false),
   'review': (label: 'Yeni platform / Google yorumu', severity: 'normal', permission: 'reviews.reply', clients: ['windows', 'yonetici'], windowsOnly: false),
   'pos.unavailable': (label: 'Windows POS erişilemiyor', severity: 'high', permission: null, clients: ['personel', 'yonetici'], windowsOnly: false),
   'command.failed': (label: 'Uzak komut başarısız / bekliyor', severity: 'high', permission: 'online.act', clients: ['windows', 'yonetici'], windowsOnly: false),
@@ -101,6 +103,9 @@ List<String> recordOperationalNotifications(PosStore store, {DateTime Function()
       ...deriveOperationalEvents(snap.data),
       if (daily != null) {...daily, 'severity': notificationCategories['report.daily']!.severity,
         'permission': notificationCategories['report.daily']!.permission},
+      for (final r in payrollReminderEvents(snap.data, now))
+        {...r, 'severity': notificationCategories[r['category']]!.severity,
+          'permission': r['permission'] ?? notificationCategories[r['category']]!.permission},
     ])
       if (!known.contains(e['eventId'])) () {
         final at = DateTime.tryParse('${e['createdAt']}');
@@ -131,6 +136,10 @@ List<Json> visibleNotifications(List? rows, LocalAuth auth, AuthContext ctx, {in
     if (cat == null || cat.windowsOnly || !cat.clients.contains(client)) continue;
     final perm = r['permission'] as String? ?? cat.permission;
     if (perm != null && auth.authorize(ctx, perm) != 'ok') continue;
+    // Personal events reach only their employee (never other staff).
+    final recipient = r['recipientEmployeeId'];
+    if (recipient != null && recipient != ctx.employeeId) continue;
+    if (recipient == null && cat.permission == null && r['category'] == 'personal') continue;
     out.add({
       for (final k in ['eventId', 'category', 'severity', 'createdAt', 'title', 'body', 'ref']) k: r[k],
     });

@@ -1,0 +1,192 @@
+import 'dart:io';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:nohut_falafel_desktop/finance_logic.dart';
+import 'package:nohut_falafel_desktop/finance_sync_server.dart';
+import 'package:nohut_falafel_desktop/local_accounts.dart';
+import 'package:nohut_falafel_desktop/notification_events.dart';
+import 'package:nohut_falafel_desktop/payroll.dart';
+import 'package:nohut_falafel_desktop/payroll_reminders.dart';
+import 'package:nohut_falafel_desktop/pos_logic.dart';
+import 'package:nohut_falafel_desktop/pos_store.dart';
+import 'package:nohut_falafel_desktop/workforce.dart';
+
+void main() {
+  late Directory dir;
+  late PosStore store;
+  late int ayse, mehmet;
+  const week = '2026-11-16'; // Mon; payday Mon 2026-11-23
+  final friday = DateTime.utc(2026, 11, 20, 12);
+
+  setUp(() {
+    dir = Directory.systemTemp.createTempSync('nohut-payroll');
+    store = PosStore(databaseFile: '${dir.path}/db');
+    final people = asMaps(store.read().data['employees']);
+    ayse = people[0]['id'] as int;
+    mehmet = people[1]['id'] as int;
+    // Keep two active employees only, so reminder counts are exact.
+    final s = store.read();
+    for (final e in (s.data['employees'] as List).cast<Map>().skip(2)) {
+      e['active'] = false;
+    }
+    store.replace(s.data, s.revision);
+  });
+  tearDown(() { store.dispose(); dir.deleteSync(recursive: true); });
+
+  void work(int who, String id, String date, String start, String end, {int breakMinutes = 0}) =>
+      applyWorkCommand(store, {'requestId': id, 'action': 'work_save', 'date': date, 'start': start,
+        'end': end, 'breakMinutes': breakMinutes}, actorId: who, actorName: 'x', now: friday);
+  Json mgr(String id, String action, Map<String, dynamic> data) => FinanceSyncServer.managerWrite(store,
+      {'requestId': 'req-payroll-$id', 'operation': 'managerWrite', 'action': action, 'data': data, 'actor': 'mudur'});
+  Json status(int who, {String today = '2026-11-24'}) =>
+      payrollStatus(store.read().data, who, week, today: today);
+
+  test('missing rate is incomplete, never 0 TL; hours are kept', () {
+    work(ayse, 'w-0001', '2026-11-17', '10:00', '18:00', breakMinutes: 30);
+    final s = status(ayse);
+    expect(s['minutes'], 450);
+    expect(s['earnedCents'], isNull);
+    expect(s['rateComplete'], false);
+    expect(s['remainingCents'], isNull);
+  });
+
+  test('effective-dated rates: each day uses its own rate; history is append-only', () {
+    mgr('rate-00000001', 'payroll_rate', {'employeeId': ayse, 'payType': 'Saatlik', 'rateCents': 10000, 'effectiveFrom': '2026-11-01'});
+    mgr('rate-00000002', 'payroll_rate', {'employeeId': ayse, 'payType': 'Saatlik', 'rateCents': 12050, 'effectiveFrom': '2026-11-18'});
+    work(ayse, 'w-0101', '2026-11-17', '10:00', '13:00'); // 3h × 100,00
+    work(ayse, 'w-0102', '2026-11-18', '10:00', '12:20'); // 140 min × 120,50
+    final s = status(ayse);
+    // 3×10000 + 140×12050/60 = 30000 + 28116.67 → 58117 (half-up once)
+    expect(s['earnedCents'], 58117);
+    final e = asMaps(store.read().data['employees']).firstWhere((e) => e['id'] == ayse);
+    expect((e['payHistory'] as List).map((h) => h['rateCents']), [10000, 12050]);
+    expect(payRateOn(e, '2026-11-17')!.$2, 10000);
+    expect(payRateOn(e, '2026-10-01'), isNull, reason: 'no rate before first effective date');
+  });
+
+  test('partial, mixed and full payments; status derived; reversal audited; no double count', () {
+    mgr('rate-00000101', 'payroll_rate', {'employeeId': ayse, 'payType': 'Saatlik', 'rateCents': 15000, 'effectiveFrom': '2026-11-01'});
+    work(ayse, 'w-0201', '2026-11-17', '10:00', '18:00'); // 8h → 1200,00
+    expect(status(ayse)['financialStatus'], 'Ödenmedi');
+    expect(status(ayse)['reviewStatus'], 'Belirtilmedi');
+    expect(status(ayse)['overdue'], true);
+    mgr('pay-000000001', 'payroll_payment', {'employeeId': ayse, 'weekStart': week, 'kind': 'Avans',
+      'method': 'Nakit', 'cashCents': 20000, 'paidOn': '2026-11-19'});
+    expect(status(ayse)['financialStatus'], 'Kısmen Ödendi');
+    expect(status(ayse)['remainingCents'], 100000);
+    expect(() => mgr('pay-000000002', 'payroll_payment', {'employeeId': ayse, 'weekStart': week,
+      'method': 'Karma', 'cashCents': 50000, 'bankCents': 0, 'paidOn': '2026-11-20'}), throwsFormatException);
+    mgr('pay-000000003', 'payroll_payment', {'employeeId': ayse, 'weekStart': week,
+      'method': 'Karma', 'cashCents': 50000, 'bankCents': 50000, 'paidOn': '2026-11-20', 'expectedPaidCents': 20000});
+    // Retry of the same request (lost ACK) records once.
+    mgr('pay-000000003', 'payroll_payment', {'employeeId': ayse, 'weekStart': week,
+      'method': 'Karma', 'cashCents': 50000, 'bankCents': 50000, 'paidOn': '2026-11-20', 'expectedPaidCents': 20000});
+    final full = status(ayse);
+    expect(full['financialStatus'], 'Ödendi');
+    expect(full['paidCents'], 120000);
+    expect(full['resolved'], true);
+    // Stale screen (expected 20000 paid) cannot add another payment.
+    expect(() => mgr('pay-000000004', 'payroll_payment', {'employeeId': ayse, 'weekStart': week,
+      'method': 'Nakit', 'cashCents': 100, 'paidOn': '2026-11-20', 'expectedPaidCents': 20000}),
+      throwsA(isA<FinanceVersionConflict>()));
+    // Monthly expense = net payments once (Nov, week ends 22nd).
+    expect(financeMonthSummary(store.read().data, '2026-11').payrollCents, 120000);
+    // Correction by reversal, never edit.
+    final pid = financeRows(store.read().data, 'payrollPayments').last['id'];
+    mgr('rev-000000001', 'payroll_reverse', {'id': pid, 'reason': 'Yanlış tutar'});
+    expect(() => mgr('rev-000000002', 'payroll_reverse', {'id': pid, 'reason': 'tekrar'}), throwsA(isA<PayrollConflict>()));
+    expect(status(ayse)['financialStatus'], 'Kısmen Ödendi');
+    expect(financeRows(store.read().data, 'payrollPayments'), hasLength(3));
+    expect(financeMonthSummary(store.read().data, '2026-11').payrollCents, 20000);
+    // Paid-hours edit: more hours later reopens the balance.
+    final rec = asMaps(store.read().data['shifts']).single;
+    applyWorkCommand(store, {'requestId': 'w-0202', 'action': 'work_save', 'id': rec['id'],
+      'expectedUpdatedAt': rec['updatedAt'], 'date': '2026-11-17', 'start': '09:00', 'end': '18:00'},
+      actorId: ayse, actorName: 'x', now: friday.add(const Duration(minutes: 1)));
+    expect(status(ayse)['earnedCents'], 135000);
+    expect(status(ayse)['remainingCents'], 115000);
+  });
+
+  test('legacy weeklyPayroll weeks refuse ledger payments (no double counting)', () {
+    final s = store.read();
+    saveEmployeePay(s.data, mehmet, 'Saatlik', 10000);
+    saveWeeklyPayroll(s.data, employeeId: mehmet, weekStart: week, workedMinutes: 600);
+    store.replace(s.data, s.revision);
+    expect(() => mgr('pay-000000101', 'payroll_payment', {'employeeId': mehmet, 'weekStart': week,
+      'method': 'Nakit', 'cashCents': 100, 'paidOn': '2026-11-20'}), throwsA(isA<PayrollConflict>()));
+    expect(status(mehmet)['legacy'], true);
+  });
+
+  test('explicit Ödenmedi is review, not money; reminders keep running while owed', () {
+    mgr('rate-00000301', 'payroll_rate', {'employeeId': ayse, 'payType': 'Haftalık Sabit', 'rateCents': 500000, 'effectiveFrom': '2026-11-01'});
+    work(ayse, 'w-0301', '2026-11-17', '10:00', '12:00');
+    expect(status(ayse)['earnedCents'], 500000);
+    mgr('ack-000000001', 'payroll_unpaid', {'employeeId': ayse, 'weekStart': week});
+    final s = status(ayse);
+    expect(s['reviewStatus'], 'Ödenmedi (belirtildi)');
+    expect(s['financialStatus'], 'Ödenmedi');
+    expect(s['paidCents'], 0);
+    expect(s['resolved'], false);
+  });
+
+  group('reminders', () {
+    DateTime ist(String day, int h, [int m = 0]) => instantOf(day, '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}');
+
+    test('Sunday 18:00 / 21:30 to employees with unsubmitted weeks; stops after sending', () {
+      work(ayse, 'w-0401', '2026-11-17', '10:00', '12:00');
+      List<Json> at(DateTime t) => payrollReminderEvents(store.read().data, t).where((e) => '${e['eventId']}'.startsWith('tsr:')).toList();
+      expect(at(ist('2026-11-22', 17, 59)), isEmpty);
+      final e18 = at(ist('2026-11-22', 18, 1));
+      expect(e18.map((e) => e['recipientEmployeeId']).toSet(), {ayse, mehmet});
+      expect(e18.first['title'], 'Haftalık mesainizi gönderin');
+      expect('${e18.first}', isNot(contains('₺')));
+      // After 21:30 only the latest slot is produced (bounded catch-up).
+      expect(at(ist('2026-11-22', 23)).map((e) => e['eventId']).every((id) => '$id'.endsWith(':21:30')), true);
+      submitWeek(store, {'requestId': 'week-0401', 'weekStart': week}, actorId: ayse, now: ist('2026-11-22', 19));
+      expect(at(ist('2026-11-22', 23)).map((e) => e['recipientEmployeeId']), [mehmet]);
+    });
+
+    test('payday Monday 09/14/20 then daily; stop when resolved; one event per slot across restarts', () {
+      mgr('rate-00000501', 'payroll_rate', {'employeeId': ayse, 'payType': 'Saatlik', 'rateCents': 10000, 'effectiveFrom': '2026-11-01'});
+      work(ayse, 'w-0501', '2026-11-17', '10:00', '12:00');
+      List<String> ids(DateTime t) => [for (final e in payrollReminderEvents(store.read().data, t)) if ('${e['eventId']}'.startsWith('payday:')) '${e['eventId']}'];
+      expect(ids(ist('2026-11-23', 8, 59)), isEmpty);
+      expect(ids(ist('2026-11-23', 9, 5)), ['payday:$week:2026-11-23:09:00']);
+      expect(ids(ist('2026-11-23', 20, 30)), ['payday:$week:2026-11-23:20:00']);
+      expect(ids(ist('2026-11-24', 9, 1)), ['payday:$week:2026-11-24:09:00']);
+      // Durable dedup through the notification history.
+      final t = ist('2026-11-23', 9, 5);
+      final added = recordOperationalNotifications(store, clock: () => t);
+      expect(added.where((id) => id.startsWith('payday:')), hasLength(1));
+      expect(recordOperationalNotifications(store, clock: () => t.add(const Duration(minutes: 3))).where((id) => id.startsWith('payday:')), isEmpty);
+      final row = asMaps(store.read().data['notifications']).firstWhere((r) => '${r['eventId']}'.startsWith('payday:'));
+      expect(row['permission'], 'payroll.manage');
+      // Pay in full → reminders stop.
+      mgr('pay-000000501', 'payroll_payment', {'employeeId': ayse, 'weekStart': week,
+        'method': 'Havale/EFT', 'bankCents': 20000, 'paidOn': '2026-11-23'});
+      expect(ids(ist('2026-11-24', 9, 1)), isEmpty);
+      // The employee is told privately that a payment was recorded.
+      final personal = payrollReminderEvents(store.read().data, ist('2026-11-24', 9, 1))
+          .where((e) => '${e['eventId']}'.startsWith('pp:')).single;
+      expect(personal['recipientEmployeeId'], ayse);
+      expect('${personal['title']}${personal['body']}', isNot(contains('200')));
+    });
+
+    test('personal events are visible only to their employee', () async {
+      final auth = LocalAuth(store.authDatabase, iterations: 1000);
+      await auth.createUser(username: 'sahip', password: 'owner-pass-1', role: 'Yönetici', isOwner: true);
+      await auth.createUser(username: 'ayse', password: 'staff-pass-1', role: 'Personel', employeeId: ayse);
+      await auth.createUser(username: 'mehmet', password: 'staff-pass-2', role: 'Personel', employeeId: mehmet);
+      work(ayse, 'w-0601', '2026-11-17', '10:00', '12:00');
+      submitWeek(store, {'requestId': 'week-0601', 'weekStart': week}, actorId: ayse, now: ist('2026-11-22', 17));
+      recordOperationalNotifications(store, clock: () => ist('2026-11-22', 18, 5));
+      final rows = store.read().data['notifications'] as List;
+      final a = await auth.login(username: 'ayse', password: 'staff-pass-1', deviceId: 'dev-ayse-00000001', client: 'personel');
+      final m = await auth.login(username: 'mehmet', password: 'staff-pass-2', deviceId: 'dev-mehm-00000001', client: 'personel');
+      final forAyse = visibleNotifications(rows, auth, a.context).where((e) => e['category'] == 'personal');
+      final forMehmet = visibleNotifications(rows, auth, m.context).where((e) => e['category'] == 'personal');
+      expect(forAyse, isEmpty, reason: 'Ayşe already sent her week');
+      expect(forMehmet.single['title'], 'Haftalık mesainizi gönderin');
+    });
+  });
+}

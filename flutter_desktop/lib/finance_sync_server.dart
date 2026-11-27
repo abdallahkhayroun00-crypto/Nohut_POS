@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:nohut_core/finance_wire.dart';
 import 'package:nohut_core/report_period.dart';
 
+import 'payroll.dart';
 import 'finance_logic.dart';
 import 'google_business.dart';
 import 'staff_commands.dart';
@@ -226,6 +227,7 @@ class FinanceSyncServer {
       if (d[key] is! bool) throw const FormatException('Seçim geçersiz.');
       return d[key] as bool;
     }
+    final actor = '${payload['actor'] ?? 'Android yönetici'}';
     return store.command('fin_mgr_' + id, payload, (state) {
       Json? row(String collection, bool Function(Json) match) =>
         financeRows(state, collection).where(match).firstOrNull;
@@ -293,6 +295,22 @@ class FinanceSyncServer {
           if (current == null) throw const FinanceVersionConflict();
           check(current);
           voidManualPlatformIncome(state, str('source'), str('month'));
+        // V6.0 payroll (lib/payroll.dart): rates with effective dates and an
+        // immutable payment ledger; nothing here initiates a transfer.
+        case 'payroll_rate':
+          setEmployeeRate(state, employeeId: num('employeeId'), payType: str('payType'),
+            rateCents: num('rateCents'), effectiveFrom: str('effectiveFrom'), by: actor);
+        case 'payroll_payment':
+          final w = str('weekStart');
+          if (d['expectedPaidCents'] != null &&
+              payrollStatus(state, num('employeeId'), w, today: '9999-12-31')['paidCents'] != d['expectedPaidCents']) {
+            throw const FinanceVersionConflict();
+          }
+          recordPayrollPayment(state, {...d, 'requestId': id}, by: actor);
+        case 'payroll_reverse':
+          reversePayrollPayment(state, d, by: actor);
+        case 'payroll_unpaid':
+          acknowledgeUnpaid(state, d, by: actor);
         case 'quick_save':
           // §24.8 Hızlı Gider Ekle from Yönetici (LAN + Android): same rules
           // as the Windows quick form; edits need the exact prior version.

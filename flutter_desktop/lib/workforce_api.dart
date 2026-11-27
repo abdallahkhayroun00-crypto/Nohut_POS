@@ -9,6 +9,7 @@ import 'lan_auth_gate.dart';
 import 'local_accounts.dart';
 import 'pos_logic.dart';
 import 'pos_store.dart';
+import 'payroll.dart' show payrollStatus, payRateOn;
 import 'workforce.dart';
 
 class WorkforceApi {
@@ -45,6 +46,14 @@ class WorkforceApi {
           // Rate is payroll data: only for the person themself or payroll.view.
           if (who != ctx.employeeId && auth.authorize(ctx, 'payroll.view') != 'ok') {
             (view['employee'] as Map)..remove('payRateCents')..remove('payType');
+          }
+          // Own earned / paid / remaining (staff see only their own).
+          if (who == ctx.employeeId || auth.authorize(ctx, 'payroll.view') == 'ok') {
+            final data = store.read().data;
+            view['pay'] = payrollStatus(data, who, view['weekStart'] as String, today: today);
+            final emp = asMaps(data['employees']).where((e) => e['id'] == who).firstOrNull;
+            final rate = emp == null ? null : payRateOn(emp, view['weekStart'] as String);
+            (view['employee'] as Map)..['payType'] = rate?.$1..['payRateCents'] = rate?.$2;
           }
           return GateReply(200, {'today': today, 'self': who == ctx.employeeId, 'week': view});
         case ('GET', 'schedule'):

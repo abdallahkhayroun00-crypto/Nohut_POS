@@ -38,8 +38,12 @@ class _NotificationHistoryPanelState extends State<NotificationHistoryPanel> {
   @override
   Widget build(BuildContext context) {
     final rows = asMaps(widget.store.read().data[notificationsStateKey]).reversed
+        .where((r) => notificationCategories['${r['category']}']?.clients.contains('windows') ?? true)
         .where((r) => category == null || r['category'] == category).take(200).toList();
-    final unread = unreadNotifications(widget.store.read().data[notificationsStateKey] as List?);
+    final unread = unreadNotifications([
+      for (final r in asMaps(widget.store.read().data[notificationsStateKey]))
+        if (notificationCategories['${r['category']}']?.clients.contains('windows') ?? true) r,
+    ]);
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Wrap(spacing: 8, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
         Text('Okunmamış: $unread',
