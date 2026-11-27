@@ -13,7 +13,7 @@ select set_config('request.jwt.claims', '{"sub":"a1000000-0000-0000-0000-0000000
 set local role authenticated;
 do $$ begin
   begin
-    perform public.nohut_register_device('a3000000-0000-0000-0000-000000000001', 'windows', 'Kasa');
+    perform public.nohut_register_windows_device('a3000000-0000-0000-0000-000000000001', 'Kasa', null);
     raise exception 'owner without MFA enrolled windows';
   exception when insufficient_privilege then
     if sqlerrm <> 'windows_enrollment_requires_owner_mfa' then raise; end if;
@@ -26,7 +26,7 @@ select set_config('request.jwt.claims', '{"sub":"a1000000-0000-0000-0000-0000000
 set local role authenticated;
 do $$ begin
   begin
-    perform public.nohut_register_device('a3000000-0000-0000-0000-000000000002', 'windows', 'Kasa');
+    perform public.nohut_register_windows_device('a3000000-0000-0000-0000-000000000002', 'Kasa', null);
     raise exception 'manager enrolled windows';
   exception when insufficient_privilege then null;
   end;
@@ -47,10 +47,14 @@ begin
 end $$;
 reset role;
 
+-- Bootstrap ticket from the trusted setup channel (service role).
+set local role service_role;
+select set_config('nohut.test_ticket', public.nohut_issue_windows_bootstrap('e0000000-0000-0000-0000-0000000000a1'), true);
+reset role;
 -- 3. Owner with MFA enrolls the Windows POS; Windows-only ops are ok there.
 select set_config('request.jwt.claims', '{"sub":"a1000000-0000-0000-0000-00000000000a","session_id":"a2000000-0000-0000-0000-000000000003","aal":"aal2","role":"authenticated"}', true);
 set local role authenticated;
-select public.nohut_register_device('a3000000-0000-0000-0000-00000000000a', 'windows', 'Kasa PC');
+select public.nohut_register_windows_device('a3000000-0000-0000-0000-00000000000a', 'Kasa PC', current_setting('nohut.test_ticket'));
 do $$
 declare s jsonb; v bigint;
 begin
