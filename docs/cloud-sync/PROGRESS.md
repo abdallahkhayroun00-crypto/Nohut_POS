@@ -288,6 +288,10 @@ Owner decision 2026-11-27: ChatGPT builds PR-05B (cloud functions), Claude build
 - Owner administration functions (`admin_create_user`, `admin_set_grant`, `admin_set_active`, `admin_revoke_sessions`, `admin_reset_pin`) take the JWT `aal` claim and require `aal2` (owner MFA). Device login: `enroll_device` after a password login; PIN: `set_pin` / `verify_pin` (bcrypt, 5 failures → PIN cleared, password needed).
 - **Heads-up for PR-05B (RLS):** all `nohut_private` tables use FORCE RLS. On a role without BYPASSRLS, SECURITY DEFINER functions see nothing unless a policy allows the owning role. The auth migration adds `control_plane_owner` policies for its own tables (scoped to the migration role); PR-05B functions that read/write the PR-05A tables need the same, or must be verified with a non-BYPASSRLS owner as in `nohut-auth-control-plane.yml`.
 
+### Owner decision — server-side QR Publisher v2 (2026-11-28)
+
+- **Contract written / implementation pending.** Owner approved server-only GitHub App credentials in Supabase Edge Function, preserving Windows single authority and existing menu grants. This supersedes the v1 local GitHub key location only. See `docs/contracts/v1/qr-publisher-edge-v2.md`. ChatGPT coordinates contract; Gemini/Codex implement authorized execution RPC/Edge adapter and synthetic tests, Claude integrates client transport once interface fixed; Gemini independent QA separately. Keep #48 as temporary local fallback, do not migrate the QR PEM in portable backup as a permanent solution. Trendyol credential migration remains separate. No public QR edits or production deploy authorized by this PR.
+
 ## Claims (edit when you start or finish)
 
 | Item | Agent | Since | PR |
