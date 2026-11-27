@@ -122,6 +122,31 @@ void main() {
   }
   for (final mode in [Brightness.light, Brightness.dark]) {
     final m = mode == Brightness.light ? 'light' : 'dark';
+    testWidgets('owner Personel tab $m', (t) async {
+      final api = FakeOwnerApi();
+      api.overviewData['employees'] = [
+        {'id': 7, 'name': 'Test Personel A', 'role': 'Kasa', 'active': true},
+        {'id': 8, 'name': 'Test Personel B', 'role': 'Mutfak', 'active': true},
+      ];
+      await renderScreen(t, 'owner-staff-$m', MaterialApp(debugShowCheckedModeBanner: false,
+          theme: NohutStyle.theme, darkTheme: NohutStyle.darkTheme,
+          home: OwnerHome(controller: PersonelController(api, StaffNotifications()), api: api, onUnpair: () {})),
+          brightness: mode, before: (t) async {
+            // §24.3 bottom bar: Ana Sayfa / Satışlar / Finans / Personel / Daha Fazla.
+            for (final l in ['Ana Sayfa', 'Satışlar', 'Finans', 'Personel', 'Daha Fazla']) {
+              expect(find.descendant(of: find.byType(NavigationBar), matching: find.text(l)), findsOneWidget);
+            }
+            await t.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Personel')));
+            await t.pumpAndSettle();
+          });
+      expect(find.byKey(const ValueKey('staff-payroll')), findsOneWidget);
+      expect(find.text('Test Personel B'), findsWidgets);
+      await t.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Daha Fazla')));
+      await t.pumpAndSettle();
+      expect(find.byKey(const ValueKey('owner-nav-settings')), findsOneWidget);
+      expect(t.takeException(), isNull);
+      await t.pumpWidget(const SizedBox());
+    });
     testWidgets('owner dashboard $m', (t) async {
       final api = FakeOwnerApi();
       await renderScreen(t, 'owner-dashboard-$m', MaterialApp(debugShowCheckedModeBanner: false,

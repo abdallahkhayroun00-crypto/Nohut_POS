@@ -26,20 +26,22 @@ Future<void> loadNohutFonts() async {
 
 /// Pumps [child] at a phone size and, if requested, saves a PNG.
 Future<void> renderScreen(WidgetTester t, String name, Widget child,
-    {Size size = const Size(412, 915), double ratio = 2, Brightness brightness = Brightness.light}) async {
+    {Size size = const Size(412, 915), double ratio = 2, Brightness brightness = Brightness.light,
+    Future<void> Function(WidgetTester t)? before}) async {
   // Real shadows while rendering; restored before the test ends, because
   // newer SDKs check painting debug flags before tear-downs run.
   final shadows = debugDisableShadows;
   debugDisableShadows = false;
   try {
-    await _render(t, name, child, size: size, ratio: ratio, brightness: brightness);
+    await _render(t, name, child, size: size, ratio: ratio, brightness: brightness, before: before);
   } finally {
     debugDisableShadows = shadows;
   }
 }
 
 Future<void> _render(WidgetTester t, String name, Widget child,
-    {required Size size, required double ratio, required Brightness brightness}) async {
+    {required Size size, required double ratio, required Brightness brightness,
+    Future<void> Function(WidgetTester t)? before}) async {
   t.view.physicalSize = size * ratio;
   t.view.devicePixelRatio = ratio;
   t.platformDispatcher.platformBrightnessTestValue = brightness;
@@ -48,6 +50,7 @@ Future<void> _render(WidgetTester t, String name, Widget child,
   final key = GlobalKey();
   await t.pumpWidget(RepaintBoundary(key: key, child: child));
   await t.pumpAndSettle();
+  if (before != null) await before(t);
   final dir = Platform.environment['NOHUT_RENDER_DIR'];
   if (dir == null) return;
   await t.runAsync(() async {

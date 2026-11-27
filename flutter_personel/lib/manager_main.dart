@@ -268,26 +268,43 @@ class _OwnerHomeState extends State<OwnerHome> {
   static const _groups=<(String,List<String>)>[
     ('Operasyon',['dashboard','tables','online','open-accounts','payments']),
     ('Müşteri',['reviews','google','qr-menu']),
-    ('Yönetim',['reports','finance','market-prices','settings']),
+    ('Yönetim',['staff','reports','finance','market-prices','settings']),
   ];
+  /// §24.3 bottom bar on phones: Ana Sayfa / Satışlar / Finans / Personel /
+  /// Daha Fazla (the full section list in the drawer).
+  static const _bar=<(String,String,IconData)>[
+    ('dashboard','Ana Sayfa',Icons.home_outlined),
+    ('tables','Satışlar',Icons.point_of_sale_outlined),
+    ('finance','Finans',Icons.account_balance_wallet_outlined),
+    ('staff','Personel',Icons.badge_outlined),
+  ];
+  final scaffoldKey=GlobalKey<ScaffoldState>();
+  String sectionLabel(String id)=>switch(id){
+    'dashboard'=>'Ana Sayfa','staff'=>'Personel',
+    _=>managementSections.where((p)=>p.$1==id).map((p)=>p.$2).firstOrNull??id};
+  void go(String id){
+    setState(()=>section=id);
+    if(id=='google'||id=='reviews')unawaited(loadGoogle());
+    if(id=='staff'&&payroll==null)unawaited(loadPayroll());
+  }
   Widget menu(bool drawer){
     final nc=context.nohut,scheme=Theme.of(context).colorScheme;
-    Widget item(int i){
-      final id=managementSections[i].$1,selected=section==id;
+    Widget item(String id,String label,IconData icon){
+      final selected=section==id;
       return Padding(padding:const EdgeInsets.symmetric(horizontal:10,vertical:1),child:ListTile(
         key:ValueKey('owner-nav-'+id),dense:true,selected:selected,
         selectedTileColor:scheme.secondaryContainer,selectedColor:scheme.onSecondaryContainer,
         shape:RoundedRectangleBorder(borderRadius:BorderRadius.circular(14)),
-        leading:Icon(icons[i],color:selected?scheme.onSecondaryContainer:nc.muted),
-        title:Text(managementSections[i].$2,style:TextStyle(fontSize:14.5,
+        leading:Icon(icon,color:selected?scheme.onSecondaryContainer:nc.muted),
+        title:Text(label,style:TextStyle(fontSize:14.5,
           fontWeight:selected?FontWeight.w700:FontWeight.w500,color:selected?scheme.onSecondaryContainer:nc.ink)),
         onTap:(){
           if(drawer)Navigator.pop(context);
-          setState(()=>section=id);
-          if(section=='google'||section=='reviews')unawaited(loadGoogle());
+          go(id);
         }));
     }
-    return ColoredBox(color:nc.card,child:SafeArea(child:Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[
+    // Material, not ColoredBox: the selected tile and ink must paint on it.
+    return Material(color:nc.card,child:SafeArea(child:Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[
       Container(margin:const EdgeInsets.all(12),padding:const EdgeInsets.all(14),
         decoration:BoxDecoration(color:nc.brandPanel,borderRadius:BorderRadius.circular(20)),
         child:Row(children:[
@@ -305,7 +322,9 @@ class _OwnerHomeState extends State<OwnerHome> {
           Padding(padding:const EdgeInsets.fromLTRB(24,14,24,6),child:Text(label.toUpperCase(),
             style:TextStyle(fontSize:11.5,letterSpacing:1.1,fontWeight:FontWeight.w700,color:nc.muted))),
           for(final id in ids)
-            if(managementSections.indexWhere((x)=>x.$1==id)>=0)item(managementSections.indexWhere((x)=>x.$1==id)),
+            if(id=='staff')item('staff','Personel',Icons.badge_outlined)
+            else if(managementSections.indexWhere((x)=>x.$1==id)>=0)
+              item(id,sectionLabel(id),icons[managementSections.indexWhere((x)=>x.$1==id)]),
         ],
       ])),
       Padding(padding:const EdgeInsets.fromLTRB(16,4,16,14),child:Row(children:[
@@ -429,6 +448,19 @@ class _OwnerHomeState extends State<OwnerHome> {
           icon:const Icon(Icons.table_restaurant),label:const Text('Masa Planı · Sipariş İşlemleri')),
         title('Kayıtlı siparişler'),...orderList('orders'),
       ];
+      case 'staff':return [
+        FilledButton.icon(key:const ValueKey('staff-payroll'),onPressed:openPayroll,
+          icon:const Icon(Icons.payments_outlined),label:const Text('Haftalık Maaş Ödemeleri')),
+        title('Maaş durumu'),
+        payrollPanel(),
+        title(day==ReportPeriod.day(ReportPeriod.today())?'Bugün ekip':'Ekip · ${dayLabel(day)}'),
+        teamPanel(),
+        title('Personel Listesi'),
+        for(final p in entries('employees').where((p)=>p['active']!=false))
+          line((p['name']??'').toString(),(p['role']??'').toString()),
+        if(data!=null&&entries('employees').isEmpty)notice('Personel kaydı yok veya henüz eşitlenmedi.'),
+        notice('Saatlik ücretler ve ekip programı şimdilik yerel Yönetici sayfasında; kullanıcılar, yetkiler ve cihazlar Windows POS’ta yönetilir.'),
+      ];
       case 'online':return [...orderList('online'),notice('Platform API ayarları ve desteklenen sipariş durumları Windows üzerinden yönetilir.')];
       case 'reviews':return [
         title('Google yorumları'),...googleContent(),
@@ -499,8 +531,10 @@ class _OwnerHomeState extends State<OwnerHome> {
   @override
   Widget build(BuildContext context){
     final wide=MediaQuery.sizeOf(context).width>=900;
+    final barIndex=_bar.indexWhere((b)=>b.$1==section);
     return Scaffold(
-      appBar:AppBar(title:Text(managementSections.firstWhere((p)=>p.$1==section).$2),
+      key:scaffoldKey,
+      appBar:AppBar(title:Text(sectionLabel(section)),
         actionsPadding:const EdgeInsets.only(right:6),
         actions:[IconButton(tooltip:'Yenile',onPressed:loading?null:()async{
           await widget.controller.refresh();await refresh();
@@ -522,6 +556,16 @@ class _OwnerHomeState extends State<OwnerHome> {
             ...body(),
           ])))),
       ]),
+      bottomNavigationBar:wide?null:NavigationBar(
+        selectedIndex:barIndex<0?_bar.length:barIndex,
+        onDestinationSelected:(i){
+          if(i==_bar.length){scaffoldKey.currentState?.openDrawer();return;}
+          go(_bar[i].$1);
+        },
+        destinations:[
+          for(final (_,label,icon) in _bar)NavigationDestination(icon:Icon(icon),label:label),
+          const NavigationDestination(icon:Icon(Icons.more_horiz),label:'Daha Fazla'),
+        ]),
     );
   }
 }
