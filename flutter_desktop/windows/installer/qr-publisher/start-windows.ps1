@@ -171,7 +171,18 @@ if ($health -and $health.service -eq 'Nohut QR Publisher') {
 }
 # Start at Windows sign-in, hidden and without prompts. Rewritten every run so
 # upgrades replace older shortcuts that could open a file picker at sign-in.
-$startup = [Environment]::GetFolderPath('Startup')
+# The lifecycle test uses a disposable APPDATA profile. Do not create a
+# shortcut in the runner's real shell folders. In production prefer the
+# Windows shell's (possibly redirected) Startup folder, with an APPDATA
+# fallback when the shell API returns an empty path.
+$startup = $null
+if (-not ($env:GITHUB_ACTIONS -eq 'true' -and $env:RUNNER_TEMP)) {
+  $startup = [Environment]::GetFolderPath('Startup')
+}
+if ([string]::IsNullOrWhiteSpace($startup)) {
+  $startup = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Startup'
+}
+New-Item -ItemType Directory -Path $startup -Force | Out-Null
 $shortcutFile = Join-Path $startup 'Nohut QR Publisher.lnk'
 $shell = New-Object -ComObject WScript.Shell
 $link = $shell.CreateShortcut($shortcutFile)
