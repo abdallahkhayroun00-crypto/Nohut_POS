@@ -66,7 +66,9 @@ begin
   end if;
   -- Customer contact data stays local: only promised pickup time may cross.
   if body ? 'customer' and (jsonb_typeof(body->'customer') is distinct from 'object'
-    or exists(select 1 from jsonb_object_keys(case when jsonb_typeof(body->'customer')='object' then body->'customer' else '{}'::jsonb end) k(key) where key<>'time')) then
+    or exists(select 1 from jsonb_object_keys(case when jsonb_typeof(body->'customer')='object' then body->'customer' else '{}'::jsonb end) k(key) where key<>'time')
+    or (body->'customer' ? 'time' and (jsonb_typeof(body->'customer'->'time') not in ('string','null')
+      or length(body->'customer'->>'time')>40))) then
     raise exception 'customer contact is local only' using errcode='22023';
   end if;
   if p_action in ('clock_in_out','retry_print','platform_action','print_payment_receipt') then ttl:=interval '5 minutes'; end if;
