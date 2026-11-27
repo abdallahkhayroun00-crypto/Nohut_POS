@@ -20,10 +20,13 @@ class CheckError extends Error {
 
 export function makeHandler(env: (name: string) => string | undefined, call = fetch) {
   return async (req: Request): Promise<Response> => {
-    // Require exact project server credential, not just any valid user JWT.
-    const admin = env("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-    const auth = req.headers.get("authorization") ?? "";
-    if (!admin || !same(auth, "Bearer " + admin)) return json({error:"forbidden"},403);
+    // Separate high-entropy diagnostic credential; never require a database
+    // administrator key in the Dashboard. Gateway JWT verification stays on.
+    // Missing/short configuration fails closed.
+    const checkKey = env("NOHUT_QR_CHECK_KEY") ?? "";
+    const supplied = req.headers.get("x-nohut-check-key") ?? "";
+    if (checkKey.length < 32 || !same(supplied, checkKey))
+      return json({error:"forbidden"},403);
     if (req.method !== "POST") return json({error:"method_not_allowed"},405);
     const steps: string[] = [];
     let stage = "config";
