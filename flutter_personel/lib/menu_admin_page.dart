@@ -464,9 +464,11 @@ class _MenuAdminPageState extends State<MenuAdminPage> {
               ),
           ])),
         ],
-        const SizedBox(height: 8),
-        Text('Fotoğraf yükleme ve QR menüde yayınlama Windows’taki QR Menü Yönetimi’nden yapılır.',
-          style: Theme.of(context).textTheme.bodySmall),
+        if (v['publish'] != 'here') ...[
+          const SizedBox(height: 8),
+          Text('Fotoğraf yükleme ve QR menüde yayınlama Windows’taki QR Menü Yönetimi’nden yapılır.',
+            style: Theme.of(context).textTheme.bodySmall),
+        ],
       ]);
     }
     return RefreshIndicator(

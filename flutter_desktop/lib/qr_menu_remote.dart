@@ -1,10 +1,11 @@
-/// QR menu draft edits from phones (ChatGPT relay 7226917068). Windows stays
-/// authoritative: phones never hold a publisher key or GitHub token and never
-/// call the publisher. They read and edit the same offline draft the Windows
-/// QR Menü Yönetimi page uses, through authenticated LAN commands that check
-/// each permission on the server, are bound to the draft they were based on
-/// (stale edits are refused, never merged blindly) and are audited.
-/// Publishing stays on Windows (owner, explicit confirmation).
+/// QR menu management from phones (relays 7226917068, 7226936601). Windows
+/// stays authoritative: phones never hold a publisher key or GitHub token and
+/// never call the publisher. They read and edit the same offline draft the
+/// Windows QR Menü Yönetimi page uses, through authenticated LAN commands that
+/// check each `menu.*` grant on the server, are bound to the draft they were
+/// based on (stale edits are refused, never merged blindly) and are audited.
+/// Publishing, photo upload and POS sync are asked of Windows, which does them
+/// with its own key ([QrMenuRemoteService]) after the phone's explicit review.
 library;
 
 import 'dart:convert';
@@ -284,11 +285,16 @@ class QrMenuRemoteService {
     if (audit.length > 200) audit.removeRange(0, audit.length - 200);
   }
 
+  /// Applies [change] to the latest state. A concurrent POS write (order,
+  /// payment) moves the revision: re-read and re-apply, never drop it (QA-20).
   void _write(void Function(Json s) change) {
-    final snap = store.read();
-    final next = copyJson(snap.data);
-    change(next);
-    store.replace(next, snap.revision);
+    for (var attempt = 0; attempt < 5; attempt++) {
+      final snap = store.read();
+      final next = copyJson(snap.data);
+      change(next);
+      if (store.replace(next, snap.revision).ok) return;
+    }
+    throw const QrMenuConflict('Menü durumu kaydedilemedi; Windows başka bir işlem yazıyor. Yeniden deneyin.');
   }
 
   /// `ready`, `no_key` or `service_down`, for the phone's status line.

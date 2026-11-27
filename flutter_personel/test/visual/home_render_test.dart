@@ -4,6 +4,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -70,6 +71,14 @@ void main() {
       final g = t.widget<Text>(find.byKey(const ValueKey('home-greeting')));
       expect(g.maxLines, 1);
       expect(find.text('Laptop çevrimdışı · Sepet korunuyor'), findsOneWidget);
+      // QA-22: the next shift's full date and times are shown, not clipped.
+      final shift = find.text('Cmt 28 Kas · 10:00–18:00');
+      expect(shift, findsOneWidget);
+      expect(t.renderObject<RenderParagraph>(shift).didExceedMaxLines, isFalse);
+      // QA-22: quick-action tiles in one row have equal heights.
+      final a = t.getRect(find.ancestor(of: find.text('Masalar').first, matching: find.byType(Material)).first);
+      final b = t.getRect(find.ancestor(of: find.text('Sipariş Al'), matching: find.byType(Material)).first);
+      expect(a.height, b.height);
     });
     testWidgets('home $s tablet', (t) async {
       await renderScreen(t, 'home-$s-tablet', app(longName), size: const Size(1100, 800));

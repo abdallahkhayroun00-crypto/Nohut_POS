@@ -430,9 +430,11 @@ class _OwnerHomeState extends State<OwnerHome> {
         NohutMetricGrid(minTileWidth:150,children:[
           NohutMetric(label:'Nakit',value:amount(cash),icon:Icons.payments_outlined),
           NohutMetric(label:'Kart',value:amount(card),icon:Icons.credit_card),
-          NohutMetric(label:'Sipariş',value:data?['orderCount']?.toString()??'—',icon:Icons.receipt_long_outlined),
+          // Four tiles keep the grid balanced (2×2 phone, 4×1 tablet; QA-22);
+          // active tables travel with the order count.
+          NohutMetric(label:'Sipariş',value:data?['orderCount']?.toString()??'—',icon:Icons.receipt_long_outlined,
+            caption:data?['activeTables'] is int?'Aktif masa ${data!['activeTables']} / 5':null),
           NohutMetric(label:'Açık hesap',value:data==null?'—':'${entries('openAccounts').length}',icon:Icons.pending_actions_outlined),
-          NohutMetric(label:'Aktif masa',value:data?['activeTables'] is int?'${data!['activeTables']} / 5':'—',icon:Icons.table_restaurant_outlined),
         ]),
         title('Haftalık Maaş Ödemeleri'),
         payrollPanel(),

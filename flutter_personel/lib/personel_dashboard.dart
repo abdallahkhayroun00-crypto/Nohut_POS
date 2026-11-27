@@ -217,9 +217,13 @@ class _PersonelDashboardState extends State<PersonelDashboard> {
             child: Row(children: [
               Icon(Icons.event_outlined, size: 19, color: soft),
               const SizedBox(width: 10),
-              Expanded(child: Text(next == null ? 'Planlı vardiya yok' : 'Sıradaki vardiya · $next',
-                  maxLines: 1, overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontFamily: 'Barlow', fontSize: 14.5, fontWeight: FontWeight.w700, color: on))),
+              // Two lines so the shift's date and times never clip (QA-22).
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('Sıradaki vardiya', style: TextStyle(fontFamily: 'Barlow', fontSize: 12.5, color: soft,
+                    fontWeight: FontWeight.w600)),
+                Text(next ?? 'Planlı vardiya yok', softWrap: true,
+                    style: const TextStyle(fontFamily: 'Barlow', fontSize: 15, fontWeight: FontWeight.w700, color: on)),
+              ])),
               Icon(Icons.chevron_right, color: soft),
             ]),
           ),
@@ -233,25 +237,36 @@ class _PersonelDashboardState extends State<PersonelDashboard> {
     final scheme = Theme.of(context).colorScheme;
     return LayoutBuilder(builder: (context, c) {
       final cols = c.maxWidth >= 560 ? 3 : 2;
-      final w = (c.maxWidth - 8 * (cols - 1)) / cols;
-      return Wrap(spacing: 8, runSpacing: 8, children: [
-        for (final (icon, label, onTap, _) in items)
-          SizedBox(width: w, child: Material(
-            color: nc.card,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: BorderSide(color: nc.outline)),
-            clipBehavior: Clip.antiAlias,
-            child: InkWell(onTap: onTap, child: ConstrainedBox(
-              constraints: const BoxConstraints(minHeight: 52),
-              child: Padding(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), child: Row(children: [
-                Container(width: 32, height: 32, decoration: BoxDecoration(color: scheme.secondaryContainer,
-                    borderRadius: BorderRadius.circular(9)),
-                  child: Icon(icon, size: 19, color: scheme.onSecondaryContainer)),
-                const SizedBox(width: 10),
-                Expanded(child: Text(label, maxLines: 2, overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontFamily: 'Barlow', fontSize: 15, fontWeight: FontWeight.w700, color: nc.ink, height: 1.15))),
-              ])),
-            )),
+      Widget tile((IconData, String, VoidCallback, String?) item) {
+        final (icon, label, onTap, _) = item;
+        return Material(
+          color: nc.card,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: BorderSide(color: nc.outline)),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(onTap: onTap, child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 52),
+            child: Padding(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), child: Row(children: [
+              Container(width: 32, height: 32, decoration: BoxDecoration(color: scheme.secondaryContainer,
+                  borderRadius: BorderRadius.circular(9)),
+                child: Icon(icon, size: 19, color: scheme.onSecondaryContainer)),
+              const SizedBox(width: 10),
+              Expanded(child: Text(label, maxLines: 2, overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontFamily: 'Barlow', fontSize: 15, fontWeight: FontWeight.w700, color: nc.ink, height: 1.15))),
+            ])),
           )),
+        );
+      }
+      // Rows of equal height: a wrapped label grows its whole row (QA-22).
+      return Column(children: [
+        for (var i = 0; i < items.length; i += cols) ...[
+          if (i > 0) const SizedBox(height: 8),
+          IntrinsicHeight(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            for (var j = i; j < i + cols; j++) ...[
+              if (j > i) const SizedBox(width: 8),
+              Expanded(child: j < items.length ? tile(items[j]) : const SizedBox()),
+            ],
+          ])),
+        ],
       ]);
     });
   }

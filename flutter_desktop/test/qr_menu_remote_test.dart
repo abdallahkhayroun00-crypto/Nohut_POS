@@ -394,4 +394,43 @@ void main() {
     final draft = store.read().data['qrPublisherDraft'];
     expect(asMaps(draft['campaigns']).single['active'], false, reason: 'new campaigns start passive');
   });
+
+  test('QA-20: a concurrent POS write during publish is retried, never dropped', () async {
+    seed();
+    final racy = RacyStore(store);
+    final service = QrMenuRemoteService(racy, publisher: () => pub, endpoint: () => 'http://127.0.0.1:18787/');
+    final (_, v) = await view(staff);
+    final (_, a) = await write(staff, {'action': 'set_stock', 'id': 1, 'available': false, 'expectedStamp': v['stamp']});
+    racy.failNext = 2; // two POS writes land between read and replace
+    final r = await service.publish(expectedStamp: '${a['stamp']}', actor: 'ayse');
+    expect(r['outcome'], 'published');
+    final data = store.read().data;
+    expect(data['qrPublisherPendingPublish'], isNull, reason: 'pending cleared despite the race');
+    expect(data['qrPublisherDraftRevision'], pub.revision);
+    racy.failNext = 99;
+    expect(() => service.reconcile(actor: 'ayse'), returnsNormally);
+    store.replace(copyJson(store.read().data)..['qrPublisherPendingPublish'] = {'revision': 'x', 'at': 'y', 'changes': 1},
+        store.read().revision);
+    pub.revision = 'x';
+    await expectLater(service.reconcile(actor: 'ayse'), throwsA(isA<QrMenuConflict>()));
+  });
+}
+
+/// Simulates a POS order written between the service's read and replace.
+class RacyStore extends PosStore {
+  RacyStore(this.inner) : super(databaseFile: '${inner.filePath}-unused');
+  final PosStore inner;
+  int failNext = 0;
+  @override
+  PosSnapshot read() => inner.read();
+  @override
+  WriteResult replace(Map<String, dynamic> next, int expectedRevision) {
+    if (failNext > 0) {
+      failNext--;
+      final s = inner.read();
+      inner.replace(copyJson(s.data), s.revision); // the concurrent write
+      return inner.replace(next, expectedRevision);
+    }
+    return inner.replace(next, expectedRevision);
+  }
 }

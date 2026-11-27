@@ -295,9 +295,18 @@ class NohutMetricGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) => LayoutBuilder(builder: (context, box) {
     final cols = (box.maxWidth / minTileWidth).floor().clamp(1, 4);
-    final w = (box.maxWidth - (cols - 1) * 10) / cols;
-    return Wrap(spacing: 10, runSpacing: 10, children: [
-      for (final ch in children) SizedBox(width: w, child: ch),
+    // Rows of equal height: a caption on one tile never leaves its
+    // neighbours short (Premium UI review QA-22).
+    return Column(children: [
+      for (var i = 0; i < children.length; i += cols) ...[
+        if (i > 0) const SizedBox(height: 10),
+        IntrinsicHeight(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          for (var j = i; j < i + cols; j++) ...[
+            if (j > i) const SizedBox(width: 10),
+            Expanded(child: j < children.length ? children[j] : const SizedBox()),
+          ],
+        ])),
+      ],
     ]);
   });
 }
