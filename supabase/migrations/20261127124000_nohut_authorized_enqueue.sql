@@ -11,7 +11,7 @@ begin;
 -- and privacy review remain necessary before public transport is enabled.
 create function nohut_private.canonical_command_json(p jsonb)
 returns text language plpgsql immutable security invoker set search_path=pg_catalog,nohut_private
-as $
+as $$
 declare typ text:=jsonb_typeof(p); out_text text;
 begin
   case typ
@@ -120,7 +120,7 @@ commit;
     when 'null' then return 'null';
     else raise exception 'invalid command JSON' using errcode='22023';
   end case;
-end $;
+end $$;
 revoke all on function nohut_private.canonical_command_json(jsonb) from public,anon,authenticated,service_role;
 
 create function nohut_private.enqueue_command(
