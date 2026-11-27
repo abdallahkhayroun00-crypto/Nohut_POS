@@ -155,6 +155,21 @@ void main() {
     expect(left.single['seq'], events[2]['seq']);
   });
 
+  test('pending index upgrades existing outboxes and serves ordered reads', () {
+    probe.execute('DROP INDEX sync_outbox_pending');
+    enableOutbox(probe);
+    final s = store.read();
+    (s.data['orders'] as List).cast<Map>().first['serviceStatus'] = 'Hazır';
+    expect(store.replace(s.data, s.revision).ok, true);
+    final before = probe.select('SELECT * FROM sync_outbox').map((r) => Map.of(r)).toList();
+    createSyncTables(probe);
+    createSyncTables(probe);
+    expect(probe.select('SELECT * FROM sync_outbox').map((r) => Map.of(r)).toList(), before);
+    final plan = probe.select('EXPLAIN QUERY PLAN SELECT * FROM sync_outbox '
+        'WHERE acked_at IS NULL ORDER BY seq LIMIT 500');
+    expect(plan.map((r) => r['detail']).join(' '), contains('sync_outbox_pending'));
+  });
+
   test('canonical JSON sorts keys recursively', () {
     expect(
       canonicalJson({

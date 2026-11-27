@@ -73,9 +73,16 @@ EVIDENCE:
 
 **Blockers / owner actions:** live Trendyol read-only check needs explicit owner authorization (R1); physical iPhone HTTPS/Safari test (L4); any FCM project needs owner approval (N4); KVKK gate unchanged.
 
+## Codex resume checkpoint — QA-07 / QA-08 / QA-12 (2026-11-27)
+
+- Read all coordination on #39/#44/#45 since e826e06; inspected actual main ed7ccce, Claude 7455259 and Gemini a2cc234. Integrated merged N1 notification work; active agent branches remain untouched. Payroll/workforce parity (QA-09/O-03), quick commands, authorized notifications/daily reads and full snapshot/runtime work remain open. Daily projections must omit staffHours; Claude's five-digit PIN migration and O-11 are reused, not recreated.
+- Additive migration 20261127154000 enforces exact combined-payment component sums, cash/card/mixed consistency and received cash. Typed terminal attempts preserve all definitive outcomes (approved/declined/cancelled), including their immutable facts; identical observations still retry safely.
+- Added sync_outbox_pending partial index on seq WHERE acked_at IS NULL for new and existing SQLite databases. The upgrade test preserves existing rows and verifies SQLite actually selects the index; Claude's receipt indexes/polling fixes remain his implementation.
+- Validation: 40 migrations / 23 SQL suites passed under superuser and non-BYPASSRLS owner; targeted outbox/ledger/terminal Flutter suite 12 passed; actual synthetic HTTP/PostgreSQL flow passed mixed financial ingestion, terminal history and lost ACK recovery. Independent re-review and new CI pending after push. No production deployment or real data.
+
 ## Integration checkpoint — Codex, 2026-11-27
 
-- Integrated main PR #42 (90e284) without conflicts, preserving Claude's accounts, LAN apps, reviews and terminal deletion guards alongside typed cloud synchronization.
+- Integrated main PR #42 (f90e284) without conflicts, preserving Claude's accounts, LAN apps, reviews and terminal deletion guards alongside typed cloud synchronization.
 - Combined validation: **432 Flutter tests passed, 2 skips** (HTTP integration executed separately); analysis has no errors/warnings (587 existing style/deprecation infos). **39 migrations / 23 SQL suites** pass as superuser and a plain owner without BYPASSRLS. Real HTTP/PostgreSQL integration passes approved installation, concurrent enrollment, lost setup/ingest ACK, typed domain ingestion and authoritative command recovery.
 - Previous 6dc0343 Windows/PWA/both Android CI passed; SQL/auth/HTTP CI failed because the PR merge test included main's new ticket requirement while fixtures still used old registration. Fixtures and explicit trusted-bootstrap test-role grants are now corrected; replacement CI remains to verify after push. No security check was bypassed.
 - Connectivity remains the owner's final strategy: Windows authority; Android cloud + LAN; local iPhone apps inside without VPN; existing Cloudflare PWAs outside via VPN. No hosting or infrastructure change.

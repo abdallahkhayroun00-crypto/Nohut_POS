@@ -43,6 +43,10 @@ void createSyncTables(Database db) {
       last_error TEXT
     )
   ''');
+  // Additive for existing databases too: keep ordered pending reads bounded
+  // independently of the retained acknowledged event history.
+  db.execute('CREATE INDEX IF NOT EXISTS sync_outbox_pending '
+      'ON sync_outbox(seq) WHERE acked_at IS NULL');
   db.execute(
     'CREATE TABLE IF NOT EXISTS sync_state(key TEXT PRIMARY KEY, value TEXT NOT NULL)',
   );

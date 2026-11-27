@@ -61,6 +61,55 @@ begin
       raise exception 'financial ledger grant leaked';end if;
   end loop;
 end $$;
+-- QA-07: constraints protect the table even outside the ingestion validator.
+do $$
+declare r uuid:=gen_random_uuid(); parts bigint[]; method text;
+begin
+  insert into nohut_private.restaurants(restaurant_id) values(r);
+  foreach parts slice 1 in array array[
+    [10000,10000,5000,10000], [10000,9999,0,10000],
+    [10000,10000,0,9999], [10000,10000,0,10000], [10000,0,10000,0]
+  ] loop
+    method:=case when parts[4]=0 then 'mixed' when parts[1]=parts[2] and parts[3]=0 and parts[4]=10000 then 'card' else 'cash' end;
+    begin
+      insert into nohut_private.combined_payment_groups values
+        (r,gen_random_uuid(),gen_random_uuid()::text,method,parts[1],parts[2],parts[3],parts[4],now(),1,1,0,now(),null);
+      raise exception 'QA-07 invalid group accepted';
+    exception when check_violation then null; end;
+  end loop;
+end $$;
+
+-- QA-08: retrying an identical definitive observation is fine; changing any
+-- financial outcome after declined/cancelled must fail on a newer revision.
+do $$
+declare r uuid; f jsonb:=pg_temp.ledger_fixture(); o jsonb; row_data jsonb; payload jsonb; bad jsonb; state text;
+begin
+  foreach state in array array['declined','cancelled'] loop
+    r:=gen_random_uuid();
+    insert into nohut_private.restaurants(restaurant_id) values(r);
+    for o in select value from jsonb_array_elements(f->'orders') loop
+      perform nohut_private.apply_typed_order(r,1,o->>'local_order_id',o);
+    end loop;
+    row_data:=jsonb_set(jsonb_set(f#>'{terminal,rows,0}','{data,status}',to_jsonb(state)),'{data,transaction_id}','null');
+    payload:=jsonb_build_object('source_updated_at',f#>'{terminal,source_updated_at}','rows',jsonb_build_array(row_data));
+    perform nohut_private.apply_typed_projection(r,1,'ledger:terminalAttempts',payload);
+    perform nohut_private.apply_typed_projection(r,2,'ledger:terminalAttempts',payload);
+    foreach bad in array array[
+      jsonb_set(payload,'{rows,0,data,status}','"waiting"'),
+      jsonb_set(payload,'{rows,0,data,status}','"unknown"'),
+      jsonb_set(payload,'{rows,0,data,status}','"approved"'),
+      jsonb_set(payload,'{rows,0,data,transaction_id}','"forged-outcome"'),
+      jsonb_set(payload,'{rows,0,data,event_count}','5')
+    ] loop
+      begin
+        perform nohut_private.apply_typed_projection(r,3,'ledger:terminalAttempts',bad);
+        raise exception 'QA-08 definitive terminal changed';
+      exception when invalid_parameter_value then null; end;
+    end loop;
+    -- Orders reference ledger groups; this isolated state-machine fixture
+    -- intentionally rolls its entire scope back before deferred FK checks.
+  end loop;
+end $$;
 set local role authenticated;
 do $$ begin
   begin perform 1 from nohut_private.terminal_attempts;raise exception 'client read terminals';exception when insufficient_privilege then null;end;
