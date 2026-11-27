@@ -39,5 +39,7 @@ jobs:
           }
           psql_ci -c 'create role anon nologin; create role authenticated nologin; create role service_role nologin bypassrls;'
           psql_ci < supabase/migrations/20261127001000_nohut_private_foundation.sql
+          psql_ci < supabase/migrations/20261127002000_nohut_finance_foundation.sql
           psql_ci < supabase/tests/private_foundation_test.sql
+          psql_ci < supabase/tests/finance_foundation_test.sql
           echo 'PASS: PostgreSQL synthetic foundation tests (no live Supabase connection)' >> "$GITHUB_STEP_SUMMARY"
