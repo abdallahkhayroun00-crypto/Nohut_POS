@@ -57,6 +57,13 @@ bool outboxEnabled(Database db) => syncStateValue(db, 'outbox_enabled') == '1';
 
 /// Turns recording on and mints the authority epoch if there is none.
 void enableOutbox(Database db) {
+  // The outbox is fed by the per-entity diff; on a legacy single-JSON
+  // database it would silently record nothing. Refuse instead.
+  if (!isNormalized(db)) {
+    throw const FormatException(
+      'Senkronizasyon için veri taşıma (Phase 1B) tamamlanmış olmalı.',
+    );
+  }
   if (syncStateValue(db, 'authority_epoch') == null) {
     final r = Random.secure();
     final epoch = List.generate(16, (_) => r.nextInt(256))

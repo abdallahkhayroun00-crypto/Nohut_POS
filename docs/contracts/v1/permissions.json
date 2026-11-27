@@ -1,6 +1,6 @@
 {
-  "schemaVersion": 1,
-  "spec": "NOHUT POS 2.0 Master Specification V5.1 §20.3",
+  "schemaVersion": 2,
+  "spec": "NOHUT POS 2.0 Master Specification V5.1 §20.3 + §22 (owner correction 2026-11-27)",
   "status": "PROPOSED_V5 — catalogue only; enforcement is implemented in Phase 3",
   "unknownOperation": "deny",
   "sensitivity": {
@@ -8,30 +8,698 @@
     "elevated": "grant check + confirmation dialog with before/after + audit",
     "ownerOnly": "verified owner identity + MFA step-up + typed confirmation + audit; not delegable; server rejects any other identity even with a stored grant"
   },
-  "applications": ["nohut_personel", "nohut_yonetici"],
-  "platforms": ["android_apk", "iphone_pwa"],
-  "sharedSections": ["menu", "sync", "backup"],
+  "applications": [
+    "nohut_windows",
+    "nohut_personel",
+    "nohut_yonetici"
+  ],
+  "platforms": [
+    "windows",
+    "android_apk",
+    "iphone_pwa"
+  ],
+  "sharedSections": [
+    "menu"
+  ],
   "operations": [
-    {"id": "menu.view", "section": "menu", "sensitivity": "normal", "defaults": ["Personel", "Müdür", "Yönetici", "Muhasebe"]},
-    {"id": "menu.product.edit", "section": "menu", "sensitivity": "elevated", "defaults": ["Müdür", "Yönetici"]},
-    {"id": "menu.price.edit", "section": "menu", "sensitivity": "elevated", "defaults": ["Yönetici"]},
-    {"id": "menu.category.edit", "section": "menu", "sensitivity": "elevated", "defaults": ["Müdür", "Yönetici"]},
-    {"id": "menu.campaign.edit", "section": "menu", "sensitivity": "elevated", "defaults": ["Yönetici"]},
-    {"id": "menu.stock.toggle", "section": "menu", "sensitivity": "normal", "defaults": ["Personel", "Müdür", "Yönetici"]},
-    {"id": "menu.qr.publish", "section": "menu", "sensitivity": "elevated", "defaults": ["Yönetici"]},
-    {"id": "sync.view", "section": "sync", "sensitivity": "normal", "defaults": ["Müdür", "Yönetici"]},
-    {"id": "sync.manual", "section": "sync", "sensitivity": "normal", "defaults": ["Müdür", "Yönetici"]},
-    {"id": "sync.retry", "section": "sync", "sensitivity": "normal", "defaults": ["Müdür", "Yönetici"]},
-    {"id": "sync.auto.configure", "section": "sync", "sensitivity": "elevated", "defaults": ["Yönetici"]},
-    {"id": "sync.initial.start", "section": "sync", "sensitivity": "ownerOnly", "defaults": []},
-    {"id": "sync.cloud.configure", "section": "sync", "sensitivity": "ownerOnly", "defaults": []},
-    {"id": "sync.full_resync", "section": "sync", "sensitivity": "ownerOnly", "defaults": []},
-    {"id": "backup.view", "section": "backup", "sensitivity": "normal", "defaults": ["Müdür", "Yönetici"]},
-    {"id": "backup.manual", "section": "backup", "sensitivity": "normal", "defaults": ["Müdür", "Yönetici"]},
-    {"id": "backup.auto.configure", "section": "backup", "sensitivity": "elevated", "defaults": ["Yönetici"]},
-    {"id": "backup.verify", "section": "backup", "sensitivity": "normal", "defaults": ["Müdür", "Yönetici"]},
-    {"id": "backup.restore", "section": "backup", "sensitivity": "ownerOnly", "defaults": [], "extra": "Windows-local confirmation"},
-    {"id": "backup.delete", "section": "backup", "sensitivity": "ownerOnly", "defaults": [], "extra": "retention policy required; no silent deletion"},
-    {"id": "permissions.update", "section": "admin", "sensitivity": "ownerOnly", "defaults": []}
-  ]
+    {
+      "id": "menu.view",
+      "section": "menu",
+      "sensitivity": "normal",
+      "defaults": [
+        "Personel",
+        "Müdür",
+        "Yönetici",
+        "Muhasebe"
+      ],
+      "clients": [
+        "windows",
+        "personel",
+        "yonetici"
+      ]
+    },
+    {
+      "id": "menu.product.edit",
+      "section": "menu",
+      "sensitivity": "elevated",
+      "defaults": [
+        "Müdür",
+        "Yönetici"
+      ],
+      "clients": [
+        "windows",
+        "personel",
+        "yonetici"
+      ]
+    },
+    {
+      "id": "menu.price.edit",
+      "section": "menu",
+      "sensitivity": "elevated",
+      "defaults": [
+        "Yönetici"
+      ],
+      "clients": [
+        "windows",
+        "personel",
+        "yonetici"
+      ]
+    },
+    {
+      "id": "menu.category.edit",
+      "section": "menu",
+      "sensitivity": "elevated",
+      "defaults": [
+        "Müdür",
+        "Yönetici"
+      ],
+      "clients": [
+        "windows",
+        "personel",
+        "yonetici"
+      ]
+    },
+    {
+      "id": "menu.campaign.edit",
+      "section": "menu",
+      "sensitivity": "elevated",
+      "defaults": [
+        "Yönetici"
+      ],
+      "clients": [
+        "windows",
+        "personel",
+        "yonetici"
+      ]
+    },
+    {
+      "id": "menu.stock.toggle",
+      "section": "menu",
+      "sensitivity": "normal",
+      "defaults": [
+        "Personel",
+        "Müdür",
+        "Yönetici"
+      ],
+      "clients": [
+        "windows",
+        "personel",
+        "yonetici"
+      ]
+    },
+    {
+      "id": "menu.qr.publish",
+      "section": "menu",
+      "sensitivity": "elevated",
+      "defaults": [
+        "Yönetici"
+      ],
+      "clients": [
+        "windows",
+        "personel",
+        "yonetici"
+      ]
+    },
+    {
+      "id": "sync.view",
+      "section": "sync",
+      "sensitivity": "normal",
+      "defaults": [
+        "Müdür",
+        "Yönetici"
+      ],
+      "clients": [
+        "windows"
+      ]
+    },
+    {
+      "id": "sync.manual",
+      "section": "sync",
+      "sensitivity": "normal",
+      "defaults": [
+        "Müdür",
+        "Yönetici"
+      ],
+      "clients": [
+        "windows"
+      ]
+    },
+    {
+      "id": "sync.retry",
+      "section": "sync",
+      "sensitivity": "normal",
+      "defaults": [
+        "Müdür",
+        "Yönetici"
+      ],
+      "clients": [
+        "windows"
+      ]
+    },
+    {
+      "id": "sync.auto.configure",
+      "section": "sync",
+      "sensitivity": "elevated",
+      "defaults": [
+        "Yönetici"
+      ],
+      "clients": [
+        "windows"
+      ]
+    },
+    {
+      "id": "sync.initial.start",
+      "section": "sync",
+      "sensitivity": "ownerOnly",
+      "defaults": [],
+      "clients": [
+        "windows"
+      ]
+    },
+    {
+      "id": "sync.cloud.configure",
+      "section": "sync",
+      "sensitivity": "ownerOnly",
+      "defaults": [],
+      "clients": [
+        "windows"
+      ]
+    },
+    {
+      "id": "sync.full_resync",
+      "section": "sync",
+      "sensitivity": "ownerOnly",
+      "defaults": [],
+      "clients": [
+        "windows"
+      ]
+    },
+    {
+      "id": "backup.view",
+      "section": "backup",
+      "sensitivity": "normal",
+      "defaults": [
+        "Müdür",
+        "Yönetici"
+      ],
+      "clients": [
+        "windows"
+      ]
+    },
+    {
+      "id": "backup.manual",
+      "section": "backup",
+      "sensitivity": "normal",
+      "defaults": [
+        "Müdür",
+        "Yönetici"
+      ],
+      "clients": [
+        "windows"
+      ]
+    },
+    {
+      "id": "backup.auto.configure",
+      "section": "backup",
+      "sensitivity": "elevated",
+      "defaults": [
+        "Yönetici"
+      ],
+      "clients": [
+        "windows"
+      ]
+    },
+    {
+      "id": "backup.verify",
+      "section": "backup",
+      "sensitivity": "normal",
+      "defaults": [
+        "Müdür",
+        "Yönetici"
+      ],
+      "clients": [
+        "windows"
+      ]
+    },
+    {
+      "id": "backup.restore",
+      "section": "backup",
+      "sensitivity": "ownerOnly",
+      "defaults": [],
+      "extra": "Windows-local confirmation",
+      "clients": [
+        "windows"
+      ]
+    },
+    {
+      "id": "backup.delete",
+      "section": "backup",
+      "sensitivity": "ownerOnly",
+      "defaults": [],
+      "extra": "retention policy required; no silent deletion",
+      "clients": [
+        "windows"
+      ]
+    },
+    {
+      "id": "permissions.update",
+      "section": "admin",
+      "sensitivity": "ownerOnly",
+      "defaults": [],
+      "clients": [
+        "windows",
+        "yonetici"
+      ]
+    },
+    {
+      "id": "tables.view",
+      "section": "tables",
+      "sensitivity": "normal",
+      "defaults": [
+        "Personel",
+        "Müdür",
+        "Yönetici"
+      ],
+      "clients": [
+        "windows",
+        "personel",
+        "yonetici"
+      ]
+    },
+    {
+      "id": "orders.create",
+      "section": "orders",
+      "sensitivity": "normal",
+      "defaults": [
+        "Personel",
+        "Müdür",
+        "Yönetici"
+      ],
+      "clients": [
+        "windows",
+        "personel",
+        "yonetici"
+      ]
+    },
+    {
+      "id": "orders.edit",
+      "section": "orders",
+      "sensitivity": "elevated",
+      "defaults": [
+        "Müdür",
+        "Yönetici"
+      ],
+      "clients": [
+        "windows",
+        "personel",
+        "yonetici"
+      ]
+    },
+    {
+      "id": "orders.move",
+      "section": "orders",
+      "sensitivity": "normal",
+      "defaults": [
+        "Personel",
+        "Müdür",
+        "Yönetici"
+      ],
+      "clients": [
+        "windows",
+        "personel",
+        "yonetici"
+      ]
+    },
+    {
+      "id": "orders.release",
+      "section": "orders",
+      "sensitivity": "normal",
+      "defaults": [
+        "Personel",
+        "Müdür",
+        "Yönetici"
+      ],
+      "clients": [
+        "windows",
+        "personel",
+        "yonetici"
+      ]
+    },
+    {
+      "id": "pickup.contact.view",
+      "section": "orders",
+      "sensitivity": "normal",
+      "defaults": [
+        "Personel",
+        "Müdür",
+        "Yönetici"
+      ],
+      "clients": [
+        "windows",
+        "personel",
+        "yonetici"
+      ]
+    },
+    {
+      "id": "payments.take",
+      "section": "payments",
+      "sensitivity": "normal",
+      "defaults": [
+        "Personel",
+        "Müdür",
+        "Yönetici"
+      ],
+      "clients": [
+        "windows",
+        "personel",
+        "yonetici"
+      ]
+    },
+    {
+      "id": "payments.correct",
+      "section": "payments",
+      "sensitivity": "elevated",
+      "defaults": [
+        "Müdür",
+        "Yönetici"
+      ],
+      "clients": [
+        "windows",
+        "personel",
+        "yonetici"
+      ]
+    },
+    {
+      "id": "payments.refund",
+      "section": "payments",
+      "sensitivity": "elevated",
+      "defaults": [
+        "Yönetici"
+      ],
+      "clients": [
+        "windows",
+        "personel",
+        "yonetici"
+      ]
+    },
+    {
+      "id": "receipts.print",
+      "section": "receipts",
+      "sensitivity": "normal",
+      "defaults": [
+        "Personel",
+        "Müdür",
+        "Yönetici"
+      ],
+      "clients": [
+        "windows",
+        "personel",
+        "yonetici"
+      ]
+    },
+    {
+      "id": "online.view",
+      "section": "online",
+      "sensitivity": "normal",
+      "defaults": [
+        "Personel",
+        "Müdür",
+        "Yönetici"
+      ],
+      "clients": [
+        "windows",
+        "personel",
+        "yonetici"
+      ]
+    },
+    {
+      "id": "online.act",
+      "section": "online",
+      "sensitivity": "normal",
+      "defaults": [
+        "Personel",
+        "Müdür",
+        "Yönetici"
+      ],
+      "clients": [
+        "windows",
+        "personel",
+        "yonetici"
+      ]
+    },
+    {
+      "id": "shifts.self",
+      "section": "shifts",
+      "sensitivity": "normal",
+      "defaults": [
+        "Personel",
+        "Müdür",
+        "Yönetici"
+      ],
+      "clients": [
+        "windows",
+        "personel",
+        "yonetici"
+      ]
+    },
+    {
+      "id": "payroll.self.view",
+      "section": "payroll",
+      "sensitivity": "normal",
+      "defaults": [
+        "Personel",
+        "Müdür",
+        "Yönetici"
+      ],
+      "clients": [
+        "windows",
+        "personel",
+        "yonetici"
+      ]
+    },
+    {
+      "id": "dashboard.view",
+      "section": "dashboard",
+      "sensitivity": "normal",
+      "defaults": [
+        "Müdür",
+        "Yönetici",
+        "Muhasebe"
+      ],
+      "clients": [
+        "windows",
+        "yonetici"
+      ]
+    },
+    {
+      "id": "sales.view",
+      "section": "sales",
+      "sensitivity": "normal",
+      "defaults": [
+        "Müdür",
+        "Yönetici",
+        "Muhasebe"
+      ],
+      "clients": [
+        "windows",
+        "yonetici"
+      ]
+    },
+    {
+      "id": "finance.view",
+      "section": "finance",
+      "sensitivity": "normal",
+      "defaults": [
+        "Yönetici",
+        "Muhasebe"
+      ],
+      "clients": [
+        "windows",
+        "yonetici"
+      ]
+    },
+    {
+      "id": "finance.edit",
+      "section": "finance",
+      "sensitivity": "elevated",
+      "defaults": [
+        "Yönetici"
+      ],
+      "clients": [
+        "windows",
+        "yonetici"
+      ]
+    },
+    {
+      "id": "reports.view",
+      "section": "reports",
+      "sensitivity": "normal",
+      "defaults": [
+        "Müdür",
+        "Yönetici",
+        "Muhasebe"
+      ],
+      "clients": [
+        "windows",
+        "yonetici"
+      ]
+    },
+    {
+      "id": "reports.export",
+      "section": "reports",
+      "sensitivity": "normal",
+      "defaults": [
+        "Yönetici",
+        "Muhasebe"
+      ],
+      "clients": [
+        "windows",
+        "yonetici"
+      ]
+    },
+    {
+      "id": "staff.view",
+      "section": "staff",
+      "sensitivity": "normal",
+      "defaults": [
+        "Müdür",
+        "Yönetici"
+      ],
+      "clients": [
+        "windows",
+        "yonetici"
+      ]
+    },
+    {
+      "id": "staff.manage",
+      "section": "staff",
+      "sensitivity": "elevated",
+      "defaults": [
+        "Yönetici"
+      ],
+      "clients": [
+        "windows",
+        "yonetici"
+      ]
+    },
+    {
+      "id": "shifts.manage",
+      "section": "staff",
+      "sensitivity": "elevated",
+      "defaults": [
+        "Müdür",
+        "Yönetici"
+      ],
+      "clients": [
+        "windows",
+        "yonetici"
+      ]
+    },
+    {
+      "id": "payroll.view",
+      "section": "staff",
+      "sensitivity": "normal",
+      "defaults": [
+        "Yönetici",
+        "Muhasebe"
+      ],
+      "clients": [
+        "windows",
+        "yonetici"
+      ]
+    },
+    {
+      "id": "payroll.manage",
+      "section": "staff",
+      "sensitivity": "elevated",
+      "defaults": [
+        "Yönetici"
+      ],
+      "clients": [
+        "windows",
+        "yonetici"
+      ]
+    },
+    {
+      "id": "accounts.view",
+      "section": "accounts",
+      "sensitivity": "normal",
+      "defaults": [
+        "Müdür",
+        "Yönetici"
+      ],
+      "clients": [
+        "windows",
+        "yonetici"
+      ]
+    },
+    {
+      "id": "accounts.settle",
+      "section": "accounts",
+      "sensitivity": "elevated",
+      "defaults": [
+        "Yönetici"
+      ],
+      "clients": [
+        "windows",
+        "yonetici"
+      ]
+    },
+    {
+      "id": "integrations.view",
+      "section": "integrations",
+      "sensitivity": "normal",
+      "defaults": [
+        "Yönetici"
+      ],
+      "clients": [
+        "windows",
+        "yonetici"
+      ]
+    },
+    {
+      "id": "reviews.reply",
+      "section": "integrations",
+      "sensitivity": "elevated",
+      "defaults": [
+        "Yönetici"
+      ],
+      "clients": [
+        "windows",
+        "yonetici"
+      ]
+    },
+    {
+      "id": "audit.view",
+      "section": "admin",
+      "sensitivity": "normal",
+      "defaults": [
+        "Yönetici"
+      ],
+      "clients": [
+        "windows",
+        "yonetici"
+      ]
+    },
+    {
+      "id": "users.manage",
+      "section": "admin",
+      "sensitivity": "ownerOnly",
+      "defaults": [],
+      "clients": [
+        "windows",
+        "yonetici"
+      ]
+    }
+  ],
+  "windowsOnlySections": [
+    "sync",
+    "backup"
+  ],
+  "clients": {
+    "windows": "Windows POS (local authority)",
+    "personel": "Nohut Personel (Android + PWA)",
+    "yonetici": "Nohut Yönetici (Android + PWA)"
+  },
+  "windowsOnlyRule": "Operations whose clients are ['windows'] are rejected from every remote client, including the verified owner."
 }

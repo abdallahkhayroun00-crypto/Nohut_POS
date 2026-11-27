@@ -329,7 +329,7 @@ class _ManagerFinancePageState extends State<ManagerFinancePage> {
           OutlinedButton(onPressed: busy ? null : () async {
             await widget.store.sync(force: true);
             if (mounted) await _load();
-          }, child: const Text('Senkronize Et')),
+          }, child: const Text('Bekleyenleri Gönder')),
         ]),
         if (data != null) ...[
           Text((offline ? 'Çevrimdışı kopya · ' : 'Windows kaydı · ') +

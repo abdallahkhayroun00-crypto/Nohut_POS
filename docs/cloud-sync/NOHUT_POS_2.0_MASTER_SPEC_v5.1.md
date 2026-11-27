@@ -366,9 +366,9 @@ Shares the Cloudflare-hosted PWA shell with role-gated `/yonetici/*` routes (als
 - **Açık Hesaplar (existing functionality only, if present):** Preserve authorized local account balances, settlements and necessary order links; do not introduce a customer directory or CRM. Platform customer details are accessed through the authorized API only as required for active order operations (Section 19).
 - **Menü Yönetimi, Stok, Kampanyalar:** Authoritative command-based edits + QR menu publish status and deployed-version verification (`cms/pos-managed-status.json` + `cms/pos-managed-menu.json`).
 - **Entegrasyonlar:** Trendyol Go, Yemeksepeti, Migros Yemek, Google Business Profile — honest status (`Aktif`, `Salt Okunur`, `Onay Bekliyor`, `Yapılandırılmadı`).
-- **Kullanıcılar & Yetkiler, Bağlı Cihazlar, Bulut & Senkronizasyon, Yedekleme & Geri Yükleme, İşlem Geçmişi:** Full owner administration and security audit trail.
+- **Kullanıcılar & Yetkiler, Bağlı Cihazlar, İşlem Geçmişi:** Full owner administration and security audit trail. (Bulut & Senkronizasyon and Yedekleme & Geri Yükleme are **Windows-only** — §22.)
 
-### 10.3 Shared Sections in BOTH Applications (V5.1)
+### 10.3 Shared Sections in BOTH Applications (V5.1) — **superseded by §22 (owner decision 2026-11-27): only Menü & Kampanya is shared; Bulut and Yedekleme are Windows-only**
 `Menü & Kampanya Yönetimi`, `Bulut & Senkronizasyon` and `Yedekleme & Geri Yükleme` appear in **Nohut Personel** and **Nohut Yönetici**, on Android APK and iPhone PWA. Each button is rendered from the user's effective grants: a missing grant hides or disables the control with a Turkish explanation (`Bu işlem için yetkiniz yok`) — the server still rejects a forged call. Full content and gates: §20.2.
 
 ---
@@ -703,7 +703,7 @@ First sync must create all required dictionary/version references before publish
 - **No duplicated business logic:** both Android apps use `packages/nohut_core` and one shared Dart feature module for the three sections; both PWAs are built from one TS/Vite codebase with two entry configurations. Pricing, sync state, backup state and permission evaluation come from the same versioned contracts (`docs/contracts/v1/`) and the same authority (Windows POS + cloud projection). The apps differ only in navigation, default landing screen and which sections the user's grants unlock.
 - All previous V5 requirements remain: offline-first, Windows single-writer authority, compact storage, lossless history, KVKK gates, 0 TL target, Nohut AI excluded.
 
-### 20.2 The three shared sections (content in both apps, both platforms)
+### 20.2 The three shared sections (content in both apps, both platforms) — **superseded by §22.3: Bulut & Senkronizasyon and Yedekleme & Geri Yükleme exist only in the Windows POS**
 **Menü & Kampanya Yönetimi**
 - Ürün yönetimi (create/edit/deactivate; new immutable product version per change)
 - Fiyat güncelleme (versioned; never rewrites historical order prices)
@@ -811,4 +811,46 @@ Schema guarantees are layered: (1) top-level drift guard; (2) nested field regis
 
 ### 21.6 QR menu audit
 Pending repository access; focus files: `cms-live.js`, `cms-pos-live.js`, `menu.js`, `cms/menu-prices.json`, `cms/pos-managed-menu.json`, `cms/pos-managed-status.json`.
+
+---
+
+## 22. Owner Correction 2026-11-27 — Functional Applications & Windows-Only Technical Sections (Binding; supersedes §10.3, §20.2 and the Bulut/Yedek parts of §20.4–20.6)
+
+### 22.1 Purpose of the mobile and web applications
+Nohut Personel and Nohut Yönetici are **complete, functional restaurant applications**, not cloud-configuration dashboards or collections of placeholder cards. The existing native Android apps (`flutter_personel/lib/home.dart`, `manager_main.dart`, `manager_finance.dart`, `expense_drafts.dart`) and the Windows POS are the functional reference; no working function is removed or replaced by a placeholder. Android and PWA versions of each app have equivalent functionality, navigation, data and permissions.
+
+### 22.2 Navigation (default screen after login)
+| App | Primary navigation (bottom bar on phone, sidebar on tablet/desktop) | Default | "Daha Fazla" |
+|---|---|---|---|
+| **Nohut Personel** | Masalar · Siparişler · Online · Mesailerim · Daha Fazla | **Masalar** | Maaş & Avans, Menü & Kampanya, Fişler, Bildirimler, Profil |
+| **Nohut Yönetici** | Genel Bakış · Satışlar · Finans · Personel · Daha Fazla | **Genel Bakış** | Raporlar, Açık Hesaplar, Menü & Kampanya, Entegrasyonlar, Kullanıcılar & Yetkiler, İşlem Geçmişi, Profil |
+
+- Gel-Al lives in **Siparişler** (with Masa orders) and is created from Siparişler or the Masalar screen; Ödemeler and Fişler open from the order/table detail where they naturally belong.
+- **Personel Siparişler** = active Masa + Gel-Al orders, Sipariş Al / Ek Sipariş composer (categories, instant search, campaigns first, quantities, removals/substitutions, notes, custom and POS-only products such as Ek Lavaş, availability validation, price preview with authoritative recalculation on Windows).
+- **Personel Online** = one unified list for Trendyol Go by Uber Eats, Yemeksepeti and Migros Yemek with platform badges; `Kabul Et` / `Hazır` / `İptal` are enabled only when that integration actually supports the operation *and* the user holds the grant. Never simulated.
+- **Mesailerim** = Mesai Başlat / Bitir, current duration, daily/weekly hours, own history, audited corrections. **Maaş & Avans** = own data only.
+- **Yönetici Personel** = Personel Yönetimi, Mesai Yönetimi, Maaş & Avans Yönetimi in one section with tabs.
+- A permanent "Kurulum Durumu" page is **not** a homepage. A temporary sign-in / service-unavailable screen is allowed before the system is ready; after configuration and login, Personel opens on Masalar and Yönetici on Genel Bakış.
+
+### 22.3 Windows-only technical sections
+**Bulut & Senkronizasyon** and **Yedekleme & Geri Yükleme** exist **only in the Windows POS**. They are removed from Nohut Personel Android, Nohut Yönetici Android and both PWAs: no tab, menu entry, settings page, card or remote control.
+
+Windows-only operations: cloud configuration, first synchronization, manual sync, automatic-sync configuration, full resync, sync diagnostics, detailed sync history, storage management, manual backup, automatic-backup configuration, backup history, backup verification, restore, recovery. Owner authentication, MFA and confirmations still apply on Windows.
+
+Mobile and web clients may show **only** compact read-only indicators: connection status, last successful sync (`as_of`), offline status, stale-data warning, pending-command status, Windows POS availability. The underlying automatic sync and backup architecture is unchanged.
+
+Permission catalogue: every operation carries `clients`. `sync.*` and `backup.*` have `clients: ["windows"]`; the server and the Windows command worker reject them when they arrive from any remote client, **even for the verified owner** (an owner role on a phone does not make a Windows-only operation remotely executable). `menu.*` remains shared by both apps on both platforms.
+
+### 22.4 Authority and offline behaviour
+The Windows POS remains the single transactional authority. Remote writes are §11.2 commands; a client shows an operation as done **only after** authoritative execution is confirmed. When the Windows POS is offline, clients show the last synchronized data with its time and a stale warning and disable operations that need live authority (or queue them only where a safe pending-command behaviour is explicitly approved). Unconfirmed payments, orders or print jobs are never shown as completed.
+
+### 22.5 Data shown in development
+Development screenshots and visual tests use clearly labelled synthetic fixtures (banner "ÖRNEK VERİ — geliştirme") in an isolated build. Production builds never contain fixtures or fabricated restaurant data; the PWA CI fails if fixture code reaches a production bundle.
+
+### 22.6 Acceptance tests (replace §20.6 items 2 and 6)
+1. No Bulut/Yedek tab, route, menu item or control in any of the four clients (route-table test + bundle grep in CI).
+2. A `sync.*` or `backup.*` command from a remote client is rejected (`403 windows_only`) by the server and the Windows worker, including for the owner.
+3. Read-only indicators (connection, last sync, stale, pending commands, Windows availability) show identical values in both apps for the same `as_of`.
+4. Personel lands on Masalar and Yönetici on Genel Bakış after login; Menü & Kampanya is reachable in both apps according to grants.
+5. With Windows offline, every write control that needs live authority is disabled with *"Kasa Çevrimdışı"*, and no unconfirmed operation is shown as successful.
 

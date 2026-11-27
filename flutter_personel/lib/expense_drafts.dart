@@ -477,7 +477,7 @@ class _ExpenseDraftPageState extends State<ExpenseDraftPage> {
               icon: const Icon(Icons.vpn_key_outlined), label: const Text('Finans Anahtarı')),
             OutlinedButton.icon(onPressed: widget.store.syncing ? null :
               () => widget.store.sync(force: true), icon: const Icon(Icons.sync),
-              label: const Text('Şimdi Senkronize Et')),
+              label: const Text('Bekleyenleri Gönder')),
           ]),
           OutlinedButton.icon(
             onPressed: () async {
