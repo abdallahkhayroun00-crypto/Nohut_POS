@@ -8,6 +8,7 @@ import 'package:path/path.dart' as paths;
 import 'package:sqlite3/sqlite3.dart';
 
 import 'entity_storage.dart';
+import 'sync_outbox.dart';
 import 'pos_logic.dart';
 import 'operations.dart';
 
@@ -103,6 +104,7 @@ class PosStore extends ChangeNotifier {
         error_message TEXT
       )
     ''');
+    createSyncTables(_db);
     _normalized = isNormalized(_db);
     if (!_normalized) _normalize();
     final old = read();
@@ -186,8 +188,16 @@ class PosStore extends ChangeNotifier {
       _cache = _loadState();
       _cacheRevision = revision - 1;
     }
+    // The same SQLite transaction covers domain rows and local events.
+    // Recording remains disabled until the future owner-authorized wizard.
+    final changes = outboxEnabled(_db)
+        ? collectOutboxChanges(_cache!, next)
+        : const <OutboxChange>[];
     final (cached, _) = writeNormalizedState(
       _db, _cache, next, revision: revision, updatedAt: stamp);
+    if (changes.isNotEmpty) {
+      writeOutboxEvents(_db, revision: revision, createdAt: stamp, changes: changes);
+    }
     return cached;
   }
 
