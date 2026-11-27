@@ -22,7 +22,7 @@ import 'operations.dart' show ledger;
 import 'order_reporting.dart' show istanbulDay;
 import 'platform_net.dart';
 import 'pos_logic.dart';
-import 'workforce.dart' show isCalendarDay, istanbulDayOfInstant, workMinutes;
+import 'workforce.dart' show isCalendarDay;
 import 'trendyol_go_readonly.dart' show tgoOrders, tgoCountsAsSale;
 import 'package:nohut_core/report_period.dart';
 
@@ -257,21 +257,7 @@ Json buildDailyReport(Json state, String day, {DateTime? now, bool withCompariso
     'peakHour': peak < 0 ? null : peak,
     // §24.7: manual Mesai records that started this business day (never
     // estimated from planned Vardiya). Totals only, no per-person pay.
-    'staffHours': _staffHours(state, day),
   };
-}
-
-Json? _staffHours(Json state, String day) {
-  var minutes = 0;
-  final people = <Object?>{};
-  for (final w in asMaps(state['shifts'])) {
-    if (w['voided'] == true || w['end'] == null || w['start'] == null) continue;
-    final start = DateTime.tryParse('${w['start']}');
-    if (start == null || istanbulDayOfInstant(start) != day) continue;
-    minutes += workMinutes(w);
-    people.add(w['employeeId']);
-  }
-  return people.isEmpty ? null : {'totalMinutes': minutes, 'people': people.length};
 }
 
 /// Removes amounts the viewer may not see (kept: counts, hours, product name).
