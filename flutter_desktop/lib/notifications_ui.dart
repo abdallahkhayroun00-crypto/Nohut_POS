@@ -48,8 +48,9 @@ class _NotificationHistoryPanelState extends State<NotificationHistoryPanel> {
       Wrap(spacing: 8, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
         Text('Okunmamış: $unread',
             style: const TextStyle(color: NohutBrand.green, fontWeight: FontWeight.w700)),
-        DropdownButton<String?>(
+        LayoutBuilder(builder: (context, c) => SizedBox(width: c.maxWidth < 260 ? c.maxWidth : 260, child: DropdownButton<String?>(
           isDense: true,
+          isExpanded: true,
           value: category,
           hint: const Text('Tüm kategoriler'),
           items: [
@@ -59,7 +60,7 @@ class _NotificationHistoryPanelState extends State<NotificationHistoryPanel> {
                 DropdownMenuItem<String?>(value: e.key, child: Text(e.value.label)),
           ],
           onChanged: (v) => setState(() => category = v),
-        ),
+        ))),
         TextButton(
           key: const ValueKey('notifications-mark-all'),
           onPressed: unread == 0 ? null : () => _markRead((r) => category == null || r['category'] == category),

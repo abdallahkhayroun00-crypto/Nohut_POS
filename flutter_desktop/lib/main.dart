@@ -3245,6 +3245,19 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     onlineWarning: _onlineDataWarning,
   );
 
+  /// Two equal columns side by side, or stacked when the page is narrow
+  /// (e.g. Ayarlar with its side navigation on a 1280 px screen).
+  Widget _twoColumns(List<Widget> children) => LayoutBuilder(
+    builder: (context, c) => c.maxWidth >= 760
+        ? Row(crossAxisAlignment: CrossAxisAlignment.start, children: children)
+        : Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            for (final w in children)
+              if (w is Expanded) w.child
+              else if (w is SizedBox) const SizedBox(height: 16)
+              else w,
+          ]),
+  );
+
   Widget _wifi(Json db) {
     final url = lan.staffUrl;
     return Column(
@@ -3254,9 +3267,8 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
           'Personel Bağlantısı',
           'Android uygulaması için QR + tek seferlik PIN; iPhone için Safari.',
         ),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+        _twoColumns(
+          [
             Expanded(
               child: Card(
                 child: Padding(
@@ -3455,11 +3467,12 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
                       ),
                       const SizedBox(height: 15),
                       const Divider(height: 28),
-                      const Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
+                      const Wrap(
+                        alignment: WrapAlignment.center,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 6,
                         children: [
                           Icon(Icons.android, color: NohutBrand.green),
-                          SizedBox(width: 6),
                           Text('ANDROID · NOHUT PERSONEL',
                               style: TextStyle(fontWeight: FontWeight.w800)),
                         ],

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/services.dart';
 
 import 'operations.dart';
@@ -87,15 +88,15 @@ class ReceiptPrinter {
           outcome = 'Kontrol gerekli';
         }
         if (_disposed) return;
-        final current = store.read(), updated = copyJson(current.data);
         final key = tgoOrderKey(order);
-        for (final target in mutableTgoOrders(updated)) {
-          if (tgoOrderKey(target) == key &&
-              target['kitchenPrintState'] == 'Gönderiliyor') {
-            target['kitchenPrintState'] = outcome;
+        _commitAfterPrint((updated) {
+          for (final target in mutableTgoOrders(updated)) {
+            if (tgoOrderKey(target) == key &&
+                target['kitchenPrintState'] == 'Gönderiliyor') {
+              target['kitchenPrintState'] = outcome;
+            }
           }
-        }
-        store.replace(updated, current.revision);
+        });
         return;
       }
       // A Hesap Özeti is always requested by the cashier, so it prints even
@@ -135,19 +136,40 @@ class ReceiptPrinter {
       }
       if (_disposed) return;
       // Read current state after I/O, preserving intervening phone orders.
-      final result = store.read(), finished = copyJson(result.data);
-      final target = (finished['printJobs'] as List).cast<Map>().firstWhere(
-        (j) => j['orderId'] == id && j['batchId'] == batch,
-      );
-      target['state'] = failure == null
-          ? 'Kuyruğa gönderildi'
-          : 'Kontrol gerekli';
-      target['error'] = failure ?? '';
-      target['spooledAt'] = DateTime.now().toUtc().toIso8601String();
-      store.replace(finished, result.revision);
+      final spooledAt = DateTime.now().toUtc().toIso8601String();
+      _commitAfterPrint((finished) {
+        for (final target in (finished['printJobs'] as List).cast<Map>()) {
+          if (target['orderId'] != id || target['batchId'] != batch ||
+              target['state'] != 'Gönderiliyor') {
+            continue;
+          }
+          target['state'] = failure == null
+              ? 'Kuyruğa gönderildi'
+              : 'Kontrol gerekli';
+          target['error'] = failure ?? '';
+          target['spooledAt'] = spooledAt;
+        }
+      });
     } finally {
       _busy = false;
     }
+  }
+
+  /// Records a print outcome after the printer I/O. A phone or POS write
+  /// in the meantime changes the revision, so re-read and retry; otherwise
+  /// the job would stay 'Gönderiliyor' (and block deleting its order) until
+  /// the next restart. (Gemini QA-13)
+  @visibleForTesting
+  bool commitAfterPrint(void Function(Json) apply, {int attempts = 5}) =>
+      _commitAfterPrint(apply, attempts: attempts);
+
+  bool _commitAfterPrint(void Function(Json) apply, {int attempts = 5}) {
+    for (var i = 0; i < attempts; i++) {
+      final current = store.read(), next = copyJson(current.data);
+      apply(next);
+      if (store.replace(next, current.revision).ok) return true;
+    }
+    return false;
   }
 
   void dispose() {

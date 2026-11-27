@@ -177,7 +177,7 @@ void main() {
       expect(find.text('Partner Panelini Aç'), findsOneWidget);
       await t.tap(find.byKey(const ValueKey('navigation-settings')));
       await t.pumpAndSettle();
-      for (final tab in ['Personel', 'Bağlantı', 'Yazıcı']) {
+      for (final tab in ['Personel', 'Telefon Bağlantısı', 'Yazıcı & Fiş']) {
         await t.tap(find.text(tab).first);
         await t.pumpAndSettle();
         expect(t.takeException(), isNull);
