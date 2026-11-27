@@ -398,6 +398,7 @@ void main() {
   test('QA-20: a concurrent POS write during publish is retried, never dropped', () async {
     seed();
     final racy = RacyStore(store);
+    addTearDown(racy.dispose); // its own database handle: close it before the temp dir is deleted
     final service = QrMenuRemoteService(racy, publisher: () => pub, endpoint: () => 'http://127.0.0.1:18787/');
     final (_, v) = await view(staff);
     final (_, a) = await write(staff, {'action': 'set_stock', 'id': 1, 'available': false, 'expectedStamp': v['stamp']});
