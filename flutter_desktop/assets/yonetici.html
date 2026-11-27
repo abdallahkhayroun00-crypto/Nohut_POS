@@ -1,4 +1,4 @@
-<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#123e30"><title>Nohut · Yönetici</title><style>
+<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#123e30" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#0B2A1F" media="(prefers-color-scheme: dark)"><title>Nohut · Yönetici</title><style>
 @font-face{font-family:Barlow;src:url('/assets/fonts/Barlow-Regular.ttf');font-display:swap}@font-face{font-family:Barlow;src:url('/assets/fonts/Barlow-SemiBold.ttf');font-weight:600;font-display:swap}@font-face{font-family:Barlow;src:url('/assets/fonts/Barlow-Bold.ttf');font-weight:700;font-display:swap}@font-face{font-family:Bree;src:url('/assets/fonts/BreeSerif-Regular.ttf');font-display:swap}
 :root{--green:#123e30;--gold:#a58336;--cream:#f6f2e7;--card:#fbf9f3;--muted:#60705f;--line:#d9ddcc;--warn:#775624;--warn-bg:#fff1d9;--bad:#8b3c30}
 *{box-sizing:border-box}html,body{margin:0;background:var(--cream);color:var(--green);font:16px/1.4 Barlow,Arial,sans-serif}
@@ -52,6 +52,28 @@ nav button{flex:1;border:0;border-radius:0;background:transparent;font-size:13px
 .rep svg text{fill:var(--rmuted);font:11px Barlow,Arial,sans-serif}.rep-note{font-size:12px;color:var(--rmuted);margin:8px 0 0}
 .rep-actions{display:flex;gap:8px;flex-wrap:wrap;padding:14px 16px;border-top:1px solid var(--rline)}.rep-actions .primary{background:var(--rg);border-color:var(--rg)}
 .rep-mini{display:flex;justify-content:space-between;align-items:center;gap:10px;background:var(--rg,#163D30);color:#FFF3DC;border-radius:14px;padding:14px;margin-bottom:12px}.rep-mini small{color:#CBB58B;display:block;font-size:13px}.rep-mini strong{font-size:22px;font-variant-numeric:tabular-nums}.rep-mini button{background:#FFF3DC;color:#163D30;border-color:#FFF3DC}
+/* Dark mode: follows the phone setting; same tokens as the native apps and the Personel page. */
+@media(prefers-color-scheme:dark){
+:root{color-scheme:dark;--green:#7FD29A;--ink:#E8EFEA;--gold:#E2B86A;--cream:#0E1A15;--card:#16251F;--muted:#9DB0A6;--line:#2A3D34;--warn:#FFD99A;--warn-bg:#3A2E16;--bad:#FF9C8F}
+html,body{color:var(--ink)}
+h1,h2{color:var(--ink)}
+button{border-color:var(--line);background:var(--card);color:var(--ink)}
+.primary,#toast{background:#2E7D4F;border-color:#2E7D4F;color:#fff}
+.danger{border-color:#5A2A25}
+input,select{background:#0F1C17;border-color:var(--line);color:var(--ink)}
+header{background:#0B2A1F}
+header button{background:transparent;color:#fff;border-color:#ffffff40}
+nav{background:var(--card);border-top-color:var(--line)}
+nav button{background:transparent}nav button[aria-selected=true]{color:var(--ink)}
+.stat{background:var(--card)}
+.notice{border-color:#A57B32}
+.bars div{background:#4E8A63}.bars div:hover{background:var(--green)}
+.error{color:#FF9C8F}
+#notify-panel{background:#0009}
+#notify-panel .sheet{background:var(--card);color:var(--ink);box-shadow:-4px 0 18px #0008}
+#notify-list li{border-bottom-color:var(--line)}#notify-list li.unread strong{color:var(--ink)}#notify-list small{color:var(--muted)}
+.rep-mini{background:#0B2A1F;border:1px solid var(--line)}
+}
 </style></head><body>
 <div id="auth-gate"><form id="auth-form" autocomplete="on"><img src="/assets/nohut-logo.webp" width="44" height="44" alt=""><h2 id="auth-title">Yönetici girişi</h2><p id="auth-hint" class="muted"></p>
 <label id="auth-user-row">Kullanıcı adı<input id="auth-username" autocomplete="username" autocapitalize="none" maxlength="32"></label>
@@ -91,7 +113,7 @@ nav button{flex:1;border:0;border-radius:0;background:transparent;font-size:13px
 </main>
 <nav aria-label="Yönetici bölümleri"><button data-view="ozet" aria-selected="true">Özet</button><button data-view="siparis" aria-selected="false">Siparişler</button><button data-view="personel" aria-selected="false" id="nav-personel">Personel</button><button data-view="finans" aria-selected="false" id="nav-finans">Finans</button><button data-view="menu" aria-selected="false">Menü</button></nav>
 <div id="toast" role="status" hidden></div>
-<div id="notify-panel" hidden><div class="sheet" role="dialog" aria-labelledby="notify-title"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h2 id="notify-title" style="margin:0">Bildirimler</h2><button type="button" id="notify-close">Kapat</button></div><p style="font-size:13px;color:#60705f">Bildirim onay değildir; güncel durum için ekranı yenileyin.</p><button type="button" id="notify-all">Tümünü okundu say</button><ul id="notify-list"></ul></div></div>
+<div id="notify-panel" hidden><div class="sheet" role="dialog" aria-labelledby="notify-title"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h2 id="notify-title" style="margin:0">Bildirimler</h2><button type="button" id="notify-close">Kapat</button></div><p style="font-size:13px;color:var(--muted)">Bildirim onay değildir; güncel durum için ekranı yenileyin.</p><button type="button" id="notify-all">Tümünü okundu say</button><ul id="notify-list"></ul></div></div>
 <script>
 'use strict';
 const $=id=>document.getElementById(id);

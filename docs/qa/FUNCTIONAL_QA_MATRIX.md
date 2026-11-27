@@ -73,6 +73,7 @@ Gemini review pass 2 (comment 7223539958):
 | D-26 | Personel browser polling (QA-12, part) | Personel | State refresh every 5 s even when the tab is hidden | Paused while hidden; refreshes on return | Low | `staff.html` | — | — |
 | D-27 | Staff product payment (O-11) | Personel | `payProducts` had no automated test; its `productPaymentId`/`productReceipt` fields were not registered for sync | Tested: collector id, stable id, receipt summary, retry adds no second row; fields registered | Medium (coverage) | `sync_field_paths.g.dart`, `data-inventory.md` | `terminal_delete_guard_test` "O-11…" | — |
 | D-28 | Android Personel Mesai / Vardiya / Maaş (was O-09) | Personel | No native screens; only the browser app had them | Native Flutter screens (no WebView) on the same `/api/work/*` server rules: own week from the session, manual hours with native date/time pickers, edit and void with reason, weekly submission that never blocks corrections, own plans with repeat and copy-week, team schedule, own rate/earned/paid/remaining/status and payment history; owner or anyone not on payroll sees no money; a write retried after a lost connection keeps its request id | High (parity) | `flutter_personel/lib/work_page.dart`, `pos_api.dart` `work()`, entry in `home.dart` (badge icon + Hesabım menu) | `work_page_test` (7: no employee id sent, retry same id, acceptance numbers 1.760/800/960 Kısmen Ödendi, not-on-payroll, 320 px + 130 % text without overflow) | Emulator capture added to `integration_test/screens_test.dart` (pending CI run) |
+| D-29 | Browser Personel and Yönetici dark mode (was O-01) | Personel, Yönetici (browser) | `staff.html` ignored the phone's dark setting; `yonetici.html` only darkened the Gün Sonu card, so it showed a dark card on a light page | Both pages follow `prefers-color-scheme` with the native apps' dark tokens; light mode is unchanged; dark `theme-color` for the phone status bar | Low (visual) | `assets/staff.html`, `assets/yonetici.html` | Playwright, Pixel 7 viewport, light and dark, every tab (Masalar, Ürünler, Sepet, Siparişler, Mesai; Özet, Siparişler, Personel, Finans, Menü); no page errors |
 
 Owner acceptance example (8 h × 100 TL + 8 h × 120 TL = 1.760 TL; pay 800 → Kısmen Ödendi, kalan 960; pay 960 → Ödendi; later raise not retroactive): **Verified** in `payroll_test` and in a rendered LAN run (Yönetici records 800 TL Nakit → Kısmen Ödendi, kalan 960,00 ₺; Personel sees the same numbers).
 
@@ -80,7 +81,6 @@ Owner acceptance example (8 h × 100 TL + 8 h × 120 TL = 1.760 TL; pay 800 → 
 
 | ID | Finding | Severity | Next step |
 |---|---|---|---|
-| O-01 | `staff.html` ignores dark mode (Yönetici supports it) | Low (visual) | Premium UI pass |
 | O-02 | Personel rate card shows the rate at week start when the rate changed mid-week | Low | Show both rates for the week |
 | O-03 | Payroll on Android Yönetici and cloud PWAs not yet projected | High (parity) | Codex: cloud projection of `payHistory`, `payrollPayments`, `payrollReviews`, `payrollEligible` |
 | O-04 | Order, payment, refund, receipt, analytics modules not re-audited in this cycle | — | Next audit pass |

@@ -1,4 +1,4 @@
-<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#123e30"><title>Nohut · Personel</title><style>
+<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#123e30" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#0B2A1F" media="(prefers-color-scheme: dark)"><title>Nohut · Personel</title><style>
 .platform-order .detail-line{min-width:0}
 .platform-order p{overflow-wrap:anywhere}
 @font-face{font-family:Barlow;src:url('/assets/fonts/Barlow-Regular.ttf');font-display:swap}@font-face{font-family:Barlow;src:url('/assets/fonts/Barlow-SemiBold.ttf');font-weight:600;font-display:swap}@font-face{font-family:Barlow;src:url('/assets/fonts/Barlow-Bold.ttf');font-weight:700;font-display:swap}@font-face{font-family:Bree;src:url('/assets/fonts/BreeSerif-Regular.ttf');font-display:swap}
@@ -181,6 +181,50 @@ dialog{background:var(--card);border-color:var(--line);border-radius:22px;box-sh
 body[data-view=work] .bottom-bar{display:none}
 /* Signed-in header on phones: logo + name on one line, buttons on the next. */
 @media(max-width:600px){header>.row{flex-wrap:wrap;row-gap:6px}header .grow{flex:1 1 calc(100% - 60px);min-width:0}header #connection,header #auth-user{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}header #notify-btn,header #logout-btn{min-height:40px;padding:6px 12px}header label{flex:1 1 120px;width:auto}}
+/* Dark mode: follows the phone setting. Same tokens as the native apps (NohutStyle.darkTheme). */
+@media(prefers-color-scheme:dark){
+:root{color-scheme:dark;--green:#7FD29A;--green-2:#9BE0B1;--ink:#E8EFEA;--gold:#E2B86A;--cream:#0E1A15;--card:#16251F;--muted:#9DB0A6;--line:#2A3D34;--soft:#1D2F27;--amber:#3A2E16;--amber-line:#A57B32;--teal:#14313A;--teal-line:#4F8FA3;--free:#173024;--free-line:#4E8A63}
+body{color:var(--ink)}
+h1,h2,h3,.product .name,#total,.detail-totals p:last-child,#customer summary,.empty strong{color:var(--ink)}
+button{border-color:var(--line);background:var(--card);color:var(--ink)}
+button:hover{background:var(--soft)}
+.primary,.primary:hover,.add-button,.add-button:hover,.select-order,#retry:not([hidden]),.top-nav [aria-selected=true],.top-nav [aria-selected=true]:hover,#categories [aria-pressed=true],#categories [aria-pressed=true]:hover,#ingredient-chips [aria-pressed=true]{background:#2E7D4F;border-color:#2E7D4F;color:#fff}
+.primary:hover,.add-button:hover,.select-order:hover{background:#38925D}
+.danger,.line-removed,.cart-line [data-line-status][data-warn=true],.error,.wk-err,#auth-gate .error{color:#FF9C8F}
+.danger{border-color:#5A2A25}
+.line-extra{color:#7FD29A}
+input,select,textarea,.wk-form input,.wk-form select,#search{background:#0F1C17;border-color:var(--line);color:var(--ink)}
+input:focus,select:focus,textarea:focus{border-color:var(--green);box-shadow:0 0 0 3px #7FD29A33}
+header{background:#0B2A1F;color:#fff}
+header select{background:#16251F;color:var(--ink)}
+header .brand-logo{background:#F7F5EE}
+.top-nav [aria-selected=true] .count{background:#fff;color:#123B2D}
+.count{background:var(--soft);color:var(--ink)}
+#staff-floor{background:#111F19}
+#staff-floor .table-tile{color:var(--ink);box-shadow:none}
+#staff-floor .table-tile.occupied{color:#FFD99A}
+#staff-floor .table-tile.paid{color:#A9DCEB}
+#staff-floor .chair{border-color:#A57B32;background:#3A2E16}
+#staff-floor .door{color:#E59A8F}
+.price,.detail-line .line-price,.cart-line [data-line-status]{color:var(--green)}
+.target-bar,.badge,#cart-validation:not(:empty),#review-price-changes{background:var(--amber);border-color:var(--amber-line);color:#FFD99A}
+.badge.ready{background:#173024;color:#9BE0B1}
+#notice{background:var(--amber);border-bottom-color:var(--amber-line);color:#FFE3B0}
+#notice[data-tone=success],#cash-change{background:#173024;border-bottom-color:#2E5A3E;color:#9BE0B1}
+.quantity button{background:var(--card);color:var(--ink)}
+.empty{border-color:var(--line)}
+.product,#staff-floor,.order,.cart-line,.summary{box-shadow:none}
+.bottom-bar{background:#0B2A1F;color:#F7F5EE;box-shadow:0 -6px 16px #0006}.bottom-bar small{color:#BFD6C8}
+.bottom-bar button{background:#F7F5EE;color:#123B2D}
+.bottom-bar button:hover{background:#E1E7E3}
+dialog{background:var(--card);color:var(--ink);border-color:var(--line);box-shadow:0 20px 60px #0009}
+dialog::backdrop{background:#000a}
+#notify-panel{background:#0009}
+#notify-panel .sheet{background:var(--card);color:var(--ink)}
+#notify-list li{border-bottom-color:var(--line)}#notify-list li.unread strong{color:var(--ink)}#notify-list small{color:var(--muted)}
+.wk-chip{background:var(--soft);color:var(--ink)}.wk-chip[data-s="Gönderildi"],.wk-chip[data-s="Çalışma yok"]{background:#173024;color:#9BE0B1}.wk-chip[data-s="Değişti"]{background:var(--amber);color:#FFD99A}
+.wk-stats div{background:var(--card)}
+}
 </style></head><body data-view="tables">
 <div id="auth-gate" hidden><form id="auth-form" autocomplete="on"><img src="/assets/nohut-logo.webp" width="44" height="44" alt=""><h2 id="auth-title">Personel girişi</h2><p id="auth-hint" class="muted"></p>
 <label id="auth-user-row">Kullanıcı adı<input id="auth-username" name="username" autocomplete="username" autocapitalize="none" maxlength="32"></label>
