@@ -263,6 +263,68 @@ end $$;
 revoke all on function nohut_private.qr_recovery_authority(text,text,bigint,text),
  nohut_private.qr_publish_recover(text,text,bigint,text,text,text,text,text)
  from public,anon,authenticated,service_role;
+-- Bind the complete original Windows jsonEncode(draft) bytes to the
+-- confirmed command. The synced catalog is a redacted view, never a source
+-- for publication. All values are checked inside the private transaction.
+-- The existing command stamp is a 16-hex prefix; the receipt stores full SHA256.
+create function nohut_private.qr_publish_bind_draft(
+ p_token text,p_request text,p_generation bigint,p_envelope_sha256 text,
+ p_expected_stamp text,p_expected_revision text,p_draft_json text
+) returns jsonb language plpgsql security invoker set search_path=''
+as $$
+declare a nohut_private.windows_agents; c nohut_private.commands;
+ q nohut_private.qr_menu_state; draft jsonb; digest text; projection jsonb;
+begin
+ a:=nohut_private.qr_publish_authority(p_token,p_request,p_generation,p_envelope_sha256);
+ if p_expected_stamp is null or p_expected_stamp !~ '^[0-9a-f]{16}$'
+ or p_expected_revision is null or p_expected_revision !~ '^[0-9a-f]{40}$'
+ or p_draft_json is null or octet_length(p_draft_json)>800000 then
+   raise exception 'invalid draft binding' using errcode='22023';
+ end if;
+ select * into strict c from nohut_private.commands x where x.restaurant_id=a.restaurant_id and x.request_id=p_request;
+ digest:=encode(sha256(convert_to(p_draft_json,'UTF8')),'hex');
+ if left(digest,16) is distinct from p_expected_stamp
+ or c.envelope->'payload'->>'expectedStamp' is distinct from p_expected_stamp then
+   raise exception 'draft stamp conflict' using errcode='42501';
+ end if;
+ draft:=p_draft_json::jsonb;
+ if jsonb_typeof(draft) is distinct from 'object'
+ or jsonb_typeof(draft->'categories') is distinct from 'array'
+ or jsonb_typeof(draft->'products') is distinct from 'array'
+ or jsonb_typeof(draft->'campaigns') is distinct from 'array'
+ or nohut_private.contains_forbidden_secret_key(draft) then
+   raise exception 'invalid draft structure' using errcode='22023';
+ end if;
+ select * into q from nohut_private.qr_menu_state x where x.restaurant_id=a.restaurant_id for share;
+ if not found or not q.available or q.offline or q.draft_stamp is distinct from p_expected_stamp
+ or q.revision is distinct from p_expected_revision then
+   raise exception 'synced draft conflict' using errcode='42501';
+ end if;
+ -- Match the redacted serializer exactly, preserving array order. Omitted
+ -- full-draft fields remain covered by the command stamp and full SHA256.
+ select jsonb_build_object(
+ 'categories',coalesce((select jsonb_agg(value order by ord) from jsonb_array_elements(draft->'categories') with ordinality as x(value,ord)),'[]'::jsonb),
+ 'products',coalesce((select jsonb_agg(value-'legacyKey' order by ord) from jsonb_array_elements(draft->'products') with ordinality as x(value,ord)),'[]'::jsonb),
+ 'campaigns',coalesce((select jsonb_agg(value-ARRAY['startsAt','endsAt','eyebrow','items']::text[] order by ord) from jsonb_array_elements(draft->'campaigns') with ordinality as x(value,ord)),'[]'::jsonb)
+ ) into projection;
+ if q.catalog is distinct from projection then
+   raise exception 'synced catalog conflict' using errcode='42501';
+ end if;
+ -- Require projection provenance in current authority epoch; stale prior-PC
+ -- projection cannot authorize a new publish.
+ if not exists(
+   select 1 from nohut_private.sync_transactions t
+   join nohut_private.sync_event_ids i on i.restaurant_id=t.restaurant_id
+     and i.authority_epoch=t.authority_epoch and i.tx_id=t.tx_id
+   where t.restaurant_id=a.restaurant_id and t.authority_epoch=a.authority_epoch
+     and t.source_revision=q.source_revision and i.entity_type='qrMenuState' and i.entity_id='core'
+ ) then raise exception 'draft epoch conflict' using errcode='42501'; end if;
+ return jsonb_build_object('restaurantId',a.restaurant_id,'epoch',a.authority_epoch,
+   'agentId',a.agent_id,'digest',digest,'expectedRevision',p_expected_revision);
+end $$;
+revoke all on function nohut_private.qr_publish_bind_draft(text,text,bigint,text,text,text,text)
+ from public,anon,authenticated,service_role;
+
 -- No public/Edge wrapper grants yet. Recovery evidence is stored atomically.
 -- No negative-evidence unlock.
 commit;
