@@ -87,6 +87,8 @@ begin
  if nohut_private.qr_publish_recover(token,q3::text,1,recovery_hash,q2::text,'cancel_before_attempt')->>'status' is distinct from 'cancelled_before_attempt' then raise exception 'abandoned claim not released'; end if;
  if has_function_privilege('anon','nohut_private.qr_publish_recover(text,text,bigint,text,text,text,text,text)','EXECUTE') or
  has_function_privilege('service_role','nohut_private.qr_publish_recover(text,text,bigint,text,text,text,text,text)','EXECUTE') then raise exception 'recovery exposed'; end if;
+ if (select count(*) from nohut_private.qr_publish_recovery_audit where restaurant_id=r and reconcile_request_id=q3::text)<>2 then raise exception 'recovery audit missing'; end if;
+ if has_table_privilege('authenticated','nohut_private.qr_publish_recovery_audit','INSERT') then raise exception 'audit exposed'; end if;
  update nohut_private.sessions set revoked_at=clock_timestamp() where session_id=s;
  begin
   perform nohut_private.qr_publish_recover(token,q3::text,1,recovery_hash,q::text,'inspect');
