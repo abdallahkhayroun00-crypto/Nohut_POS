@@ -85,6 +85,10 @@ EVIDENCE:
 
 **Blockers / owner actions:** live Trendyol read-only check needs explicit owner authorization (R1); physical iPhone HTTPS/Safari test (L4); any FCM project needs owner approval (N4); KVKK gate unchanged.
 
+### Owner-approved QR settings consolidation (2026-11-28)
+
+- ChatGPT — PR #47 (stacked on #44): **Implemented / CI pending**. Removed duplicate Ayarlar > Menü & QR navigation and product list. QR Menü Yönetimi owns the POS sync status, last successful check, Eşitleme Ayarları and Şimdi Eşitle; local-only prices remain editable only with auto-sync disabled. Existing auto-sync service, historical order snapshots and public QR publication are unchanged. Added widget regression. Claude to integrate after CI; Gemini to independently verify. No production data or public menu edits.
+
 ## Phase status
 
 | Phase | Status | Evidence |
