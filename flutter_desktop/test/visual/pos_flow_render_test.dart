@@ -141,13 +141,13 @@ void main() {
       await t.sendKeyEvent(LogicalKeyboardKey.escape);
       await t.pumpAndSettle();
 
-      await click(t, find.text('Online Siparişler').last);
-      await shot(t, 'flow-$name-6-online');
-      expect(t.takeException(), isNull);
-      await click(t, find.text('Masalar & Siparişler').last);
-
       await click(t, find.text('Ödeme Bekleyen').last);
       await shot(t, 'flow-$name-4-odeme-bekleyen');
+      expect(t.takeException(), isNull);
+
+      // Last, so a slow tab switch cannot affect the steps above.
+      await click(t, find.text('Online Siparişler').last);
+      await shot(t, 'flow-$name-6-online');
       expect(t.takeException(), isNull);
     });
   }
