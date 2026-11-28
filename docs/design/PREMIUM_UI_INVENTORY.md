@@ -50,7 +50,7 @@ The Functional column records test coverage.
 | Raporlar, Yoğunluk, Gün Sonu | `sales_reports.dart`, `daily_report_ui.dart`, `report_activity.dart`, `dashboard_sales.dart` | 🔄 duplicate page title removed; section renders in `sections_render_test` (all 11 sidebar sections, 1536 and 1280) | tests ✓ | Data viz palette |
 | Finans, giderler | `finance_ui.dart` | 🔄 duplicate page title removed; cards and pills already on the shared tokens | tests ✓ | |
 | Market takibi | `market_prices.dart`, `market_price_tracking.dart` | ⬜ | tests ✓ | |
-| Personel, Mesai, Vardiya, Maaş | `operations_ui.dart`, `workforce.dart`, `payroll.dart`, `shifts.dart` | 🔄 Ayarlar › Personel: duplicate title removed, normal-size Personel Ekle button. Mesai/Vardiya/Maaş screens still to review | tests ✓ | |
+| Personel, Mesai, Vardiya, Maaş | `operations_ui.dart`, `workforce.dart`, `payroll.dart`, `shifts.dart` | 🔄 Ayarlar › Personel: duplicate title removed, normal-size Personel Ekle button. Windows weekly payroll and expenses live in Finans tabs, rendered by `sections_render_test` (Haftalık Maaşlar, Günlük Malzeme, Sabit, Diğer): already on the shared tokens, no change needed. Populated-data states still to review | tests ✓ | |
 | Bildirimler | `notifications_ui.dart`, `notification_center.dart` | ⬜ | tests ✓ | |
 | Ayarlar (9 pages), Yedekleme, Bulut | `simple_settings.dart`, `backup_ui.dart` | 🔄 (IA regrouped) | tests ✓ | Sync/backup stay Windows-only |
 | Dialogs, menus, empty/error/offline states | across | ⬜ | — | Shared components first |

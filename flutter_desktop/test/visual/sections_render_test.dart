@@ -74,4 +74,31 @@ void main() {
       }
     });
   }
+
+  // Windows Mesai and Maaş live in Finans, as tabs.
+  for (final (name, size) in [
+    ('1536', const Size(1536, 864)),
+    ('1280', const Size(1280, 720)),
+  ]) {
+    testWidgets('every Finans tab renders at $name', (t) async {
+      await mount(t, size);
+      await t.tap(find.text('Finans').first);
+      for (var i = 0; i < 6; i++) {
+        await t.pump(const Duration(milliseconds: 250));
+      }
+      for (final (key, label) in const [
+        ('maas', 'Haftalık Maaşlar'),
+        ('malzeme', 'Günlük Malzeme'),
+        ('sabit', 'Sabit Giderler'),
+        ('diger', 'Diğer Giderler'),
+      ]) {
+        await t.tap(find.text(label).first);
+        for (var i = 0; i < 6; i++) {
+          await t.pump(const Duration(milliseconds: 250));
+        }
+        expect(t.takeException(), isNull, reason: '$label at $name');
+        await shot(t, 'finans-$name-$key');
+      }
+    });
+  }
 }
