@@ -439,7 +439,7 @@ class _OrderComposerState extends State<_OrderComposer> {
                         fontWeight: FontWeight.w700, fontSize: 14, height: 1.2),
                     ),
                   ),
-                  const SizedBox(width: 6),
+                  const SizedBox(width: 12),
                   // Price and quantity badge stack on the right; on narrow
                   // tiles the price scales down instead of overflowing.
                   ConstrainedBox(

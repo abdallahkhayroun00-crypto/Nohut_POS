@@ -178,14 +178,12 @@ class _PlatformManagementPageState extends State<PlatformManagementPage>
 
   @override
   Widget build(BuildContext context) => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+    // The window header already names this page.
     Row(children: [
-      const Expanded(child: Text('Platform Yönetimi', style: TextStyle(
-          fontFamily: NohutBrand.headingFont, fontSize: 26, color: NohutBrand.ink))),
+      const Expanded(child: Text('Restoranın online platformlardaki açık/kapalı durumu, çalışma saatleri ve işlem geçmişi. '
+          'Siparişler Online Siparişler sayfasında kalır.', style: TextStyle(color: NohutBrand.muted))),
       if (loading) const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
     ]),
-    const SizedBox(height: 4),
-    const Text('Restoranın online platformlardaki açık/kapalı durumu, çalışma saatleri ve işlem geçmişi. '
-        'Siparişler Online Siparişler sayfasında kalır.', style: TextStyle(color: NohutBrand.muted)),
     if (message.isNotEmpty)
       Padding(padding: const EdgeInsets.only(top: 10), child: Text(message,
           key: const ValueKey('platform-message'), style: const TextStyle(fontWeight: FontWeight.w700))),

@@ -446,7 +446,7 @@ class _FinancePanelState extends State<FinancePanel> {
       }
       if (sources.isEmpty) {
         notify('Bu marketin doğrulanmış fiyat kaynağı şubesi yok. '
-          'Önce Market Fiyat Takibi → Şubeyi Eşleştir.', setup: true);
+          'Önce Market Fiyat Takibi › Şubeyi Eşleştir.', setup: true);
         return;
       }
       updateDialog(() {
@@ -1277,7 +1277,7 @@ class _FinancePanelState extends State<FinancePanel> {
   Future<void> _payrollForm([Json? current]) async {
     final people = asMaps(widget.state['employees']);
     if (people.isEmpty) {
-      _error('Ayarlar → Personel üzerinden çalışan ekleyin.');
+      _error('Ayarlar › Personel üzerinden çalışan ekleyin.');
       return;
     }
     int selected = current?['employeeId'] is int ?
@@ -1326,7 +1326,7 @@ class _FinancePanelState extends State<FinancePanel> {
                     const SizedBox(height: 12),
                     Text(configured ?
                       payType + ' · ' + formatTry(rate) :
-                      'Önce Ayarlar → Personel → Düzenle: Ücret girin.',
+                      'Önce Ayarlar › Personel › Düzenle: Ücret girin.',
                       style: TextStyle(
                         color: configured ? NohutBrand.green : Colors.red,
                         fontWeight: FontWeight.w700)),
@@ -1415,14 +1415,14 @@ class _FinancePanelState extends State<FinancePanel> {
             onPressed: () => _payrollForm(),
             icon: const Icon(Icons.add),
             label: const Text('Haftalık Maaş Ekle'))),
-        _notice('Maaş oranları Ayarlar → Personel kaydından gelir. '
+        _notice('Maaş oranları Ayarlar › Personel kaydından gelir. '
           'Saatler otomatik tahmin edilmez. Haftalık gider, '
           'haftanın bittiği ayda bir kez sayılır. SGK ayrı aylık giderdir.'),
         const SizedBox(height: 10),
         Row(children: [
           IconButton(tooltip: 'Önceki hafta', icon: const Icon(Icons.chevron_left),
             onPressed: () => _shiftWeek(-1)),
-          Expanded(child: Text(week + ' → ' + end,
+          Expanded(child: Text(week + ' – ' + end,
             textAlign: TextAlign.center,
             style: const TextStyle(fontWeight: FontWeight.w700))),
           IconButton(tooltip: 'Sonraki hafta', icon: const Icon(Icons.chevron_right),
@@ -1877,7 +1877,7 @@ class _FinancePanelState extends State<FinancePanel> {
           _notice('Bazı online siparişlerin komisyon oranı bilinmiyor: ' +
             formatTry(report.onlineUnpricedGrossCents) +
             ' brüt. Tahmini faaliyet farkı bilinçli olarak gizlendi. '
-            'Raporlar → Genel Bakış üzerinden oranları girin.'),
+            'Raporlar › Genel Bakış üzerinden oranları girin.'),
         const SizedBox(height: 10),
         _notice('Yönetim amaçlı yaklaşık hesap: yerel gerçek tahsilat + '
           'kaydedilmiş online siparişlerin tahmini neti − kaydedilen '

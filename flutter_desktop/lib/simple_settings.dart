@@ -696,7 +696,7 @@ class _SimpleSettingsState extends State<SimpleSettings> {
           ),
         if (tab == 'Bulut' && widget.cloudPanel != null)
           section(
-            'Bulut & Senkronizasyon',
+            'Durum ve ilk senkronizasyon',
             'İlk senkronizasyon ve bulut durumu · yalnızca bu Windows bilgisayarda.',
             [widget.cloudPanel!],
           ),

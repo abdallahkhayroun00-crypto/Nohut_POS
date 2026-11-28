@@ -1770,7 +1770,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     child: Column(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(14, 24, 14, 20),
+          padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
           child: Row(
             children: [
               Container(
@@ -1822,7 +1822,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
             children: [
               for (final item in sections)
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 3),
+                  padding: const EdgeInsets.only(bottom: 2),
                   child: Tooltip(
                     message: item.$3,
                     child: ListTile(
