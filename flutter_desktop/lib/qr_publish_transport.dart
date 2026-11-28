@@ -89,11 +89,39 @@ class QrPublishRequest {
 
   /// Canonical text of the draft that is sent and fingerprinted.
   String get draftJson => jsonEncode(draft);
-  /// Full SHA-256 of [draftJson] (the final confirmation hash under
-  /// discussion on #49; recorded locally now, sent once the contract has it).
+  /// Full SHA-256 (64 lowercase hex) of the exact UTF-8 [draftJson]. Agreed
+  /// on #44 (7230811119) as the binding digest; [expectedStamp] stays its
+  /// first 16 hex for the existing UI and legacy publisher.
   String get draftSha256 => sha256.convert(utf8.encode(draftJson)).toString();
   /// Current wire stamp: first 16 hex of the same hash (`qrDraftStamp`).
   String get expectedStamp => draftSha256.substring(0, 16);
+
+  /// Payload of the authenticated `menu.qr.publish` command envelope the
+  /// backend leases (never a client-invented lease). Both digests are bound
+  /// here so the Edge can recompute and refuse a mismatch.
+  Json commandPayload() => {
+    'expectedRevision': expectedRevision,
+    'expectedStamp': expectedStamp,
+    'draftSha256': draftSha256,
+    'draftJson': draftJson,
+    'activateConfirmed': false,
+  };
+}
+
+enum QrRecoveryMode { reconcile, cancelBeforeAttempt }
+
+/// Exact recovery command payload agreed on #44/#49:
+/// `{targetRequestId, mode: "reconcile" | "cancel_before_attempt"}`.
+/// Anything else (including legacy `{}`) is refused by #49's SQL.
+Json qrRecoveryPayload(String targetRequestId, QrRecoveryMode mode) {
+  if (!QrCommandBinding._uuid.hasMatch(targetRequestId)) {
+    throw const FormatException('invalid targetRequestId');
+  }
+  return {
+    'targetRequestId': targetRequestId,
+    'mode': mode == QrRecoveryMode.reconcile
+        ? 'reconcile' : 'cancel_before_attempt',
+  };
 }
 
 abstract class QrPublishTransport {

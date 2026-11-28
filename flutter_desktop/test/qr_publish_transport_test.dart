@@ -92,6 +92,28 @@ void main() {
     });
   });
 
+  group('command payloads (#44 7230811119)', () {
+    test('publish envelope binds the full digest and its 16-hex stamp', () {
+      final r = QrPublishRequest(draft: draft, expectedRevision: rev);
+      final p = r.commandPayload();
+      expect(p.keys.toSet(), {'expectedRevision', 'expectedStamp', 'draftSha256',
+        'draftJson', 'activateConfirmed'});
+      expect(p['draftSha256'], matches(RegExp(r'^[0-9a-f]{64}$')));
+      expect(p['expectedStamp'], (p['draftSha256'] as String).substring(0, 16));
+      expect(p['draftJson'], jsonEncode(draft));
+      expect(p['activateConfirmed'], isFalse);
+    });
+    test('recovery payload is exactly {targetRequestId, mode}', () {
+      const target = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
+      expect(qrRecoveryPayload(target, QrRecoveryMode.reconcile),
+        {'targetRequestId': target, 'mode': 'reconcile'});
+      expect(qrRecoveryPayload(target, QrRecoveryMode.cancelBeforeAttempt),
+        {'targetRequestId': target, 'mode': 'cancel_before_attempt'});
+      expect(() => qrRecoveryPayload('nope', QrRecoveryMode.reconcile),
+        throwsFormatException);
+    });
+  });
+
   group('cloud transport answers', () {
     QrPublishStatus read(int code, Object body) =>
         CloudQrPublishTransport.interpret(code, jsonEncode(body), cmd).status;
