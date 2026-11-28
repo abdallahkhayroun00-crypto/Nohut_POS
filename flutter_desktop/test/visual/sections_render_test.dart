@@ -33,6 +33,13 @@ const settingsPages = <(String, String)>[
   ('yedek', 'Yedekleme & Geri Yükleme'),
 ];
 
+/// Unmount and let page timers (polling, debounce) run out so none is left
+/// pending when the test ends; Windows CI is strict about this.
+Future<void> drain(WidgetTester t) async {
+  await t.pumpWidget(const SizedBox.shrink());
+  await t.pump(const Duration(minutes: 2));
+}
+
 void main() {
   for (final (name, size) in [
     ('1536', const Size(1536, 864)),
@@ -50,6 +57,7 @@ void main() {
         expect(t.takeException(), isNull, reason: '$label at $name');
         await shot(t, 'section-$name-$key');
       }
+      await drain(t);
     });
   }
 
@@ -72,6 +80,7 @@ void main() {
         expect(t.takeException(), isNull, reason: '$label at $name');
         await shot(t, 'ayarlar-$name-$key');
       }
+      await drain(t);
     });
   }
 
@@ -99,6 +108,7 @@ void main() {
         expect(t.takeException(), isNull, reason: '$label at $name');
         await shot(t, 'finans-$name-$key');
       }
+      await drain(t);
     });
   }
 }
