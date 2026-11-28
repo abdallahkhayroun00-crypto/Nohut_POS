@@ -39,8 +39,14 @@ void main() {
       'time': '18:30',
     },
     productLines: [
-      {'productId': 0, 'name': 'Falafel', 'qty': 1, 'price': 140,
-       'removed': <String>[], 'note': ''},
+      {
+        'productId': 0,
+        'name': 'Falafel',
+        'qty': 1,
+        'price': 140,
+        'removed': <String>[],
+        'note': '',
+      },
     ],
   );
 
@@ -52,31 +58,40 @@ void main() {
     expect(pendingOutbox(probe), isEmpty);
   });
 
-  test('replace records projected order, not contact fields or print jobs', () {
-    enableOutbox(probe);
-    final snap = store.read();
-    final order = addPickup(snap.data);
-    expect(store.replace(snap.data, snap.revision).ok, true);
-    final events = pendingOutbox(probe);
-    final event = events.singleWhere((e) => e['entity_type'] == 'orders');
-    expect(event['entity_id'], '${order['id']}');
-    expect(event['revision'], snap.revision + 1);
-    expect(event['op'], 'upsert');
-    final payload = jsonDecode(event['payload_json'] as String) as Map;
-    expect(payload['id'], order['id']);
-    final customer = payload['customer'] as Map;
-    expect(customer['time'], '18:30');
-    expect(customer.containsKey('name'), false);
-    expect(customer.containsKey('phone'), false);
-    expect(jsonEncode(events), isNot(contains('05550001122')));
-    expect(events.any((e) => e['entity_type'] == 'printJobs'), false);
+  test(
+    'replace records order and sanitized frozen print audit without contact fields',
+    () {
+      enableOutbox(probe);
+      final snap = store.read();
+      final order = addPickup(snap.data);
+      expect(store.replace(snap.data, snap.revision).ok, true);
+      final events = pendingOutbox(probe);
+      final event = events.singleWhere((e) => e['entity_type'] == 'orders');
+      expect(event['entity_id'], '${order['id']}');
+      expect(event['revision'], snap.revision + 1);
+      expect(event['op'], 'upsert');
+      final payload = jsonDecode(event['payload_json'] as String) as Map;
+      expect(payload['id'], order['id']);
+      final customer = payload['customer'] as Map;
+      expect(customer['time'], '18:30');
+      expect(customer.containsKey('name'), false);
+      expect(customer.containsKey('phone'), false);
+      expect(jsonEncode(events), isNot(contains('05550001122')));
+      final print = events.singleWhere((e) => e['entity_type'] == 'printJobs');
+      final printPayload = jsonDecode(print['payload_json'] as String) as Map;
+      expect(printPayload['syncReceipt']['sourceFormat'], 'frozen_kitchen');
+      expect(printPayload['syncReceipt']['body'], contains('Falafel'));
+      expect(printPayload.containsKey('snapshot'), false);
+      expect(printPayload.containsKey('text'), false);
+      expect(jsonEncode(events), isNot(contains('Synthetic Customer')));
 
-    final current = store.read();
-    final mutable = mutableOrder(current.data, order['id'] as int)!;
-    (mutable['customer'] as Map)['phone'] = '05550009988';
-    expect(store.replace(current.data, current.revision).ok, true);
-    expect(pendingOutbox(probe), hasLength(events.length));
-  });
+      final current = store.read();
+      final mutable = mutableOrder(current.data, order['id'] as int)!;
+      (mutable['customer'] as Map)['phone'] = '05550009988';
+      expect(store.replace(current.data, current.revision).ok, true);
+      expect(pendingOutbox(probe), hasLength(events.length));
+    },
+  );
 
   test('command retries and stale revisions do not duplicate events', () {
     enableOutbox(probe);
@@ -87,39 +102,56 @@ void main() {
     });
     final count = pendingOutbox(probe).length;
     expect(count, greaterThan(0));
-    expect(store.command('outbox_test_001', {'kind': 'test'}, (_) {
-      throw StateError('replay must not execute');
-    }), result);
+    expect(
+      store.command('outbox_test_001', {'kind': 'test'}, (_) {
+        throw StateError('replay must not execute');
+      }),
+      result,
+    );
     expect(store.replace(first.data, first.revision).ok, false);
     expect(pendingOutbox(probe), hasLength(count));
   });
 
-  test('soft deletion records a tombstone and removes the active projection', () {
-    enableOutbox(probe);
-    final snap = store.read();
-    final order = addPickup(snap.data);
-    final id = order['id'] as int;
-    expect(store.replace(snap.data, snap.revision).ok, true);
-    final revision = store.read().revision;
-    store.deleteOrder(id, revision, 'outbox_delete_001', reason: 'Test');
-    final events = pendingOutbox(probe)
-        .where((e) => e['revision'] == revision + 1).toList();
-    expect(events.any((e) => e['entity_type'] == 'orders' && e['op'] == 'delete'), true);
-    final archived = events.singleWhere((e) => e['entity_type'] == 'deletedOrders');
-    expect(archived['op'], 'upsert');
-    expect(archived['payload_json'], isNot(contains('05550001122')));
-    expect(archived['payload_json'], isNot(contains('Synthetic Customer')));
-    expect(mutableOrder(store.read().data, id), isNull);
-  });
+  test(
+    'soft deletion records a tombstone and removes the active projection',
+    () {
+      enableOutbox(probe);
+      final snap = store.read();
+      final order = addPickup(snap.data);
+      final id = order['id'] as int;
+      expect(store.replace(snap.data, snap.revision).ok, true);
+      final revision = store.read().revision;
+      store.deleteOrder(id, revision, 'outbox_delete_001', reason: 'Test');
+      final events = pendingOutbox(
+        probe,
+      ).where((e) => e['revision'] == revision + 1).toList();
+      expect(
+        events.any((e) => e['entity_type'] == 'orders' && e['op'] == 'delete'),
+        true,
+      );
+      final archived = events.singleWhere(
+        (e) => e['entity_type'] == 'deletedOrders',
+      );
+      expect(archived['op'], 'upsert');
+      expect(archived['payload_json'], isNot(contains('05550001122')));
+      expect(archived['payload_json'], isNot(contains('Synthetic Customer')));
+      expect(mutableOrder(store.read().data, id), isNull);
+    },
+  );
 
   test('outbox insert failure rolls back business rows and revision', () {
     enableOutbox(probe);
-    probe.execute("CREATE TRIGGER block_sync BEFORE INSERT ON sync_outbox "
-        "BEGIN SELECT RAISE(ABORT, 'synthetic failure'); END");
+    probe.execute(
+      "CREATE TRIGGER block_sync BEFORE INSERT ON sync_outbox "
+      "BEGIN SELECT RAISE(ABORT, 'synthetic failure'); END",
+    );
     final before = store.read();
     final next = copyJson(before.data);
     addPickup(next);
-    expect(() => store.replace(next, before.revision), throwsA(isA<SqliteException>()));
+    expect(
+      () => store.replace(next, before.revision),
+      throwsA(isA<SqliteException>()),
+    );
     expect(store.read().revision, before.revision);
     expect(store.read().data, before.data);
     expect(pendingOutbox(probe), isEmpty);

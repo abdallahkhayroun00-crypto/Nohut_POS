@@ -2,7 +2,7 @@ name: Test Nohut PostgreSQL foundation
 on:
   workflow_dispatch:
   push:
-    branches: [chatgpt/phase2-postgres-foundation]
+    branches: [chatgpt/phase2-postgres-foundation, chatgpt/pr-05b-cloud-rpcs]
     paths:
       - 'supabase/**'
       - '.github/workflows/nohut-postgres-foundation.yml'
@@ -38,8 +38,22 @@ jobs:
             docker exec -i "$PG_CONTAINER" psql -X -v ON_ERROR_STOP=1 -U postgres -d nohut_synthetic "$@"
           }
           psql_ci -c 'create role anon nologin; create role authenticated nologin; create role service_role nologin bypassrls;'
-          psql_ci < supabase/migrations/20261127001000_nohut_private_foundation.sql
-          psql_ci < supabase/migrations/20261127002000_nohut_finance_foundation.sql
-          psql_ci < supabase/tests/private_foundation_test.sql
-          psql_ci < supabase/tests/finance_foundation_test.sql
-          echo 'PASS: PostgreSQL synthetic foundation tests (no live Supabase connection)' >> "$GITHUB_STEP_SUMMARY"
+          psql_ci < supabase/ci/supabase_auth_stub.sql
+          for f in supabase/migrations/*.sql; do psql_ci < "$f"; done
+          for f in supabase/tests/*.sql; do psql_ci < "$f"; done
+          echo 'PASS: PostgreSQL integrated synthetic tests (no live Supabase connection)' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cloud primitives under migration owner without BYPASSRLS
+        env:
+          PG_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          set -euo pipefail
+          run_pg() { docker exec -i "$PG_CONTAINER" psql -X -v ON_ERROR_STOP=1 "$@"; }
+          run_pg -U postgres -d nohut_synthetic -c 'create role cloud_migrator login nosuperuser nobypassrls; grant authenticated, anon, service_role to cloud_migrator;'
+          run_pg -U postgres -d nohut_synthetic -c 'create database nohut_cloud_plain owner cloud_migrator'
+          run_pg -U postgres -d nohut_cloud_plain < supabase/ci/supabase_auth_stub.sql
+          for f in supabase/migrations/*.sql; do run_pg -U cloud_migrator -d nohut_cloud_plain < "$f"; done
+          for f in supabase/tests/*.sql; do
+            run_pg -U cloud_migrator -d nohut_cloud_plain < "$f"
+          done
+          echo 'PASS: private cloud functions as plain migration owner' >> "$GITHUB_STEP_SUMMARY"

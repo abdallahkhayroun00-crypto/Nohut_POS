@@ -92,6 +92,116 @@ Active engineers: **Claude** (Windows, Android, PWA/LAN, auth UI, UI/UX, all cli
 
 **Blockers / owner actions:** live Trendyol read-only check needs explicit owner authorization (R1); physical iPhone HTTPS/Safari test (L4); any FCM project needs owner approval (N4); KVKK gate unchanged.
 
+## Antigravity (Gemini) Backend — Increment E: Standalone Platform Yönetimi Control Plane (2026-11-28)
+
+- **Branch / PR:** `gemini/backend-continuation` (**PR #46** targeting `main`).
+- **Status:** `Implemented / Tested` (NOT self-verified; independent review requested from Claude).
+- **Implemented (`supabase/migrations/20261128030000_nohut_platform_management.sql`, `docs/contracts/v1/platform-management.md`):**
+  1. **Idempotent `platform.*` permissions:** `platform.view`, `platform.store.toggle`, `platform.schedule.edit`, `platform.catalog.toggle` mirrored in `docs/contracts/v1/permissions.json` and `flutter_desktop/lib/permission_roles.g.dart` (byte-for-byte compatible with PR #51 `20261128020000`).
+  2. **Authoritative Read Model (`public.nohut_platform_cards_view`):** Requires `platform.view`, returns all 3 providers in fixed order (`trendyol_go`, `yemeksepeti`, `migros_yemek`) matching `PlatformCard.fromJson` field-for-field.
+  3. **Durable Idempotent Store `Aç/Kapat` (`public.nohut_platform_enqueue_status_set`):** Requires `platform.store.toggle` + `p_confirmed = true`; enforces connected + `can_toggle_store`, verified store ID, ≤10 min fresh readback, no pending/unknown mutation in flight, and `expectedStatus == working_status`; enqueues `platform_store_status_set` (5m TTL) in `nohut_private.commands`; locks `pendingMutation`; appends to immutable `platform_status_audit`.
+  4. **Read-Only Refresh & Unknown-Outcome Reconciliation:** `public.nohut_platform_enqueue_refresh`, `public.nohut_platform_enqueue_reconcile`, and Windows-agent RPCs `public.nohut_agent_report_platform_state` & `public.nohut_agent_resolve_platform_mutation`.
+- **Validation (synthetic data only):**
+  - Local Docker Postgres 16 (exact CI harness): **66/66 migrations & 33/33 SQL test suites PASS** under both `postgres` superuser and `cloud_migrator` (`NOSUPERUSER NOBYPASSRLS`).
+
+## Antigravity (Gemini) Backend — Increment D Clean Resync & Canonical JSON Contract (2026-11-28)
+
+- **Branch / PR:** `gemini/backend-continuation` (**PR #46** draft targeting `chatgpt/pr-05b-cloud-rpcs`).
+- **Status:** `Implemented / Tested` (NOT self-verified; independent re-review requested from ChatGPT & Claude).
+- **Resolves Claude #7235779939 (1 blocking + 2 medium + 1 note) via `supabase/migrations/20261127174000_nohut_initial_sync_clean_resync.sql`:**
+  1. **Blocking #1 (Canonical JSON for snapshot payloads):** Confirmed strict **integer-only canonical JSON** (`nohut_private.canonical_command_json`: safe integers in `[-9007199254740991, 9007199254740991]`, no floats/exponents, UTF-8 byte-ordered object keys, no whitespace, Postgres string escaping, no keys > `U+FFFF`) documented in `docs/contracts/v1/initial-sync-and-recovery.md`.
+  2. **Medium #1 (Clean projection replacement on resync):** Added private `nohut_private.clear_restaurant_projections(uuid)` invoked inside `nohut_agent_activate_initial_sync` before promoting staged batches (within the same transaction) so rows deleted locally on Windows are cleanly removed instead of surviving as ghosts after a second full sync.
+  3. **Medium #2 (`statement_timeout` on activation):** `nohut_agent_activate_initial_sync` now sets `set local statement_timeout = '120s'` deterministically for large staged promotions.
+  4. **Note (Orphaned staged batches on epoch rotation):** `nohut_owner_rotate_authority_epoch` now purges any orphaned `migration_staged_batches` and marks incomplete old-epoch `sync_migrations` as `'safely_aborted'` (`abort_reason = 'epoch_rotated'`).
+- **Validation (synthetic data only):**
+  - Local Docker Postgres 16: **61/61 migrations & 32/32 SQL test suites** (including Epoch 1 → Epoch 3 clean replacement and orphaned staged-batch purge tests) executed under both `postgres` superuser and `cloud_migrator` (`NOSUPERUSER NOBYPASSRLS`).
+
+## Antigravity (Gemini) Backend — Increment D Hardening: Claude #7231808318 Blockers Fixed (2026-11-28)
+
+- **Branch / PR:** `gemini/backend-continuation` (**PR #46** draft targeting `chatgpt/pr-05b-cloud-rpcs`).
+- **Status:** `Implemented / Tested` (NOT self-verified; independent re-review requested from ChatGPT & Claude).
+- **Resolves all 4 blocking + 3 minor findings (`supabase/migrations/20261127173000_nohut_initial_sync_hardening.sql`):**
+  1. **Blocking #1:** `nohut_agent_activate_initial_sync` explicitly rejects `NULL` or negative `p_expected_batches` (`22023`).
+  2. **Blocking #2:** `nohut_agent_upload_snapshot_batch` enforces `jsonb_array_length(p_events) = p_item_count` and `sha256(utf8(canonical_command_json(p_events))) = p_body_sha256`. Activation recomputes `manifest_sha256 = sha256(string_agg(category||':'||batch_id||':'||item_count||':'||body_sha256, '\n' order by batch_id::text))` and requires exact match against both stored and expected manifest.
+  3. **Blocking #3 (Stage + Promote):** `upload_snapshot_batch` stages verified events in private `nohut_private.migration_staged_batches` (ZERO writes to live projection tables before activation). `abort_initial_sync` purges all staged batches and stores/audits `abort_reason`. `activate_initial_sync` atomically promotes all staged batches in dependency order in one transaction and purges staged payloads.
+  4. **Blocking #4 (Second Full Sync / "Yeniden eşitle"):** Added owner-only, `aal2` MFA, Windows-only `public.nohut_owner_rotate_authority_epoch(p_device_id, p_permission_version, p_reason)` (`sync.full_resync`), which retires the old epoch, revokes old-epoch Windows agents, creates a fresh epoch, and audits it.
+  5. **Minor #1–#3:** Batch capped at ≤500 events / ≤4 MB; `abort_reason`/`aborted_at` stored & audited; `migration_status` cross-epoch semantics documented in `docs/contracts/v1/initial-sync-and-recovery.md`.
+  6. **Compatibility (`expenses.quick_add`):** Confirmed PR #46 does not duplicate PR #44's `20261128010000_nohut_expenses_quick_add.sql` (`on conflict do nothing`).
+
+## Antigravity (Gemini) Backend Ownership — Increment D: Initial Sync, Resumable Snapshots, Recovery & Strict QR Digest (2026-11-28)
+
+- **Ownership Acknowledged (`#7231137435` / `#7231119516`):** Codex removed from active assignments (historical PR #39 `8d918b2` preserved untouched). Gemini owns remaining P0 Backend & Security on **PR #46 (`gemini/backend-continuation`)** and separate Independent QA on **PR #45 (`gemini/independent-qa`)**. ChatGPT reviews Gemini's backend work independently.
+- **Status:** `Implemented / Tested` (NOT self-verified; independent review requested from ChatGPT).
+- **Implemented (`supabase/migrations/20261127172000_nohut_initial_sync_and_strict_qr_digest.sql`):**
+  1. **Strict QR Publish Digest (P0 checklist):** `qr_menu_publish` now **requires** full 64-hex `draftSha256` (prefix matching 16-hex `expectedStamp`); omitting `draftSha256` is rejected (`22023`).
+  2. **First Database Synchronization & Snapshot/Recovery RPCs (Windows-agent authenticated only):**
+     - `public.nohut_agent_begin_initial_sync` (requires `p_backup_verified = true`, idempotent on `migration_id`, prevents concurrent active/uploading migrations per epoch).
+     - `public.nohut_agent_upload_snapshot_batch` (atomic multi-entity typed batch ingestion + `migration_batches` recording, idempotent/resumable across crashes/offline drops).
+     - `public.nohut_agent_activate_initial_sync` (verifies exact `manifest_sha256` and committed batch count before transitioning to `'active'` and initializing `sync_checkpoints`).
+     - `public.nohut_agent_abort_initial_sync` (marks incomplete migration `'safely_aborted'`; refuses to abort `'active'`).
+     - `public.nohut_agent_migration_status` (returns migration state, committed batches, and checkpoint for deterministic offline resume).
+  3. Contract & tests: `docs/contracts/v1/initial-sync-and-recovery.md`, `supabase/tests/initial_sync_and_recovery_test.sql`.
+- **Validation (synthetic data only):**
+  - Local Docker Postgres 16: **59/59 migrations & 32/32 SQL test suites passed** under both `postgres` superuser and `cloud_migrator` (`NOSUPERUSER NOBYPASSRLS`).
+
+## Antigravity (Gemini) temporary backend continuation — Hardening Pass: Privacy Allowlist, Provenance Freshness & QR v2 Reconcile Alignment (2026-11-28)
+
+- **Branch / PR:** `gemini/backend-continuation` (**PR #46** draft targeting `chatgpt/pr-05b-cloud-rpcs`).
+- **Status:** `Implemented / Tested` (NOT self-verified; independent re-review requested from ChatGPT / Codex & Claude).
+- **Resolves review blockers `#7230391428`, `#7230501923`, `#7230678865`:**
+  - `supabase/migrations/20261127171000_nohut_read_privacy_freshness_hardening.sql`:
+    1. **Financial Privacy Allowlist (`public.nohut_daily_report_view`):** Enforces `p_client = 'yonetici'` + `dashboard.view`, constructs output strictly field-by-field matching Claude's `daily_report.dart` `redactDailyReport` matrix (`amountsHidden: true` without `sales.view`; all 12 monetary fields strictly absent without `sales.view`; `expenses`/`estimatedResultCents`/`estimateNote` absent without `finance.view`). Ingest rejects unknown top-level keys and rejects `staffHours`/`workingHours`/`employeeHours` at **any nesting depth**.
+    2. **Provenance-Bound Stale Metadata (`nohut_private.projection_watermarks` + `projection_freshness`):** Tracks `(restaurant_id, projection_key, authority_epoch, source_revision, calculated_at, updated_at)` across all 5 projections (`workforce_summaries`, `shift_plans`, `qr_menu_state`, `notifications`, `daily_reports`), detecting `no_sync`, `sync_aged`, `projection_missing`, `epoch_mismatch`, `revision_ahead`, and `projection_aged`. Forces `preliminary: true` on stale daily reports.
+    3. **Full `unreadCount`:** `public.nohut_notifications_list` computes `unreadCount` across ALL visible unread items (independent of `p_limit`).
+    4. **QR Recovery & Digest Alignment (`#7230501923` / Claude `aea2861`):** `qr_menu_reconcile` enforces exact `{targetRequestId: UUID, mode: 'reconcile' | 'cancel_before_attempt'}` and denies legacy `{}`; `qr_menu_publish` supports optional `draftSha256` (64-hex) validated against `expectedStamp` (first 16 hex).
+- **Validation (synthetic data only):**
+  - Local Docker Postgres 16: **58/58 migrations & 31/31 SQL test suites passed** under both `postgres` superuser and `cloud_migrator` (`NOSUPERUSER NOBYPASSRLS`).
+
+## Antigravity (Gemini) temporary backend continuation — Increment C: Cloud Notifications & Gün Sonu Raporu Projections (2026-11-27)
+
+- **Branch / PR:** `gemini/backend-continuation` (**PR #46** draft targeting `chatgpt/pr-05b-cloud-rpcs`).
+- **Status:** `Implemented / Tested` (NOT self-verified; independent review requested from ChatGPT / Codex).
+- **Implemented:**
+  - `supabase/migrations/20261127170000_nohut_notifications_and_daily_reports.sql`:
+    - Private `nohut_private.cloud_notifications` + `nohut_private.notification_reads` (FORCE RLS + owner-only policy, zero direct client grants) + `public.nohut_notifications_list` (client-, permission-, and personal `recipientEmployeeId`-filtered) + `public.nohut_notification_mark_read` (per-user read state).
+    - Private `nohut_private.daily_report_summaries` (FORCE RLS + owner-only policy) enforcing owner decision (`QA-05` permanently superseded): **`staffHours` / `workingHours` are strictly rejected at schema and projection level**.
+    - `public.nohut_daily_report_view` requiring `dashboard.view` and gating sales/collections/platforms on `sales.view` and expenses/profit on `finance.view`, with explicit `syncMeta`.
+    - Extended `ingest_sync_transaction` for `entity_type in ('notifications', 'dailyReports')`.
+  - Aligned `docs/contracts/v1/permissions.json` and `flutter_desktop/lib/permission_roles.g.dart` with `menu.*` parity (`20261127168000` / Claude `20261127221000`).
+  - `supabase/tests/notifications_and_daily_reports_test.sql` + `docs/contracts/v1/notifications-and-daily-reports.md`.
+- **Validation (synthetic data only):**
+  - Local Docker Postgres 16: **57/57 migrations & 31/31 SQL tests passed** under both `postgres` superuser and `cloud_migrator` (`NOSUPERUSER NOBYPASSRLS`).
+
+## Antigravity (Gemini) temporary backend continuation — Increment B: QR Menu Management Cloud Integration (2026-11-27)
+
+- **Branch / PR:** `gemini/backend-continuation` (**PR #46** draft targeting `chatgpt/pr-05b-cloud-rpcs`).
+- **Status:** `Implemented / Tested` (NOT self-verified; independent review requested from ChatGPT / Codex).
+- **Implemented:**
+  - `supabase/migrations/20261127168000_nohut_qr_menu_cloud.sql`:
+    - Idempotent `menu.*` role parity alignment for `Personel`, `Müdür`, and `Yönetici` (matching Claude's `20261127221000_nohut_menu_parity.sql`, zero broadening outside `menu.*`).
+    - Private `nohut_private.qr_menu_state` (FORCE RLS + owner-only policy, zero direct client grants), recursive `contains_forbidden_secret_key` guard blocking any token/key from entering cloud state or commands, `apply_qr_menu_projection`, and atomic `ingest_sync_transaction` support for `entity_type = 'qrMenuState'`, `entity_id = 'core'`.
+    - JWT-authenticated `public.nohut_qr_menu_view(p_device_id, p_client, p_permission_version)` returning Claude's `#7228113217` contract shape + dynamic `can` map + `syncMeta`.
+  - `supabase/migrations/20261127169000_nohut_qr_menu_commands.sql`:
+    - Extends `validate_command_payload` and `enqueue_command` for `qr_menu_write` (per-action `menu.*` grant), `qr_menu_publish` (`menu.qr.publish`, `confirmed: true`, 5m TTL), `qr_menu_reconcile` (`menu.qr.publish`, 5m TTL), `qr_menu_image` (`menu.product.edit`, MIME/path/6 MB cap, 10m TTL), and `qr_menu_sync` (`menu.product.edit`, 5m TTL), preserving `expectedStamp`, `requestId` idempotency, actor binding, and zero credentials in cloud.
+  - `flutter_desktop/lib/cloud_qr_menu_bridge.dart` + `flutter_desktop/test/cloud_qr_menu_test.dart` + `docs/contracts/v1/qr-menu-cloud.md`.
+  - CI fixes: eliminated `sync_registry_drift_test` false positive (`s['start']` → `shiftRow['start']` in `cloud_workforce_summary.dart`) and aligned `finance_store_picker_test.dart` to Istanbul business day (mirroring Claude `da7faf5`).
+
+## Antigravity (Gemini) temporary backend continuation — Increment A: QA-09 / O-03 Workforce & Payroll Read APIs (2026-11-27)
+
+- **Branch / PR:** `gemini/backend-continuation` (branched from verified PR #39 head `8d918b2`, draft PR targeting `chatgpt/pr-05b-cloud-rpcs`; PR #39 untouched).
+- **Status:** `Implemented / Tested` (NOT self-verified; independent review requested from ChatGPT / Codex when available).
+- **Implemented:**
+  - `supabase/migrations/20261127166000_nohut_workforce_summaries.sql`: private `nohut_private.weekly_workforce_summaries` (FORCE RLS, zero direct client grants), `apply_workforce_summary_projection`, and atomic `ingest_sync_transaction` support for `entity_type = 'workforceSummaries'`, `entity_id = 'core'`.
+  - `supabase/migrations/20261127167000_nohut_workforce_read_rpcs.sql`: `sync_freshness` helper + 3 JWT-scoped `SECURITY DEFINER` read RPCs:
+    - `public.nohut_workforce_own_week(p_device_id, p_client, p_permission_version, p_week_start)` — matches Claude's `/api/work/week` shape, strictly bound to `auth.uid() -> pos_employee_id` (impossible to query another employee).
+    - `public.nohut_team_schedule(p_device_id, p_client, p_permission_version, p_from, p_to)` — shared schedule with employee names and shift times ONLY (zero wages, zero manager notes, zero payroll).
+    - `public.nohut_payroll_week(p_device_id, p_client, p_permission_version, p_week_start)` — matches Claude's `ownerPayroll` shape, enforces `payroll.view` (or owner), excludes non-eligible owners (`payrollEligible=false`), preserves `null` for missing wages (`Ücret belirlenmedi`), retains departed employees with unpaid hours, and returns explicit `syncMeta` (`sourceRevision`, `calculatedAt`, `syncedAt`, `stale`, `staleReason`).
+  - `flutter_desktop/lib/cloud_workforce_summary.dart`: Windows-authoritative serializer reusing `payrollStatus`, `ownWeek`, `payRateOn`, `weekStartOf` (no parallel cloud wage engine).
+  - `docs/contracts/v1/workforce-reads.md`: full contract documentation.
+- **Validation (synthetic data only):**
+  - `flutter test test/employee_wage_sync_test.dart test/payroll_ledger_sync_test.dart test/workforce_summary_sync_test.dart`: **3/3 passed** (verifies owner acceptance 1760/800/960/0, `Kısmen Ödendi` → `Ödendi`, missing rate `null`, owner exclusion, departed employee unpaid dues).
+  - Local Docker Postgres 16: **54/54 migrations & 29/29 SQL test files passed** under both `postgres` superuser and `cloud_migrator` (`NOSUPERUSER NOBYPASSRLS`), including `supabase/tests/workforce_read_rpcs_test.sql` (privacy, permissions, stale-data detection, cross-tenant isolation, direct-table RLS block).
+
 ### Owner-approved QR settings consolidation (2026-11-28)
 
 - ChatGPT — PR #47 (stacked on #44): **Implemented / CI pending**. Removed duplicate Ayarlar > Menü & QR navigation and product list. QR Menü Yönetimi owns the POS sync status, last successful check, Eşitleme Ayarları and Şimdi Eşitle; local-only prices remain editable only with auto-sync disabled. Existing auto-sync service, historical order snapshots and public QR publication are unchanged. Added widget regression. Claude to integrate after CI; Gemini to independently verify. No production data or public menu edits.
@@ -170,10 +280,14 @@ Owner decision 2026-11-27: ChatGPT builds PR-05B (cloud functions), Claude build
 | Phase 3: accounts, PIN, auth, role + per-user permissions (owner: Claude; PR-05B: ChatGPT, must use the auth contract above) | Claude Code | 2026-11-27 | #40 |
 | Phase 4: PWA functional clients (§22) + Cloudflare Pages deploy workflow | Claude Code | done | #37 |
 | Phase 5A: Windows remote command worker | Claude Code | 2026-11-27 | this PR |
-| Phase 5B: cloud command-queue RPCs (`nohut_private.commands`, claim with lease, complete) | **open — suggested: ChatGPT** (continues PR-05B) | — | — |
-| Phase 6 prerequisite: Windows `sales_daily`/`top_products`/`heatmap` projection functions (pure Dart, tested against `order_reporting.dart`) | **open** | — | — |
+| Phase 5B: cloud command-queue RPCs (`nohut_private.commands`, claim with lease, complete) + Increments A–E (Workforce/Payroll, QR Menu Cloud, Notifications & Daily Report, Clean Resync, Platform Yönetimi, atomic claim read & expired-lock reap) | Gemini / Antigravity (`Implemented / Tested`, 7/7 CI GREEN, awaiting Claude independent review) | 2026-11-28 | #46 (`659267b`) |
+| Trendyol Cloud Proxy v1 (Edge Function: `verify`, `poll`, `execute` Kabul Et/Hazır, `reconcile`, `store_status_read`, `store_status_set` Aç/Kapat; Supabase Secrets; disabled by default) | Gemini / Antigravity (`Implemented / Tested`, 5/5 CI GREEN, B1–B4 & N1–N4 fixed, awaiting Claude re-review) | 2026-11-28 | #52 (`f35f796`) |
+| Cloud QR Publisher v2 (Edge Function: GitHub App via Supabase Secrets, 64-hex `draftSha256` binding, `NOHUT_QR_PUBLISHER_ENABLED` gate, `qr-publisher-check` read-only verifier) | Gemini / Antigravity (`Implemented / Tested`, 4/4 CI GREEN, awaiting Claude independent review) | 2026-11-28 | #53 (`eeda48f`) |
+| Cloud Capabilities v1 (`GET`/`POST /functions/v1/cloud-capabilities`: tenant-scoped booleans for `qrPublish` + `providers.{trendyol_go,yemeksepeti,migros_yemek,uber_eats}`, fail-closed, zero secret material) | Gemini / Antigravity (`Implemented / Tested`, 7/7 synthetic tests PASS, CI GREEN; Windows client wired by Claude on #51 `7bedb7c`) | 2026-11-28 | #46 (`61b6743`) |
+| Manual Edge Function Deploy & Safe Read-Only Verify Workflow (`nohut-supabase-edge-deploy-verify.yml`: `workflow_dispatch` only, disabled-by-default deploy + read-only `cloud-capabilities`/`trendyol-proxy verify`/`qr-publisher-check`) | Gemini / Antigravity (`Implemented / Tested`, awaiting Claude independent review & owner trigger) | 2026-11-28 | #46 |
+| Phase 6: Cloud Sales Analytics Projection (`SalesView`: `sales_analytics_snapshots`, `nohut_agent_report_sales_analytics`, `nohut_sales_analytics_view` gated on `sales.view` for `daily`, `topProducts`, 7×24 `heatmap`, `platforms`) | Gemini / Antigravity (`Implemented / Tested`, 68/68 migrations & 34/34 SQL tests PASS, awaiting Claude independent review) | 2026-11-28 | #46 |
 | Phase 5 prerequisite: Windows shift entity + clock-in/out commands | Claude Code | done | #38 |
-| PR-05B: server RPCs (ingest transaction, reconcile, checkpoint), typed serializers, minimal grants | **open — suggested: ChatGPT** (continues #35) | — | — |
+| PR-05B: server RPCs (ingest transaction, reconcile, checkpoint), typed serializers, minimal grants | Gemini / Antigravity (merged into #46, 68/68 migrations & 34/34 SQL tests PASS) | 2026-11-28 | #46 |
 
 ## Owner-configured services (2026-11-27, per owner)
 

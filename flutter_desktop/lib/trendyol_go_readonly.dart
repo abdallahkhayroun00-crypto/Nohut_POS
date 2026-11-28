@@ -117,14 +117,13 @@ Json normalizeTgoPackage(Json p) {
       number = '${p['orderNumber'] ?? p['orderId'] ?? ''}';
   if (id.isEmpty || number.isEmpty)
     throw const FormatException('Geçersiz platform paketi.');
-  final lines = <Json>[];
+  final lines = <Json>[],lineFacts=<Json>[];
   for (final l in asMaps(p['lines'])) {
     final items = asMaps(l['items']);
     final qty = items.isEmpty
         ? 1
         : items.where((e) => e['isCancelled'] != true).length;
-    if (qty <= 0) continue;
-    lines.add({
+    final commercial=<String,dynamic>{
       'name': '${l['name'] ?? ''}',
       'qty': qty,
       'unitPriceCents': tgoCents(l['unitSellingPrice'] ?? l['price']),
@@ -135,7 +134,16 @@ Json normalizeTgoPackage(Json p) {
       ],
       'removed': tgoIngredientNames(l['removedIngredients']),
       'extras': tgoIngredientNames(l['extraIngredients']),
+    };
+    // Additive durable commercial facts. Existing active lines and all
+    // printing/financial behavior below remain unchanged.
+    lineFacts.add({...commercial,
+      'originalQty':items.isEmpty?null:items.length,'quantityKnown':items.isNotEmpty,
+      'unitPriceKnown':num.tryParse('${l['unitSellingPrice']??l['price']}')?.isFinite==true,
+      'itemIds':[for(final item in items)if('${item['packageItemId']??''}'.trim().isNotEmpty)'${item['packageItemId']}'.trim()],
+      'cancelledItemIds':[for(final item in items)if(item['isCancelled']==true&&'${item['packageItemId']??''}'.trim().isNotEmpty)'${item['packageItemId']}'.trim()],
     });
+    if(qty>0)lines.add(commercial);
   }
   final payment = p['payment'] is Map
       ? p['payment'] as Map
@@ -216,6 +224,8 @@ Json normalizeTgoPackage(Json p) {
     'pickup': p['storePickupSelected'] == true,
     'testPackage': p['testPackage'] == true,
     'lines': lines,
+    'lineFacts':lineFacts,
+    'totalKnown':num.tryParse('${p['totalPrice']}')?.isFinite==true,
   };
 }
 

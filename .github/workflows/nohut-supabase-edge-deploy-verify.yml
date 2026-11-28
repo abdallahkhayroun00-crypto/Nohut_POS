@@ -1,0 +1,136 @@
+name: Nohut Supabase Edge Deploy & Safe Read-Only Verify
+
+# Strictly manual owner-triggered workflow. NEVER runs automatically on PRs or pushes.
+# Never enables NOHUT_TRENDYOL_PROXY_ENABLED or NOHUT_QR_PUBLISHER_ENABLED;
+# never mutates live restaurant data or publishes to the public QR menu repository.
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Execution mode (verify_only never deploys; deploy_and_verify deploys disabled-by-default functions first)'
+        type: choice
+        default: verify_only
+        options:
+          - verify_only
+          - deploy_and_verify
+      verify_cloud_capabilities:
+        description: 'Run safe read-only GET /functions/v1/cloud-capabilities (booleans only, zero secrets)'
+        type: boolean
+        default: true
+      verify_trendyol_proxy:
+        description: 'Run safe read-only POST /functions/v1/trendyol-proxy {"action":"verify"} (no mutations)'
+        type: boolean
+        default: false
+      verify_qr_publisher_check:
+        description: 'Run safe read-only qr-publisher-check (GitHub App auth check only, zero writes)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-edge-functions:
+    if: ${{ inputs.mode == 'deploy_and_verify' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Deploy available Edge Functions (disabled-by-default, --no-verify-jwt for agent-token auth)
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ] || [ -z "${SUPABASE_PROJECT_REF:-}" ]; then
+            echo "ERROR: SUPABASE_ACCESS_TOKEN and SUPABASE_PROJECT_REF GitHub Secrets are required for deploy_and_verify."
+            exit 1
+          fi
+          for fn in cloud-capabilities trendyol-proxy qr-publisher qr-publisher-check; do
+            if [ -f "supabase/functions/${fn}/index.ts" ]; then
+              echo "Deploying ${fn}..."
+              supabase functions deploy "${fn}" \
+                --project-ref "${SUPABASE_PROJECT_REF}" \
+                --no-verify-jwt
+            else
+              echo "Skipping ${fn} (not present on this ref)."
+            fi
+          done
+
+  safe-readonly-verify:
+    needs: [deploy-edge-functions]
+    if: ${{ always() && (needs.deploy-edge-functions.result == 'success' || needs.deploy-edge-functions.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify Cloud Capabilities (read-only booleans)
+        if: ${{ inputs.verify_cloud_capabilities }}
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+          NOHUT_VERIFY_AGENT_TOKEN: ${{ secrets.NOHUT_VERIFY_AGENT_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${NOHUT_VERIFY_AGENT_TOKEN:-}" ]; then
+            echo "SKIP: SUPABASE_URL or NOHUT_VERIFY_AGENT_TOKEN secret not configured."
+            exit 0
+          fi
+          echo "::add-mask::${NOHUT_VERIFY_AGENT_TOKEN}"
+          HTTP_CODE=$(curl -sS -o /tmp/caps.json -w "%{http_code}" \
+            -H "x-nohut-agent-token: ${NOHUT_VERIFY_AGENT_TOKEN}" \
+            -H "apikey: ${SUPABASE_PUBLISHABLE_KEY:-}" \
+            -H "Accept: application/json" \
+            "${SUPABASE_URL%/}/functions/v1/cloud-capabilities")
+          echo "cloud-capabilities HTTP ${HTTP_CODE}"
+          cat /tmp/caps.json
+          echo ""
+          test "${HTTP_CODE}" = "200"
+
+      - name: Verify Trendyol Cloud Proxy (read-only action=verify)
+        if: ${{ inputs.verify_trendyol_proxy }}
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+          NOHUT_VERIFY_AGENT_TOKEN: ${{ secrets.NOHUT_VERIFY_AGENT_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${NOHUT_VERIFY_AGENT_TOKEN:-}" ]; then
+            echo "SKIP: SUPABASE_URL or NOHUT_VERIFY_AGENT_TOKEN secret not configured."
+            exit 0
+          fi
+          echo "::add-mask::${NOHUT_VERIFY_AGENT_TOKEN}"
+          HTTP_CODE=$(curl -sS -o /tmp/tgo_verify.json -w "%{http_code}" \
+            -X POST \
+            -H "Content-Type: application/json" \
+            -H "x-nohut-agent-token: ${NOHUT_VERIFY_AGENT_TOKEN}" \
+            -H "apikey: ${SUPABASE_PUBLISHABLE_KEY:-}" \
+            -d '{"action":"verify"}' \
+            "${SUPABASE_URL%/}/functions/v1/trendyol-proxy")
+          echo "trendyol-proxy verify HTTP ${HTTP_CODE}"
+          cat /tmp/tgo_verify.json
+          echo ""
+          test "${HTTP_CODE}" = "200" -o "${HTTP_CODE}" = "503"
+
+      - name: Verify QR Publisher Read-Only Check (no GitHub writes)
+        if: ${{ inputs.verify_qr_publisher_check }}
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+          NOHUT_VERIFY_AGENT_TOKEN: ${{ secrets.NOHUT_VERIFY_AGENT_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${NOHUT_VERIFY_AGENT_TOKEN:-}" ]; then
+            echo "SKIP: SUPABASE_URL or NOHUT_VERIFY_AGENT_TOKEN secret not configured."
+            exit 0
+          fi
+          echo "::add-mask::${NOHUT_VERIFY_AGENT_TOKEN}"
+          HTTP_CODE=$(curl -sS -o /tmp/qr_check.json -w "%{http_code}" \
+            -H "x-nohut-agent-token: ${NOHUT_VERIFY_AGENT_TOKEN}" \
+            -H "apikey: ${SUPABASE_PUBLISHABLE_KEY:-}" \
+            -H "Accept: application/json" \
+            "${SUPABASE_URL%/}/functions/v1/qr-publisher-check")
+          echo "qr-publisher-check HTTP ${HTTP_CODE}"
+          cat /tmp/qr_check.json
+          echo ""
+          test "${HTTP_CODE}" = "200" -o "${HTTP_CODE}" = "503"

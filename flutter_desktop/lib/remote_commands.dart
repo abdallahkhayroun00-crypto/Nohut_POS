@@ -116,6 +116,26 @@ String canonicalJson(Object? value) {
 
 String payloadSha256(Object? payload) => hash.sha256.convert(utf8.encode(canonicalJson(payload))).toString();
 
+/// Lease metadata is mutable; every server-created identity/authority field
+/// is part of the durable request identity, including action and actor.
+String envelopeSha256(Map<String, dynamic> envelope) => payloadSha256({
+  for (final entry in envelope.entries)
+    if (!{'lease_generation', 'lease_until'}.contains(entry.key)) entry.key: entry.value,
+});
+
+RemoteCommandResult? _expiry(Map<String, dynamic> envelope, _Route route, DateTime? now) {
+  final clock = (now ?? DateTime.now()).toUtc();
+  final expires = DateTime.tryParse('${envelope['expires_at']}');
+  final issued = DateTime.tryParse('${envelope['issued_at']}');
+  if (expires == null || issued == null || !expires.isAfter(issued) || issued.isAfter(clock)) {
+    return _reject('invalid_envelope', 'Komut zamanı geçersiz');
+  }
+  if (!clock.isBefore(expires) || !clock.isBefore(issued.add(route.ttl))) {
+    return const RemoteCommandResult(CommandOutcome.expired, 'expired', {'message': 'Komutun süresi doldu; yeniden deneyin'});
+  }
+  return null;
+}
+
 RemoteCommandResult _reject(String code, String message) =>
     RemoteCommandResult(CommandOutcome.rejected, code, {'message': message});
 
@@ -158,15 +178,6 @@ Object _check(PosStore store, Map<String, dynamic> envelope, DateTime? now) {
     return reject('payload_hash_mismatch', 'Komut içeriği doğrulanamadı');
   }
 
-  // Expiry: both the server's expires_at and our own TTL per action type.
-  final clock = (now ?? DateTime.now()).toUtc();
-  final expires = DateTime.tryParse('${envelope['expires_at']}');
-  final issued = DateTime.tryParse('${envelope['issued_at']}');
-  if (expires == null || issued == null) return reject('invalid_envelope', 'Komut zamanı eksik');
-  if (!clock.isBefore(expires) || clock.isAfter(issued.add(route.ttl))) {
-    return RemoteCommandResult(CommandOutcome.expired, 'expired', {'message': 'Komutun süresi doldu; yeniden deneyin'});
-  }
-
   // Authorization (server already checked; Windows re-checks, §20.3 rule 4).
   final isOwner = actor['is_owner'] == true;
   final grants = {for (final g in (actor['grants'] as List? ?? const [])) '$g'};
@@ -182,6 +193,24 @@ Object _check(PosStore store, Map<String, dynamic> envelope, DateTime? now) {
   final body = Map<String, dynamic>.from(payload)
     ..['requestId'] = requestId
     ..['staffId'] = employeeId;
+  // Cloud custom prices use exact kuruş. Convert only inside Windows after
+  // checking the immutable cloud payload; LAN's existing TL API is unchanged.
+  if (route.kind == 'order' && body['lines'] is List) {
+    final lines = <dynamic>[];
+    for (final raw in body['lines'] as List) {
+      if (raw is! Map) return reject('invalid_request', 'Ürün satırı geçersiz');
+      final line = Map<String, dynamic>.from(raw);
+      if (line['customItem'] == true && line.containsKey('unitPriceCents')) {
+        final amount = line.remove('unitPriceCents');
+        if (amount is! int || amount < 1 || amount > 9999999) {
+          return reject('invalid_request', 'Özel ürün fiyatı geçersiz');
+        }
+        line['price'] = fromCents(amount);
+      }
+      lines.add(line);
+    }
+    body['lines'] = lines;
+  }
   if (route.actions != null) {
     if (!route.actions!.contains(body['action'])) {
       return reject('action_mismatch', 'İşlem türü ile içerik uyuşmuyor');
@@ -198,21 +227,28 @@ Object _check(PosStore store, Map<String, dynamic> envelope, DateTime? now) {
 /// Pure decision + execution for one envelope. Never throws for bad input:
 /// every problem becomes a `rejected`/`expired`/`conflict` result. Commands
 /// with external side effects need [executeRemoteCommandAsync].
-RemoteCommandResult executeRemoteCommand(PosStore store, Map<String, dynamic> envelope, {DateTime? now}) {
+RemoteCommandResult executeRemoteCommand(PosStore store, Map<String, dynamic> envelope, {DateTime? now, bool Function()? executionGuard}) {
   final checked = _check(store, envelope, now);
   if (checked is RemoteCommandResult) return checked;
   final c = checked as _Checked;
   if (c.route.kind == 'platform') return _reject('async_required', 'Platform işlemi ayrı yürütülür');
   final body = c.body;
   try {
-    final result = switch (c.route.kind) {
+    final fingerprint = envelopeSha256(envelope);
+    // Authorization/integrity were checked above. A committed receipt wins
+    // over expiry: reporting a commit is not executing an expired command.
+    final receipt = store.remoteCommandReceipt('${envelope['request_id']}', fingerprint);
+    if (receipt != null) return RemoteCommandResult(CommandOutcome.confirmed, 'ok', receipt);
+    final expired = _expiry(envelope, c.route, now);
+    if (expired != null) return expired;
+    final result = store.withRemoteCommand('${envelope['request_id']}', fingerprint, () => switch (c.route.kind) {
       'order' => submitStaffOrder(store, body),
       'shift' => submitShiftAction(store, body..['source'] = 'remote', now: now),
       'shiftCorrect' => correctShift(store, body),
       'print' => retryAmbiguousPrint(store, body),
       'menuSale' => setProductSale(store, body),
       _ => submitStaffAction(store, body),
-    };
+    }, guard: executionGuard);
     return RemoteCommandResult(CommandOutcome.confirmed, 'ok', Map<String, dynamic>.from(result));
   } on StaffConflict {
     return RemoteCommandResult(CommandOutcome.conflict, 'conflict', {'message': 'Veriler değişti; yenileyip tekrar deneyin', 'revision': store.read().revision});
@@ -223,10 +259,14 @@ RemoteCommandResult executeRemoteCommand(PosStore store, Map<String, dynamic> en
 }
 
 /// Calls the delivery platform (Trendyol Go today). Returns whether the
-/// platform confirmed the new status. Throws [FormatException] for checks
-/// that fail BEFORE any network call; any other error means the outcome is
-/// unknown.
+/// platform confirmed the new status. Only [PlatformPreflightException]
+/// proves a failure BEFORE external I/O. A generic FormatException can be a
+/// malformed response AFTER acceptance and therefore means unknown outcome.
 typedef PlatformCall = Future<bool> Function(Json order, String action, {int? preparationMinutes});
+
+class PlatformPreflightException extends FormatException {
+  const PlatformPreflightException(super.message);
+}
 
 /// Like [executeRemoteCommand], plus platform actions. The attempt is stored
 /// before the external call; a repeat of an interrupted attempt returns
@@ -236,14 +276,15 @@ Future<RemoteCommandResult> executeRemoteCommandAsync(
   Map<String, dynamic> envelope, {
   PlatformCall? platform,
   DateTime? now,
+  bool Function()? executionGuard,
 }) async {
   final checked = _check(store, envelope, now);
   if (checked is RemoteCommandResult) return checked;
   final c = checked as _Checked;
-  if (c.route.kind != 'platform') return executeRemoteCommand(store, envelope, now: now);
+  if (c.route.kind != 'platform') return executeRemoteCommand(store, envelope, now: now, executionGuard: executionGuard);
 
   final requestId = '${envelope['request_id']}';
-  final sha = '${envelope['payload_sha256']}';
+  final sha = envelopeSha256(envelope);
   final previous = store.platformAttempt(requestId);
   if (previous != null) {
     if (previous['payload_sha256'] != sha) {
@@ -257,12 +298,19 @@ Future<RemoteCommandResult> executeRemoteCommandAsync(
           {'message': 'Önceki deneme yarıda kaldı; platform panelinden durumu kontrol edin'}),
     };
   }
+  final expired = _expiry(envelope, c.route, now);
+  if (expired != null) return expired;
   if (platform == null) return _reject('platform_unavailable', 'Platform bağlantısı etkin değil');
   final packageId = '${c.body['packageId'] ?? ''}';
-  final order = asMaps(store.read().data['trendyolGoOrders'])
+  final matches = asMaps(store.read().data['trendyolGoOrders'])
       .where((o) => packageId.isNotEmpty && '${o['packageId']}' == packageId)
-      .firstOrNull;
-  if (order == null) return _reject('invalid_request', 'Sipariş bulunamadı');
+      .toList();
+  if(matches.isEmpty)return _reject('invalid_request', 'Sipariş bulunamadı');
+  if(matches.length!=1)return _reject('ambiguous_platform_identity','Platform paket kimliği tek bir mağazayla eşleşmiyor');
+  final order=matches.single;
+  if (!store.remoteExecutionAllowed || executionGuard?.call() == false) {
+    return _reject('execution_fenced', 'Komutun yürütme izni sona erdi');
+  }
   if (!store.beginPlatformAttempt(requestId, sha)) {
     return const RemoteCommandResult(CommandOutcome.reconciliationRequired, 'reconciliation_required',
         {'message': 'Aynı işlem zaten yürütülüyor'});
@@ -270,10 +318,15 @@ Future<RemoteCommandResult> executeRemoteCommandAsync(
   final minutes = c.body['preparationMinutes'];
   try {
     final verified = await platform(order, '${c.body['action']}', preparationMinutes: minutes is int ? minutes : null);
+    if (!verified) {
+      final result = <String, dynamic>{'message': 'Platform işlemi doğrulanamadı; platform panelinden durumu kontrol edin'};
+      store.finishPlatformAttempt(requestId, 'reconciliation_required', result);
+      return RemoteCommandResult(CommandOutcome.reconciliationRequired, 'reconciliation_required', result);
+    }
     final result = <String, dynamic>{'ok': true, 'verified': verified, 'by': c.employee['name']};
     store.finishPlatformAttempt(requestId, 'confirmed', result);
     return RemoteCommandResult(CommandOutcome.confirmed, 'ok', result);
-  } on FormatException catch (e) {
+  } on PlatformPreflightException catch (e) {
     final result = <String, dynamic>{'code': 'invalid_request', 'message': e.message};
     store.finishPlatformAttempt(requestId, 'rejected', result);
     return RemoteCommandResult(CommandOutcome.rejected, 'invalid_request', result);
@@ -340,9 +393,21 @@ Json setProductSale(PosStore store, Json payload) {
 /// Server side of the command queue (Supabase RPCs in production; a fake in
 /// tests). Claims are leased: an unacknowledged claim becomes claimable
 /// again, which is safe because execution is idempotent.
+class CommandClaim {
+  CommandClaim({required this.envelope, required this.generation, required this.leaseUntil});
+  final Map<String, dynamic> envelope;
+  final int generation;
+  final DateTime leaseUntil;
+  String get requestId => '${envelope['request_id']}';
+}
+
 abstract class CommandTransport {
-  Future<List<Map<String, dynamic>>> claim({required int max});
-  Future<void> complete(String requestId, Map<String, dynamic> result);
+  Future<List<CommandClaim>> claim({required int max});
+  /// Live server authorization, epoch and lease check immediately before work.
+  Future<bool> validate(CommandClaim claim);
+  Future<void> complete(CommandClaim claim, Map<String, dynamic> result);
+  /// Reports an already-durable result, including after lease/command expiry.
+  Future<void> reportReceipt(String requestId, String fingerprint, Map<String, dynamic> result);
 }
 
 /// Polls the transport, executes on Windows, reports after COMMIT.
@@ -364,13 +429,28 @@ class RemoteCommandWorker {
   Future<int> runOnce({int max = 20}) => _running ??= _run(max).whenComplete(() => _running = null);
 
   Future<int> _run(int max) async {
+    if (!store.remoteExecutionAllowed) return 0;
     var done = 0;
     try {
+      for (final report in store.pendingRemoteReports()) {
+        await transport.reportReceipt(report['request_id'] as String,
+            report['envelope_sha256'] as String, report['result'] as Map<String, dynamic>);
+        store.acknowledgeRemoteReport(report['request_id'] as String, report['envelope_sha256'] as String);
+        done++;
+      }
       final batch = await transport.claim(max: max);
-      for (final envelope in batch) {
-        final result = await executeRemoteCommandAsync(store, envelope, platform: platform, now: _clock());
+      for (final claim in batch) {
+        if (claim.generation < 1 || !_clock().toUtc().isBefore(claim.leaseUntil) || !await transport.validate(claim)) {
+          continue;
+        }
+        // The validation request can itself use the remainder of a lease.
+        if (!_clock().toUtc().isBefore(claim.leaseUntil)) continue;
+        final envelope = claim.envelope;
+        final result = await executeRemoteCommandAsync(store, envelope, platform: platform, now: _clock(),
+            executionGuard: () => _clock().toUtc().isBefore(claim.leaseUntil));
         // Local state is committed (or nothing changed) before reporting.
-        await transport.complete('${envelope['request_id']}', result.toJson());
+        await transport.complete(claim, result.toJson());
+        store.acknowledgeRemoteReport(claim.requestId, envelopeSha256(envelope));
         done++;
       }
       lastError = null;
