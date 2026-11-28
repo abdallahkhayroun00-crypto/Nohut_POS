@@ -1,7 +1,7 @@
 import { makePublishAdapter } from './git-data-publish.mjs';
 async function runChecks(makePublishAdapter){
  const P="1".repeat(40),B="2".repeat(40),R="3".repeat(40),M="4".repeat(40),T="5".repeat(40),C="6".repeat(40),N="7".repeat(40),X="8".repeat(40),requestId="12345678-1234-4234-8234-123456789abc";
- const managed="cms/pos-managed-menu.json",marker="cms/pos-managed-status.json",old={products:[{price:1}]},candidate={products:[{price:2}]};
+ const managed="cms/pos-managed-menu.json",marker="cms/pos-managed-status.json",old={products:[{price:1}],campaigns:[]},candidate={products:[{price:2}],campaigns:[]};
  const equal=(a,b)=>{if(JSON.stringify(a)!==JSON.stringify(b))throw Error("assert "+JSON.stringify(a)+" != "+JSON.stringify(b))};
  function mock({enabled=true,lost=false,race=false,receiptFail=false,revoked=false,wrongTree=false,compareAhead=false}={}){
   let current=P,recorded=null,checks=0,patches=0,trees=[],calls=[];
