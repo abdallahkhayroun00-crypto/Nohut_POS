@@ -465,28 +465,52 @@ class LocalAuth {
   }) async {
     const refused = LocalAuthException('invalid_activation',
         'Kullanıcı adı veya aktivasyon kodu hatalı ya da kodun süresi dolmuş.');
+    // Everything that could make sign-in fail is checked before the code is
+    // consumed (QA-25).
     _checkPassword(password);
     _checkPin(pin);
+    if (!localAuthClients.contains(client)) throw const LocalAuthException('client_not_allowed');
+    if (!RegExp(r'^[A-Za-z0-9_-]{16,64}$').hasMatch(deviceId)) {
+      throw const LocalAuthException('invalid_device');
+    }
+    final known = db.select('SELECT user_id, client, revoked_at FROM auth_devices WHERE device_id=?', [deviceId]);
     final rows = db.select('SELECT a.*, u.active FROM auth_activations a JOIN auth_users u USING(user_id) '
         'WHERE u.username=?', [username.trim()]);
-    if (rows.isEmpty) {
-      await _verify(code, 'pbkdf2-sha256\$$iterations\$AAAAAAAAAAAAAAAAAAAAAA==\$AA=='); // timing
-      throw refused;
-    }
-    final a = rows.single;
+    // One PBKDF2 check on every path, and one generic refusal for unknown,
+    // expired, voided, inactive or wrong (QA-24).
+    final a = rows.isEmpty ? null : rows.single;
+    final ok = await _verify(normalizeActivationCode(code),
+        a?['code_hash'] as String? ?? 'pbkdf2-sha256\$$iterations\$AAAAAAAAAAAAAAAAAAAAAA==\$AA==');
+    if (a == null) throw refused;
     final userId = a['user_id'] as String;
-    if ((a['failed'] as int) >= 5 ||
-        !_clock().toUtc().isBefore(DateTime.parse(a['expires_at'] as String))) {
+    final usable = (a['failed'] as int) < 5 &&
+        _clock().toUtc().isBefore(DateTime.parse(a['expires_at'] as String)) && a['active'] == 1;
+    if (!ok || !usable) {
+      if (!ok) {
+        db.execute('UPDATE auth_activations SET failed=failed+1 WHERE user_id=?', [userId]);
+        _audit('activation.failed', target: userId);
+      }
       throw refused;
     }
-    if (a['active'] != 1) throw const LocalAuthException('inactive', 'Hesap devre dışı.');
-    if (!await _verify(normalizeActivationCode(code), a['code_hash'] as String)) {
-      db.execute('UPDATE auth_activations SET failed=failed+1 WHERE user_id=?', [userId]);
-      _audit('activation.failed', target: userId);
-      throw refused;
+    if (known.isNotEmpty && (known.single['user_id'] != userId || known.single['client'] != client)) {
+      throw const LocalAuthException('device_mismatch', 'Bu cihaz başka bir hesaba bağlı.');
     }
-    db.execute('UPDATE auth_users SET password_hash=? WHERE user_id=?', [await _hash(password), userId]);
-    db.execute('DELETE FROM auth_activations WHERE user_id=?', [userId]);
+    if (known.isNotEmpty && known.single['revoked_at'] != null) {
+      throw const LocalAuthException('device_revoked', 'Bu cihazın erişimi kaldırıldı.');
+    }
+    final hash = await _hash(password);
+    db.execute('BEGIN IMMEDIATE');
+    try {
+      db.execute('UPDATE auth_users SET password_hash=?, failed_logins=0, locked_until=NULL WHERE user_id=?',
+          [hash, userId]);
+      // The same code used twice at once: only one delete finds it.
+      db.execute('DELETE FROM auth_activations WHERE user_id=? AND code_hash=?', [userId, a['code_hash']]);
+      if (db.updatedRows != 1) throw refused;
+      db.execute('COMMIT');
+    } catch (_) {
+      db.execute('ROLLBACK');
+      rethrow;
+    }
     _audit('user.activated', actor: userId, target: deviceId, detail: {'client': client});
     final r = await login(username: username, password: password, deviceId: deviceId,
         client: client, label: label);

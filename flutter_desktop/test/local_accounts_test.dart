@@ -293,4 +293,24 @@ void main() {
     await expectLater(auth.activate(username: 'nobody', code: issued.code, password: 'kendi-sifrem-9',
         pin: '48207', deviceId: dev2, client: 'personel'), throwsA(isA<LocalAuthException>()));
   });
+
+  test('activation: inactive looks like any refusal; bad device keeps the code (QA-24/25)', () async {
+    final (owner, staff) = await seed();
+    final issued = await auth.issueActivation(staff, actor: owner);
+    await expectLater(auth.activate(username: 'deniz', code: issued.code, password: 'kendi-sifrem-9',
+        pin: '48207', deviceId: 'bad', client: 'personel'),
+        throwsA(predicate((e) => e is LocalAuthException && e.code == 'invalid_device')));
+    await expectLater(auth.activate(username: 'deniz', code: issued.code, password: 'kendi-sifrem-9',
+        pin: '48207', deviceId: dev2, client: 'nope'),
+        throwsA(predicate((e) => e is LocalAuthException && e.code == 'client_not_allowed')));
+    expect(auth.activationOf(staff), isNotNull, reason: 'code not consumed');
+    auth.setActive(staff, false, actor: owner);
+    await expectLater(auth.activate(username: 'deniz', code: issued.code, password: 'kendi-sifrem-9',
+        pin: '48207', deviceId: dev2, client: 'personel'),
+        throwsA(predicate((e) => e is LocalAuthException && e.code == 'invalid_activation')));
+    auth.setActive(staff, true, actor: owner);
+    final r = await auth.activate(username: 'deniz', code: issued.code, password: 'kendi-sifrem-9',
+        pin: '48207', deviceId: dev2, client: 'personel');
+    expect(r.context.ok, isTrue);
+  });
 }
