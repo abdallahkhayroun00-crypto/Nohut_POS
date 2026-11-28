@@ -1,4 +1,5 @@
 
+import 'dart:io' show Platform;
 import 'daily_report_ui.dart';
 import 'package:flutter/material.dart';
 
@@ -10,6 +11,10 @@ import 'online_orders.dart';
 import 'qr_menu_sync.dart';
 import 'trendyol_go_readonly.dart';
 import 'trendyol_go_ui.dart';
+import 'cloud_capabilities.dart';
+import 'first_sync_ui.dart' show FirstSyncController;
+import 'windows_vault.dart';
+import 'supabase_agent_transport.dart';
 import 'partner_credentials.dart';
 import 'receipt_printer.dart';
 import 'receipt_layout.dart';
@@ -48,6 +53,13 @@ class SimpleSettings extends StatefulWidget {
 
 class _SimpleSettingsState extends State<SimpleSettings> {
   String tab = 'Genel';
+  late final CloudCapabilitiesSource? _cloud = Platform.isWindows
+      ? CloudCapabilitiesSource(credentials: () => AgentCredentials.load(
+          WindowsVault(FirstSyncController.agentVaultFile(widget.store.filePath))))
+      : null;
+
+  Widget _managed(String title, bool Function(CloudCapabilities) on, Widget child) =>
+      CloudManaged(source: _cloud, title: title, isManaged: on, child: child);
   Widget _quickTile(String name, IconData icon, String description) =>
       Material(
         color: Colors.white,
@@ -367,17 +379,19 @@ class _SimpleSettingsState extends State<SimpleSettings> {
               LayoutBuilder(builder: (context, constraints) {
                 final wide = constraints.maxWidth >= 700;
                 final cards = [
+                  _managed('Yemeksepeti', (c) => c.has(CloudProvider.yemeksepeti),
                   PartnerCredentialsCard(
                     partner: 'Yemeksepeti',
                     databasePath: widget.store.filePath,
                     portalUrl: onlinePartners['Yemeksepeti']!.url,
                     documentationUrl: 'https://integration.yemeksepeti.com/en/',
-                  ),
+                  )),
+                  _managed('Migros Yemek', (c) => c.has(CloudProvider.migrosYemek),
                   PartnerCredentialsCard(
                     partner: 'Migros Yemek',
                     databasePath: widget.store.filePath,
                     portalUrl: onlinePartners['Migros Yemek']!.url,
-                  ),
+                  )),
                 ];
                 return wide
                   ? Row(crossAxisAlignment: CrossAxisAlignment.start,
@@ -417,7 +431,8 @@ class _SimpleSettingsState extends State<SimpleSettings> {
             ],
           ),
           const SizedBox(height: 12),
-          TgoSettingsPanel(integration: widget.tgoIntegration),
+          _managed('Trendyol Go', (c) => c.has(CloudProvider.trendyolGo),
+            TgoSettingsPanel(integration: widget.tgoIntegration)),
           if (asMaps(widget.state['tgoOperationAudit']).isNotEmpty)
             Card(
               child: ExpansionTile(
@@ -436,11 +451,12 @@ class _SimpleSettingsState extends State<SimpleSettings> {
               ),
             ),
           const SizedBox(height: 12),
-          QrPublisherSettingsPanel(
-            state: widget.state,
-            edit: widget.edit,
-            databasePath: widget.store.filePath,
-          ),
+          _managed('QR Menü yayıncısı (GitHub)', (c) => c.qrPublish,
+            QrPublisherSettingsPanel(
+              state: widget.state,
+              edit: widget.edit,
+              databasePath: widget.store.filePath,
+            )),
           const SizedBox(height: 12),
           Card(
             child: ListTile(
