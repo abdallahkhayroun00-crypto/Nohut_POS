@@ -100,4 +100,95 @@ begin
 end $$;
 revoke all on function nohut_private.qr_stage_normalized_image(text,text,bigint,text,text,text,bytea)
  from public,anon,authenticated,service_role,nohut_qr_runtime;
+
+-- Durable metadata survives cleanup of staged bytes. A pin cannot be reused
+-- for a different publication, product, or digest.
+create table nohut_private.qr_image_pins (
+ restaurant_id uuid not null,
+ publish_request_id text not null,
+ stage_request_id text not null,
+ product_id text not null,
+ path text not null,
+ image_sha256 text not null,
+ pinned_at timestamptz not null default clock_timestamp(),
+ primary key(restaurant_id,publish_request_id,product_id),
+ foreign key(restaurant_id,publish_request_id) references nohut_private.qr_publish_receipts(restaurant_id,request_id),
+ foreign key(restaurant_id,stage_request_id) references nohut_private.commands(restaurant_id,request_id)
+);
+alter table nohut_private.qr_image_pins enable row level security;
+alter table nohut_private.qr_image_pins force row level security;
+do $$ begin
+ execute format('create policy qr_pin_owner on nohut_private.qr_image_pins for all to %I using(true) with check(true)',current_user);
+end $$;
+revoke all on nohut_private.qr_image_pins from public,anon,authenticated,service_role,nohut_qr_runtime;
+
+-- Owner-only port. Only the exact fresh, bound draft and new receipt may
+-- pin/read; the planner must obtain every changed asset through this port.
+create function nohut_private.qr_pin_image(
+ p_token text,p_request text,p_generation bigint,p_envelope_sha256 text,
+ p_stamp text,p_revision text,p_draft text,p_fence uuid,p_product text,p_path text
+) returns jsonb language plpgsql security invoker set search_path=''
+as $$
+declare identity jsonb; receipt nohut_private.qr_publish_receipts;
+ stage nohut_private.qr_staged_images; pin nohut_private.qr_image_pins;
+ tenant uuid; epoch uuid;
+begin
+ identity:=nohut_private.qr_publish_bind_draft(p_token,p_request,p_generation,p_envelope_sha256,p_stamp,p_revision,p_draft);
+ tenant:=(identity->>'restaurantId')::uuid; epoch:=(identity->>'epoch')::uuid;
+ select * into receipt from nohut_private.qr_publish_receipts x
+ where x.restaurant_id=tenant and x.request_id=p_request for update;
+ if not found or receipt.state<>'new' or receipt.authority_epoch<>epoch
+ or receipt.agent_id is distinct from (identity->>'agentId')::uuid
+ or receipt.lease_generation<>p_generation or receipt.fence is distinct from p_fence
+ or receipt.envelope_sha256 is distinct from p_envelope_sha256
+ or receipt.payload_sha256 is distinct from identity->>'digest'
+ or receipt.expected_revision is distinct from p_revision then
+ raise exception 'image pin receipt denied' using errcode='42501'; end if;
+ if p_product is null or p_path is null or not exists(
+ select 1 from jsonb_array_elements(p_draft::jsonb->'products') v
+ where v->>'id'=p_product and v->>'image'=p_path
+ ) then raise exception 'image pin target denied' using errcode='42501'; end if;
+ -- Shared lock order with staging and cleanup; no new pin can race expiry.
+ perform pg_catalog.pg_advisory_xact_lock(734981,2);
+ select * into pin from nohut_private.qr_image_pins x
+ where x.restaurant_id=tenant and x.publish_request_id=p_request and x.product_id=p_product;
+ if found then
+ if pin.path<>p_path then raise exception 'image pin conflict' using errcode='42501'; end if;
+ select * into strict stage from nohut_private.qr_staged_images x
+ where x.restaurant_id=tenant and x.request_id=pin.stage_request_id;
+ if stage.image_sha256<>pin.image_sha256 then raise exception 'image pin integrity failure'; end if;
+ else
+ select * into stage from nohut_private.qr_staged_images x
+ where x.restaurant_id=tenant and x.authority_epoch=epoch and x.product_id=p_product
+ and x.path=p_path and x.expires_at>clock_timestamp()
+ order by x.created_at desc,x.request_id limit 1;
+ if not found then raise exception 'eligible staged image missing' using errcode='42501'; end if;
+ insert into nohut_private.qr_image_pins(restaurant_id,publish_request_id,stage_request_id,product_id,path,image_sha256)
+ values(tenant,p_request,stage.request_id,p_product,stage.path,stage.image_sha256);
+ end if;
+ return jsonb_build_object('requestId',p_request,'productId',p_product,'path',stage.path,
+ 'sha256',stage.image_sha256,'mime',stage.mime,'base64',encode(stage.image_bytes,'base64'));
+end $$;
+revoke all on function nohut_private.qr_pin_image(text,text,bigint,text,text,text,text,uuid,text,text)
+ from public,anon,authenticated,service_role,nohut_qr_runtime;
+
+-- Maintenance-only. Never delete a staged byte row needed by an unresolved
+-- receipt, even after expiry. Pins are retained as audit metadata. No scheduler.
+create function nohut_private.qr_cleanup_expired_images() returns integer
+ language plpgsql security invoker set search_path=''
+as $$
+declare removed integer;
+begin
+ perform pg_catalog.pg_advisory_xact_lock(734981,2);
+ delete from nohut_private.qr_staged_images s
+ where s.expires_at<=clock_timestamp()
+ and not exists(select 1 from nohut_private.qr_image_pins p
+ join nohut_private.qr_publish_receipts r on r.restaurant_id=p.restaurant_id and r.request_id=p.publish_request_id
+ where p.restaurant_id=s.restaurant_id and p.stage_request_id=s.request_id and r.state<>'completed');
+ get diagnostics removed=row_count;
+ return removed;
+end $$;
+revoke all on function nohut_private.qr_cleanup_expired_images()
+ from public,anon,authenticated,service_role,nohut_qr_runtime;
+
 commit;
