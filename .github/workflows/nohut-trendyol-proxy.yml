@@ -1,0 +1,21 @@
+name: Test Nohut Trendyol Cloud Proxy
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'supabase/functions/trendyol-proxy/**'
+      - 'docs/contracts/v1/trendyol-cloud-proxy.md'
+      - '.github/workflows/nohut-trendyol-proxy.yml'
+permissions:
+  contents: read
+jobs:
+  synthetic-trendyol-proxy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run Trendyol Cloud Proxy synthetic tests
+        run: node --test supabase/functions/trendyol-proxy/*.test.mjs
