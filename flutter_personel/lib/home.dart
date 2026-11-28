@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'expense_drafts.dart';
 import 'performance_page.dart';
 import 'personel_dashboard.dart';
+import 'staff_expense_page.dart';
 import 'models.dart';
 import 'pos_api.dart';
 import 'style.dart';
@@ -755,7 +756,16 @@ class _StaffHomeState extends State<StaffHome> {
               onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
                 builder: (_) => PerformancePage(api: c.api)))),
           ],
-          if (hasDrafts)
+          // With the explicit grant the signed-in person submits to Windows
+          // (own entries only); otherwise the existing paired outbox stays.
+          if (canSubmitExpenses(c.api))
+            ListTile(key: const ValueKey('open-staff-expense'),
+              leading: const Icon(Icons.account_balance_wallet_outlined), title: const Text('Hızlı Gider'),
+              subtitle: const Text('Alışveriş gideri ekle · kendi kayıtlarım'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                builder: (_) => StaffExpensePage(api: c.api))))
+          else if (hasDrafts)
             ListTile(leading: const Icon(Icons.account_balance_wallet_outlined), title: const Text('Giderler'),
               subtitle: const Text('Hızlı Gider Ekle'),
               trailing: const Icon(Icons.chevron_right), onTap: () => setState(() => tab = 5)),

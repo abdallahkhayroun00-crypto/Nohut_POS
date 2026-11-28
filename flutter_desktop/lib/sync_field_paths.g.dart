@@ -83,6 +83,8 @@ const knownStateFieldPaths = <String>{
   'finance.materials[].amountsCents',
   'finance.materials[].createdAt',
   'finance.materials[].date',
+  'finance.materials[].submittedByEmployeeId',
+  'finance.materials[].submittedByName',
   'finance.materials[].discountCents',
   'finance.materials[].discountType',
   'finance.materials[].discountValue',

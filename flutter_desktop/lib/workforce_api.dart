@@ -10,6 +10,7 @@ import 'local_accounts.dart';
 import 'pos_logic.dart';
 import 'pos_store.dart';
 import 'personal_performance.dart';
+import 'finance_logic.dart' show financeRows, saveQuickMaterialPurchase, materialStores, financeMethods;
 import 'payroll.dart' show payrollStatus, payRateOn, payrollPaymentsFor;
 import 'workforce.dart';
 
@@ -70,6 +71,48 @@ class WorkforceApi {
             'message': 'Hesabınız bir personele bağlı değil. Windows › Kullanıcılar’dan bağlayın.'});
           return GateReply(200, {'today': today, 'performance': personalPerformance(
               store.read().data, who, performanceRangeOf(query['range']), today)});
+        case ('GET', 'expenses'):
+          // §24.8 Hızlı Gider for staff with the explicit grant: own rows only.
+          final d = guard('expenses.quick_add', touch: query['poll'] != '1');
+          if (!d.allowed) return GateReply(d.status, {'error': d.error});
+          final who = d.context!.employeeId;
+          if (who == null) return const GateReply(409, {'error': 'no_employee',
+            'message': 'Hesabınız bir personele bağlı değil. Windows › Kullanıcılar’dan bağlayın.'});
+          final from = addDays(today, -30);
+          return GateReply(200, {'today': today, 'stores': materialStores, 'methods': financeMethods,
+            'expenses': [
+              for (final r in financeRows(store.read().data, 'materials').reversed)
+                if (r['submittedByEmployeeId'] == who && '${r['date']}'.compareTo(from) >= 0)
+                  {for (final k in ['id', 'date', 'storeBrand', 'market', 'amountsCents', 'totalCents',
+                    'paymentMethod', 'note', 'voided', 'createdAt']) k: r[k]},
+            ]});
+        case ('POST', 'expense'):
+          final d = guard('expenses.quick_add');
+          if (!d.allowed) return GateReply(d.status, {'error': d.error});
+          final ctx = d.context!;
+          final who = ctx.employeeId;
+          if (who == null) return const GateReply(409, {'error': 'no_employee',
+            'message': 'Hesabınız bir personele bağlı değil. Windows › Kullanıcılar’dan bağlayın.'});
+          final requestId = body['requestId'];
+          final amounts = body['amountsCents'];
+          if (requestId is! String || !RegExp(r'^[A-Za-z0-9_-]{16,80}$').hasMatch(requestId) ||
+              amounts is! List || !amounts.every((x) => x is int)) {
+            return const GateReply(422, {'error': 'invalid_request'});
+          }
+          final name = asMaps(store.read().data['employees'])
+              .where((e) => e['id'] == who).firstOrNull?['name'];
+          // Create only; edits and voids stay with finance.edit (Yönetici).
+          final r = store.command('qexp_$requestId', {...body, 'employeeId': who}, (state) {
+            saveQuickMaterialPurchase(state, date: '${body['date']}',
+              storeBrand: '${body['storeBrand']}', amountsCents: amounts.cast<int>(),
+              market: '${body['market'] ?? ''}', paymentMethod: '${body['paymentMethod'] ?? 'Nakit'}',
+              note: '${body['note'] ?? ''}', submittedByEmployeeId: who,
+              submittedByName: name is String ? name : ctx.username);
+            final rows = financeRows(state, 'materials');
+            final row = rows.reduce((a, b) => (a['id'] as int) > (b['id'] as int) ? a : b);
+            return {'ok': true, 'id': row['id'], 'totalCents': row['totalCents']};
+          });
+          return GateReply(200, r);
         case ('GET', 'schedule'):
           final d = guard('shifts.self', touch: query['poll'] != '1');
           if (!d.allowed) return GateReply(d.status, {'error': d.error});

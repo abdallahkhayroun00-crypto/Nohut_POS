@@ -196,7 +196,7 @@ void main() {
   test('LAN /api/work needs an individual login; acting employee comes from the session', () async {
     final auth = LocalAuth(store.authDatabase, iterations: 1000);
     await auth.createUser(username: 'sahip', password: 'owner-pass-1', role: 'Yönetici', isOwner: true);
-    await auth.createUser(username: 'ayse', password: 'staff-pass-1', role: 'Personel', employeeId: ayse);
+    final ayseUser = await auth.createUser(username: 'ayse', password: 'staff-pass-1', role: 'Personel', employeeId: ayse);
     await auth.createUser(username: 'mudur', password: 'mudur-pass-1', role: 'Müdür', employeeId: mehmet);
     final server = PosLanServer(store, port: 0, staffHtml: '<p>', yoneticiHtml: '<p>', authGate: LanAuthGate(auth));
     await server.start();
@@ -248,6 +248,28 @@ void main() {
     expect((pb['performance'] as Map)['range'], 'week');
     expect((pb['performance'] as Map)['collectionsAttributed'], false);
     expect((await call('GET', '/api/work/performance')).$1, 401);
+    // Hızlı Gider (§24.8): Personel needs the explicit grant.
+    final expense = {'requestId': 'lan-expense-0001', 'date': yesterday, 'storeBrand': 'BİM',
+      'market': '', 'amountsCents': [12550, 4000], 'paymentMethod': 'Nakit', 'note': 'ekmek'};
+    expect((await call('POST', '/api/work/expense', cookie: staff, body: expense)).$1, 403);
+    expect((await call('GET', '/api/work/expenses', cookie: staff)).$1, 403);
+    auth.setGrant(ayseUser, 'expenses.quick_add', true, actor: 'sahip');
+    final (e1, eb) = await call('POST', '/api/work/expense', cookie: staff,
+        body: {...expense, 'employeeId': mehmet});
+    expect(e1, 200, reason: '$eb');
+    expect(eb['totalCents'], 16550);
+    // Retrying the same request does not add a second row.
+    expect((await call('POST', '/api/work/expense', cookie: staff, body: expense)).$1, 200);
+    final mats = asMaps((store.read().data['finance'] as Map)['materials'])
+        .where((m) => m['note'] == 'ekmek').toList();
+    expect(mats, hasLength(1));
+    expect((mats.single['submittedByEmployeeId'], mats.single['recordType']), (ayse, 'quick'));
+    final (g, gb) = await call('GET', '/api/work/expenses', cookie: staff);
+    expect(g, 200);
+    expect((gb['expenses'] as List).single['totalCents'], 16550);
+    // Staff cannot edit or void through this route.
+    expect((await call('POST', '/api/work/expense', cookie: staff,
+        body: {...expense, 'requestId': 'lan-expense-0002', 'amountsCents': 'x'})).$1, 422);
     // Staff cannot see the team view or edit another person's plan.
     expect((await call('GET', '/api/work/team', cookie: staff)).$1, 403);
     final (p1, _) = await call('POST', '/api/work/write', cookie: staff, body: {'requestId': 'lan-plan-0001',
