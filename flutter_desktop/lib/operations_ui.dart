@@ -1617,7 +1617,7 @@ class _SettingsPanelState extends State<SettingsPanel> {
         'Yemeksepeti / Trendyol Go: DEMO. Banka POS / ÖKC bağlı değil. Termal yazıcı Windows sürücüsüyle çalışır. Gerçek API anahtarı girmeyin.',
       ),
       info(
-        'Platform denemeleri Online Siparişler bölümündeki ayrı test alanında yapılır.',
+        'Platform açma/kapatma ve durum Platform Yönetimi sayfasındadır.',
       ),
       SwitchListTile(
         title: const Text('Otomatik Masa / Gel-Al Fişi'),

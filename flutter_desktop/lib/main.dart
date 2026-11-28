@@ -55,7 +55,6 @@ import 'operations_ui.dart';
 import 'backup_container.dart';
 import 'backup_service.dart';
 import 'backup_ui.dart';
-import 'platform_ui.dart';
 import 'platform_workflows.dart';
 import 'review_sync_service.dart';
 import 'tgo_review_api.dart';
@@ -66,6 +65,8 @@ import 'accounts_ui.dart';
 import 'notification_events.dart';
 import 'notifications_ui.dart';
 import 'first_sync_ui.dart';
+import 'platform_management.dart';
+import 'platform_management_ui.dart';
 
 part 'order_composer.dart';
 
@@ -173,6 +174,8 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
   late final LocalAuth localAuth;
   late final QrMenuAutoSync qrSync;
   late final TrendyolGoReadonly tgo;
+  /// One source for Platform Yönetimi and the Ana Sayfa quick widget.
+  late final PlatformControl platformControl = PendingPlatformControl(tgo: tgo);
   late final ReviewSyncService reviewSync;
   final List<Json> _pendingReviewPopups = [];
   Timer? _reviewPopupTimer;
@@ -206,7 +209,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
 
   static const _sectionIcons = <IconData>[
     Icons.dashboard_outlined, Icons.table_restaurant_outlined,
-    Icons.delivery_dining_outlined, Icons.star_outline, Icons.storefront_outlined,
+    Icons.delivery_dining_outlined, Icons.toggle_on_outlined, Icons.star_outline, Icons.storefront_outlined,
     Icons.menu_book_outlined, Icons.account_balance_wallet_outlined,
     Icons.point_of_sale_outlined, Icons.bar_chart_outlined,
     Icons.account_balance_wallet_outlined, Icons.trending_up_outlined,
@@ -1938,6 +1941,8 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
         );
       case 'online':
         return _online(db);
+      case 'platform':
+        return PlatformManagementPage(control: platformControl);
       case 'google':
         return GoogleBusinessPanel(google: google);
       case 'reviews':
@@ -2052,6 +2057,8 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
         onlineWarning: _onlineDataWarning,
         onNavigate: _switch,
       ),
+      const SizedBox(height: 16),
+      PlatformQuickPanel(control: platformControl, onOpenPage: () => _switch('platform')),
       const SizedBox(height: 16),
       StaffPerformanceChart(state: db, day: businessDay),
     ],
@@ -2975,7 +2982,6 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     integration: tgo,
     businessDay: businessDay,
     initialSource: onlinePlatform,
-    demo: () => _platformDemo(db),
     // Only a ticket whose earlier send is uncertain can be sent again; the
     // operator checks the printer first (same rule as the Masa print queue).
     onReprint: (order) async {
@@ -2998,32 +3004,6 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       });
     },
   );
-
-  Widget _platformDemo(Json db) {
-    platformDemo ??= {...emptyPosState(), 'localMenu': asMaps(db['localMenu'])};
-    seedPlatformMenu(
-      platformDemo!,
-      asMaps(platformDemo!['localMenu'])
-          .where((p) => p['active'] != false)
-          .toList(),
-    );
-    return PlatformPanel(
-      state: platformDemo!,
-      fixedSource: 'Yemeksepeti',
-      edit: (change) {
-        try {
-          final next = copyJson(platformDemo!);
-          change(next);
-          PosStore.validate(next);
-          setState(() => platformDemo = next);
-          return true;
-        } catch (e) {
-          _notify('$e', error: true);
-          return false;
-        }
-      },
-    );
-  }
 
   Widget _payments(Json db) {
     final locals = asMaps(db['orders'])

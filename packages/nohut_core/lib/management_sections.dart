@@ -3,6 +3,7 @@ const managementSections = <(String, String)>[
   ('dashboard', 'Genel Bakış'),
   ('tables', 'Masalar & Siparişler'),
   ('online', 'Online Siparişler'),
+  ('platform', 'Platform Yönetimi'),
   ('reviews', 'Geri Bildirimler'),
   ('google', 'Google İşletme Profili'),
   ('qr-menu', 'QR Menü Yönetimi'),

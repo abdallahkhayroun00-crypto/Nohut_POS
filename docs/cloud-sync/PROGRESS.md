@@ -118,6 +118,14 @@ Active engineers: **Claude** (Windows, Android, PWA/LAN, auth UI, UI/UX, all cli
   - Agent enrollment UI (owner sign-in + MFA via `windows_agent_setup.dart`).
   - The first real run on the restaurant PC needs the owner present and explicit approval. It is a real data transfer.
 
+### Platform Yönetimi (Windows) — Claude
+- New standalone page **Platform Yönetimi** (sidebar, after Online Siparişler) for Trendyol GO, Yemeksepeti and Migros Yemek: verified status, Aç/Kapat (confirm dialog), Yenile, Çalışma Saatleri, Ürün/Kategori Durumu, İşlem Geçmişi. The old "Yemeksepeti test alanı" demo in Online Siparişler is removed.
+- **Ana Sayfa quick widget** (`PlatformQuickPanel`) uses the same `PlatformControl`, permission and `PlatformCard` read model (`packages/nohut_core/lib/platform_status.dart`) as the page, so labels and enabled/disabled decisions cannot diverge.
+- Permissions: `platform.view` (Müdür, Yönetici), `platform.store.toggle`, `platform.schedule.edit`, `platform.catalog.toggle` (Yönetici; elevated). Contract, generated Dart, accounts UI and SQL catalogue migration `20261128020000` updated; `permission_catalogue_sql.py --check` passes.
+- Honest state today: `PendingPlatformControl` calls no provider. Trendyol GO with stored credentials shows `Bilinmiyor` and the toggle is disabled ("Mağaza durumu bulut üzerinden doğrulanacak"); Yemeksepeti/Migros show `Entegrasyon bekleniyor`.
+- **TO Gemini (#50):** connect `PlatformControl` to the backend read model (`PlatformCard.fromJson` fields as agreed on #51) and the durable idempotent `platform_store_status_set` with readback. No live store toggle without owner approval.
+- Next: Yönetici/Personel Android, PWA and LAN (Daha Fazla entry + quick widget).
+
 ## Phase status
 
 | Phase | Status | Evidence |

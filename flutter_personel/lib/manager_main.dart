@@ -159,7 +159,7 @@ class OwnerHome extends StatefulWidget {
 class _OwnerHomeState extends State<OwnerHome> {
   static const icons=<IconData>[
     Icons.dashboard_outlined,Icons.table_restaurant_outlined,Icons.delivery_dining_outlined,
-    Icons.star_outline,Icons.storefront_outlined,Icons.menu_book_outlined,
+    Icons.toggle_on_outlined,Icons.star_outline,Icons.storefront_outlined,Icons.menu_book_outlined,
     Icons.account_balance_wallet_outlined,Icons.point_of_sale_outlined,
     Icons.bar_chart_outlined,Icons.account_balance_wallet_outlined,
     Icons.trending_up_outlined,Icons.settings_outlined,

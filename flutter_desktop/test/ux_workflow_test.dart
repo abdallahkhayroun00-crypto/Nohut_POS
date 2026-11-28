@@ -215,15 +215,8 @@ void main() {
       await tester.ensureVisible(find.widgetWithText(FilterChip, 'Yemeksepeti'));
       await tester.tap(find.widgetWithText(FilterChip, 'Yemeksepeti'));
       await tester.pumpAndSettle();
-      final demo = find.text('Yemeksepeti test alanı');
-      await tester.ensureVisible(demo);
-      await tester.tap(demo);
-      await tester.pumpAndSettle();
-      final sampleOrder = find.text('Örnek Online Kart');
-      await tester.ensureVisible(sampleOrder);
-      await tester.tap(sampleOrder);
-      await tester.pumpAndSettle();
-      expect(find.textContaining('Kabul bekliyor'), findsWidgets);
+      // Owner decision: the platform sandbox no longer sits in Online Siparişler.
+      expect(find.text('Yemeksepeti test alanı'), findsNothing);
       final real = PosStore(databaseFile: file);
       expect(real.read().data['orders'], isEmpty);
       expect(real.read().data['printJobs'], isEmpty);
