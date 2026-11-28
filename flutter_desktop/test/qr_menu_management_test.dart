@@ -281,7 +281,7 @@ void main() {
     expect(find.text('bulundu'), findsOneWidget);
     await shot(t, 'qr-publisher-stopped-1536x864');
     await tapKey(t, 'qr-repair-action');
-    expect(machine.launches.single, contains('-NoPrompt'));
+    expect(machine.launches.single.first, endsWith('node.exe'), reason: 'node directly, no PowerShell');
     expect(find.byKey(const ValueKey('qr-repair')), findsNothing);
     expect(state(t), 'Yayındakiyle aynı');
     expect(text(t, 'qr-fact-link'), 'GitHub bağlı');

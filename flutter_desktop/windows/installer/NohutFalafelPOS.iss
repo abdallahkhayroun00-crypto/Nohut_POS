@@ -59,8 +59,15 @@ Source: "{#ReleaseDir}\*.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#ReleaseDir}\data\*"; DestDir: "{app}\data"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#ReleaseDir}\build-manifest.json"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#ReleaseDir}\QRPublisher\server.mjs"; DestDir: "{app}\QRPublisher"; Flags: ignoreversion
-Source: "{#ReleaseDir}\QRPublisher\start-windows.ps1"; DestDir: "{app}\QRPublisher"; Flags: ignoreversion
-Source: "{#ReleaseDir}\QRPublisher\stop-windows.ps1"; DestDir: "{app}\QRPublisher"; Flags: ignoreversion
+
+[InstallDelete]
+; Older releases started the publisher through PowerShell with
+; ExecutionPolicy Bypass (scripts, a Start menu entry and a sign-in shortcut).
+; POS now starts Node.js itself, so all of that is removed on upgrade.
+Type: files; Name: "{app}\QRPublisher\start-windows.ps1"
+Type: files; Name: "{app}\QRPublisher\stop-windows.ps1"
+Type: files; Name: "{userprograms}\Nohut QR Publisher Kurulum.lnk"
+Type: files; Name: "{userstartup}\Nohut QR Publisher.lnk"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
@@ -68,17 +75,14 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Icons]
 Name: "{userdesktop}\{#AppTitle}"; Filename: "{app}\{#AppExe}"; WorkingDir: "{app}"; Tasks: desktopicon
 Name: "{userprograms}\{#AppTitle}"; Filename: "{app}\{#AppExe}"; WorkingDir: "{app}"
-Name: "{userprograms}\Nohut QR Publisher Kurulum"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\QRPublisher\start-windows.ps1"""; WorkingDir: "{app}\QRPublisher"
 
 [Run]
-; Start (or, after an upgrade, replace) the local QR publisher without any
-; prompt. If Node.js or the GitHub App key is missing it only records that in
-; %APPDATA%\NohutFalafel\QrPublisher\status.json; POS shows the fix.
-Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File ""{app}\QRPublisher\start-windows.ps1"" -NoPrompt"; WorkingDir: "{app}\QRPublisher"; Flags: runhidden nowait
+; Setup runs no scripts. POS starts (or, after an upgrade, replaces) the
+; local QR publisher itself when it opens; QR Menü Yönetimi shows any fix.
 Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppTitle}}"; Flags: nowait postinstall skipifsilent
 
-[UninstallRun]
-Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File ""{app}\QRPublisher\stop-windows.ps1"""; Flags: runhidden waituntilterminated; RunOnceId: "StopQrPublisher"
+[UninstallDelete]
+Type: files; Name: "{userstartup}\Nohut QR Publisher.lnk"
 
 [CustomMessages]
 english.NewerInstalled=A newer version of Nohut Falafel POS is already installed.
@@ -102,4 +106,19 @@ begin
       MsgBox(CustomMessage('NewerInstalled'), mbError, MB_OK);
     Result := False;
   end;
+end;
+
+// Uninstall: stop only the publisher POS started (its recorded PID, and
+// only if that PID is node.exe). Keys and DPAPI vaults in %APPDATA% stay.
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  PidText: AnsiString;
+  ResultCode: Integer;
+begin
+  if CurUninstallStep <> usUninstall then Exit;
+  if LoadStringFromFile(ExpandConstant('{userappdata}\NohutFalafel\QrPublisher\publisher.pid'), PidText)
+    and (StrToIntDef(Trim(String(PidText)), 0) > 0) then
+    Exec(ExpandConstant('{sys}\taskkill.exe'),
+      '/PID ' + IntToStr(StrToIntDef(Trim(String(PidText)), 0)) + ' /F /FI "IMAGENAME eq node.exe"',
+      '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;

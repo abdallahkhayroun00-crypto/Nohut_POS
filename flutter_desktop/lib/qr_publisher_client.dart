@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'package:path/path.dart' as paths;
 
 import 'pos_logic.dart';
@@ -65,6 +66,18 @@ class QrPublisherClient {
     if(value.trim().length<32||value.trim().length>512)
       throw const FormatException('Yayınlama anahtarı en az 32 karakter olmalı.');
     await vault.save({'token':value.trim()});
+  }
+
+  /// The access code POS and its local publisher share. Kept only in this
+  /// Windows user's DPAPI vault; created once with a secure random source.
+  Future<String> localAccessCode() async {
+    if (testToken != null) return testToken!;
+    final saved = (await vault.load())?['token'];
+    if (saved is String && saved.length >= 32) return saved;
+    final r = Random.secure();
+    final code = base64Url.encode(List<int>.generate(48, (_) => r.nextInt(256))).replaceAll('=', '');
+    await vault.save({'token': code});
+    return code;
   }
 
   Future<bool> hasToken() async =>

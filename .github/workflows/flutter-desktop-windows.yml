@@ -58,9 +58,6 @@ jobs:
         run: node pos-demo/tests/logic.test.cjs
       - name: QR publisher server lifecycle (node)
         run: node --test flutter_desktop/windows/installer/qr-publisher/test/server.test.mjs
-      - name: QR publisher start script on Windows PowerShell 5.1
-        shell: powershell
-        run: ./flutter_desktop/windows/installer/qr-publisher/test/lifecycle.ps1
       - name: Install phone UI test dependencies
         working-directory: flutter_desktop/ui-tests
         run: npm ci
@@ -110,7 +107,7 @@ jobs:
           $release = 'flutter_desktop/build/windows/x64/runner/Release'
           $destination = Join-Path $release 'QRPublisher'
           New-Item -ItemType Directory -Path $destination -Force | Out-Null
-          foreach ($file in @('server.mjs', 'start-windows.ps1', 'stop-windows.ps1')) {
+          foreach ($file in @('server.mjs')) {
             $from = Join-Path $source $file
             if (-not (Test-Path -LiteralPath $from -PathType Leaf)) {
               throw "QR Publisher build source missing: $from"
@@ -119,15 +116,8 @@ jobs:
           }
           node --check (Join-Path $destination 'server.mjs')
           if ($LASTEXITCODE -ne 0) { throw 'QR Publisher JavaScript syntax check failed' }
-          $tokens = $null
-          $errors = $null
-          foreach ($script in @('start-windows.ps1', 'stop-windows.ps1')) {
-            [System.Management.Automation.Language.Parser]::ParseFile(
-              (Join-Path $destination $script), [ref]$tokens, [ref]$errors
-            ) | Out-Null
-            if ($errors.Count -ne 0) { throw ($errors | Out-String) }
-          }
-          Write-Host 'QRPublisher server.mjs, start-windows.ps1 and stop-windows.ps1 bundled in Windows portable output.'
+          if (Get-ChildItem -LiteralPath $destination -Filter '*.ps1') { throw 'QRPublisher must not ship PowerShell scripts' }
+          Write-Host 'QRPublisher server.mjs bundled in Windows portable output (POS starts it; no PowerShell).'
 
       - name: Record release checksums and source revision
         shell: pwsh

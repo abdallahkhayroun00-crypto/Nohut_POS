@@ -76,3 +76,29 @@ test('binds to loopback only',async()=>{
   s.child.kill();
   await s.exited;
 });
+
+test('started by POS without a console: writes its own logs and status.json',async()=>{
+  const port=await freePort();
+  const logs=mkdtempSync(join(tmpdir(),'nohut-pub-logs-'));
+  const statusFile=join(logs,'status.json');
+  const child=spawn(process.execPath,[server],{env:{...process.env,
+    GITHUB_APP_PRIVATE_KEY_FILE:keyFile,QR_PUBLISH_ADMIN_TOKEN:token,QR_PUBLISH_PORT:String(port),
+    QR_PUBLISH_LOG_DIR:logs,QR_PUBLISH_STATUS_FILE:statusFile},stdio:'ignore'});
+  const exited=new Promise(r=>child.on('exit',code=>r(code)));
+  await waitHealth(port);
+  assert.equal(JSON.parse(readFileSync(statusFile,'utf8')).state,'running');
+  assert.match(readFileSync(join(logs,'publisher.log'),'utf8'),/Nohut QR Publisher/);
+  await fetch(`http://127.0.0.1:${port}/shutdown`,{method:'POST',headers:{authorization:'Bearer '+token}});
+  assert.equal(await exited,0);
+  assert.equal(JSON.parse(readFileSync(statusFile,'utf8')).state,'stopped');
+  const busy=createServer().listen(port,'127.0.0.1');
+  await new Promise(r=>busy.once('listening',r));
+  const second=spawn(process.execPath,[server],{env:{...process.env,
+    GITHUB_APP_PRIVATE_KEY_FILE:keyFile,QR_PUBLISH_ADMIN_TOKEN:token,QR_PUBLISH_PORT:String(port),
+    QR_PUBLISH_LOG_DIR:logs,QR_PUBLISH_STATUS_FILE:statusFile},stdio:'ignore'});
+  assert.equal(await new Promise(r=>second.on('exit',r)),98);
+  busy.close();
+  assert.equal(JSON.parse(readFileSync(statusFile,'utf8')).state,'port_busy');
+  for(const f of ['publisher.log','publisher-error.log','status.json'])
+    assert.ok(!readFileSync(join(logs,f),'utf8').includes(token),'token never written: '+f);
+});
