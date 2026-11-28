@@ -365,9 +365,12 @@ class _OrderComposerState extends State<_OrderComposer> {
                   style: TextStyle(color: NohutBrand.muted)))
               : GridView.builder(
                   padding: const EdgeInsets.only(bottom: 8),
-                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                  // Premium pass: tiles only reserve room for a description
+                  // when this category has one (no empty white blocks).
+                  gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
                     maxCrossAxisExtent: 250,
-                    mainAxisExtent: 176,
+                    mainAxisExtent: visibleProducts.any((p) =>
+                        (p.descriptionTr ?? '').trim().isNotEmpty) ? 138 : 106,
                     crossAxisSpacing: 10,
                     mainAxisSpacing: 10,
                   ),
@@ -396,7 +399,9 @@ class _OrderComposerState extends State<_OrderComposer> {
       color: count > 0 ? const Color(0xffF3F8F4) : Colors.white,
       child: InkWell(
         onTap: available ? () => add(p) : null,
-        child: Padding(
+        child: LayoutBuilder(builder: (context, box) {
+          final tileWidth = box.maxWidth - 20;
+          return Padding(
           padding: const EdgeInsets.fromLTRB(10, 10, 10, 6),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -434,36 +439,54 @@ class _OrderComposerState extends State<_OrderComposer> {
                         fontWeight: FontWeight.w700, fontSize: 14, height: 1.2),
                     ),
                   ),
-                  if (count > 0)
-                    Container(
-                      margin: const EdgeInsets.only(left: 4),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 7, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: NohutBrand.green,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text('×$count', style: const TextStyle(
-                        color: Colors.white, fontSize: 12,
-                        fontWeight: FontWeight.w800)),
+                  const SizedBox(width: 6),
+                  // Price and quantity badge stack on the right; on narrow
+                  // tiles the price scales down instead of overflowing.
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: tileWidth < 0 ? 0 : tileWidth * 0.4),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            available ? formatTry(cents(p.price)) : 'Fiyat yok',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800, fontSize: 14.5,
+                              color: available
+                                  ? NohutBrand.ink : NohutBrand.muted),
+                          ),
+                        ),
+                        if (count > 0)
+                          Container(
+                            margin: const EdgeInsets.only(top: 4),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 7, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: NohutBrand.green,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text('×$count', style: const TextStyle(
+                              color: Colors.white, fontSize: 12,
+                              fontWeight: FontWeight.w800)),
+                          ),
+                      ],
                     ),
+                  ),
                 ],
               ),
-              const SizedBox(height: 6),
-              Text(
-                p.descriptionTr ?? '',
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 11.5,
-                  color: NohutBrand.muted, height: 1.25),
-              ),
+              if ((p.descriptionTr ?? '').trim().isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(
+                  p.descriptionTr!,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 11.5,
+                    color: NohutBrand.muted, height: 1.25),
+                ),
+              ],
               const Spacer(),
-              Text(
-                available ? formatTry(cents(p.price)) : 'Fiyat yok',
-                style: TextStyle(
-                  fontWeight: FontWeight.w800, fontSize: 15,
-                  color: available ? NohutBrand.ink : NohutBrand.muted),
-              ),
               Row(
                 children: [
                   FilledButton.tonalIcon(
@@ -491,7 +514,8 @@ class _OrderComposerState extends State<_OrderComposer> {
               ),
             ],
           ),
-        ),
+        );
+        }),
       ),
     );
   }
