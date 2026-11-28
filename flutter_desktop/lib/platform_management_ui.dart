@@ -37,20 +37,6 @@ class PlatformStatusPill extends StatelessWidget {
   }
 }
 
-String _wire(String? s) => switch (s) { 'OPEN' => 'Açık', 'CLOSED' => 'Kapalı', _ => '?' };
-
-String _outcome(String s) => switch (s) {
-  'confirmed' => 'doğrulandı', 'unknown' => 'belirsiz, doğrulanıyor', 'failed' => 'başarısız',
-  'rejected' => 'reddedildi', 'pending' => 'bekliyor', _ => s,
-};
-
-String _when(DateTime? t) {
-  if (t == null) return 'Hiç doğrulanmadı';
-  final l = t.toLocal();
-  String two(int v) => v.toString().padLeft(2, '0');
-  return 'Son doğrulama ${two(l.day)}.${two(l.month)} ${two(l.hour)}:${two(l.minute)}';
-}
-
 /// Shared confirm + command for both surfaces.
 Future<String?> confirmStoreToggle(BuildContext context, PlatformControl control, PlatformCard card) async {
   final target = card.toggleTarget;
@@ -154,7 +140,7 @@ class _PlatformManagementPageState extends State<PlatformManagementPage>
         _muted(c.verifiedStoreName == null
             ? 'Mağaza doğrulanmadı'
             : '${c.verifiedStoreName} · ${c.verifiedStoreId}'),
-        _muted(c.connection == PlatformConnection.connected ? _when(c.lastVerifiedAt) : (c.note ?? '')),
+        _muted(c.connection == PlatformConnection.connected ? platformVerifiedText(c.lastVerifiedAt) : (c.note ?? '')),
         const SizedBox(height: 12),
         Wrap(spacing: 8, runSpacing: 8, children: [
           FilledButton.icon(
@@ -184,7 +170,7 @@ class _PlatformManagementPageState extends State<PlatformManagementPage>
         _section('İşlem Geçmişi', Icons.history, [
           if (c.audit.isEmpty) _muted('Henüz işlem yok.')
           else for (final a in c.audit.take(5))
-            _muted('${a.at} · ${a.actor} · ${_wire(a.oldStatus)} › ${_wire(a.newStatus)} · ${_outcome(a.outcome)}'),
+            _muted('${a.at} · ${a.actor} · ${platformStatusWord(a.oldStatus)} › ${platformStatusWord(a.newStatus)} · ${platformOutcomeWord(a.outcome)}'),
         ]),
       ])),
     );

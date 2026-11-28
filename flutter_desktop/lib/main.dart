@@ -266,6 +266,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       googleProvider: () => google,
       platformWritable: () => tgo.canWrite && !tgo.writing,
       platformAction: _staffPlatformAction,
+      platforms: DeferredPlatformControl(() => platformControl),
       menuRemote: QrMenuRemoteService(
         store,
         publisher: () => QrPublisherClient(store.filePath),

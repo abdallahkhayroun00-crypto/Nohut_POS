@@ -62,3 +62,18 @@ class PendingPlatformControl implements PlatformControl {
       {required PlatformWorking expected}) async =>
       throw const PlatformUnavailable(waitingNote);
 }
+
+/// Resolves the real control on first use, so servers built before the
+/// Trendyol client exists share the same instance as the Windows page.
+class DeferredPlatformControl implements PlatformControl {
+  DeferredPlatformControl(this._resolve);
+  final PlatformControl Function() _resolve;
+  @override
+  Future<List<PlatformCard>> load() => _resolve().load();
+  @override
+  Future<void> refresh(String provider) => _resolve().refresh(provider);
+  @override
+  Future<void> setStoreStatus(String provider, PlatformWorking target,
+          {required PlatformWorking expected}) =>
+      _resolve().setStoreStatus(provider, target, expected: expected);
+}

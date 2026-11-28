@@ -24,10 +24,14 @@ import 'local_accounts.dart';
 import 'pos_logic.dart';
 import 'pos_store.dart';
 import 'staff_commands.dart';
+import 'platform_api.dart';
+import 'platform_management.dart';
 
 class YoneticiApi {
-  YoneticiApi(this.store, this.gate);
+  YoneticiApi(this.store, this.gate, {this.platforms});
   final PosStore store;
+  /// Platform Yönetimi (same control as the Windows page). Null = not offered.
+  final PlatformControl? platforms;
   final LanAuthGate gate;
   static const client = 'yonetici';
 
@@ -159,6 +163,22 @@ class YoneticiApi {
             return const GateReply(409, {'error': 'conflict',
               'message': 'Kayıt Windows üzerinde değişti. Yenileyin ve karşılaştırın.'});
           }
+        case ('GET', 'platforms'):
+          // Platform Yönetimi read model (platform.view); the toggle needs
+          // platform.store.toggle, decided here and again on the command.
+          final d = _guard(token, 'platform.view', touch: query['poll'] != '1');
+          if (!d.allowed) return GateReply(d.status, {'error': d.error});
+          final c = platforms;
+          if (c == null) return const GateReply(503, {'error': 'unavailable'});
+          return GateReply(200, await platformsView(c, canToggle: _can(d.context!, 'platform.store.toggle')));
+        case ('POST', 'platform'):
+          final op = body['action'] == 'store' ? 'platform.store.toggle' : 'platform.view';
+          final d = _guard(token, op);
+          if (!d.allowed) return GateReply(d.status, {'error': d.error});
+          final c = platforms;
+          if (c == null) return const GateReply(503, {'error': 'unavailable'});
+          final r = await platformCommand(c, body, canToggle: _can(d.context!, 'platform.store.toggle'));
+          return GateReply(r['ok'] == true ? 200 : 409, r);
         case ('POST', 'report'):
           final d = _guard(token, 'reports.export');
           if (!d.allowed) return GateReply(d.status, {'error': d.error});

@@ -76,8 +76,15 @@ class FakeOwnerApi extends OwnerApi {
     },
   };
   @override
-  Future<Json> request(Json payload) async =>
-      payload['operation'] == 'ownerPayroll' ? payrollReply(paid: 80000) : throw const FormatException('?');
+  Future<Json> request(Json payload) async => switch (payload['operation']) {
+    'ownerPayroll' => payrollReply(paid: 80000),
+    // Windows today: Trendyol GO credentials, no verified store status yet.
+    'ownerPlatforms' => {'ok': true, 'canToggle': true, 'cards': [
+      {'provider': 'trendyol_go', 'connectionState': 'connected', 'workingStatus': 'UNKNOWN',
+        'note': 'Mağaza durumu bulut üzerinden doğrulanacak. Platform bağlantısı hazırlanıyor.'},
+    ]},
+    _ => throw const FormatException('?'),
+  };
   @override
   Future<Json?> cachedOverview(String day) async => overviewData;
   @override
@@ -155,6 +162,8 @@ void main() {
           brightness: mode, before: (t) async {
             await t.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Daha Fazla')));
             await t.pumpAndSettle();
+            await t.ensureVisible(find.byKey(const ValueKey('owner-nav-settings')));
+            await t.pumpAndSettle();
             await t.tap(find.byKey(const ValueKey('owner-nav-settings')));
             await t.pumpAndSettle();
           });
@@ -173,6 +182,10 @@ void main() {
       // §24.3: payroll panel and today's team on Ana Sayfa.
       expect(find.byKey(const ValueKey('dash-payroll')), findsOneWidget);
       expect(find.text('1 gecikti'), findsOneWidget);
+      // Platformlar quick card sits above payroll (same cards as the page).
+      expect(find.byKey(const ValueKey('platform-quick')), findsOneWidget);
+      expect(find.text('Bilinmiyor'), findsOneWidget);
+      await t.scrollUntilVisible(find.textContaining('Planlı 2 kişi'), 200, scrollable: find.byType(Scrollable).first);
       expect(find.textContaining('Planlı 2 kişi'), findsOneWidget);
       await t.pumpWidget(const SizedBox()); // stop the 30 s refresh timer
     });

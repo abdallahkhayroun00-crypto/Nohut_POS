@@ -158,6 +158,42 @@ class PlatformCard {
     );
   }
 
+  static String _connectionWire(PlatformConnection c) => switch (c) {
+    PlatformConnection.connected => 'connected',
+    PlatformConnection.disabled => 'disabled',
+    PlatformConnection.notConnected => 'not_connected',
+  };
+
+  /// The same shape [fromJson] reads, so Windows can serve its cards to the
+  /// LAN/phone clients and they rebuild the identical card.
+  Map<String, Object?> toJson() => {
+    'provider': provider,
+    'connectionState': _connectionWire(connection),
+    'workingStatus': workingWire(working),
+    'verifiedStoreId': verifiedStoreId,
+    'verifiedStoreName': verifiedStoreName,
+    'lastVerifiedAt': lastVerifiedAt?.toUtc().toIso8601String(),
+    'scheduleState': scheduleState,
+    'workingHours': [
+      for (final h in workingHours)
+        {'dayOfWeek': h.dayOfWeek, 'openingTime': h.opening, 'closingTime': h.closing},
+    ],
+    'pendingMutation': pending == null ? null : {
+      'requestId': pending!.requestId,
+      'targetStatus': workingWire(pending!.target),
+      'outcome': pending!.outcome,
+    },
+    'auditHistory': [
+      for (final a in audit)
+        {'at': a.at, 'actor': a.actor, 'action': a.action, 'oldStatus': a.oldStatus,
+          'newStatus': a.newStatus, 'outcome': a.outcome},
+    ],
+    'capabilities': {
+      'toggleStore': canToggleStore, 'editHours': canEditHours, 'toggleCatalog': canToggleCatalog,
+    },
+    'note': note,
+  };
+
   /// Always three cards in the fixed order; missing providers are shown
   /// as not connected rather than hidden.
   static List<PlatformCard> completeSet(Iterable<PlatformCard> known) {
@@ -175,3 +211,18 @@ const _days = {
 };
 
 String platformDayName(String wire) => _days[wire.toUpperCase()] ?? wire;
+
+/// Audit wording shared by every surface.
+String platformStatusWord(String? s) => switch (s) { 'OPEN' => 'Açık', 'CLOSED' => 'Kapalı', _ => '?' };
+
+String platformOutcomeWord(String s) => switch (s) {
+  'confirmed' => 'doğrulandı', 'unknown' => 'belirsiz, doğrulanıyor', 'failed' => 'başarısız',
+  'rejected' => 'reddedildi', 'pending' => 'bekliyor', _ => s,
+};
+
+String platformVerifiedText(DateTime? t) {
+  if (t == null) return 'Hiç doğrulanmadı';
+  final l = t.toLocal();
+  String two(int v) => v.toString().padLeft(2, '0');
+  return 'Son doğrulama ${two(l.day)}.${two(l.month)} ${two(l.hour)}:${two(l.minute)}';
+}

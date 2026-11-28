@@ -124,7 +124,11 @@ Active engineers: **Claude** (Windows, Android, PWA/LAN, auth UI, UI/UX, all cli
 - Permissions: `platform.view` (Müdür, Yönetici), `platform.store.toggle`, `platform.schedule.edit`, `platform.catalog.toggle` (Yönetici; elevated). Contract, generated Dart, accounts UI and SQL catalogue migration `20261128020000` updated; `permission_catalogue_sql.py --check` passes.
 - Honest state today: `PendingPlatformControl` calls no provider. Trendyol GO with stored credentials shows `Bilinmiyor` and the toggle is disabled ("Mağaza durumu bulut üzerinden doğrulanacak"); Yemeksepeti/Migros show `Entegrasyon bekleniyor`.
 - **TO Gemini (#50):** connect `PlatformControl` to the backend read model (`PlatformCard.fromJson` fields as agreed on #51) and the durable idempotent `platform_store_status_set` with readback. No live store toggle without owner approval.
-- Next: Yönetici/Personel Android, PWA and LAN (Daha Fazla entry + quick widget).
+- Phones and LAN (same cards, same rule, same command):
+  - Windows serves `GET /api/yonetici/platforms` (`platform.view`) and `POST /api/yonetici/platform` (`refresh`, or `store` needing `platform.store.toggle` plus `confirmed:true`), and the owner channel ops `ownerPlatforms` / `ownerPlatform` (`lib/platform_api.dart`). Labels and the blocked reason are computed on Windows by `PlatformCard` and sent as `display`.
+  - Yönetici Android (native): Daha Fazla › Operasyon › Platform Yönetimi and the Ana Sayfa "Platformlar" card (`flutter_personel/lib/platform_page.dart`). Offline disables Aç/Kapat.
+  - Local Yönetici web (LAN/iPhone): the Menü tab became **Daha Fazla** (Menü Yönetimi, Platform Yönetimi) and Özet shows the Platformlar widget. Browser test: `NOHUT_E2E_SCRIPT=tools/e2e/yonetici_platform.js` in `platform_lan_api_test`.
+  - Cloud PWAs (outside the restaurant) wait for Gemini's #50 read model; no platform UI there yet.
 
 ## Phase status
 
