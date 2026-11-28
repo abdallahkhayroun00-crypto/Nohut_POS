@@ -288,11 +288,44 @@ void main() {
       expect(server.calls, isNot(contains('activate')));
     });
 
+    test('QA-26: a rotated epoch stops a stale plan; cancel after a lost activation ack '
+        'reconciles to active; QA-27: staged rows are deleted', () async {
+      var p = plan();
+      setSyncState(db, 'authority_epoch', 'f' * 32);
+      final r = await runner.run(backup: backup);
+      expect(r.outcome, InitialSyncOutcome.stopped);
+      expect(currentInitialSyncPlan(db)!.lastError, 'epoch_rotated');
+      expect(server.calls, isNot(contains('begin')));
+      expect(plannedBatches(db, p.migrationId), isEmpty);
+
+      p = plan();
+      expect(p.authorityEpoch, 'f' * 32);
+      await runner.run(backup: backup);
+      expect(plannedBatches(db, p.migrationId), isEmpty, reason: 'deleted after activation');
+      expect(currentInitialSyncPlan(db)!.status, 'active');
+
+      // The server activated but Windows never heard it; the owner cancels.
+      final snap = store.read();
+      db.execute("UPDATE initial_sync_plan SET status='aborted'");
+      setSyncState(db, 'initial_sync_state', 'planned');
+      final q = planInitialSync(db, snapshotRevision: snap.revision,
+          categories: categoriesFrom(snap.data));
+      await server.begin(migrationId: q.migrationId, snapshotRevision: 0, snapshotSeq: 0,
+          manifestSha256: q.manifestSha256, backupVerified: true);
+      server.migrations[q.migrationId]!['status'] = 'active';
+      server.calls.clear();
+      await runner.abort();
+      expect(server.calls, isNot(contains('abort')));
+      expect(currentInitialSyncPlan(db)!.status, 'active');
+      expect(initialSyncHoldsIncremental(db), isFalse);
+    });
+
     test('owner abort clears the cloud staging and allows a new plan', () async {
       final p = plan();
       server.failUploadAfter = 0;
       await runner.run(backup: backup);
       await runner.abort();
+      expect(plannedBatches(db, p.migrationId), isEmpty);
       expect(server.migrations[p.migrationId]!['status'], 'safely_aborted');
       expect(currentInitialSyncPlan(db)!.status, 'aborted');
       expect(plan().migrationId, isNot(p.migrationId));

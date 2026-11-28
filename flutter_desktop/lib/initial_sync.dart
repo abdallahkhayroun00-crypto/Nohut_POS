@@ -502,7 +502,12 @@ class InitialSyncRunner {
         'UPDATE initial_sync_plan SET status=?, last_error=?, '
         'finished_at=CASE WHEN ? THEN ? ELSE finished_at END WHERE migration_id=?',
         [status, error, finished ? 1 : 0, _now, id]);
+    // QA-27: once finished, drop the staged copy of the data (it would
+    // bloat the POS database and every backup); the plan row stays as audit.
+    if (finished) db.execute('DELETE FROM initial_sync_batches WHERE migration_id=?', [id]);
   }
+
+  static String _epochKey(Object? e) => '$e'.replaceAll('-', '').toLowerCase();
 
   void _stop(String id, String message) =>
       db.execute('UPDATE initial_sync_plan SET last_error=? WHERE migration_id=?', [message, id]);
@@ -535,6 +540,12 @@ class InitialSyncRunner {
           uploaded: plan.batchCount, total: plan.batchCount);
     }
     final id = plan.migrationId;
+    // QA-26: a plan made under a retired authority epoch can never activate.
+    if (_epochKey(syncStateValue(db, 'authority_epoch')) != _epochKey(plan.authorityEpoch)) {
+      _setPlan(id, 'aborted', error: 'epoch_rotated', finished: true);
+      return const InitialSyncProgress(InitialSyncOutcome.stopped,
+          message: 'Yetki dönemi değişti. Yeni bir anlık görüntü ile yeniden başlatın.');
+    }
     final batches = plannedBatches(db, id);
     if (batches.length != plan.batchCount || manifestSha256(batches) != plan.manifestSha256) {
       _stop(id, 'local_plan_corrupt');
@@ -563,6 +574,13 @@ class InitialSyncRunner {
         db.execute('UPDATE initial_sync_plan SET backup_id=?, status=? WHERE migration_id=?',
             [backup.backupId, 'uploading', id]);
         server = await transport.status(migrationId: id);
+      }
+      final serverEpoch = server['authority_epoch'];
+      if (server['exists'] == true && serverEpoch != null &&
+          _epochKey(serverEpoch) != _epochKey(plan.authorityEpoch)) {
+        _setPlan(id, 'aborted', error: 'epoch_rotated', finished: true);
+        return const InitialSyncProgress(InitialSyncOutcome.stopped,
+            message: 'Yetki dönemi değişti. Yeni bir anlık görüntü ile yeniden başlatın.');
       }
       if (server['manifest_sha256'] != null && server['manifest_sha256'] != plan.manifestSha256) {
         _stop(id, 'manifest_mismatch');
@@ -649,6 +667,11 @@ class InitialSyncRunner {
     final plan = currentInitialSyncPlan(db);
     if (plan == null || plan.status == 'active' || plan.status == 'aborted') return;
     final server = await transport.status(migrationId: plan.migrationId);
+    // QA-26: activation may have committed before the answer was lost.
+    if (server['exists'] == true && server['status'] == 'active') {
+      _finish(plan, plan.batchCount);
+      return;
+    }
     if (server['exists'] == true && server['status'] != 'safely_aborted') {
       await transport.abort(migrationId: plan.migrationId, reason: reason);
     }
