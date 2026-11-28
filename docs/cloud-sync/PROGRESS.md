@@ -107,7 +107,16 @@ Active engineers: **Claude** (Windows, Android, PWA/LAN, auth UI, UI/UX, all cli
 - `lib/initial_sync_snapshot.dart`: `buildSnapshotCategories` treats every syncable entity as an upsert from an empty state. It reuses the outbox projection (`outboxPayload`, shared with the outbox writer) and the production typed encoder chain (finance → catalog → order → receipt → platform → ledger), then adds `workforceSummaries` and `qrMenuState`. It encodes one record at a time. A record the serializers refuse is listed in `rejected` (for example legacy Trendyol rows without supplier, store or package ids); it is never dropped silently. `dailyReports` and `notifications` have no Windows producer yet and are not included.
 - `lib/initial_sync_transport.dart`: an HTTPS adapter over the scoped agent token (`SupabaseAgentTransport.initialSyncRpc` only allows the 5 first-sync RPCs). `p_events` is sent as a JSON array.
 - Tests: `initial_sync_snapshot_test` (2), `initial_sync_transport_test` (1).
-- **Next:** the Kurulum wizard step: verified backup → `prepareCloudOrderIdentities` → build → show rejected records → plan → run. Real cloud use waits for the owner (no live data transfer without approval).
+- Windows UI: **Ayarlar › Bulut & Senkronizasyon** (`lib/first_sync_ui.dart`, `FirstSyncController` + `FirstSyncPanel`). It has 4 gated steps:
+  1. Bulut bağlantısı: scoped agent credentials from `%APPDATA%/NohutFalafel/cloud-agent.dpapi`.
+  2. Anlık görüntü: shows category counts and the refused records.
+  3. Dondur.
+  4. Yedek al ve gönder: a fresh verified encrypted backup is taken **after** freezing, so it covers the snapshot. Resume and İptal are supported.
+  - Without agent credentials, Başlat stays disabled.
+  - Tests: `first_sync_ui_test` (2), with renders.
+- **Not done / physical:**
+  - Agent enrollment UI (owner sign-in + MFA via `windows_agent_setup.dart`).
+  - The first real run on the restaurant PC needs the owner present and explicit approval. It is a real data transfer.
 
 ## Phase status
 

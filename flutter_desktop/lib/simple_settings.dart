@@ -30,6 +30,7 @@ class SimpleSettings extends StatefulWidget {
     this.staffPanel,
     this.wifiPanel,
     this.backupPanel,
+    this.cloudPanel,
     this.accountsPanel,
     this.notificationHistory,
   });
@@ -40,7 +41,7 @@ class SimpleSettings extends StatefulWidget {
   final TrendyolGoReadonly tgoIntegration;
   final VoidCallback onOpenGoogle;
   final ValueChanged<String>? onTestOnlineSound;
-  final Widget? staffPanel, wifiPanel, backupPanel, accountsPanel, notificationHistory;
+  final Widget? staffPanel, wifiPanel, backupPanel, cloudPanel, accountsPanel, notificationHistory;
   @override
   State<SimpleSettings> createState() => _SimpleSettingsState();
 }
@@ -693,6 +694,12 @@ class _SimpleSettingsState extends State<SimpleSettings> {
               ),
             ],
           ),
+        if (tab == 'Bulut' && widget.cloudPanel != null)
+          section(
+            'Bulut & Senkronizasyon',
+            'İlk senkronizasyon ve bulut durumu · yalnızca bu Windows bilgisayarda.',
+            [widget.cloudPanel!],
+          ),
         if (tab == 'Yedekleme')
           section(
             'Yedekleme ve Geri Yükleme',
@@ -756,6 +763,9 @@ class _SimpleSettingsState extends State<SimpleSettings> {
       'Sipariş sesleri ve bildirim geçmişi.', 'ses alarm uyarı bildirim'),
     const _SettingsPage('Entegrasyonlar', 'Entegrasyonlar', 'Operasyon', Icons.hub_outlined,
       'Trendyol Go, Yemeksepeti, Migros ve Google bağlantı durumu.', 'trendyol yemeksepeti migros google api'),
+    if (widget.cloudPanel != null)
+      const _SettingsPage('Bulut', 'Bulut & Senkronizasyon', 'Sistem', Icons.cloud_sync_outlined,
+        'İlk senkronizasyon: yedek, anlık görüntü ve gönderim (yalnızca Windows).', 'bulut senkronizasyon supabase ilk eşitleme'),
     const _SettingsPage('Yedekleme', 'Yedekleme & Geri Yükleme', 'Sistem', Icons.backup_outlined,
       'Şifreli yedek, doğrulama ve geri yükleme (yalnızca Windows).', 'yedek geri yükle veritabanı şifreli'),
   ];

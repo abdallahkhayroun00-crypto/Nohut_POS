@@ -65,6 +65,7 @@ import 'lan_auth_gate.dart';
 import 'accounts_ui.dart';
 import 'notification_events.dart';
 import 'notifications_ui.dart';
+import 'first_sync_ui.dart';
 
 part 'order_composer.dart';
 
@@ -160,6 +161,9 @@ class ManagerDesktop extends StatefulWidget {
 class _ManagerDesktopState extends State<ManagerDesktop> {
   late final PosStore store;
   late final BackupService backups;
+  FirstSyncController? _firstSync;
+  FirstSyncController get firstSync => _firstSync ??= FirstSyncController.forStore(store, backups);
+
   late final RestoreManager restorer;
   RestoreOutcome? restoreOutcome;
   late final InposPayments inpos;
@@ -3612,6 +3616,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     staffPanel: _staff(db),
     wifiPanel: _wifi(db),
     backupPanel: BackupPanel(service: backups, restore: restorer),
+    cloudPanel: FirstSyncPanel(controller: firstSync),
     notificationHistory: NotificationHistoryPanel(store: store),
     accountsPanel: AccountsPanel(auth: localAuth, employees: asMaps(db['employees']),
         yoneticiUrl: lan.staffUrl.replaceFirst('/personel', '/yonetici')),
