@@ -37,10 +37,18 @@ jobs:
           psql_ci() {
             docker exec -i "$PG_CONTAINER" psql -X -v ON_ERROR_STOP=1 -U postgres -d nohut_synthetic "$@"
           }
-          psql_ci -c 'create role anon nologin; create role authenticated nologin; create role service_role nologin bypassrls;'
+          psql_ci -c 'create role anon nologin; create role authenticated nologin; create role service_role nologin bypassrls; create role nohut_qr_runtime nologin nosuperuser nobypassrls nocreatedb nocreaterole noreplication;'
           psql_ci < supabase/ci/supabase_auth_stub.sql
           for f in supabase/migrations/*.sql; do psql_ci < "$f"; done
           for f in supabase/tests/*.sql; do psql_ci < "$f"; done
+          # Review-only SQL: disposable CI database, never a production migration.
+          psql_ci < supabase/functions/qr-publisher/sql/receipt-storage.review.sql
+          psql_ci < supabase/functions/qr-publisher/sql/runtime-role.review.sql
+          psql_ci < supabase/functions/qr-publisher/sql/receipt-storage.review.test.sql
+          psql_ci < supabase/functions/qr-publisher/sql/runtime-role.review.test.sql
+          psql_ci < supabase/functions/qr-publisher/sql/image-staging.review.sql
+          psql_ci < supabase/functions/qr-publisher/sql/image-staging.review.test.sql
+          bash supabase/functions/qr-publisher/sql/concurrency.review.sh "$PG_CONTAINER" nohut_synthetic postgres
           echo 'PASS: PostgreSQL integrated synthetic tests (no live Supabase connection)' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Cloud primitives under migration owner without BYPASSRLS
@@ -49,11 +57,18 @@ jobs:
         run: |
           set -euo pipefail
           run_pg() { docker exec -i "$PG_CONTAINER" psql -X -v ON_ERROR_STOP=1 "$@"; }
-          run_pg -U postgres -d nohut_synthetic -c 'create role cloud_migrator login nosuperuser nobypassrls; grant authenticated, anon, service_role to cloud_migrator;'
+          run_pg -U postgres -d nohut_synthetic -c 'create role cloud_migrator login nosuperuser nobypassrls; grant authenticated, anon, service_role, nohut_qr_runtime to cloud_migrator;'
           run_pg -U postgres -d nohut_synthetic -c 'create database nohut_cloud_plain owner cloud_migrator'
           run_pg -U postgres -d nohut_cloud_plain < supabase/ci/supabase_auth_stub.sql
           for f in supabase/migrations/*.sql; do run_pg -U cloud_migrator -d nohut_cloud_plain < "$f"; done
           for f in supabase/tests/*.sql; do
             run_pg -U cloud_migrator -d nohut_cloud_plain < "$f"
           done
+          run_pg -U cloud_migrator -d nohut_cloud_plain < supabase/functions/qr-publisher/sql/receipt-storage.review.sql
+          run_pg -U cloud_migrator -d nohut_cloud_plain < supabase/functions/qr-publisher/sql/runtime-role.review.sql
+          run_pg -U cloud_migrator -d nohut_cloud_plain < supabase/functions/qr-publisher/sql/receipt-storage.review.test.sql
+          run_pg -U cloud_migrator -d nohut_cloud_plain < supabase/functions/qr-publisher/sql/runtime-role.review.test.sql
+          run_pg -U cloud_migrator -d nohut_cloud_plain < supabase/functions/qr-publisher/sql/image-staging.review.sql
+          run_pg -U cloud_migrator -d nohut_cloud_plain < supabase/functions/qr-publisher/sql/image-staging.review.test.sql
+          bash supabase/functions/qr-publisher/sql/concurrency.review.sh "$PG_CONTAINER" nohut_cloud_plain cloud_migrator
           echo 'PASS: private cloud functions as plain migration owner' >> "$GITHUB_STEP_SUMMARY"
