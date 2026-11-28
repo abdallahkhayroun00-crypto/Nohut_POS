@@ -76,6 +76,18 @@ void main() {
     expect((await sup(ready()).diagnose()).issue, PublisherIssue.stopped);
   });
 
+  test('bundled runtime works without system Node and takes precedence', () async {
+    final bundled = p.join('C:', 'POS', 'QRPublisher', 'runtime', 'node.exe');
+    final h = ready()..files.remove(node)..runs.remove(node)
+      ..files[bundled] = ''..runs[bundled] = 'v22.23.5';
+    final d = await sup(h).diagnose();
+    expect(d.issue, PublisherIssue.stopped);
+    expect(d.node, contains(bundled));
+    h.files[node] = '';
+    h.runs[node] = 'v26.0.0';
+    expect((await sup(h).diagnose()).node, contains(bundled));
+  });
+
   test('GitHub original key name in Downloads counts as found', () async {
     final h = ready()..files.remove(key)
       ..files[p.join('C:', 'User', 'Downloads',

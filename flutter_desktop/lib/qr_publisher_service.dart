@@ -242,8 +242,18 @@ class QrPublisherSupervisor {
     return null;
   }
 
-  /// Same search as start-windows.ps1: PATH, Program Files, fnm installs.
+  /// Prefer the private runtime, then legacy PATH/Program Files/fnm installs.
   Future<String?> findNode() async {
+    final script = await findScript();
+    if (script != null) {
+      final bundled = paths.join(paths.dirname(script), 'runtime', 'node.exe');
+      if (await host.fileExists(bundled)) {
+        final out = await host.run(bundled, ['--version']);
+        final m = RegExp(r'^v(\d+)\.').firstMatch(out?.trim() ?? '');
+        if (m == null || int.parse(m.group(1)!) < 22) return null;
+        return '${out!.trim()} · $bundled';
+      }
+    }
     final candidates = <String>[];
     final where = await host.run('where.exe', ['node.exe']);
     if (where != null) {

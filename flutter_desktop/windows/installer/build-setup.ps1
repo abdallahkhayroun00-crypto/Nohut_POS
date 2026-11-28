@@ -65,7 +65,7 @@ if (-not (Test-Path -LiteralPath $database -PathType Leaf)) {
 $dbHash = (Get-FileHash -LiteralPath $database).Hash
 Invoke-Setup $oldSetup ($silent + @('/TASKS=desktopicon', "/DIR=`"$installDir`""))
 $installedExe = Join-Path $installDir $exeName
-foreach ($file in @('server.mjs', 'start-windows.ps1', 'stop-windows.ps1')) {
+foreach ($file in @('server.mjs', 'start-windows.ps1', 'stop-windows.ps1', 'runtime/node.exe', 'runtime/LICENSE')) {
     $source = Join-Path (Join-Path $release 'QRPublisher') $file
     $installed = Join-Path (Join-Path $installDir 'QRPublisher') $file
     if (-not (Test-Path -LiteralPath $source -PathType Leaf) -or
@@ -74,6 +74,10 @@ foreach ($file in @('server.mjs', 'start-windows.ps1', 'stop-windows.ps1')) {
         (Get-FileHash -LiteralPath $installed).Hash) {
         throw "Missing or mismatched installed QR Publisher asset: $file"
     }
+}
+$installedNode = Join-Path $installDir 'QRPublisher/runtime/node.exe'
+if ((& $installedNode --version) -notmatch '^v22\.' -or $LASTEXITCODE -ne 0) {
+    throw 'Installed private Node runtime is not executable.'
 }
 if ((Get-ItemProperty -LiteralPath $uninstallKey).DisplayVersion -ne '0.0.0.0') {
     throw 'First installation is missing from Windows Installed Apps.'
@@ -98,6 +102,8 @@ if ((Get-ItemProperty -LiteralPath $uninstallKey).DisplayVersion -ne $version -o
     (Get-FileHash -LiteralPath (Join-Path $release 'QRPublisher/server.mjs')).Hash -or
     (Get-FileHash -LiteralPath (Join-Path $installDir 'QRPublisher/start-windows.ps1')).Hash -ne
     (Get-FileHash -LiteralPath (Join-Path $release 'QRPublisher/start-windows.ps1')).Hash -or
+    (Get-FileHash -LiteralPath $installedNode).Hash -ne
+    (Get-FileHash -LiteralPath (Join-Path $release 'QRPublisher/runtime/node.exe')).Hash -or
     $shell.CreateShortcut($desktopLink).TargetPath -ne $installedExe -or
     (Get-FileHash -LiteralPath $database).Hash -ne $dbHash) {
     throw 'Upgrade changed the shortcut or database, or did not replace the installed files.'
@@ -110,7 +116,7 @@ if ($downgrade.ExitCode -eq 0 -or (Get-ItemProperty -LiteralPath $uninstallKey).
 $uninstall = Get-ChildItem -LiteralPath $installDir -Filter 'unins*.exe' -File
 if (@($uninstall).Count -ne 1) { throw 'Expected exactly one uninstaller after upgrading.' }
 Invoke-Setup $uninstall.FullName @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART')
-if ((Test-Path -LiteralPath $installedExe) -or (Test-Path -LiteralPath $desktopLink) -or
+if ((Test-Path -LiteralPath $installedExe) -or (Test-Path -LiteralPath $installedNode) -or (Test-Path -LiteralPath $desktopLink) -or
     (Test-Path -LiteralPath $menuLink) -or (Test-Path -LiteralPath $uninstallKey) -or
     (Get-FileHash -LiteralPath $database).Hash -ne $dbHash) {
     throw 'Uninstall did not remove the app and shortcuts while preserving its database.'

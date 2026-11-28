@@ -61,6 +61,8 @@ Source: "{#ReleaseDir}\build-manifest.json"; DestDir: "{app}"; Flags: ignorevers
 Source: "{#ReleaseDir}\QRPublisher\server.mjs"; DestDir: "{app}\QRPublisher"; Flags: ignoreversion
 Source: "{#ReleaseDir}\QRPublisher\start-windows.ps1"; DestDir: "{app}\QRPublisher"; Flags: ignoreversion
 Source: "{#ReleaseDir}\QRPublisher\stop-windows.ps1"; DestDir: "{app}\QRPublisher"; Flags: ignoreversion
+Source: "{#ReleaseDir}\QRPublisher\runtime\node.exe"; DestDir: "{app}\QRPublisher\runtime"; Flags: ignoreversion
+Source: "{#ReleaseDir}\QRPublisher\runtime\LICENSE"; DestDir: "{app}\QRPublisher\runtime"; Flags: ignoreversion
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
