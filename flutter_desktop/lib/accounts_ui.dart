@@ -354,7 +354,7 @@ class _AccountsPanelState extends State<AccountsPanel> {
     final users = auth.users();
     final owner = users.where((u) => u['isOwner'] == true).firstOrNull;
     if (owner == null) {
-      return _card('Kullanıcılar & Yetkiler',
+      return _card('İşletme sahibi hesabı',
           'Bireysel girişleri başlatmak için önce işletme sahibi hesabını oluşturun. '
           'Personel paneli bu ayar açılana kadar bugünkü gibi çalışmaya devam eder.', [
         Align(alignment: Alignment.centerLeft, child: FilledButton.icon(

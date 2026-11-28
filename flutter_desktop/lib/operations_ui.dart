@@ -1005,13 +1005,17 @@ class StaffPanel extends StatelessWidget {
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
-      panelTitle('Personel Yönetimi'),
+      // The Ayarlar page header already reads "Personel".
       info('Personel profilleri burada yönetilir. Giriş hesapları ve yetkiler Ayarlar › Güvenlik › Kullanıcılar bölümündedir. Maaş bordrosuna dahil olmayanlar (ör. işletme sahibi) maaş ve hatırlatmalarda yer almaz.'),
-      FilledButton.icon(
-        onPressed: () => change(context),
-        icon: const Icon(Icons.person_add_outlined),
-        label: const Text('Personel Ekle'),
+      Align(
+        alignment: Alignment.centerLeft,
+        child: FilledButton.icon(
+          onPressed: () => change(context),
+          icon: const Icon(Icons.person_add_outlined),
+          label: const Text('Personel Ekle'),
+        ),
       ),
+      const SizedBox(height: 8),
       for (final person in asMaps(state['employees']))
         ListTile(
           onTap: () => change(context, person),

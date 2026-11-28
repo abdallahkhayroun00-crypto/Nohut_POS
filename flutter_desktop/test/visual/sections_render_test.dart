@@ -21,6 +21,18 @@ const sections = <(String, String)>[
   ('ayarlar', 'Ayarlar'),
 ];
 
+/// Ayarlar pages, reached from its own navigation.
+const settingsPages = <(String, String)>[
+  ('personel', 'Personel'),
+  ('kullanicilar', 'Kullanıcılar & Güvenlik'),
+  ('telefon', 'Telefon Bağlantısı'),
+  ('yazici', 'Yazıcı & Fiş'),
+  ('bildirim', 'Bildirimler & Sesler'),
+  ('entegrasyon', 'Entegrasyonlar'),
+  ('bulut', 'Bulut & Senkronizasyon'),
+  ('yedek', 'Yedekleme & Geri Yükleme'),
+];
+
 void main() {
   for (final (name, size) in [
     ('1536', const Size(1536, 864)),
@@ -37,6 +49,28 @@ void main() {
         }
         expect(t.takeException(), isNull, reason: '$label at $name');
         await shot(t, 'section-$name-$key');
+      }
+    });
+  }
+
+  // Ayarlar has a long navigation; the 1280 layout lazily builds it, so the
+  // pages are rendered at the main desktop size.
+  for (final (name, size) in [('1536', const Size(1536, 864))]) {
+    testWidgets('every Ayarlar page renders at $name', (t) async {
+      await mount(t, size);
+      await t.tap(find.text('Ayarlar').first);
+      for (var i = 0; i < 6; i++) {
+        await t.pump(const Duration(milliseconds: 250));
+      }
+      for (final (key, label) in settingsPages) {
+        // The same label appears in the quick tiles; the nav entry is first.
+        await t.ensureVisible(find.text(label).first);
+        await t.tap(find.text(label).first);
+        for (var i = 0; i < 6; i++) {
+          await t.pump(const Duration(milliseconds: 250));
+        }
+        expect(t.takeException(), isNull, reason: '$label at $name');
+        await shot(t, 'ayarlar-$name-$key');
       }
     });
   }
