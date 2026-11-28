@@ -30,6 +30,12 @@ void _walk(Object? v, String path, Set<String> out) {
 }
 
 Future<void> testExecutable(FutureOr<void> Function() testMain) async {
+  // Synthetic fixture people (never real staff; production seeds none).
+  debugSeedEmployees = [
+    {'id': 1, 'name': 'Test Yönetici', 'role': 'Yönetici', 'active': true},
+    {'id': 2, 'name': 'Test Personel A', 'role': 'Personel', 'active': true},
+    {'id': 3, 'name': 'Test Personel B', 'role': 'Personel', 'active': true},
+  ];
   final out = Platform.environment['NOHUT_FIELD_DUMP'];
   if (out != null) {
     final seen = <String>{};

@@ -49,7 +49,7 @@ export function profileScreen(ctx: Ctx): HTMLElement {
         'div',
         { class: 'list' },
         row('lock', 'Şifre Değiştir', 'Kullanıcı adı ve şifre'),
-        row('shield', 'PIN Sıfırla', 'Bu cihaz için 6 haneli PIN'),
+        row('shield', 'PIN Sıfırla', 'Bu cihaz için 5 haneli PIN'),
         row('phone', 'Güvenilir Cihazlar', 'Bağlı cihazları gör ve kaldır'),
       ),
       authReady ? null : h('p', { class: 'muted small' }, 'Hesap işlemleri giriş sistemi etkinleşince açılır.'),

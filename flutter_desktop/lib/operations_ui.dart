@@ -12,7 +12,8 @@ import 'brand.dart';
 import 'pos_logic.dart';
 import 'pos_store.dart';
 import 'operations.dart';
-import 'finance_logic.dart';
+import 'payroll.dart' show isPayrollEligible, setPayrollEligible, setEmployeeRate;
+import 'workforce.dart' show dayOf, istanbulNow;
 import 'platform_workflows.dart';
 import 'qr_menu_preview.dart';
 import 'qr_menu_sync.dart';
@@ -313,6 +314,117 @@ class CashPanel extends StatelessWidget {
   }
 }
 
+/// The two ways to take an order off the floor, side by side so the
+/// difference is explicit: İptal keeps it in reports as cancelled; Sil moves
+/// the whole record to the audited archive.
+class OrderDangerZone extends StatelessWidget {
+  const OrderDangerZone({
+    super.key,
+    required this.order,
+    required this.onCancel,
+    required this.onDelete,
+  });
+  final Json order;
+  final VoidCallback onCancel;
+  final VoidCallback onDelete;
+
+  static const _red = Color(0xffB3261E);
+
+  @override
+  Widget build(BuildContext context) {
+    final open = order['closed'] != true && order['cancelled'] != true;
+    final paid = orderPaidCents(order) > 0;
+    final cancelBlock = !open
+        ? 'Kapalı veya iptal edilmiş sipariş yeniden iptal edilemez.'
+        : paid ? 'Önce tüm ödemeleri iade edin.' : null;
+    Widget action({
+      required Key key,
+      required IconData icon,
+      required String title,
+      required String label,
+      required String help,
+      required VoidCallback? onTap,
+    }) => Container(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xffF0D2CC)),
+      ),
+      child: Row(children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: const TextStyle(
+                fontWeight: FontWeight.w800, color: _red)),
+              const SizedBox(height: 2),
+              Text(help, style: const TextStyle(
+                fontSize: 12.5, color: NohutBrand.muted, height: 1.3)),
+            ],
+          ),
+        ),
+        const SizedBox(width: 10),
+        OutlinedButton.icon(
+          key: key,
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size(0, 40),
+            foregroundColor: _red,
+            side: const BorderSide(color: Color(0xffE7B9B2)),
+          ),
+          onPressed: onTap,
+          icon: Icon(icon, size: 18),
+          label: Text(label),
+        ),
+      ]),
+    );
+    return Container(
+      key: const ValueKey('order-danger-zone'),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xffFDF5F3),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xffF0D2CC)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text('Siparişi kaldır', style: TextStyle(
+            fontWeight: FontWeight.w900, fontSize: 15)),
+          const SizedBox(height: 8),
+          LayoutBuilder(builder: (context, box) {
+            final cancel = action(
+              key: const ValueKey('order-cancel'),
+              icon: Icons.block,
+              title: 'Siparişi iptal et',
+              label: 'İptal Et',
+              help: cancelBlock ??
+                  'Raporlarda "İptal" olarak kalır. Ödemesi olmayan açık siparişler için.',
+              onTap: cancelBlock == null ? onCancel : null,
+            );
+            final delete = action(
+              key: const ValueKey('order-delete'),
+              icon: Icons.delete_outline,
+              title: 'Siparişi sil (arşive taşı)',
+              label: 'Sil',
+              help: 'Raporlardan çıkar; tüm kayıt kim, ne zaman, neden bilgisiyle arşivde saklanır.',
+              onTap: onDelete,
+            );
+            if (box.maxWidth < 720) {
+              return Column(children: [cancel, const SizedBox(height: 8), delete]);
+            }
+            return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Expanded(child: cancel),
+              const SizedBox(width: 10),
+              Expanded(child: delete),
+            ]);
+          }),
+        ],
+      ),
+    );
+  }
+}
+
 class OrderOperations extends StatelessWidget {
   const OrderOperations({
     super.key,
@@ -490,22 +602,6 @@ class OrderOperations extends StatelessWidget {
                       edit((s) => markPickupDelivered(mutableOrder(s, id)!)),
                   label: const Text('Teslim Edildi'),
                 ),
-              OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  foregroundColor: const Color(0xffB3261E),
-                  side: const BorderSide(color: Color(0xffE7B9B2)),
-                ),
-                icon: const Icon(Icons.block, size: 18),
-                onPressed: () async {
-                  final v = await askFields(context, 'Siparişi İptal Et', [
-                    ('Neden', ''),
-                  ]);
-                  if (v != null) edit((s) => cancelLocalOrder(s, id, v[0]));
-                },
-                label: const Text('Siparişi İptal Et'),
-              ),
             ],
           ),
           const SizedBox(height: 10),
@@ -844,13 +940,15 @@ class StaffPanel extends StatelessWidget {
               person['payRateCents'] is int
                 ? ((person['payRateCents'] as int) / 100).toStringAsFixed(2)
                 : ''),
+            ('Maaş bordrosu', isPayrollEligible(person) ? 'Dahil' : 'Dahil değil'),
           ];
     final values = await askFields(
       context,
       person == null ? 'Personel Ekle' : 'Personel Bilgilerini Düzenle',
       fields,
       choices: {1: ['Personel', 'Yönetici'],
-        if (person != null) 6: ['Saatlik', 'Haftalık Sabit']}, 
+        if (person != null) 6: ['Saatlik', 'Haftalık Sabit'],
+        if (person != null) 8: ['Dahil', 'Dahil değil']},
       validate: (v) {
         if (v[0].trim().isEmpty) return 'Personel adı gerekli';
         if (v[0].length > 120 ||
@@ -879,16 +977,25 @@ class StaffPanel extends StatelessWidget {
         values[1],
         person?['active'] == true || person == null,
       );
-      final employee = (state['employees'] as List).cast<Map>()
-          .firstWhere((entry) => entry['name'] == values[0].trim());
+      // By id: two people may share a name. A new person is the highest id.
+      final people = (state['employees'] as List).cast<Map>();
+      final employee = person == null
+          ? people.reduce((a, b) => (a['id'] as int) > (b['id'] as int) ? a : b)
+          : people.firstWhere((entry) => entry['id'] == person['id']);
       employee['phone'] = values.length > 2 ? values[2].trim() : '';
       employee['jobTitle'] = values.length > 3 ? values[3].trim() : '';
       employee['startDate'] = values.length > 4 ? values[4].trim() : '';
       employee['notes'] = values.length > 5 ? values[5].trim() : '';
       if (values.length > 7 && values[7].trim().isNotEmpty) {
-        final rate = double.parse(values[7].replaceAll(',', '.'));
-        saveEmployeePay(state, employee['id'] as int, values[6],
-          (rate * 100).round());
+        final rate = (double.parse(values[7].replaceAll(',', '.')) * 100).round();
+        // A changed rate starts today; earlier days keep their own rate.
+        if (rate != employee['payRateCents'] || values[6] != employee['payType']) {
+          setEmployeeRate(state, employeeId: employee['id'] as int, payType: values[6],
+              rateCents: rate, effectiveFrom: dayOf(istanbulNow(DateTime.now())), by: 'Windows');
+        }
+      }
+      if (values.length > 8) {
+        setPayrollEligible(state, employee['id'] as int, values[8] == 'Dahil');
       }
     });
   }
@@ -898,7 +1005,7 @@ class StaffPanel extends StatelessWidget {
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       panelTitle('Personel Yönetimi'),
-      info('Personel bilgileri yerel olarak saklanır. Şifreli oturum açma bulunmadığından Yetki alanı tek başına güvenlik sağlamaz.'),
+      info('Personel profilleri burada yönetilir. Giriş hesapları ve yetkiler Ayarlar › Güvenlik › Kullanıcılar bölümündedir. Maaş bordrosuna dahil olmayanlar (ör. işletme sahibi) maaş ve hatırlatmalarda yer almaz.'),
       FilledButton.icon(
         onPressed: () => change(context),
         icon: const Icon(Icons.person_add_outlined),
@@ -914,9 +1021,11 @@ class StaffPanel extends StatelessWidget {
               (person['jobTitle'] ?? '').toString(),
             if ((person['phone'] ?? '').toString().isNotEmpty)
               (person['phone'] ?? '').toString(),
-            if (person['payRateCents'] is int)
+            if (!isPayrollEligible(person)) 'Maaş bordrosuna dahil değil'
+            else if (person['payRateCents'] is int)
               (person['payType'] ?? 'Saatlik').toString() +
-                ' · ' + formatTry(person['payRateCents'] as int),
+                ' · ' + formatTry(person['payRateCents'] as int)
+            else 'Saatlik ücret henüz belirlenmedi',
           ].join(' · ')),
           trailing: Wrap(
             crossAxisAlignment: WrapCrossAlignment.center,

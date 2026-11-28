@@ -43,6 +43,7 @@
       "section": "menu",
       "sensitivity": "elevated",
       "defaults": [
+        "Personel",
         "Müdür",
         "Yönetici"
       ],
@@ -57,6 +58,8 @@
       "section": "menu",
       "sensitivity": "elevated",
       "defaults": [
+        "Personel",
+        "Müdür",
         "Yönetici"
       ],
       "clients": [
@@ -70,6 +73,7 @@
       "section": "menu",
       "sensitivity": "elevated",
       "defaults": [
+        "Personel",
         "Müdür",
         "Yönetici"
       ],
@@ -84,6 +88,8 @@
       "section": "menu",
       "sensitivity": "elevated",
       "defaults": [
+        "Personel",
+        "Müdür",
         "Yönetici"
       ],
       "clients": [
@@ -112,6 +118,8 @@
       "section": "menu",
       "sensitivity": "elevated",
       "defaults": [
+        "Personel",
+        "Müdür",
         "Yönetici"
       ],
       "clients": [
@@ -527,6 +535,20 @@
       ],
       "clients": [
         "windows",
+        "yonetici"
+      ]
+    },
+    {
+      "id": "expenses.quick_add",
+      "section": "finance",
+      "sensitivity": "normal",
+      "defaults": [
+        "Müdür",
+        "Yönetici"
+      ],
+      "clients": [
+        "windows",
+        "personel",
         "yonetici"
       ]
     },

@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
+import 'dart:math' as math;
+
 import 'brand.dart';
+import 'floor_plan.dart';
 import 'order_reporting.dart';
 import 'pos_logic.dart';
 
@@ -86,7 +89,8 @@ class TablesSummaryStrip extends StatelessWidget {
     final longest = tables.isEmpty ? null : tables.first;
     final items = [
       (Icons.table_restaurant_outlined, 'Dolu Masa',
-        '${tables.length} / 5', '${5 - tables.length} boş masa'),
+        '${tables.length} / ${floorDefaults.length}',
+        '${floorDefaults.length - tables.length} boş masa'),
       (Icons.shopping_bag_outlined, 'Açık Gel-Al', '${pickups.length}',
         pickups.isEmpty ? 'Bekleyen paket yok' : 'Hazırlanan / ödeme bekleyen'),
       (Icons.payments_outlined, 'Tahsil Edilecek', formatTry(due),
@@ -201,34 +205,44 @@ class OpenOrdersPanel extends StatelessWidget {
         children: [
           section('Açık Masalar', tables.length),
           if (tables.isEmpty) empty('Tüm masalar boş'),
-          for (final o in tables) ...[
-            _OpenOrderCard(
-              order: o,
-              title: 'Masa ${o['table']}',
-              now: now,
-              onOpen: () => onOpenTable(o['table'] as int),
-              onPrint: () => onPrintBill(o),
+          if (tables.isNotEmpty)
+            EvenGrid(
+              minTileWidth: 420,
+              spacing: 8,
+              children: [
+                for (final o in tables)
+                  _OpenOrderCard(
+                    order: o,
+                    title: 'Masa ${o['table']}',
+                    now: now,
+                    onOpen: () => onOpenTable(o['table'] as int),
+                    onPrint: () => onPrintBill(o),
+                  ),
+              ],
             ),
-            const SizedBox(height: 8),
-          ],
-          const SizedBox(height: 8),
+          const SizedBox(height: 16),
           section('Bekleyen Gel-Al', pickups.length),
           if (pickups.isEmpty) empty('Bekleyen Gel-Al siparişi yok'),
-          for (final o in pickups) ...[
-            _OpenOrderCard(
-              order: o,
-              title: () {
-                final name = o['customer'] is Map
-                    ? '${(o['customer'] as Map)['name'] ?? ''}'.trim() : '';
-                return 'Gel-Al #${displayOrderNumber(o)}'
-                    '${name.isEmpty ? '' : ' · $name'}';
-              }(),
-              now: now,
-              onOpen: () => onOpenOrder(o),
-              onPrint: () => onPrintBill(o),
+          if (pickups.isNotEmpty)
+            EvenGrid(
+              minTileWidth: 420,
+              spacing: 8,
+              children: [
+                for (final o in pickups)
+                  _OpenOrderCard(
+                    order: o,
+                    title: () {
+                      final name = o['customer'] is Map
+                          ? '${(o['customer'] as Map)['name'] ?? ''}'.trim() : '';
+                      return 'Gel-Al #${displayOrderNumber(o)}'
+                          '${name.isEmpty ? '' : ' · $name'}';
+                    }(),
+                    now: now,
+                    onOpen: () => onOpenOrder(o),
+                    onPrint: () => onPrintBill(o),
+                  ),
+              ],
             ),
-            const SizedBox(height: 8),
-          ],
         ],
       ),
     );
@@ -312,6 +326,203 @@ class _OpenOrderCard extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+
+/// The whole "Masa Planı" view: summary, layout editing bar, floor plan with
+/// the open-orders list, and the hint line. State lives in the caller.
+class MasalarBoard extends StatelessWidget {
+  const MasalarBoard({
+    super.key,
+    required this.state,
+    required this.now,
+    required this.positions,
+    required this.editing,
+    required this.onTable,
+    required this.onMove,
+    required this.onOpenOrder,
+    required this.onPrintBill,
+    required this.onResetLayout,
+    required this.onCancelLayout,
+    required this.onSaveLayout,
+    this.selectedTable,
+    this.selectedOrder,
+  });
+  final Json state;
+  final DateTime now;
+  final Map<int, Rect> positions;
+  final bool editing;
+  final int? selectedTable;
+  final Json? selectedOrder;
+  final ValueChanged<int> onTable;
+  final void Function(int table, Offset normalizedDelta) onMove;
+  final ValueChanged<Json> onOpenOrder, onPrintBill;
+  final VoidCallback onResetLayout, onCancelLayout, onSaveLayout;
+
+  @override
+  Widget build(BuildContext context) {
+    final order = selectedOrder;
+    const hintColor = Color(0xff647a67);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        TablesSummaryStrip(state: state, now: now),
+        const SizedBox(height: 14),
+        if (editing) ...[
+          Container(
+            key: const ValueKey('floor-edit-bar'),
+            padding: const EdgeInsets.fromLTRB(14, 10, 10, 10),
+            decoration: BoxDecoration(
+              color: const Color(0xffFFF7E6),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xffE9CF97)),
+            ),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.open_with, size: 18, color: Color(0xff765720)),
+                    SizedBox(width: 8),
+                    Text('Yerleşim düzenleniyor',
+                      style: TextStyle(fontWeight: FontWeight.w800,
+                        color: Color(0xff765720))),
+                  ],
+                ),
+                Wrap(spacing: 8, runSpacing: 8, children: [
+                  OutlinedButton(
+                    onPressed: onResetLayout,
+                    child: const Text('İlk Yerleşim')),
+                  OutlinedButton(
+                    onPressed: onCancelLayout,
+                    child: const Text('Vazgeç')),
+                  FilledButton(
+                    onPressed: onSaveLayout,
+                    child: const Text('Düzeni Kaydet')),
+                ]),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+        LayoutBuilder(builder: (context, box) {
+          final plan = RestaurantFloorPlan(
+            state: state,
+            now: now,
+            positions: positions,
+            editing: editing,
+            selected: selectedTable,
+            onTable: onTable,
+            onMove: onMove,
+          );
+          if (editing) {
+            if (box.maxWidth < 1150) return plan;
+            // Same plan size as normal use (tables do not jump, the plan does
+            // not grow past the window); the side shows the editing rules.
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(flex: 3, child: plan),
+                const SizedBox(width: 12),
+                SizedBox(
+                  width: math.min(420, box.maxWidth * 0.34),
+                  child: const _LayoutRules(),
+                ),
+              ],
+            );
+          }
+          final panel = OpenOrdersPanel(
+            state: state,
+            now: now,
+            onOpenTable: onTable,
+            onOpenOrder: onOpenOrder,
+            onPrintBill: onPrintBill,
+          );
+          if (box.maxWidth < 1150) {
+            // Too narrow for side by side: keep the list, below the plan.
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [plan, const SizedBox(height: 12), panel],
+            );
+          }
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(flex: 3, child: plan),
+              const SizedBox(width: 12),
+              SizedBox(width: math.min(420, box.maxWidth * 0.34), child: panel),
+            ],
+          );
+        }),
+        const SizedBox(height: 17),
+        if (order != null && order['source'] == 'Masa')
+          Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton(
+              onPressed: () => onOpenOrder(order),
+              child: Text('Masa ${order['table']} · Hesabı Aç'),
+            ),
+          ),
+        if (order == null)
+          Row(
+            children: [
+              const Icon(Icons.info_outline, size: 16, color: hintColor),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  editing
+                      ? 'Masaları sürükleyin. Numaralar, hesaplar ve 5 masa değişmez.'
+                      : 'Boş masaya tıklayın: yeni sipariş. Dolu masaya tıklayın: hesap, ek sipariş ve ödeme.',
+                  style: const TextStyle(color: hintColor, fontSize: 12.5),
+                ),
+              ),
+            ],
+          ),
+      ],
+    );
+  }
+}
+
+class _LayoutRules extends StatelessWidget {
+  const _LayoutRules();
+
+  @override
+  Widget build(BuildContext context) {
+    Widget rule(IconData icon, String text) => Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Icon(icon, size: 18, color: NohutBrand.green),
+        const SizedBox(width: 10),
+        Expanded(child: Text(text, style: const TextStyle(fontSize: 13))),
+      ]),
+    );
+    return Container(
+      key: const ValueKey('floor-edit-rules'),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xffF4F6F2),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Yerleşim Kuralları', style: TextStyle(
+            fontSize: 15, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 12),
+          rule(Icons.open_with, 'Masayı tutup sürükleyin.'),
+          rule(Icons.block, 'Masalar birbirine değemez; kapı önü boş kalır.'),
+          rule(Icons.receipt_long_outlined,
+            'Masa numaraları ve açık hesaplar değişmez.'),
+          rule(Icons.save_outlined,
+            'Düzeni Kaydet ile kalıcı olur; Vazgeç eski yerleşime döner.'),
+        ],
       ),
     );
   }

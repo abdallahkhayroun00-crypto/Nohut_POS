@@ -184,15 +184,15 @@ void main() {
       s['nextId'] = 1201;
       recordPayment(o, 20000, 'Kart');
       expect(
-        () => editLocalLine(o, '1:0', 1, '', [], 'Ömer'),
+        () => editLocalLine(o, '1:0', 1, '', [], 'Test Yönetici'),
         throwsFormatException,
       );
       expect(o['batches'][0]['lines'][0]['qty'], 2);
       newLocalOrder(state: s, source: 'Masa', table: 2, productLines: [row()]);
-      expect(() => moveLocalTable(s, o, 2, 'Ömer'), throwsFormatException);
+      expect(() => moveLocalTable(s, o, 2, 'Test Yönetici'), throwsFormatException);
       expect(o['table'], 1);
       refundPayment(o, 0, 20000, 'Ürün değişti');
-      editLocalLine(o, '1:0', 0, 'İptal', [], 'Ömer');
+      editLocalLine(o, '1:0', 0, 'İptal', [], 'Test Yönetici');
       expect(orderTotalCents(o), 0);
       expect(o['lineEdits'], hasLength(1));
     },

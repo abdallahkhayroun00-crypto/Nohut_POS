@@ -56,13 +56,20 @@ void main() {
         theme: NohutStyle.theme,
         home: StaffHome(controller: controller, onUnpair: () {}),
       ));
+      expect(find.text('Hoş geldiniz'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      final nav = find.byWidgetPredicate((w) => w is NavigationBar || w is NavigationRail);
+      await tester.tap(find.descendant(of: nav, matching: find.byIcon(Icons.table_restaurant_outlined)));
+      await tester.pumpAndSettle();
       expect(find.text('Masa 1'), findsOneWidget);
       expect(tester.takeException(), isNull);
-      await tester.tap(find.byIcon(Icons.restaurant_menu).first);
+      await tester.ensureVisible(find.text('Masa 1'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Masa 1')); // a free table opens Ürünler
       await tester.pumpAndSettle();
       expect(find.text('Falafel Dürüm'), findsOneWidget);
       expect(tester.takeException(), isNull);
-      await tester.tap(find.byIcon(Icons.shopping_cart_outlined).first);
+      await tester.tap(find.descendant(of: nav, matching: find.byIcon(Icons.shopping_cart_outlined)));
       await tester.pumpAndSettle();
       expect(find.text('Sipariş Sepeti'), findsOneWidget);
       expect(tester.takeException(), isNull);

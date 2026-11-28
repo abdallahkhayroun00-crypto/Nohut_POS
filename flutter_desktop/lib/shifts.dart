@@ -14,6 +14,7 @@ library;
 
 import 'pos_logic.dart';
 import 'pos_store.dart';
+import 'workforce.dart' show bumpVersion;
 
 List<Json> shiftsOf(Json state) => asMaps(state['shifts']);
 
@@ -96,19 +97,32 @@ Json correctShift(PosStore store, Json payload) {
     if (end == null && other != null && other['id'] != shift['id']) {
       throw const FormatException('Bu personelin başka açık mesaisi var');
     }
-    final before = {'start': shift['start'], 'end': shift['end']};
+    // Manual Mesai rows carry a break; a correction keeps it unchanged and
+    // records it in both audit snapshots (Codex #39 contract). A corrected
+    // closed interval must stay longer than that break.
+    final breakMinutes = shift['breakMinutes'];
+    if (breakMinutes is int && end != null && end.difference(start).inMinutes <= breakMinutes) {
+      throw const FormatException('Çalışma süresi moladan uzun olmalı');
+    }
+    Json snapshot() => {'start': shift['start'], 'end': shift['end'],
+      if (breakMinutes is int) 'breakMinutes': breakMinutes};
+    final before = snapshot();
     shift['start'] = start.toUtc().toIso8601String();
     if (end == null) {
       shift.remove('end');
     } else {
       shift['end'] = end.toUtc().toIso8601String();
     }
+    // Manual Mesai rows carry a version: bump it so an employee's form opened
+    // before this correction cannot overwrite it (Codex #39). Legacy clock
+    // records without a version stay as they were.
+    if (shift.containsKey('updatedAt')) shift['updatedAt'] = bumpVersion(shift['updatedAt'], DateTime.now());
     ((shift['corrections'] ??= <dynamic>[]) as List).add({
       'at': DateTime.now().toUtc().toIso8601String(),
       'byId': by['id'],
       'by': by['name'],
       'before': before,
-      'after': {'start': shift['start'], 'end': shift['end']},
+      'after': snapshot(),
       'reason': reason,
     });
     return {'ok': true, 'shiftId': shift['id']};

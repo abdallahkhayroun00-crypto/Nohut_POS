@@ -108,8 +108,9 @@ Future<void> enter(WidgetTester t, String label, String value) async {
   );
 }
 
-Future<void> choice(WidgetTester t, String value) async {
-  await t.tap(find.byType(DropdownButtonFormField<String>).last);
+Future<void> choice(WidgetTester t, String value, {int? at}) async {
+  final dropdowns = find.byType(DropdownButtonFormField<String>);
+  await t.tap(at == null ? dropdowns.last : dropdowns.at(at));
   await t.pumpAndSettle();
   await t.tap(find.text(value).last);
   await t.pumpAndSettle();
@@ -174,8 +175,12 @@ void main() {
       );
       await tap(t, 'Fatma');
       await enter(t, 'Ad', 'Fatma Yeni');
-      await choice(t, 'Personel');
+      await choice(t, 'Personel', at: 0);
+      // Payroll eligibility is an explicit, separate decision.
+      await choice(t, 'Dahil değil');
       await tap(t, 'Kaydet');
+      expect(asMaps(key.currentState!.data['employees']).last['payrollEligible'], false);
+      expect(asMaps(key.currentState!.data['employees']).last['role'], 'Personel');
       final id = asMaps(key.currentState!.data['employees']).last['id'];
       await t.ensureVisible(find.byType(Switch).last);
       await t.tap(find.byType(Switch).last);

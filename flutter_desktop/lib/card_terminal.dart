@@ -111,6 +111,10 @@ class InposPayments {
         transactionId: attempt['transactionId'] as String?,
         amountCents: attempt['amountCents'] as int,
       );
+    // Declined and cancelled are final too: a later unanswered inquiry must
+    // not turn them back into "unknown" (that would block the order).
+    if (attempt['status'] == 'declined') return const TerminalReply(TerminalStatus.declined);
+    if (attempt['status'] == 'cancelled') return const TerminalReply(TerminalStatus.cancelled);
     final o = mutableOrder(s, attempt['orderId'] as int);
     // Never apply a terminal outcome to a missing order (deleteOrder refuses
     // unresolved attempts; this keeps an old database fail-closed too).

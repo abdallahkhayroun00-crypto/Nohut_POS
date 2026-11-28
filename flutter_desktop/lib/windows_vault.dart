@@ -74,9 +74,60 @@ Uint8List _protectForCurrentUser(List<int> data, {required bool decrypt}) {
   }
 }
 
-class WindowsVault {
+/// A small secret record bound to one protection scope (on Windows: the
+/// current user's DPAPI). Synchronous so a staged restore can use it before
+/// the database opens. Tests inject a fake that simulates another profile.
+abstract class SecretRecordVault {
+  bool get exists;
+  /// Throws when the record exists but cannot be unwrapped here (e.g. a
+  /// DPAPI file made by another Windows user or PC).
+  Map<String, dynamic>? read();
+  void write(Map<String, dynamic> fields);
+  /// Moves an unreadable record aside (never deletes it). Returns the path.
+  String? setAside(String suffix);
+}
+
+class WindowsVault implements SecretRecordVault {
   const WindowsVault(this.file);
   final File file;
+
+  @override
+  bool get exists => file.existsSync();
+
+  @override
+  Map<String, dynamic>? read() {
+    if (!file.existsSync()) return null;
+    final ciphertext = base64Decode(file.readAsStringSync().trim());
+    final clear = _protectForCurrentUser(ciphertext, decrypt: true);
+    try {
+      return (jsonDecode(utf8.decode(clear)) as Map).cast<String, dynamic>();
+    } finally {
+      clear.fillRange(0, clear.length, 0);
+    }
+  }
+
+  @override
+  void write(Map<String, dynamic> fields) {
+    final clear = utf8.encode(jsonEncode(fields));
+    final String encrypted;
+    try {
+      encrypted = base64Encode(_protectForCurrentUser(clear, decrypt: false));
+    } finally {
+      clear.fillRange(0, clear.length, 0);
+    }
+    file.parent.createSync(recursive: true);
+    final pending = File('${file.path}.part');
+    pending.writeAsStringSync(encrypted, flush: true);
+    pending.renameSync(file.path);
+  }
+
+  @override
+  String? setAside(String suffix) {
+    if (!file.existsSync()) return null;
+    final target = '${file.path}.$suffix';
+    file.renameSync(target);
+    return target;
+  }
 
   Future<Map<String, dynamic>?> load() async {
     if (!await file.exists()) return null;

@@ -27,6 +27,7 @@ declare
   r text;
   actor jsonb;
   ok boolean;
+  weak text;
 begin
   -- Owner administration requires MFA (aal2).
   begin
@@ -122,20 +123,25 @@ begin
     raise exception 'bad actor: %', actor;
   end if;
 
-  -- PIN: weak refused, verify, 5 wrong → locked and cleared.
-  begin
-    perform nohut_private.set_pin(staff, dev, sess, '123456');
-    raise exception 'weak pin accepted';
-  exception when invalid_parameter_value then null;
-  end;
-  perform nohut_private.set_pin(staff, dev, sess, '480317');
-  if (select pin_verifier from nohut_private.devices where device_id = dev) like '%480317%' then raise exception 'plain pin stored'; end if;
-  if nohut_private.verify_pin(staff, dev, '480317') <> 'ok' then raise exception 'pin rejected'; end if;
+  -- PIN (5 digits): weak and wrong-length refused, verify, 5 wrong → locked and cleared.
+  foreach weak in array array['12345', '54321', '77777', '13579', '480317', '4803'] loop
+    begin
+      perform nohut_private.set_pin(staff, dev, sess, weak);
+      raise exception 'weak or wrong-length pin accepted: %', weak;
+    exception when invalid_parameter_value then null;
+    end;
+  end loop;
+  -- A verifier from the old 6-digit rule still unlocks.
+  update nohut_private.devices set pin_verifier = extensions.crypt('480317', extensions.gen_salt('bf', 4)) where device_id = dev;
+  if nohut_private.verify_pin(staff, dev, '480317') <> 'ok' then raise exception 'legacy 6-digit pin rejected'; end if;
+  perform nohut_private.set_pin(staff, dev, sess, '48031');
+  if (select pin_verifier from nohut_private.devices where device_id = dev) like '%48031%' then raise exception 'plain pin stored'; end if;
+  if nohut_private.verify_pin(staff, dev, '48031') <> 'ok' then raise exception 'pin rejected'; end if;
   for i in 1..4 loop
     if nohut_private.verify_pin(staff, dev, '000001') <> 'wrong' then raise exception 'wrong pin not counted'; end if;
   end loop;
   if nohut_private.verify_pin(staff, dev, '000001') <> 'locked' then raise exception 'no lock after 5'; end if;
-  if nohut_private.verify_pin(staff, dev, '480317') <> 'no_pin' then raise exception 'pin still usable after lock'; end if;
+  if nohut_private.verify_pin(staff, dev, '48031') <> 'no_pin' then raise exception 'pin still usable after lock'; end if;
 
   -- Revoke all sessions: immediate refusal.
   perform nohut_private.admin_revoke_sessions(owner, 'aal2', staff, false);

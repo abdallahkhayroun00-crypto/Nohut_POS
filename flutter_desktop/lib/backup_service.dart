@@ -19,6 +19,8 @@ import 'package:crypto/crypto.dart' as hash;
 import 'package:path/path.dart' as paths;
 
 import 'backup_container.dart';
+import 'integration_secrets.dart';
+import 'trendyol_go_readonly.dart';
 import 'pos_store.dart';
 import 'windows_vault.dart';
 
@@ -96,8 +98,18 @@ class BackupService {
     BackupContainer? container,
     this.appVersion = 'unknown',
     DateTime Function()? clock,
+    SecretRecordVault? trendyolVault,
   }) : container = container ?? BackupContainer(),
-       _clock = clock ?? (() => DateTime.now().toUtc());
+       _clock = clock ?? (() => DateTime.now().toUtc()),
+       _trendyolVault = trendyolVault;
+
+  final SecretRecordVault? _trendyolVault;
+  /// This PC's Trendyol vault; its credentials go into owner backups
+  /// encrypted with the Recovery Key (`integration_secrets.dart`).
+  SecretRecordVault get trendyolVault => _trendyolVault ??
+      WindowsVault(TgoWindowsVault.defaultFile(store.filePath));
+  /// What the last successful backup included (shown in Yedekleme).
+  IntegrationCapture? lastTrendyolCapture;
 
   final PosStore store;
   final RecoveryKeyStore keyStore;
@@ -171,8 +183,11 @@ class BackupService {
             'Kurtarma anahtarı bu bilgisayarda yok. Önce anahtarı oluşturun '
             'veya girin.');
       }
+      final captured = captureIntegrationSecrets(trendyolVault);
       final result = await container.create(store, Directory(folder),
-          recoveryKey: key, appVersion: appVersion);
+          recoveryKey: key, appVersion: appVersion,
+          integrations: captured.payload);
+      lastTrendyolCapture = captured.trendyol;
       File? mirror;
       String? mirrorError;
       final target = mirrorFolder;
@@ -211,7 +226,8 @@ class BackupService {
       });
       return BackupRunResult(
         ok: true,
-        message: mirrorError ?? 'Yedek oluşturuldu ve doğrulandı.',
+        message: '${mirrorError ?? 'Yedek oluşturuldu ve doğrulandı.'} '
+            '${integrationCaptureText(captured.trendyol)}',
         file: result.file,
         mirrorFile: mirror,
         manifest: result.manifest,

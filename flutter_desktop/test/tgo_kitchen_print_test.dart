@@ -153,4 +153,26 @@ void main() {
     expect(tgoKitchenTiming(null), 'accepted');
     expect(tgoKitchenTiming({'tgoKitchenTiming': 'arrival'}), 'accepted');
   });
+
+  test('a write during printing cannot leave the outcome unrecorded (QA-13)', () {
+    final dir = Directory.systemTemp.createTempSync('nohut-qa13');
+    final store = PosStore(databaseFile: '${dir.path}/db');
+    addTearDown(() { store.dispose(); dir.deleteSync(recursive: true); });
+    final printer = ReceiptPrinter(store, transport: (_, _) async {});
+    var calls = 0;
+    final ok = printer.commitAfterPrint((next) {
+      calls++;
+      if (calls == 1) {
+        // A phone order lands between the read and the write.
+        final s = store.read();
+        store.replace({...s.data, 'settings': {...(s.data['settings'] as Map? ?? {}), 'printerName': 'XP-237B'}}, s.revision);
+      }
+      ((next['settings'] ??= <String, dynamic>{}) as Map)['autoPrint'] = true;
+    });
+    expect(ok, true);
+    expect(calls, 2);
+    final data = store.read().data;
+    expect((data['settings'] as Map)['autoPrint'], true);
+    expect((data['settings'] as Map)['printerName'], 'XP-237B', reason: 'the concurrent write is preserved');
+  });
 }
