@@ -83,6 +83,18 @@ EVIDENCE:
 
 **Blockers / owner actions:** live Trendyol read-only check needs explicit owner authorization (R1); physical iPhone HTTPS/Safari test (L4); any FCM project needs owner approval (N4); KVKK gate unchanged.
 
+## Antigravity (Gemini) Backend — Increment D Clean Resync & Canonical JSON Contract (2026-11-28)
+
+- **Branch / PR:** `gemini/backend-continuation` (**PR #46** draft targeting `chatgpt/pr-05b-cloud-rpcs`).
+- **Status:** `Implemented / Tested` (NOT self-verified; independent re-review requested from ChatGPT & Claude).
+- **Resolves Claude #7235779939 (1 blocking + 2 medium + 1 note) via `supabase/migrations/20261127174000_nohut_initial_sync_clean_resync.sql`:**
+  1. **Blocking #1 (Canonical JSON for snapshot payloads):** Confirmed strict **integer-only canonical JSON** (`nohut_private.canonical_command_json`: safe integers in `[-9007199254740991, 9007199254740991]`, no floats/exponents, UTF-8 byte-ordered object keys, no whitespace, Postgres string escaping, no keys > `U+FFFF`) documented in `docs/contracts/v1/initial-sync-and-recovery.md`.
+  2. **Medium #1 (Clean projection replacement on resync):** Added private `nohut_private.clear_restaurant_projections(uuid)` invoked inside `nohut_agent_activate_initial_sync` before promoting staged batches (within the same transaction) so rows deleted locally on Windows are cleanly removed instead of surviving as ghosts after a second full sync.
+  3. **Medium #2 (`statement_timeout` on activation):** `nohut_agent_activate_initial_sync` now sets `set local statement_timeout = '120s'` deterministically for large staged promotions.
+  4. **Note (Orphaned staged batches on epoch rotation):** `nohut_owner_rotate_authority_epoch` now purges any orphaned `migration_staged_batches` and marks incomplete old-epoch `sync_migrations` as `'safely_aborted'` (`abort_reason = 'epoch_rotated'`).
+- **Validation (synthetic data only):**
+  - Local Docker Postgres 16: **61/61 migrations & 32/32 SQL test suites** (including Epoch 1 → Epoch 3 clean replacement and orphaned staged-batch purge tests) executed under both `postgres` superuser and `cloud_migrator` (`NOSUPERUSER NOBYPASSRLS`).
+
 ## Antigravity (Gemini) Backend — Increment D Hardening: Claude #7231808318 Blockers Fixed (2026-11-28)
 
 - **Branch / PR:** `gemini/backend-continuation` (**PR #46** draft targeting `chatgpt/pr-05b-cloud-rpcs`).

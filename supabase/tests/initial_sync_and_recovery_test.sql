@@ -205,18 +205,45 @@ begin
   exception when insufficient_privilege then null;
   end;
 
-  -- New agent on ep2 can begin a clean second full sync!
+  -- New agent on ep2 can begin a clean second full sync; activating an empty snapshot cleanly REPLACES Epoch 1 data!
   insert into nohut_private.windows_agents(
     agent_id, restaurant_id, authority_epoch, windows_device_id, token_sha256, expires_at
   ) values (
     gen_random_uuid(), r1, ep2, d_win,
     sha256(convert_to(agent_token2, 'UTF8')), clock_timestamp() + interval '1 day'
   );
-  res := public.nohut_agent_begin_initial_sync(agent_token2, mig2, 200, 100, manifest_empty, true);
+  -- Also test Medium #3: stage an orphan batch on ep2, then rotate to ep3 and verify it is purged & safely_aborted
+  res := public.nohut_agent_begin_initial_sync(agent_token2, mig2, 200, 100, manifest1, true);
   if res->>'status' <> 'accepted' then raise exception 'second full sync begin failed: %', res; end if;
-  res := public.nohut_agent_activate_initial_sync(agent_token2, mig2, 0, manifest_empty);
+  res := public.nohut_agent_upload_snapshot_batch(agent_token2, mig2, b1, 'employees', 1, hash1, ev1);
+  if res->>'status' <> 'accepted' then raise exception 'ep2 staged batch failed: %', res; end if;
+
+  -- Rotate ep2 -> ep3: mig2 must become safely_aborted (abort_reason='epoch_rotated') and staged batch purged!
+  res := public.nohut_owner_rotate_authority_epoch(d_win, 1, 'rotate with uploading migration');
+  if (res->>'aborted_migrations')::integer <> 1 or (res->>'purged_staged_batches')::integer <> 1 then
+    raise exception 'rotation did not purge orphan staged migration: %', res;
+  end if;
+  select count(*) into staged_left from nohut_private.migration_staged_batches where migration_id = mig2;
+  if staged_left <> 0 then raise exception 'orphan staged batch survived rotation'; end if;
+
+  -- Provision agent on ep3 and activate an empty snapshot -> Epoch 1 QR menu MUST be cleared (Medium #2)!
+  ep2 := (res->>'new_authority_epoch')::uuid;
+  insert into nohut_private.windows_agents(
+    agent_id, restaurant_id, authority_epoch, windows_device_id, token_sha256, expires_at
+  ) values (
+    gen_random_uuid(), r1, ep2, d_win,
+    sha256(convert_to(repeat('7', 64), 'UTF8')), clock_timestamp() + interval '1 day'
+  );
+  res := public.nohut_agent_begin_initial_sync(repeat('7', 64), gen_random_uuid(), 300, 150, manifest_empty, true);
+  if res->>'status' <> 'accepted' then raise exception 'ep3 begin failed: %', res; end if;
+  res := public.nohut_agent_activate_initial_sync(repeat('7', 64), (res->>'migration_id')::uuid, 0, manifest_empty);
   if res->>'status' <> 'accepted' or res->>'migration_status' <> 'active' then
-    raise exception 'second full sync activate failed: %', res;
+    raise exception 'ep3 activate failed: %', res;
+  end if;
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', u_owner, 'session_id', s_phone, 'role', 'authenticated')::text, true);
+  res := public.nohut_qr_menu_view(d_phone, 'yonetici', 1);
+  if (res->>'available')::boolean <> false then
+    raise exception 'Epoch 1 QR menu survived clean Epoch 3 replacement: %', res;
   end if;
 end $$;
 
