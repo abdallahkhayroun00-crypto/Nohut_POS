@@ -483,11 +483,7 @@ class _StaffHomeState extends State<StaffHome> {
       return text.contains(query.toLowerCase()) &&
           (category == 'Tümü' || group == category);
     }).toList();
-    final categories = {
-      'Tümü',
-      for (final p in c.products)
-        '${p['category'] ?? p['group'] ?? 'Diğer'}',
-    }.toList();
+    final categories = ['Tümü', ...menuCategoriesOf(c.products)];
     final columns = width >= 1100 ? 4 : width >= 750 ? 3 :
         width >= 480 ? 2 : 1;
     return ListView(children: [
@@ -524,7 +520,7 @@ class _StaffHomeState extends State<StaffHome> {
             children: [for (final group in categories)
               Padding(padding: const EdgeInsets.only(right: 6),
                 child: ChoiceChip(
-                  label: Text(group),
+                  label: Text(menuCategoryLabel(group)),
                   selected: group == category,
                   onSelected: (_) => setState(() => category = group))),
             ],
@@ -711,9 +707,15 @@ class _StaffHomeState extends State<StaffHome> {
         const Card(child: NohutEmpty(icon: Icons.receipt_long_outlined, message: 'Açık sipariş yok.')),
       for (final order in c.orders)
         Card(margin: const EdgeInsets.only(bottom: 8), child: ListTile(
+          leading: Icon(order['source'] == 'Masa'
+              ? Icons.table_restaurant_outlined : Icons.takeout_dining_outlined),
           title: Text(orderLabel(order),
             style: const TextStyle(fontWeight: FontWeight.w800)),
-          subtitle: Text('${money(orderTotal(order))} · ${order['serviceStatus'] ?? 'Açık'}'),
+          subtitle: Text([
+            money(orderTotal(order)),
+            '${orderLines(order).fold<int>(0, (n, l) => n + ((l['qty'] as num?)?.toInt() ?? 0))} ürün',
+            '${order['serviceStatus'] ?? 'Açık'}',
+          ].join(' · ')),
           trailing: const Icon(Icons.chevron_right),
           onTap: () => _showOrder(order),
         )),

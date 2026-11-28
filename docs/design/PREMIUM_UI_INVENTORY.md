@@ -61,7 +61,7 @@ The Functional column records test coverage.
 |---|---|---|---|---|
 | Pairing, login, PIN, unlock | `pair_page.dart`, `home.dart` | ⬜ | ✓ | |
 | Ana Sayfa | `personel_dashboard.dart` | ✅ A "Özet kartı" (owner 2026-11-27) | 10 render + suite ✓ | Antigravity accessibility audit pending |
-| Masalar, Sipariş/Ürünler, Sepet, Siparişler | `home.dart` | ⬜ | ✓ | |
+| Masalar, Sipariş/Ürünler, Sepet, Siparişler | `home.dart` | 🔄 first pass | `order_tabs_render_test` (13: phone, dark, 320 px at 1.3×) ✓ | Fixed: product categories showed raw Windows keys (`wrap`, `plate`, `drink`); now Dürümler / Porsiyonlar / İçecekler in Windows order (`menuCategoryLabels`). Siparişler rows gain source icon and item count. Renders: `screens/personel/orders/`. Next: table tile status word, cart polish |
 | Mesai ve Maaşım (Mesai, Vardiya, Maaş) | `work_page.dart` | 🔄 | ✓ | |
 | Menü Yönetimi | `menu_admin_page.dart` | 🔄 | 8 ✓ | Full parity incl. publish (ea4b42b) |
 | Daha Fazla, Gider taslakları, Ayarlar | `home.dart`, `expense_drafts.dart` | ⬜ | ✓ | |
