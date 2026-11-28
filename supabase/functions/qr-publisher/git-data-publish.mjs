@@ -1,5 +1,5 @@
 // Isolated Git Data adapter. Requires trusted transport, decoder, durable receipt and fresh authorization hooks; no endpoint.
-export function makePublishAdapter({request,validateCatalog,decodeBase64}){
+export function makePublishAdapter({request,validateCatalog,decodeBase64,prepareAssets}){
  if([request,validateCatalog,decodeBase64].some(x=>typeof x!=="function"))throw Error("missing_dependency");
  const root="/repos/nohutfalafel/qr-menu",managed="cms/pos-managed-menu.json",marker="cms/pos-managed-status.json";
  const sha=x=>typeof x==="string"&&/^[0-9a-f]{40}$/.test(x);
@@ -40,6 +40,23 @@ export function makePublishAdapter({request,validateCatalog,decodeBase64}){
   if(status.value.enabled&&JSON.stringify(canonical(catalog))===JSON.stringify(canonical(old.value)))return {status:"no_change",requestId,revision:old.sha,head:parent};
   const entries=[{path:managed,mode:"100644",type:"blob",content}];
   if(!status.value.enabled)entries.push({path:marker,mode:"100644",type:"blob",content:'{"schemaVersion":1,"enabled":true}\n'});
+  // Asset publication remains unavailable in the runtime until the private
+  // pinned storage/decoder/transport contract is reviewed and wired.
+  const oldProducts=new Map(old.value.products.map(p=>[p.id,p.image]));
+  const oldCampaigns=new Map(old.value.campaigns.map(c=>[c.id,c]));
+  const changedAssets=catalog.products.some(p=>p.image!=null&&p.image!==oldProducts.get(p.id))||
+   catalog.campaigns.some(c=>["poster","thumbnail"].some(k=>c[k]!=null&&c[k]!==oldCampaigns.get(c.id)?.[k]));
+  if(changedAssets&&typeof prepareAssets!=="function")throw Error("asset_publication_disabled");
+  if(changedAssets){
+   const assets=await prepareAssets({requestId,previous:old.value,catalog,parentTree:baseTree});
+   if(!Array.isArray(assets)||assets.length>4)throw Error("invalid_asset_entries");
+   const allowed=new Set(catalog.products.filter(p=>p.image!==oldProducts.get(p.id)).map(p=>p.image));
+   const seen=new Set();
+   for(const e of assets){
+    if(!e||!allowed.has(e.path)||seen.has(e.path)||!/^assets\/products\/pos-[a-f0-9]{64}\.(png|jpg|webp)$/.test(e.path)||e.mode!=="100644"||e.type!=="blob"||!sha(e.sha))throw Error("invalid_asset_entry");
+    seen.add(e.path);entries.push({path:e.path,mode:e.mode,type:e.type,sha:e.sha});
+   }
+  }
   await assertAuthorized();
   const tree=await call("POST","/git/trees",{base_tree:baseTree,tree:entries});
   const treeSha=checked(tree.sha);
@@ -50,6 +67,16 @@ export function makePublishAdapter({request,validateCatalog,decodeBase64}){
    revision=t.tree?.find(x=>x.path===managed&&x.type==="blob")?.sha;
   }
   checked(revision);
+  if(entries.some(e=>e.sha)){
+   const full=await call("GET","/git/trees/"+treeSha+"?recursive=1");
+   if(full.sha!==treeSha||full.truncated!==false||!Array.isArray(full.tree))throw Error("unverifiable_asset_tree");
+   for(const e of entries.filter(e=>e.sha)){
+    const matches=full.tree.filter(x=>x.path===e.path);
+    if(matches.length!==1||matches[0].sha!==e.sha||matches[0].type!=="blob"||matches[0].mode!=="100644")throw Error("asset_tree_mismatch");
+   }
+   const menu=full.tree.filter(x=>x.path===managed);
+   if(menu.length!==1||menu[0].sha!==revision||menu[0].type!=="blob")throw Error("catalog_tree_mismatch");
+  }
   const message="cms: Nohut POS QR publication "+requestId;
   const c=await call("POST","/git/commits",{message,tree:treeSha,parents:[parent]});
   const prepared={requestId,parent,commit:checked(c.sha),tree:treeSha,revision,expectedRevision};
