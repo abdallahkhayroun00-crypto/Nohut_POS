@@ -65,6 +65,7 @@ class FakePublisher extends QrPublisherClient {
     remote = copyJson(menu);
     this.revision = 'sha-p$publishes';
     if (mode == 'lostAfterWrite') throw const QrPublisherNoAnswer('Yayınlama hizmeti bağlantıyı kesti.');
+    if (mode == 'serverErrorAfterWrite') throw const QrPublisherRefused('GitHub HTTP 502', 502);
     return {'published': true, 'revision': this.revision, 'commit': 'c0ffee1234567'};
   }
 }
@@ -426,6 +427,21 @@ void main() {
     expect(find.textContaining('doğrulandı'), findsOneWidget);
     expect(f.publishes, 1);
     expect(host.currentState!.data['qrPublisherDraft'], isNull);
+  });
+
+  testWidgets('a 5xx after GitHub wrote it is unknown, not a refusal: no second publish', (t) async {
+    final f = FakePublisher();
+    final host = await mount(t, f);
+    await setPrice(t, 1, '150');
+    f.failNext = 'serverErrorAfterWrite';
+    await publishNow(t);
+    expect(state(t), 'Sonuç bilinmiyor');
+    final pending = host.currentState!.data['qrPublisherPendingPublish'] as Map;
+    expect(pending['transport'], 'local');
+    expect(pending['draftSha256'], hasLength(64));
+    await tapKey(t, 'qr-primary');
+    expect(state(t), 'Yayındakiyle aynı');
+    expect(f.publishes, 1);
   });
 
   testWidgets('every control: tabs, search, filter, drawer, preview, setup, discard; small window and dark', (t) async {

@@ -16,6 +16,7 @@ import 'qr_menu_draft.dart';
 import 'qr_menu_reader.dart';
 import 'qr_menu_sync.dart';
 import 'qr_image_crops.dart';
+import 'qr_publish_transport.dart';
 import 'qr_publisher_client.dart';
 import 'qr_publisher_service.dart';
 
@@ -668,28 +669,30 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
     final sent=revision!,body=copyJson(menu!),count=changes.length;
     setState(()=>publishing=true);
     _persist();
-    _setPending({'revision':sent,'at':now().toUtc().toIso8601String(),'changes':count});
+    final request=QrPublishRequest(draft:body,expectedRevision:sent);
+    _setPending({'revision':sent,'at':now().toUtc().toIso8601String(),'changes':count,
+      'transport':'local','draftSha256':request.draftSha256});
     var rebase=false;
     try{
-      final answer=await publisher.publish(endpoint,sent,body);
-      final rev=answer['revision']?.toString()??'';
-      if(answer['published']!=true||rev.isEmpty)
-        throw const QrPublisherNoAnswer('Yayın yanıtı eksik.');
-      revision=rev;sourceSnapshot=copyJson(body);verifiedAt=now();
-      _setPending(null);
-      _persist();
-      final commit=(answer['commit']??'').toString();
-      say('Yayınlandı: $count değişiklik GitHub’a yazıldı'
-        '${commit.isEmpty?'':' (commit ${commit.length>7?commit.substring(0,7):commit})'}. '
-        'Müşteri menüsü GitHub Pages dağıtımından sonra (genellikle 1–2 dakika) güncellenir.');
-    }on QrPublisherNoAnswer catch(e){
-      say('Yayın sonucu bilinmiyor: ${e.message} Yeniden göndermeden önce '
-        '“Sonucu Doğrula” ile GitHub’ı kontrol edin.',error:true);
-    }on FormatException catch(e){
-      // Refused before anything was written.
-      _setPending(null);
-      rebase=e is QrPublisherRefused&&e.statusCode==409&&e.message.contains('değişti');
-      say('Yayın reddedildi, web menüsü değişmedi: ${e.message}',error:true);
+      // Only a validated answer is success; a 5xx or a lost answer may have
+      // written, so it stays pending until “Sonucu Doğrula”.
+      final out=await LocalQrPublishTransport(publisher,endpoint).publish(request);
+      if(out.wrote){
+        revision=out.revision;sourceSnapshot=copyJson(body);verifiedAt=now();
+        _setPending(null);
+        _persist();
+        final commit=out.commit??'';
+        say('Yayınlandı: $count değişiklik GitHub’a yazıldı'
+          '${commit.isEmpty?'':' (commit ${commit.length>7?commit.substring(0,7):commit})'}. '
+          'Müşteri menüsü GitHub Pages dağıtımından sonra (genellikle 1–2 dakika) güncellenir.');
+      }else if(out.status==QrPublishStatus.conflict||out.status==QrPublishStatus.refused){
+        _setPending(null);
+        rebase=out.status==QrPublishStatus.conflict&&(out.reason??'').contains('değişti');
+        say('Yayın reddedildi, web menüsü değişmedi: ${out.reason}',error:true);
+      }else{
+        say('Yayın sonucu bilinmiyor: ${out.reason??''} Yeniden göndermeden önce '
+          '“Sonucu Doğrula” ile GitHub’ı kontrol edin.',error:true);
+      }
     }catch(e){
       say('Yayın sonucu bilinmiyor ($e). Yeniden göndermeden önce '
         '“Sonucu Doğrula” ile GitHub’ı kontrol edin.',error:true);

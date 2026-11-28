@@ -15,6 +15,7 @@ import 'package:crypto/crypto.dart';
 import 'pos_logic.dart';
 import 'pos_store.dart';
 import 'qr_menu_draft.dart';
+import 'qr_publish_transport.dart';
 import 'qr_publisher_client.dart';
 
 const qrMenuAuditKey = 'qrMenuAudit';
@@ -335,29 +336,32 @@ class QrMenuRemoteService {
       if (problem != null) throw FormatException(problem);
       // Record the attempt before sending: a lost answer is reconciled, never retried blindly.
       _write((s) {
-        s[_pendingKey] = {'revision': revision, 'at': _clock().toUtc().toIso8601String(), 'changes': changes.length};
+        s[_pendingKey] = {'revision': revision, 'at': _clock().toUtc().toIso8601String(), 'changes': changes.length,
+          'transport': 'local', 'draftSha256': QrPublishRequest(draft: draft, expectedRevision: revision).draftSha256};
         _audit(s, 'publish_requested', actor, actorId, {'revision': revision});
       });
-      try {
-        final answer = await p.publish(endpoint(), revision, draft);
-        final rev = answer['revision']?.toString() ?? '';
-        if (answer['published'] != true || rev.isEmpty) throw const QrPublisherNoAnswer('Yayın yanıtı eksik.');
+      // Through the transport seam: only a validated answer is success, a
+      // 5xx or lost answer stays pending (it may have written).
+      final out = await LocalQrPublishTransport(p, endpoint())
+          .publish(QrPublishRequest(draft: draft, expectedRevision: revision));
+      if (out.wrote) {
+        final rev = out.revision!;
         _write((s) {
           s[_baseKey] = copyJson(draft);
           s[_revisionKey] = rev;
           s.remove(_draftKey);
           s.remove(_pendingKey);
-          _audit(s, 'publish', actor, actorId, {'commit': answer['commit'] ?? rev});
+          _audit(s, 'publish', actor, actorId, {'commit': out.commit ?? rev});
         });
         return {'ok': true, 'outcome': 'published', 'revision': rev, 'revisionLabel': qrRevisionLabel(rev),
-          'changes': changes.length, 'commit': answer['commit']};
-      } on QrPublisherNoAnswer catch (e) {
-        return {'ok': false, 'outcome': 'unknown', 'message': 'Yayın sonucu bilinmiyor: ${e.message} '
-            'Yeniden göndermeden önce “Sonucu Doğrula”.'};
-      } on FormatException catch (e) {
-        _write((s) => s.remove(_pendingKey));
-        return {'ok': false, 'outcome': 'refused', 'message': 'Yayın reddedildi, web menüsü değişmedi: ${e.message}'};
+          'changes': changes.length, 'commit': out.commit};
       }
+      if (out.status == QrPublishStatus.conflict || out.status == QrPublishStatus.refused) {
+        _write((s) => s.remove(_pendingKey));
+        return {'ok': false, 'outcome': 'refused', 'message': 'Yayın reddedildi, web menüsü değişmedi: ${out.reason}'};
+      }
+      return {'ok': false, 'outcome': 'unknown', 'message': 'Yayın sonucu bilinmiyor: ${out.reason ?? ''} '
+          'Yeniden göndermeden önce “Sonucu Doğrula”.'};
     } finally {
       _publishing = false;
     }
