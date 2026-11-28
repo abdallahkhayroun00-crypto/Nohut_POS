@@ -59,9 +59,9 @@ The Functional column records test coverage.
 
 | Surface | Code | Visual | Functional | Notes |
 |---|---|---|---|---|
-| Pairing, login, PIN, unlock | `pair_page.dart`, `home.dart` | ⬜ | ✓ | |
+| Pairing, login, PIN, unlock, İlk Aktivasyon | `pair_page.dart`, `home.dart`, `activation_page.dart` | 🔄 pairing two-step redesign (390227c), activation 3-step screen (454e886); awaiting owner approval | `login_render_test` (6), `activation_page_test` (4) ✓ | Login sheet unchanged apart from the activation link |
 | Ana Sayfa | `personel_dashboard.dart` | ✅ A "Özet kartı" (owner 2026-11-27) | 10 render + suite ✓ | Antigravity accessibility audit pending |
-| Masalar, Sipariş/Ürünler, Sepet, Siparişler | `home.dart` | 🔄 first pass | `order_tabs_render_test` (13: phone, dark, 320 px at 1.3×) ✓ | Fixed: product categories showed raw Windows keys (`wrap`, `plate`, `drink`); now Dürümler / Porsiyonlar / İçecekler in Windows order (`menuCategoryLabels`). Siparişler rows gain source icon and item count. Renders: `screens/personel/orders/`. Next: table tile status word, cart polish |
+| Masalar, Sipariş/Ürünler, Sepet, Siparişler | `home.dart` | 🔄 first pass | `order_tabs_render_test` (13: phone, dark, 320 px at 1.3×) ✓ | Fixed: product categories showed raw Windows keys (`wrap`, `plate`, `drink`); now Dürümler / Porsiyonlar / İçecekler in Windows order (`menuCategoryLabels`). Siparişler rows gain source icon and item count. Renders: `screens/personel/orders/`. Sepet polish 7e00813: qty × unit price, Not/Çıkar details, compact stepper, Ek sipariş hint, sticky total + send. Next: table tile status word |
 | Mesai ve Maaşım (Mesai, Vardiya, Maaş) | `work_page.dart` | 🔄 | ✓ | |
 | Menü Yönetimi | `menu_admin_page.dart` | 🔄 | 8 ✓ | Full parity incl. publish (ea4b42b) |
 | Daha Fazla, Gider taslakları, Ayarlar | `home.dart`, `expense_drafts.dart` | ⬜ | ✓ | |
@@ -71,7 +71,9 @@ The Functional column records test coverage.
 | Surface | Code | Visual | Functional | Notes |
 |---|---|---|---|---|
 | Ana Sayfa / dashboard | `manager_main.dart` | 🔄 | ✓ | |
-| Personel, Maaş | `manager_main.dart`, `owner_payroll.dart` | 🔄 | ✓ | |
+| Personel, Maaş, Ekip Performansı | `manager_main.dart`, `owner_payroll.dart`, `team_performance_page.dart` | 🔄 | ✓ `team_performance_page_test` (3) | |
+| Raporlar: Satış Analizi, Yoğunluk | `sales_page.dart`, `demand_page.dart` | 🔄 new, awaiting owner approval | `sales_page_test` (4), `demand_page_test` (4) ✓ | |
+| Pairing | `manager_main.dart` (`_OwnerPair`) | 🔄 redesign 83bd4fd | `login_render_test` ✓ | |
 | Finans | `manager_finance.dart` | ⬜ | ✓ | |
 | QR Menü, Ayarlar | `manager_main.dart` | 🔄 | ✓ | |
 
