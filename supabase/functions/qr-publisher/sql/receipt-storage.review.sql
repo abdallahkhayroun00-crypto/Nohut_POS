@@ -305,7 +305,8 @@ begin
  select * into strict c from nohut_private.commands x where x.restaurant_id=a.restaurant_id and x.request_id=p_request;
  digest:=encode(sha256(convert_to(p_draft_json,'UTF8')),'hex');
  if left(digest,16) is distinct from p_expected_stamp
- or c.envelope->'payload'->>'expectedStamp' is distinct from p_expected_stamp then
+ or c.envelope->'payload'->>'expectedStamp' is distinct from p_expected_stamp
+ or c.envelope->'payload'->>'draftSha256' is distinct from digest then
    raise exception 'draft stamp conflict' using errcode='42501';
  end if;
  draft:=p_draft_json::jsonb;
