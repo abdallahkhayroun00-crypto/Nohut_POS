@@ -46,6 +46,10 @@ RELATED PR:
 EVIDENCE:
 ```
 
+### Active ownership (owner decision 2026-11-28 ~00:45Z, relayed 7231136936 / 7231152161 / 7231170702)
+
+Active engineers: **Claude** (Windows, Android, PWA/LAN, auth UI, UI/UX, all client integration) and **Gemini/Antigravity** (backend, Supabase, security, QR publisher #49, Trendyol proxy #50, independent frontend QA #45). Codex and ChatGPT no longer hold active assignments; their branches (#39, #47/#48, #49, #50) and evidence are preserved. Cross-review: Claude reviews Gemini's backend, Gemini reviews Claude's frontend; nobody self-certifies release. Rows below that name Codex/ChatGPT for open work now mean Gemini. Shared 49-item checklist: #44 comment 7231119516.
+
 ### Task board (§23)
 
 | # | Task | Owner | Status | Depends on | PR / evidence |
