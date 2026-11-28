@@ -140,19 +140,19 @@ void main() {
         deviceId: 'qa_device_staff_002',
         client: 'personel',
       );
-      await auth.setPin(login.token, 'personel', '482917');
+      await auth.setPin(login.token, 'personel', '48291');
       clock = clock.add(const Duration(minutes: 40)); // idle lock
       expect(auth.check(login.token, 'personel').status, 'locked');
 
       for (var i = 0; i < 4; i++) {
-        final bad = await auth.unlockWithPin(login.token, 'personel', '192837');
+        final bad = await auth.unlockWithPin(login.token, 'personel', '19283');
         expect(bad.status, 'invalid_pin');
       }
-      final fifth = await auth.unlockWithPin(login.token, 'personel', '192837');
+      final fifth = await auth.unlockWithPin(login.token, 'personel', '19283');
       expect(fifth.status, 'password_required');
 
       // Even the previously valid PIN must no longer unlock once cleared.
-      final afterClear = await auth.unlockWithPin(login.token, 'personel', '482917');
+      final afterClear = await auth.unlockWithPin(login.token, 'personel', '48291');
       expect(afterClear.status, 'password_required');
     });
 
