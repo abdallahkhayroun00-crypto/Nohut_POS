@@ -180,5 +180,16 @@ class SupabaseAgentTransport implements SyncTransport, CommandTransport {
         'p_request': requestId, 'p_envelope_sha256': fingerprint, 'p_result': result,
       }));
 
+  /// The five first-sync RPCs (`initial_sync_transport.dart`); nothing else.
+  Future<Object?> initialSyncRpc(String method, Map<String, Object?> args) {
+    const allowed = {
+      'nohut_agent_begin_initial_sync', 'nohut_agent_upload_snapshot_batch',
+      'nohut_agent_activate_initial_sync', 'nohut_agent_abort_initial_sync',
+      'nohut_agent_migration_status',
+    };
+    if (!allowed.contains(method)) throw ArgumentError.value(method, 'method');
+    return _rpc(method, args);
+  }
+
   void close() => _client.close(force: true);
 }

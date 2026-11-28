@@ -198,6 +198,32 @@ List<OutboxChange> collectOutboxChanges(
   return changes;
 }
 
+/// The (op, payload) an outbox event carries for [change], or null when the
+/// change is not syncable. Shared by the outbox writer and the first-sync
+/// snapshot so both produce the same projection.
+(String, Object?)? outboxPayload(Database db, OutboxChange change, String createdAt) {
+  Object? payload;
+  var operation = change.op;
+  if (change.op == 'delete') {
+    payload = null;
+  } else {
+    payload = change.entityId == 'core'
+        ? projectCore(change.entityType, change.row)
+        : projectRow(change.entityType, change.row);
+    // Not syncable (e.g. device settings, contact directory): skip.
+    if (payload == null) return null;
+    if (change.entityType == 'finance' && payload is Map<String,dynamic>) {
+      payload = captureFinanceReversals(db,change.previousRow,payload,createdAt);
+    }
+  }
+  if(catalogSyncSources.contains(change.entityType)){
+    payload=captureCatalogRemovals(db,change.entityType,
+        projectCore(change.entityType,change.previousRow),payload,createdAt);
+    operation='upsert';
+  }
+  return (operation, payload);
+}
+
 /// Writes the events for one committed revision. Call inside the business
 /// transaction, after the state rows are written.
 int writeOutboxEvents(
@@ -218,25 +244,9 @@ int writeOutboxEvents(
   var written = 0;
   try {
     for (final change in changes) {
-      Object? payload;
-      var operation=change.op;
-      if (change.op == 'delete') {
-        payload = null;
-      } else {
-        payload = change.entityId == 'core'
-            ? projectCore(change.entityType, change.row)
-            : projectRow(change.entityType, change.row);
-        // Not syncable (e.g. device settings, contact directory): skip.
-        if (payload == null) continue;
-        if (change.entityType == 'finance' && payload is Map<String,dynamic>) {
-          payload = captureFinanceReversals(db,change.previousRow,payload,createdAt);
-        }
-      }
-      if(catalogSyncSources.contains(change.entityType)){
-        payload=captureCatalogRemovals(db,change.entityType,
-            projectCore(change.entityType,change.previousRow),payload,createdAt);
-        operation='upsert';
-      }
+      final projected = outboxPayload(db, change, createdAt);
+      if (projected == null) continue;
+      final (operation, payload) = projected;
       final body = canonicalJson(payload);
       insert.execute([
         '$epoch:$revision:${change.entityType}:${change.entityId}',
