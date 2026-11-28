@@ -5,7 +5,10 @@ import 'package:nohut_core/finance_wire.dart';
 import 'package:nohut_core/report_period.dart';
 
 import 'payroll.dart';
-import 'workforce.dart' as wf show addDays, isCalendarDay, istanbulDayOfInstant, weekStartOf;
+import 'personal_performance.dart';
+import 'demand_view.dart';
+import 'sales_view.dart';
+import 'workforce.dart' as wf show addDays, isCalendarDay, istanbulDayOfInstant, sharedSchedule, weekStartOf, workMinutes;
 import 'finance_logic.dart';
 import 'google_business.dart';
 import 'staff_commands.dart';
@@ -18,12 +21,13 @@ import 'package:nohut_core/management_sections.dart';
 import 'finance_pdf.dart';
 import 'pos_logic.dart';
 import 'pos_store.dart';
+import 'qr_menu_remote.dart';
 import 'windows_vault.dart';
 
 /// Independent, physically enrolled financial capability. Never grant it to
 /// an ordinary staff bearer token. The key is held in the Windows DPAPI vault.
 class FinanceSyncServer {
-  FinanceSyncServer(this.store, {this.staffProjection, this.googleProvider, this.ownerEmployeeIds}) :
+  FinanceSyncServer(this.store, {this.staffProjection, this.googleProvider, this.ownerEmployeeIds, this.menuRemote}) :
     vault = WindowsVault(File(store.filePath + '.finance-sync.dpapi'));
 
   final PosStore store;
@@ -31,6 +35,8 @@ class FinanceSyncServer {
   final GoogleBusiness Function()? googleProvider;
   /// Employee profiles linked to owner accounts (Windows › Kullanıcılar).
   final List<int> Function()? ownerEmployeeIds;
+  /// QR publish / verify / POS sync with Windows' key (owner channel).
+  final QrMenuRemoteService? menuRemote;
 
   Json _owner(Json state) => owner(state, ownerIds: ownerEmployeeIds?.call() ?? const []);
 
@@ -401,8 +407,28 @@ class FinanceSyncServer {
       ['Masa','Gel-Al'].contains(p.source)).toList();
     final cash = payments.where((p)=>p.method=='Nakit').fold<int>(0,(n,p)=>n+p.amount);
     final card = payments.where((p)=>p.method=='Kart').fold<int>(0,(n,p)=>n+p.amount);
+    // §24.3 Yönetici Ana Sayfa: today's team. Planned shifts are names and
+    // times only; actual hours are the staff's own Mesai records for the day.
+    final worked = <Object?, Json>{};
+    final names = {for (final e in asMaps(state['employees'])) e['id']: e['name']};
+    for (final w in asMaps(state['shifts'])) {
+      final start = DateTime.tryParse('${w['start']}');
+      if (start == null || wf.istanbulDayOfInstant(start) != day) continue;
+      final m = wf.workMinutes(w);
+      if (m <= 0) continue;
+      final row = worked.putIfAbsent(w['employeeId'], () => {'employeeId': w['employeeId'],
+        'name': w['employeeName'] ?? names[w['employeeId']] ?? '', 'minutes': 0});
+      row['minutes'] = (row['minutes'] as int) + m;
+    }
     return {
       'day':day, 'cashCents':cash, 'cardCents':card,
+      'activeTables':{for (final o in orders) if (o['source']=='Masa' && o['closed']!=true && o['cancelled']!=true) o['table']}.length,
+      'team':{
+        'planned':[for (final p in wf.sharedSchedule(state, day, day)) if (p['dayOff'] != true)
+          {for (final k in ['employeeName','start','end','endsNextDay']) k:p[k]}],
+        'worked':worked.values.toList(),
+        'actualMinutes':worked.values.fold<int>(0, (n, r) => n + (r['minutes'] as int)),
+      },
       'orderCount':today.where((o)=>o['cancelled']!=true && ['Masa','Gel-Al'].contains(o['source'])).length,
       'orders':today.reversed.take(100).map(projectOrder).toList(),
       'openAccounts':orders.where((o)=>['Masa','Gel-Al'].contains(o['source']) &&
@@ -487,9 +513,45 @@ class FinanceSyncServer {
           result = {'ok':true,'ownerId':employee['id'],'ownerName':employee['name']};
         } else if (op == 'ownerOverview') {
           result = {'ok':true,'view':ownerOverview(store.read().data, (payload['day'] ?? '').toString())};
+        } else if (op == 'ownerSales') {
+          result = {'ok': true, 'sales': salesView(store.read().data,
+              '${payload['range'] ?? ''}', wf.istanbulDayOfInstant(DateTime.now()))};
+        } else if (op == 'ownerDemand') {
+          result = {'ok': true, 'demand': demandView(store.read().data,
+              '${payload['range'] ?? ''}', wf.istanbulDayOfInstant(DateTime.now()))};
+        } else if (op == 'ownerTeamPerformance') {
+          result = {'ok': true, 'team': teamPerformance(store.read().data,
+              performanceRangeOf('${payload['range'] ?? ''}'), wf.istanbulDayOfInstant(DateTime.now()))};
         } else if (op == 'ownerPayroll') {
           result = ownerPayroll(store, '${payload['weekStart'] ?? ''}',
               ownerIds: ownerEmployeeIds?.call() ?? [employee['id'] as int]);
+        } else if (op == 'ownerMenu') {
+          result = {'ok': true, 'menu': qrMenuView(store.read().data, can: (_) => true,
+              link: await menuRemote?.linkState())};
+        } else if (op == 'ownerMenuWrite') {
+          if (payload['data'] is! Map) throw const FormatException('İstek geçersiz.');
+          try {
+            result = applyQrMenuCommand(store, Map<String, dynamic>.from(payload['data'] as Map),
+                can: (_) => true, actor: '${employee['name']}', actorId: employee['id'] as int?);
+          } on QrMenuConflict catch (e) {
+            result = {'ok': false, 'error': 'conflict', 'message': e.message};
+          }
+        } else if (op == 'ownerMenuPublish' || op == 'ownerMenuReconcile' || op == 'ownerMenuSync' ||
+            op == 'ownerMenuImage') {
+          final r = menuRemote ?? (throw const FormatException('QR yayınlama bu bilgisayarda kapalı.'));
+          final actor = '${employee['name']}';
+          final id = employee['id'] as int?;
+          final request = payload['data'] is Map ? Map<String, dynamic>.from(payload['data'] as Map) : <String, dynamic>{};
+          try {
+            result = switch (op) {
+              'ownerMenuPublish' => await r.publish(expectedStamp: '${request['expectedStamp'] ?? ''}', actor: actor, actorId: id),
+              'ownerMenuReconcile' => await r.reconcile(actor: actor, actorId: id),
+              'ownerMenuImage' => await r.uploadImage(payload: request, can: (_) => true, actor: actor, actorId: id),
+              _ => await r.sync(actor: actor),
+            };
+          } on QrMenuConflict catch (e) {
+            result = {'ok': false, 'error': 'conflict', 'message': e.message};
+          }
         } else if (op == 'ownerGoogle') {
           final google = googleProvider?.call();
           if (google == null || !google.connected) {

@@ -39,4 +39,21 @@ void main() {
     expect(auth.devices().single['revoked'], true);
     expect(find.text('Kaldırıldı'), findsOneWidget);
   });
+
+  testWidgets('pending activation is shown and the menu offers a new code', (tester) async {
+    tester.view.physicalSize = const Size(1200, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    final auth = LocalAuth(sqlite3.openInMemory(), iterations: 1000);
+    await tester.runAsync(() async {
+      await auth.createUser(username: 'sahip', password: 'owner-pass-1', role: 'Yönetici', isOwner: true);
+      final ayse = await auth.createUser(username: 'ayse', password: 'staff-pass-1', role: 'Personel', employeeId: 7);
+      await auth.issueActivation(ayse);
+    });
+    await tester.pumpWidget(host(auth));
+    expect(find.textContaining('aktivasyon bekliyor'), findsOneWidget);
+    await tester.tap(find.descendant(of: find.byKey(const ValueKey('user-ayse')), matching: find.byTooltip('İşlemler')));
+    await tester.pumpAndSettle();
+    expect(find.text('Aktivasyon kodu oluştur'), findsOneWidget);
+  });
 }

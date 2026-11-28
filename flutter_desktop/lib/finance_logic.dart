@@ -310,6 +310,9 @@ void saveQuickMaterialPurchase(Json state, {
   String market = '',
   String paymentMethod = 'Nakit',
   String note = '',
+  /// Staff submission (§24.8, `expenses.quick_add`): who entered it.
+  int? submittedByEmployeeId,
+  String? submittedByName,
 }) {
   _checkDay(date);
   _checkNotFuture(date, 'Alış');
@@ -343,6 +346,11 @@ void saveQuickMaterialPurchase(Json state, {
     'createdAt': before?['createdAt'] ?? _stamp(),
     'updatedAt': _stamp(),
     'voided': false,
+    // The submitter never changes when a manager edits the row.
+    if ((before?['submittedByEmployeeId'] ?? submittedByEmployeeId) != null) ...{
+      'submittedByEmployeeId': before?['submittedByEmployeeId'] ?? submittedByEmployeeId,
+      'submittedByName': before?['submittedByName'] ?? submittedByName,
+    },
     'history': [
       ...asMaps(before?['history']),
       if (before != null) {

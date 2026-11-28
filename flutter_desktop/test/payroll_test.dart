@@ -153,6 +153,21 @@ void main() {
     expect(s['resolved'], false);
   });
 
+  test('Yönetici Ana Sayfa overview: today\'s planned team (names and times) and actual hours', () {
+    applyPlanCommand(store, {'requestId': 'plan-dash-0001', 'action': 'plan_save', 'date': '2026-11-17',
+      'start': '10:00', 'end': '18:00'}, actorId: ayse, actorName: 'x', now: friday.subtract(const Duration(days: 4)));
+    work(ayse, 'dash-w-001', '2026-11-17', '10:00', '18:00', breakMinutes: 30);
+    work(mehmet, 'dash-w-002', '2026-11-18', '10:00', '12:00');
+    final v = FinanceSyncServer.ownerOverview(store.read().data, '2026-11-17');
+    final team = v['team'] as Map;
+    final planned = (team['planned'] as List).cast<Map>();
+    expect(planned.single['start'], '10:00');
+    expect(planned.single.keys, isNot(contains('note')));
+    expect(team['actualMinutes'], 450);
+    expect((team['worked'] as List).single['employeeId'], ayse);
+    expect(v['activeTables'], isA<int>());
+  });
+
   test('native Yönetici payroll (ownerPayroll) shows the same rows and money as the LAN page', () {
     mgr('own-rate-0001', 'payroll_rate', {'employeeId': ayse, 'payType': 'Saatlik', 'rateCents': 10000, 'effectiveFrom': '2026-11-01'});
     mgr('own-rate-0002', 'payroll_rate', {'employeeId': ayse, 'payType': 'Saatlik', 'rateCents': 12000, 'effectiveFrom': '2026-11-18'});

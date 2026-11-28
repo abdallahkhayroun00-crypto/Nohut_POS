@@ -14,6 +14,7 @@ library;
 
 import 'pos_logic.dart';
 import 'pos_store.dart';
+import 'workforce.dart' show bumpVersion;
 
 List<Json> shiftsOf(Json state) => asMaps(state['shifts']);
 
@@ -112,6 +113,10 @@ Json correctShift(PosStore store, Json payload) {
     } else {
       shift['end'] = end.toUtc().toIso8601String();
     }
+    // Manual Mesai rows carry a version: bump it so an employee's form opened
+    // before this correction cannot overwrite it (Codex #39). Legacy clock
+    // records without a version stay as they were.
+    if (shift.containsKey('updatedAt')) shift['updatedAt'] = bumpVersion(shift['updatedAt'], DateTime.now());
     ((shift['corrections'] ??= <dynamic>[]) as List).add({
       'at': DateTime.now().toUtc().toIso8601String(),
       'byId': by['id'],

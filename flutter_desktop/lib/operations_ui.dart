@@ -314,6 +314,117 @@ class CashPanel extends StatelessWidget {
   }
 }
 
+/// The two ways to take an order off the floor, side by side so the
+/// difference is explicit: İptal keeps it in reports as cancelled; Sil moves
+/// the whole record to the audited archive.
+class OrderDangerZone extends StatelessWidget {
+  const OrderDangerZone({
+    super.key,
+    required this.order,
+    required this.onCancel,
+    required this.onDelete,
+  });
+  final Json order;
+  final VoidCallback onCancel;
+  final VoidCallback onDelete;
+
+  static const _red = Color(0xffB3261E);
+
+  @override
+  Widget build(BuildContext context) {
+    final open = order['closed'] != true && order['cancelled'] != true;
+    final paid = orderPaidCents(order) > 0;
+    final cancelBlock = !open
+        ? 'Kapalı veya iptal edilmiş sipariş yeniden iptal edilemez.'
+        : paid ? 'Önce tüm ödemeleri iade edin.' : null;
+    Widget action({
+      required Key key,
+      required IconData icon,
+      required String title,
+      required String label,
+      required String help,
+      required VoidCallback? onTap,
+    }) => Container(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xffF0D2CC)),
+      ),
+      child: Row(children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: const TextStyle(
+                fontWeight: FontWeight.w800, color: _red)),
+              const SizedBox(height: 2),
+              Text(help, style: const TextStyle(
+                fontSize: 12.5, color: NohutBrand.muted, height: 1.3)),
+            ],
+          ),
+        ),
+        const SizedBox(width: 10),
+        OutlinedButton.icon(
+          key: key,
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size(0, 40),
+            foregroundColor: _red,
+            side: const BorderSide(color: Color(0xffE7B9B2)),
+          ),
+          onPressed: onTap,
+          icon: Icon(icon, size: 18),
+          label: Text(label),
+        ),
+      ]),
+    );
+    return Container(
+      key: const ValueKey('order-danger-zone'),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xffFDF5F3),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xffF0D2CC)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text('Siparişi kaldır', style: TextStyle(
+            fontWeight: FontWeight.w900, fontSize: 15)),
+          const SizedBox(height: 8),
+          LayoutBuilder(builder: (context, box) {
+            final cancel = action(
+              key: const ValueKey('order-cancel'),
+              icon: Icons.block,
+              title: 'Siparişi iptal et',
+              label: 'İptal Et',
+              help: cancelBlock ??
+                  'Raporlarda "İptal" olarak kalır. Ödemesi olmayan açık siparişler için.',
+              onTap: cancelBlock == null ? onCancel : null,
+            );
+            final delete = action(
+              key: const ValueKey('order-delete'),
+              icon: Icons.delete_outline,
+              title: 'Siparişi sil (arşive taşı)',
+              label: 'Sil',
+              help: 'Raporlardan çıkar; tüm kayıt kim, ne zaman, neden bilgisiyle arşivde saklanır.',
+              onTap: onDelete,
+            );
+            if (box.maxWidth < 720) {
+              return Column(children: [cancel, const SizedBox(height: 8), delete]);
+            }
+            return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Expanded(child: cancel),
+              const SizedBox(width: 10),
+              Expanded(child: delete),
+            ]);
+          }),
+        ],
+      ),
+    );
+  }
+}
+
 class OrderOperations extends StatelessWidget {
   const OrderOperations({
     super.key,
@@ -491,22 +602,6 @@ class OrderOperations extends StatelessWidget {
                       edit((s) => markPickupDelivered(mutableOrder(s, id)!)),
                   label: const Text('Teslim Edildi'),
                 ),
-              OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  foregroundColor: const Color(0xffB3261E),
-                  side: const BorderSide(color: Color(0xffE7B9B2)),
-                ),
-                icon: const Icon(Icons.block, size: 18),
-                onPressed: () async {
-                  final v = await askFields(context, 'Siparişi İptal Et', [
-                    ('Neden', ''),
-                  ]);
-                  if (v != null) edit((s) => cancelLocalOrder(s, id, v[0]));
-                },
-                label: const Text('Siparişi İptal Et'),
-              ),
             ],
           ),
           const SizedBox(height: 10),

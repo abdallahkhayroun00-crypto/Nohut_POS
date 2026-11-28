@@ -130,6 +130,10 @@ class NohutApi {
           'invalid_credentials' => 'Kullanıcı adı veya şifre hatalı.',
           'locked_out' || 'too_many_attempts' => 'Çok fazla hatalı deneme. Biraz sonra tekrar deneyin.',
           'invalid_pin' => 'PIN hatalı.',
+          'invalid_activation' => 'Kullanıcı adı veya aktivasyon kodu hatalı ya da kodun süresi dolmuş.',
+          'weak_password' => 'Şifre en az 8 karakter olmalı.',
+          'weak_pin' => 'PIN 5 haneli olmalı ve kolay tahmin edilmemeli.',
+          'password_required' => 'Mevcut şifrenizi girin.',
           'inactive' => 'Hesap devre dışı.',
           'device_revoked' || 'revoked' => 'Bu cihazın oturumu kaldırıldı. Yeniden giriş yapın.',
           _ => 'Giriş yapılamadı.',
@@ -144,9 +148,25 @@ class NohutApi {
     if (sessionEmployeeId != null) await saveEmployee(sessionEmployeeId!);
   }
 
+  /// İlk Aktivasyon: one-time code from Windows › Kullanıcılar, own
+  /// password and this phone's 5-digit PIN, in one step.
+  Future<void> activate({required String username, required String code,
+      required String password, required String pin}) async {
+    await _auth('POST', 'activate', {'username': username.trim(), 'code': code.trim(),
+      'password': password, 'pin': pin, 'deviceId': await _deviceId(), 'label': 'Android Personel'});
+    await refreshSession();
+    if (sessionEmployeeId != null) await saveEmployee(sessionEmployeeId!);
+  }
+
   Future<void> unlock({String? pin, String? password}) async {
     await _auth('POST', 'unlock', pin != null ? {'pin': pin} : {'password': password ?? ''});
     await refreshSession();
+  }
+
+  /// Sets or replaces this device's 5-digit PIN. The account password is
+  /// always sent and checked on Windows (LocalAuth.setPin).
+  Future<void> setPin(String pin, String password) async {
+    await _auth('POST', 'pin', {'pin': pin, 'password': password});
   }
 
   Future<void> logout() async {
@@ -221,7 +241,29 @@ class NohutApi {
     final response = method == 'GET'
         ? await _client.get(uri, headers: _headers()).timeout(const Duration(seconds: 8))
         : await _client.post(uri, headers: _headers(json: true),
-            body: jsonEncode({'client': 'personel', ...?body})).timeout(const Duration(seconds: 12));
+            body: jsonEncode({'client': 'personel', ...?body}))
+            // Publishing and photos go through Windows to GitHub: allow longer.
+            .timeout(Duration(seconds: const {'publish', 'reconcile', 'image'}.contains(path) ? 90 : 12));
+    final data = jsonDecode(utf8.decode(response.bodyBytes));
+    final result = data is Map ? Map<String, dynamic>.from(data) : <String, dynamic>{};
+    if (response.statusCode == 401) {
+      throw const FormatException('Giriş gerekli. Kullanıcı adınızla giriş yapın.');
+    }
+    return (response.statusCode, result);
+  }
+
+  /// `/api/menu/*` (QR menu draft). The server checks each `menu.*` grant
+  /// and binds every edit to the draft it was based on; no keys on the phone.
+  Future<(int, Json)> menu(String method, String path, {Json? body}) async {
+    if (!paired) throw const FormatException('Önce cihazı eşleştirin.');
+    final uri = Uri.parse(host!).replace(path: '/api/menu/$path',
+        queryParameters: method == 'GET' ? {'client': 'personel'} : null);
+    final response = method == 'GET'
+        ? await _client.get(uri, headers: _headers()).timeout(const Duration(seconds: 8))
+        : await _client.post(uri, headers: _headers(json: true),
+            body: jsonEncode({'client': 'personel', ...?body}))
+            // Publishing and photos go through Windows to GitHub: allow longer.
+            .timeout(Duration(seconds: const {'publish', 'reconcile', 'image'}.contains(path) ? 90 : 12));
     final data = jsonDecode(utf8.decode(response.bodyBytes));
     final result = data is Map ? Map<String, dynamic>.from(data) : <String, dynamic>{};
     if (response.statusCode == 401) {

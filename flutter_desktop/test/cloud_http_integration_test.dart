@@ -3,6 +3,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart' as crypto;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nohut_falafel_desktop/cloud_finance_serializer.dart';
 import 'package:nohut_falafel_desktop/cloud_catalog_serializer.dart';
@@ -718,5 +719,165 @@ void main() {
     },
     skip: base == null,
     timeout: const Timeout(Duration(minutes: 2)),
+  );
+
+  test(
+    'initial-sync HTTP contract: p_events JSON array accepted, string rejected, activation tolerates omitted dailyReports/notifications',
+    () async {
+      final url = Uri.parse(base!);
+      final client = HttpClient();
+      Future<({int status, Map<String, dynamic> body})> rawCall(
+        String path,
+        Map<String, Object?> args, {
+        String? jwt,
+      }) async {
+        final request = await client.postUrl(url.replace(path: path));
+        request.headers.contentType = ContentType.json;
+        if (jwt != null) request.headers.set('Authorization', 'Bearer $jwt');
+        request.write(jsonEncode(args));
+        final response = await request.close();
+        final text = await utf8.decoder.bind(response).join();
+        return (
+          status: response.statusCode,
+          body: Map<String, dynamic>.from(jsonDecode(text) as Map),
+        );
+      }
+
+      try {
+        final setupRes = await rawCall('/test/setup', {});
+        expect(setupRes.status, 200);
+        final setup = setupRes.body;
+
+        // 1. Rotate authority epoch via owner aal2 Windows RPC
+        final rotRes = await rawCall(
+          '/rest/v1/rpc/nohut_owner_rotate_authority_epoch',
+          {
+            'p_device_id': setup['windowsDeviceId'],
+            'p_permission_version': 1,
+            'p_reason': 'synthetic_http_initial_sync_test',
+          },
+          jwt: 'synthetic-windows-owner-jwt',
+        );
+        expect(rotRes.status, 200, reason: '${rotRes.body}');
+        final newEpoch = rotRes.body['new_authority_epoch'] as String;
+
+        // 2. Enroll fresh scoped Windows agent on the rotated epoch
+        final agentToken = List.filled(64, 'b').join();
+        final tokenSha = crypto.sha256.convert(utf8.encode(agentToken)).toString();
+        final enrollRes = await rawCall(
+          '/rest/v1/rpc/nohut_enroll_agent',
+          {
+            'p_device_id': setup['windowsDeviceId'],
+            'p_permission_version': 1,
+            'p_epoch': newEpoch,
+            'p_request_id': '88888888-8888-4888-8888-888888888881',
+            'p_token_sha256': tokenSha,
+          },
+          jwt: 'synthetic-windows-owner-jwt',
+        );
+        expect(enrollRes.status, 200, reason: '${enrollRes.body}');
+
+        // 3. Build one canonical employee snapshot batch (omitting dailyReports & notifications)
+        const migrationId = '77777777-7777-4777-8777-777777777771';
+        const batchId = '77777777-7777-4777-8777-777777777772';
+        const eventsCanonical =
+            '[{"entity_id":"core","entity_type":"employees","payload":[{"active":true,"id":1,"name":"Synthetic HTTP Staff","payrollEligible":true}]}]';
+        final eventsArray = jsonDecode(eventsCanonical) as List;
+        final bodySha = crypto.sha256.convert(utf8.encode(eventsCanonical)).toString();
+        final manifestLine = 'employees:$batchId:1:$bodySha';
+        final manifestSha = crypto.sha256.convert(utf8.encode(manifestLine)).toString();
+
+        // 4. Begin initial sync
+        final beginRes = await rawCall(
+          '/rest/v1/rpc/nohut_agent_begin_initial_sync',
+          {
+            'p_token': agentToken,
+            'p_migration_id': migrationId,
+            'p_snapshot_revision': 12,
+            'p_snapshot_seq': 5,
+            'p_manifest_sha256': manifestSha,
+            'p_backup_verified': true,
+          },
+        );
+        expect(beginRes.status, 200, reason: '${beginRes.body}');
+        expect(beginRes.body['status'], 'accepted');
+
+        // 5a. Negative check: sending p_events as a JSON-encoded STRING must be rejected (400)
+        final stringRes = await rawCall(
+          '/rest/v1/rpc/nohut_agent_upload_snapshot_batch',
+          {
+            'p_token': agentToken,
+            'p_migration_id': migrationId,
+            'p_batch_id': batchId,
+            'p_category': 'employees',
+            'p_item_count': 1,
+            'p_body_sha256': bodySha,
+            'p_events': eventsCanonical,
+          },
+        );
+        expect(stringRes.status, 400, reason: 'JSON string p_events must be rejected');
+
+        // 5b. Positive check: sending p_events as a JSON ARRAY in PostgREST body succeeds (200)
+        final uploadRes = await rawCall(
+          '/rest/v1/rpc/nohut_agent_upload_snapshot_batch',
+          {
+            'p_token': agentToken,
+            'p_migration_id': migrationId,
+            'p_batch_id': batchId,
+            'p_category': 'employees',
+            'p_item_count': 1,
+            'p_body_sha256': bodySha,
+            'p_events': eventsArray,
+          },
+        );
+        expect(uploadRes.status, 200, reason: '${uploadRes.body}');
+        expect(uploadRes.body['status'], 'accepted');
+
+        // 6. Activate without any dailyReports or notifications batches
+        final actRes = await rawCall(
+          '/rest/v1/rpc/nohut_agent_activate_initial_sync',
+          {
+            'p_token': agentToken,
+            'p_migration_id': migrationId,
+            'p_expected_batches': 1,
+            'p_expected_manifest_sha256': manifestSha,
+          },
+        );
+        expect(actRes.status, 200, reason: '${actRes.body}');
+        expect(actRes.body['status'], 'accepted');
+
+        // 7. Verify read RPCs tolerate absent dailyReports and notifications cleanly over HTTP
+        final dailyRes = await rawCall(
+          '/rest/v1/rpc/nohut_daily_report_view',
+          {
+            'p_device_id': setup['deviceId'],
+            'p_client': 'yonetici',
+            'p_permission_version': 1,
+            'p_day': '2026-11-28',
+          },
+          jwt: 'synthetic-user-jwt',
+        );
+        expect(dailyRes.status, 200, reason: '${dailyRes.body}');
+        expect(dailyRes.body['available'], false);
+
+        final notifRes = await rawCall(
+          '/rest/v1/rpc/nohut_notifications_list',
+          {
+            'p_device_id': setup['deviceId'],
+            'p_client': 'yonetici',
+            'p_permission_version': 1,
+            'p_limit': 20,
+          },
+          jwt: 'synthetic-user-jwt',
+        );
+        expect(notifRes.status, 200, reason: '${notifRes.body}');
+        expect(notifRes.body['items'], isEmpty);
+        expect(notifRes.body['unreadCount'], 0);
+      } finally {
+        client.close(force: true);
+      }
+    },
+    skip: base == null,
+    timeout: const Timeout(Duration(minutes: 1)),
   );
 }

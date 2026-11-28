@@ -65,7 +65,19 @@ class FakeOwnerApi extends OwnerApi {
       {'source': 'Trendyol Go', 'orderNumber': 'T-1001', 'status': 'Teslim edildi', 'totalCents': 31000},
     ],
     'openAccounts': [{'source': 'Masa', 'table': 2, 'dueCents': 12000}],
+    'activeTables': 2,
+    'team': {
+      'planned': [
+        {'employeeName': 'Test Personel A', 'start': '10:00', 'end': '18:00'},
+        {'employeeName': 'Test Personel B', 'start': '16:00', 'end': '00:30', 'endsNextDay': true},
+      ],
+      'worked': [{'employeeId': 7, 'name': 'Test Personel A', 'minutes': 450}],
+      'actualMinutes': 450,
+    },
   };
+  @override
+  Future<Json> request(Json payload) async =>
+      payload['operation'] == 'ownerPayroll' ? payrollReply(paid: 80000) : throw const FormatException('?');
   @override
   Future<Json?> cachedOverview(String day) async => overviewData;
   @override
@@ -94,9 +106,63 @@ void main() {
           home: StaffHome(controller: staffController(), onUnpair: () {})), brightness: mode);
       expect(t.takeException(), isNull);
     });
+    testWidgets('staff home signed in $m', (t) async {
+      final api = workApi()..sessionInfo = {'session': {'status': 'ok', 'employeeId': 7, 'username': 'personela'}};
+      final c = PersonelController(api, StaffNotifications())
+        ..state = staffController().state
+        ..online = true;
+      c.state['orders'] = [{'id': 1, 'source': 'Masa', 'table': 2}, {'id': 2, 'source': 'Gel-Al'}];
+      await renderScreen(t, 'staff-home-signed-in-$m', MaterialApp(debugShowCheckedModeBanner: false,
+          theme: NohutStyle.theme, darkTheme: NohutStyle.darkTheme,
+          home: StaffHome(controller: c, onUnpair: () {})), brightness: mode);
+      expect(find.text('Mesai Ekle'), findsOneWidget);
+      expect(find.text('Kazanılan'), findsOneWidget);
+      expect(t.takeException(), isNull);
+    });
   }
   for (final mode in [Brightness.light, Brightness.dark]) {
     final m = mode == Brightness.light ? 'light' : 'dark';
+    testWidgets('owner Personel tab $m', (t) async {
+      final api = FakeOwnerApi();
+      api.overviewData['employees'] = [
+        {'id': 7, 'name': 'Test Personel A', 'role': 'Kasa', 'active': true},
+        {'id': 8, 'name': 'Test Personel B', 'role': 'Mutfak', 'active': true},
+      ];
+      await renderScreen(t, 'owner-staff-$m', MaterialApp(debugShowCheckedModeBanner: false,
+          theme: NohutStyle.theme, darkTheme: NohutStyle.darkTheme,
+          home: OwnerHome(controller: PersonelController(api, StaffNotifications()), api: api, onUnpair: () {})),
+          brightness: mode, before: (t) async {
+            // §24.3 bottom bar: Ana Sayfa / Satışlar / Finans / Personel / Daha Fazla.
+            for (final l in ['Ana Sayfa', 'Satışlar', 'Finans', 'Personel', 'Daha Fazla']) {
+              expect(find.descendant(of: find.byType(NavigationBar), matching: find.text(l)), findsOneWidget);
+            }
+            await t.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Personel')));
+            await t.pumpAndSettle();
+          });
+      expect(find.byKey(const ValueKey('staff-payroll')), findsOneWidget);
+      expect(find.text('Test Personel B'), findsWidgets);
+      await t.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Daha Fazla')));
+      await t.pumpAndSettle();
+      expect(find.byKey(const ValueKey('owner-nav-settings')), findsOneWidget);
+      expect(t.takeException(), isNull);
+      await t.pumpWidget(const SizedBox());
+    });
+    testWidgets('owner Ayarlar $m', (t) async {
+      final api = FakeOwnerApi();
+      await renderScreen(t, 'owner-settings-$m', MaterialApp(debugShowCheckedModeBanner: false,
+          theme: NohutStyle.theme, darkTheme: NohutStyle.darkTheme,
+          home: OwnerHome(controller: PersonelController(api, StaffNotifications()), api: api, onUnpair: () {})),
+          brightness: mode, before: (t) async {
+            await t.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Daha Fazla')));
+            await t.pumpAndSettle();
+            await t.tap(find.byKey(const ValueKey('owner-nav-settings')));
+            await t.pumpAndSettle();
+          });
+      expect(find.text('Windows’ta yönetilenler'), findsOneWidget);
+      await t.scrollUntilVisible(find.byKey(const ValueKey('settings-forget')), 200, scrollable: find.byType(Scrollable).first);
+      expect(t.takeException(), isNull);
+      await t.pumpWidget(const SizedBox());
+    });
     testWidgets('owner dashboard $m', (t) async {
       final api = FakeOwnerApi();
       await renderScreen(t, 'owner-dashboard-$m', MaterialApp(debugShowCheckedModeBanner: false,
@@ -104,6 +170,10 @@ void main() {
           home: OwnerHome(controller: PersonelController(api, StaffNotifications()), api: api, onUnpair: () {})),
           brightness: mode);
       expect(t.takeException(), isNull);
+      // §24.3: payroll panel and today's team on Ana Sayfa.
+      expect(find.byKey(const ValueKey('dash-payroll')), findsOneWidget);
+      expect(find.text('1 gecikti'), findsOneWidget);
+      expect(find.textContaining('Planlı 2 kişi'), findsOneWidget);
       await t.pumpWidget(const SizedBox()); // stop the 30 s refresh timer
     });
     testWidgets('owner payroll $m', (t) async {
@@ -111,6 +181,28 @@ void main() {
           theme: NohutStyle.theme, darkTheme: NohutStyle.darkTheme,
           home: OwnerPayrollPage(request: (_) async => payrollReply(paid: 80000))), brightness: mode);
       expect(t.takeException(), isNull);
+    });
+  }
+
+  // Compact phone with large text and a tablet: the new Ana Sayfa screens.
+  for (final (label, size, scale) in [('compact', const Size(320, 640), 1.3), ('tablet', const Size(1100, 800), 1.0)]) {
+    testWidgets('staff home signed in $label', (t) async {
+      final api = workApi()..sessionInfo = {'session': {'status': 'ok', 'employeeId': 7, 'username': 'personela'}};
+      final c = PersonelController(api, StaffNotifications())..state = staffController().state..online = true;
+      await renderScreen(t, 'staff-home-$label', MaterialApp(debugShowCheckedModeBanner: false,
+          theme: NohutStyle.theme, darkTheme: NohutStyle.darkTheme,
+          builder: (ctx, child) => MediaQuery(data: MediaQuery.of(ctx).copyWith(textScaler: TextScaler.linear(scale)), child: child!),
+          home: StaffHome(controller: c, onUnpair: () {})), size: size);
+      expect(t.takeException(), isNull);
+    });
+    testWidgets('owner dashboard $label', (t) async {
+      final api = FakeOwnerApi();
+      await renderScreen(t, 'owner-dashboard-$label', MaterialApp(debugShowCheckedModeBanner: false,
+          theme: NohutStyle.theme, darkTheme: NohutStyle.darkTheme,
+          builder: (ctx, child) => MediaQuery(data: MediaQuery.of(ctx).copyWith(textScaler: TextScaler.linear(scale)), child: child!),
+          home: OwnerHome(controller: PersonelController(api, StaffNotifications()), api: api, onUnpair: () {})), size: size);
+      expect(t.takeException(), isNull);
+      await t.pumpWidget(const SizedBox());
     });
   }
 }

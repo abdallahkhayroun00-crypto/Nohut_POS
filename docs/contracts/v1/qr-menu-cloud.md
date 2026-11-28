@@ -29,7 +29,7 @@ All commands bind the acting user from JWT (`auth.uid()`), require an active ses
 | `p_action` | Operation Grant | Required Payload | TTL |
 |---|---|---|---|
 | `qr_menu_write` | Per `payload.action`: `set_price` → `menu.price.edit`, `set_stock` → `menu.stock.toggle`, `set_visible`/`set_image`/`save_product` → `menu.product.edit`, `save_category` → `menu.category.edit`, `save_campaign` → `menu.campaign.edit` | `expectedStamp` (16-hex), `action`, entity fields | 15m |
-| `qr_menu_publish` | `menu.qr.publish` | `expectedStamp` (16-hex), `confirmed: true` | 5m |
-| `qr_menu_reconcile` | `menu.qr.publish` | `{}` | 5m |
+| `qr_menu_publish` | `menu.qr.publish` | `expectedStamp` (16-hex), `confirmed: true`, optional `draftSha256` (64-hex, prefix must equal `expectedStamp`), optional `expectedRevision` | 5m |
+| `qr_menu_reconcile` | `menu.qr.publish` | Exact `{"targetRequestId": "<UUID>", "mode": "reconcile" \| "cancel_before_attempt"}` (legacy `{}` denied per PR #49 / Claude `aea2861`) | 5m |
 | `qr_menu_image` | `menu.product.edit` | `expectedStamp`, `id`, `mime` (`image/png`/`jpeg`/`webp`), `storagePath` (`qr-uploads/...`) or `base64`, optional `sizeBytes <= 6291456` | 10m |
 | `qr_menu_sync` | `menu.product.edit` | `{}` | 5m |

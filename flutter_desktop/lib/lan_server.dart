@@ -17,16 +17,22 @@ import 'google_business.dart';
 import 'lan_auth_gate.dart';
 import 'yonetici_api.dart';
 import 'workforce_api.dart';
+import 'qr_menu_lan_api.dart';
+import 'qr_menu_remote.dart';
 import 'notification_events.dart';
 
 /// Native Flutter Windows HTTP server for employee phones. No Python process.
 class PosLanServer extends ChangeNotifier {
   PosLanServer(this.store, {this.port = 8787, String? staffHtml, String? yoneticiHtml,
-      this.googleProvider, this.platformAction, this.platformWritable, this.authGate})
+      this.googleProvider, this.platformAction, this.platformWritable, this.authGate, this.menuRemote})
     : _staffHtml = staffHtml, _yoneticiHtml = yoneticiHtml;
   String? _yoneticiHtml;
   late final YoneticiApi? yonetici = authGate == null ? null : YoneticiApi(store, authGate!);
   late final WorkforceApi? workforce = authGate == null ? null : WorkforceApi(store, authGate!);
+  late final QrMenuLanApi? menuApi =
+      authGate == null ? null : QrMenuLanApi(store, authGate!, remote: menuRemote);
+  /// Phones' QR publish / photo / POS sync, done with Windows' own key.
+  final QrMenuRemoteService? menuRemote;
   late final LanNotificationsApi? notifications =
       authGate == null ? null : LanNotificationsApi(store, authGate!.auth);
   /// Individual LAN logins (spec §23.4). Null = legacy shared panel only.
@@ -39,7 +45,7 @@ class PosLanServer extends ChangeNotifier {
   final bool Function()? platformWritable;
   final GoogleBusiness Function()? googleProvider;
   late final MobilePairing pairing = MobilePairing(store);
-  late final FinanceSyncServer financeSync = FinanceSyncServer(store, staffProjection: _staffState,
+  late final FinanceSyncServer financeSync = FinanceSyncServer(store, menuRemote: menuRemote, staffProjection: _staffState,
       googleProvider: googleProvider, ownerEmployeeIds: () => authGate?.auth.ownerEmployeeIds() ?? const []);
   HttpServer? _server;
   RawDatagramSocket? _discovery;
@@ -449,6 +455,20 @@ class PosLanServer extends ChangeNotifier {
       final body = await _lanJsonBody(request, 32 * 1024);
       if (body == null) return;
       _reply(request, await api.handle(request.method, resource.substring('/api/work/'.length),
+          request.uri.queryParameters, body, token: _token(request)));
+      return;
+    }
+    if (resource.startsWith('/api/menu/')) {
+      final api = menuApi;
+      if (api == null) {
+        _json(request.response, 404, {'error': 'not_found'});
+        return;
+      }
+      // A product photo (≤ 6 MB) travels base64-encoded; everything else is small.
+      final sub = resource.substring('/api/menu/'.length);
+      final body = await _lanJsonBody(request, sub == 'image' ? 8400 * 1024 : 32 * 1024);
+      if (body == null) return;
+      _reply(request, await api.handle(request.method, sub,
           request.uri.queryParameters, body, token: _token(request)));
       return;
     }

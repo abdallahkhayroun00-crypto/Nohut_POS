@@ -24,6 +24,13 @@ const methods={
   nohut_windows_owner_session:['p_device_id'],
   nohut_enroll_agent:['p_device_id','p_permission_version','p_epoch','p_request_id','p_token_sha256'],
   nohut_revoke_agent:['p_device_id','p_permission_version','p_agent_id'],
+  nohut_owner_rotate_authority_epoch:['p_device_id','p_permission_version','p_reason'],
+  nohut_agent_begin_initial_sync:['p_token','p_migration_id','p_snapshot_revision','p_snapshot_seq','p_manifest_sha256','p_backup_verified'],
+  nohut_agent_upload_snapshot_batch:['p_token','p_migration_id','p_batch_id','p_category','p_item_count','p_body_sha256','p_events'],
+  nohut_agent_activate_initial_sync:['p_token','p_migration_id','p_expected_batches','p_expected_manifest_sha256'],
+  nohut_agent_migration_status:['p_token','p_migration_id'],
+  nohut_daily_report_view:['p_device_id','p_client','p_permission_version','p_day'],
+  nohut_notifications_list:['p_device_id','p_client','p_permission_version','p_limit'],
 };
 let loseAck=false,loseEnrollAck=false;
 // Trusted bootstrap exists only in this disposable fixture, never in a client.
@@ -165,14 +172,15 @@ async function main(){
         }
         const method=req.url?.split('/').pop();const params=methods[method];
         if(!params||req.url!==`/rest/v1/rpc/${method}`||Object.keys(args).some(k=>!params.includes(k))){res.writeHead(400).end('{}');return;}
-        const windows=['nohut_windows_owner_session','nohut_enroll_agent','nohut_revoke_agent'].includes(method);
-        const app=windows||method==='nohut_enqueue_command'||method==='nohut_command_status';
+        const windows=['nohut_windows_owner_session','nohut_enroll_agent','nohut_revoke_agent','nohut_owner_rotate_authority_epoch'].includes(method);
+        const app=windows||['nohut_enqueue_command','nohut_command_status','nohut_daily_report_view','nohut_notifications_list'].includes(method);
         if(app&&req.headers.authorization!==`Bearer ${windows?'synthetic-windows-owner-jwt':'synthetic-user-jwt'}`){res.writeHead(403).end('{}');return;}
         await db.query('begin');
         try{
           await db.query(`set local role ${app?'authenticated':'anon'}`);
           if(app)await db.query("select set_config('request.jwt.claims',$1,true)",[JSON.stringify({sub:ids.userId,session_id:windows?ids.windowsSessionId:ids.sessionId,aal:'aal2'})]);
-          const result=(await db.query(`select public.${method}(${params.map((_,i)=>'$'+(i+1)).join(',')}) as value`,params.map(k=>args[k]))).rows[0].value;
+          const boundParams=params.map(k=>k==='p_events'&&args[k]!==undefined?JSON.stringify(args[k]):args[k]);
+          const result=(await db.query(`select public.${method}(${params.map((_,i)=>'$'+(i+1)).join(',')}) as value`,boundParams)).rows[0].value;
           await db.query('commit');
           if(method==='nohut_agent_ingest'&&loseAck){loseAck=false;res.writeHead(503).end('{}');return;}
           if(method==='nohut_enroll_agent'&&loseEnrollAck){loseEnrollAck=false;res.writeHead(503).end('{}');return;}

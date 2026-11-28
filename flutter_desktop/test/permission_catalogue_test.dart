@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:nohut_falafel_desktop/accounts_ui.dart' show operationNames;
 import 'package:nohut_falafel_desktop/permission_catalogue.g.dart';
 
 void main() {
@@ -26,5 +27,11 @@ void main() {
         expect(value.clients, ['windows'], reason: key);
       }
     }
+  });
+
+  test('every grantable operation has a Turkish name in Kullanıcılar', () {
+    final missing = [for (final e in permissionCatalogue.entries)
+      if (e.value.sensitivity != 'ownerOnly' && !operationNames.containsKey(e.key)) e.key];
+    expect(missing, isEmpty);
   });
 }

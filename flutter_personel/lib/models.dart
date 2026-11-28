@@ -29,6 +29,31 @@ String orderLabel(Json o) {
   return '#$day · $place';
 }
 
+/// Windows menu category keys (`localMenu[].category`) and their Turkish
+/// labels, in the Windows composer's order. Unknown keys keep their text.
+const menuCategoryLabels = <String, String>{
+  'campaign': 'Kampanyalar',
+  'wrap': 'Dürümler',
+  'plate': 'Porsiyonlar',
+  'meze': 'Mezeler',
+  'fatte': 'Fatte',
+  'side': 'Diğer',
+  'salad': 'Salatalar',
+  'dessert': 'Tatlılar',
+  'drink': 'İçecekler',
+};
+
+String menuCategoryLabel(String key) => menuCategoryLabels[key] ?? key;
+
+/// Category keys present in [products], Windows order first, unknown last.
+List<String> menuCategoriesOf(Iterable<Json> products) {
+  final present = {for (final p in products) '${p['category'] ?? p['group'] ?? 'Diğer'}'};
+  return [
+    for (final k in menuCategoryLabels.keys) if (present.contains(k)) k,
+    ...present.where((k) => !menuCategoryLabels.containsKey(k)).toList()..sort(),
+  ];
+}
+
 List<Json> orderLines(Json order) => [
   for (final batch in rows(order['batches']))
     for (final line in rows(batch['lines']))

@@ -7,7 +7,10 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:flutter/material.dart';
+import 'package:nohut_personel/home.dart';
 import 'package:nohut_personel/pos_api.dart';
+import 'package:nohut_personel/style.dart';
 
 void main() {
   test('login stores the session, sends it, and logout clears it', () async {
@@ -62,5 +65,53 @@ void main() {
     final fresh = NohutApi(client: client);
     await fresh.restore();
     expect(fresh.session, isNull);
+  });
+
+  testWidgets('PIN Değiştir sends the password and new PIN; a wrong password stays on the sheet', (t) async {
+    FlutterSecureStorage.setMockInitialValues({
+      'lanUrl': 'http://192.168.1.5:8787', 'deviceToken': 'x' * 40, 'serverId': 'server-1234567890', 'lanSession': 'abc123',
+    });
+    final pins = <Map>[];
+    final client = MockClient((r) async {
+      switch (r.url.path) {
+        case '/api/auth/session':
+          return http.Response(jsonEncode({'session': {'status': 'ok', 'username': 'personela', 'employeeId': 7}}), 200);
+        case '/api/auth/pin':
+          final b = jsonDecode(r.body) as Map;
+          pins.add(b);
+          return b['password'] == 'staff-pass-1'
+              ? http.Response(jsonEncode({'ok': true}), 200)
+              : http.Response(jsonEncode({'error': 'invalid_credentials'}), 403);
+      }
+      return http.Response('{}', 404);
+    });
+    final api = NohutApi(client: client);
+    await api.restore();
+    await api.refreshSession();
+    final c = PersonelController(api, StaffNotifications())
+      ..state = {'employees': [{'id': 7, 'name': 'Test Personel A', 'active': true}], 'localMenu': [], 'orders': []}
+      ..online = true;
+    addTearDown(c.dispose);
+    t.view.physicalSize = const Size(412, 915) * 2;
+    t.view.devicePixelRatio = 2;
+    addTearDown(t.view.reset);
+    await t.pumpWidget(MaterialApp(theme: NohutStyle.theme, home: StaffHome(controller: c, onUnpair: () {})));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Daha Fazla').last);
+    await t.pumpAndSettle();
+    await t.scrollUntilVisible(find.byKey(const ValueKey('change-pin')), 200, scrollable: find.byType(Scrollable).first);
+    await t.tap(find.byKey(const ValueKey('change-pin')));
+    await t.pumpAndSettle();
+    await t.enterText(find.byKey(const ValueKey('pin-password')), 'wrong');
+    await t.enterText(find.byKey(const ValueKey('pin-new')), '47302');
+    await t.tap(find.text('PIN Kaydet'));
+    await t.pumpAndSettle();
+    expect(find.text('Kullanıcı adı veya şifre hatalı.'), findsOneWidget);
+    await t.enterText(find.byKey(const ValueKey('pin-password')), 'staff-pass-1');
+    await t.tap(find.text('PIN Kaydet'));
+    await t.pumpAndSettle();
+    expect(find.text('PIN kaydedildi.'), findsOneWidget);
+    expect(pins.last, allOf(containsPair('pin', '47302'), containsPair('password', 'staff-pass-1')));
+    expect(t.takeException(), isNull);
   });
 }
