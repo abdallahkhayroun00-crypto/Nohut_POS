@@ -1,0 +1,105 @@
+name: Test QR publisher modules
+on:
+  pull_request:
+    paths:
+      - 'supabase/functions/qr-publisher/**'
+      - '.github/workflows/nohut-qr-publisher.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  mock-publisher:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Execute synthetic modules without live credentials
+        run: |
+          set -euo pipefail
+          for f in supabase/functions/qr-publisher/*.test.mjs; do
+            node "$f"
+          done
+
+  tls-and-deno:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: disposable-ci-only
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Check hard-disabled Deno entrypoint
+        run: deno check --no-lock supabase/functions/qr-publisher/index.ts
+      - name: Generate disposable certificates and configure PostgreSQL TLS
+        env:
+          PG_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/qr-tls"
+          cd "$RUNNER_TEMP/qr-tls"
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 -keyout server.key -out server.crt -subj '/CN=localhost' -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1'
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 -keyout wrong.key -out wrong.crt -subj '/CN=wrong-test-ca'
+          docker cp server.key "$PG_CONTAINER":/tmp/qr-server.key
+          docker cp server.crt "$PG_CONTAINER":/tmp/qr-server.crt
+          docker exec -u root "$PG_CONTAINER" sh -c 'chown postgres:postgres /tmp/qr-server.key /tmp/qr-server.crt && chmod 600 /tmp/qr-server.key'
+          psql_ci() { docker exec -i "$PG_CONTAINER" psql -X -v ON_ERROR_STOP=1 -U postgres -d postgres "$@"; }
+          psql_ci -c "alter system set ssl_cert_file='/tmp/qr-server.crt'"
+          psql_ci -c "alter system set ssl_key_file='/tmp/qr-server.key'"
+          psql_ci -c "alter system set ssl=on"
+          psql_ci -c 'select pg_reload_conf()'
+          psql_ci <<'SQL'
+          create role nohut_qr_runtime login nosuperuser nobypassrls nocreatedb nocreaterole noreplication password 'synthetic-ci-runtime-password-not-production';
+          create schema nohut_qr_edge;
+          revoke all on schema nohut_qr_edge from public;
+          grant usage on schema nohut_qr_edge to nohut_qr_runtime;
+          create function nohut_qr_edge.qr_recovery_authority(text,text,bigint,text) returns text language sql as $$ select 'synthetic-restaurant'::text $$;
+          revoke all on function nohut_qr_edge.qr_recovery_authority(text,text,bigint,text) from public;
+          grant execute on function nohut_qr_edge.qr_recovery_authority(text,text,bigint,text) to nohut_qr_runtime;
+          SQL
+          for i in $(seq 1 10); do
+            if [ "$(psql_ci -Atc 'show ssl')" = on ]; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+      - name: Execute TLS verification with pinned driver against disposable DB
+        run: |
+          set -euo pipefail
+          cd supabase/functions/qr-publisher
+          npm install --no-save --ignore-scripts --package-lock=false postgres@3.4.7
+          QR_TEST_CA="$RUNNER_TEMP/qr-tls/server.crt" QR_TEST_WRONG_CA="$RUNNER_TEMP/qr-tls/wrong.crt" node database-tls.integration.mjs
+
+  image-wasm-review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      DENO_DIR: ${{ runner.temp }}/qr-image-deno
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Resolve and typecheck pinned experimental codec
+        run: deno check --no-lock supabase/functions/qr-publisher/image-wasm.integration.ts
+      - name: Decode synthetic raster fixtures without network or write permissions
+        run: |
+          set -euo pipefail
+          timeout 60s deno run --no-lock --cached-only --allow-read="$DENO_DIR" supabase/functions/qr-publisher/image-wasm.integration.ts

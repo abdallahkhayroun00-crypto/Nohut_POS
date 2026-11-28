@@ -1,0 +1,11 @@
+import {makePublisherRuntime} from "./runtime.mjs";
+import assert from "node:assert/strict";
+let calls=0;
+const fail=()=>{calls++;throw Error("unexpected external call")};
+const handler=makePublisherRuntime({env:fail,query:fail,fetchImpl:fail});
+const request=new Request("https://example.invalid/qr-publisher",{method:"POST",headers:{"content-type":"application/json","x-nohut-agent-token":"a".repeat(64)},body:"{}"});
+const result=await handler(request);
+assert.equal(result.status,503);
+assert.deepEqual(await result.json(),{error:"publisher_disabled"});
+assert.equal(calls,0);
+console.log("1 publisher runtime disabled-default regression passed");
