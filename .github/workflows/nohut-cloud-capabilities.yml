@@ -1,0 +1,23 @@
+name: Nohut Cloud Capabilities
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/functions/cloud-capabilities/**'
+      - 'docs/contracts/v1/cloud-capabilities.md'
+      - '.github/workflows/nohut-cloud-capabilities.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-cloud-capabilities:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run synthetic Cloud Capabilities tests
+        run: node --test supabase/functions/cloud-capabilities/cloud-capabilities.test.mjs
