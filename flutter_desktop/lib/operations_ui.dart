@@ -461,6 +461,19 @@ class OrderOperations extends StatelessWidget {
     );
     final guests = asMaps(o['guestChecks']);
     final payments = asMaps(o['payments']);
+    Widget cancelUnits(String key) => OutlinedButton(
+      style: compact,
+      onPressed: () async {
+        final v = await askFields(context, 'Ürün İptali', [
+          ('Adet', '1'),
+          ('Neden', ''),
+        ]);
+        if (v != null) {
+          edit((s) => cancelProduct(s, id, key, parseInteger(v[0]), v[1]));
+        }
+      },
+      child: const Text('Adet İptal'),
+    );
     return Padding(
       padding: const EdgeInsets.all(12),
       child: Column(
@@ -608,7 +621,7 @@ class OrderOperations extends StatelessWidget {
           for (final line in checkLines(o))
             Container(
               margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.fromLTRB(12, 10, 8, 8),
+              padding: EdgeInsets.fromLTRB(12, guests.isEmpty ? 6 : 10, 8, guests.isEmpty ? 6 : 8),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: const Color(0xffE1E7E3)),
@@ -624,6 +637,12 @@ class OrderOperations extends StatelessWidget {
                         style: const TextStyle(fontWeight: FontWeight.w700))),
                       Text(formatTry(line.total), style: const TextStyle(
                         fontWeight: FontWeight.w700)),
+                      // Premium pass: with no guests the only action sits on
+                      // the same row, so each product is one compact line.
+                      if (guests.isEmpty) ...[
+                        const SizedBox(width: 12),
+                        cancelUnits(line.key),
+                      ],
                     ]),
                     if (guests.isNotEmpty)
                       Text(
@@ -643,6 +662,7 @@ class OrderOperations extends StatelessWidget {
                         ].join(' · '),
                         style: const TextStyle(fontSize: 12, color: NohutBrand.muted),
                       ),
+                    if (guests.isNotEmpty) ...[
                     const SizedBox(height: 4),
                     Wrap(
                       spacing: 6,
@@ -712,27 +732,7 @@ class OrderOperations extends StatelessWidget {
                               label: Text('Ürünü Kişiye Ata ▾'),
                             ),
                           ),
-                        OutlinedButton(
-                          style: compact,
-                          onPressed: () async {
-                            final v = await askFields(context, 'Ürün İptali', [
-                              ('Adet', '1'),
-                              ('Neden', ''),
-                            ]);
-                            if (v != null) {
-                              edit(
-                                (s) => cancelProduct(
-                                  s,
-                                  id,
-                                  line.key,
-                                  parseInteger(v[0]),
-                                  v[1],
-                                ),
-                              );
-                            }
-                          },
-                          child: const Text('Adet İptal'),
-                        ),
+                        cancelUnits(line.key),
                         for (final g in asMaps(o['guestChecks']))
                           OutlinedButton(
                             style: compact,
@@ -768,6 +768,7 @@ class OrderOperations extends StatelessWidget {
                           ),
                       ],
                     ),
+                    ],
                   ],
                 ),
             ),
