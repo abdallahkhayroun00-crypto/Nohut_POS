@@ -1,6 +1,8 @@
 // HTTP handler for Trendyol Cloud Proxy v1 (/functions/v1/trendyol-proxy).
 // Actions: verify, poll, execute (Kabul Et / Hazır), reconcile, store_status_read, store_status_set (Aç/Kapat).
-// Strictly authenticated via scoped Windows agent token; never leaks credentials or PII.
+// B2 fix: matches platform_action payload keys { action: 'accept'|'ready', packageId, preparationMinutes? }.
+// N1 fix: enforces payload.storeId === pre.matched.id on store_status_set.
+// N3 fix: maps DB/port errors before PUT to 503 unreachable.
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const HEX64_RE = /^[0-9a-f]{64}$/;
@@ -27,17 +29,14 @@ function jsonResponse(status, payload) {
 }
 
 function validateLeaseEnvelope(body) {
-  if (
-    typeof body.commandId !== 'string' ||
-    !UUID_RE.test(body.commandId) ||
-    !Number.isInteger(body.leaseGeneration) ||
-    body.leaseGeneration <= 0 ||
-    typeof body.envelopeSha256 !== 'string' ||
-    !HEX64_RE.test(body.envelopeSha256)
-  ) {
-    return false;
-  }
-  return true;
+  return (
+    typeof body.commandId === 'string' &&
+    UUID_RE.test(body.commandId) &&
+    Number.isInteger(body.leaseGeneration) &&
+    body.leaseGeneration > 0 &&
+    typeof body.envelopeSha256 === 'string' &&
+    HEX64_RE.test(body.envelopeSha256)
+  );
 }
 
 export function createTrendyolProxyHandler({ config, tgo, ports }) {
@@ -85,7 +84,6 @@ export function createTrendyolProxyHandler({ config, tgo, ports }) {
       }
     }
 
-    // Authenticate scoped Windows agent & enforce server-bound restaurant tenant
     let agent;
     try {
       agent = await ports.authenticateAgent(token);
@@ -96,13 +94,11 @@ export function createTrendyolProxyHandler({ config, tgo, ports }) {
       return jsonResponse(403, { status: 'denied' });
     }
 
-    // 1. Safe read-only credential & store verification (no packages, no customer data, no secrets)
+    // 1. Safe read-only credential & store verification
     if (body.action === 'verify') {
       const st = await tgo.getStores({ page: 0, size: 50 });
       if (!st.ok) {
-        if (st.status === 401 || st.status === 403) {
-          return jsonResponse(401, { status: 'auth_failed' });
-        }
+        if (st.status === 401 || st.status === 403) return jsonResponse(401, { status: 'auth_failed' });
         return jsonResponse(503, { status: 'unknown' });
       }
       if (!st.matched) {
@@ -167,45 +163,66 @@ export function createTrendyolProxyHandler({ config, tgo, ports }) {
       });
     }
 
-    // 4. Lease-bound order execution: Kabul Et (accept) / Hazır (ready)
+    // Helper for lease validation with N3 error mapping before any PUT
+    async function loadLease(expectedActionType) {
+      try {
+        return {
+          ok: true,
+          lease: await ports.validateCommandLease({
+            token,
+            commandId: body.commandId,
+            leaseGeneration: body.leaseGeneration,
+            envelopeSha256: body.envelopeSha256,
+            expectedActionType,
+          }),
+        };
+      } catch {
+        return { ok: false };
+      }
+    }
+
+    // 4. Lease-bound order execution: Kabul Et (action='accept') / Hazır (action='ready')
     if (body.action === 'execute') {
       if (!validateLeaseEnvelope(body)) return jsonResponse(400, { status: 'invalid_request' });
-      const lease = await ports.validateCommandLease({
-        token,
-        commandId: body.commandId,
-        leaseGeneration: body.leaseGeneration,
-        envelopeSha256: body.envelopeSha256,
-        expectedActionType: 'platform_action',
-      });
-      if (!lease || !lease.valid) {
-        return jsonResponse(409, { status: 'conflict' });
-      }
-      const { packageId, operation, preparationTime } = lease.payload || {};
-      if (!packageId || (operation !== 'accept' && operation !== 'ready')) {
+      const loaded = await loadLease('platform_action');
+      if (!loaded.ok) return jsonResponse(503, { status: 'unreachable' });
+      if (!loaded.lease || !loaded.lease.valid) return jsonResponse(409, { status: 'conflict' });
+
+      const payload = loaded.lease.payload || {};
+      const packageId = typeof payload.packageId === 'string' && payload.packageId.trim() ? payload.packageId.trim() : null;
+      const op = payload.action;
+      if (!packageId || (op !== 'accept' && op !== 'ready')) {
         return jsonResponse(400, { status: 'invalid_request' });
       }
-      // Preflight fresh GET state check
+
+      let prepMinutes = 15;
+      if (op === 'accept' && payload.preparationMinutes !== undefined && payload.preparationMinutes !== null) {
+        if (
+          !Number.isInteger(payload.preparationMinutes) ||
+          payload.preparationMinutes < 5 ||
+          payload.preparationMinutes > 120
+        ) {
+          return jsonResponse(400, { status: 'invalid_request' });
+        }
+        prepMinutes = payload.preparationMinutes;
+      }
+
       const pre = await tgo.getPackage({ packageId });
       if (!pre.ok || !pre.pkg) {
         if (pre.status === 401 || pre.status === 403) return jsonResponse(401, { status: 'auth_failed' });
         return jsonResponse(503, { status: 'unknown' });
       }
       const cur = pre.pkg.packageStatus;
-      if (operation === 'accept') {
+      if (op === 'accept') {
         if (cur === 'Picking' || cur === 'Invoiced') {
           return jsonResponse(200, { status: 'no_change', packageStatus: cur });
         }
         if (cur !== 'Created') {
           return jsonResponse(409, { status: 'conflict', packageStatus: cur });
         }
-        const put = await tgo.acceptPackage({ packageId, preparationTime: preparationTime ?? 15 });
-        if (put.ok) {
-          return jsonResponse(200, { status: 'confirmed', packageStatus: 'Picking' });
-        }
-        if (put.status === 400 || put.status === 409) {
-          return jsonResponse(409, { status: 'conflict' });
-        }
-        // Any 5xx/timeout/ambiguous response after PUT -> unknown (NEVER blind retry)
+        const put = await tgo.acceptPackage({ packageId, preparationTime: prepMinutes });
+        if (put.ok) return jsonResponse(200, { status: 'confirmed', packageStatus: 'Picking' });
+        if (put.status === 400 || put.status === 409) return jsonResponse(409, { status: 'conflict' });
         return jsonResponse(200, { status: 'unknown' });
       } else {
         if (cur === 'Invoiced') {
@@ -215,12 +232,8 @@ export function createTrendyolProxyHandler({ config, tgo, ports }) {
           return jsonResponse(409, { status: 'conflict', packageStatus: cur });
         }
         const put = await tgo.markPackageReady({ packageId });
-        if (put.ok) {
-          return jsonResponse(200, { status: 'confirmed', packageStatus: 'Invoiced' });
-        }
-        if (put.status === 400 || put.status === 409) {
-          return jsonResponse(409, { status: 'conflict' });
-        }
+        if (put.ok) return jsonResponse(200, { status: 'confirmed', packageStatus: 'Invoiced' });
+        if (put.status === 400 || put.status === 409) return jsonResponse(409, { status: 'conflict' });
         return jsonResponse(200, { status: 'unknown' });
       }
     }
@@ -228,20 +241,13 @@ export function createTrendyolProxyHandler({ config, tgo, ports }) {
     // 5. Read-only reconciliation for unknown order outcomes (NEVER mutates)
     if (body.action === 'reconcile') {
       if (!validateLeaseEnvelope(body)) return jsonResponse(400, { status: 'invalid_request' });
-      const lease = await ports.validateCommandLease({
-        token,
-        commandId: body.commandId,
-        leaseGeneration: body.leaseGeneration,
-        envelopeSha256: body.envelopeSha256,
-        expectedActionType: 'platform_action',
-      });
-      if (!lease || !lease.valid || !lease.payload?.packageId) {
+      const loaded = await loadLease('platform_action');
+      if (!loaded.ok) return jsonResponse(503, { status: 'unreachable' });
+      if (!loaded.lease || !loaded.lease.valid || !loaded.lease.payload?.packageId) {
         return jsonResponse(409, { status: 'conflict' });
       }
-      const cur = await tgo.getPackage({ packageId: lease.payload.packageId });
-      if (!cur.ok || !cur.pkg) {
-        return jsonResponse(503, { status: 'unknown' });
-      }
+      const cur = await tgo.getPackage({ packageId: loaded.lease.payload.packageId });
+      if (!cur.ok || !cur.pkg) return jsonResponse(503, { status: 'unknown' });
       return jsonResponse(200, {
         status: 'ok',
         packageId: cur.pkg.id,
@@ -249,29 +255,26 @@ export function createTrendyolProxyHandler({ config, tgo, ports }) {
       });
     }
 
-    // 6. Lease-bound store Aç/Kapat (Platform Yönetimi) with readback verification
+    // 6. Lease-bound store Aç/Kapat (Platform Yönetimi) with storeId check & readback verification
     if (body.action === 'store_status_set') {
       if (!validateLeaseEnvelope(body)) return jsonResponse(400, { status: 'invalid_request' });
-      const lease = await ports.validateCommandLease({
-        token,
-        commandId: body.commandId,
-        leaseGeneration: body.leaseGeneration,
-        envelopeSha256: body.envelopeSha256,
-        expectedActionType: 'platform_store_status_set',
-      });
-      if (!lease || !lease.valid) {
-        return jsonResponse(409, { status: 'conflict' });
-      }
-      const { targetStatus, expectedStatus } = lease.payload || {};
+      const loaded = await loadLease('platform_store_status_set');
+      if (!loaded.ok) return jsonResponse(503, { status: 'unreachable' });
+      if (!loaded.lease || !loaded.lease.valid) return jsonResponse(409, { status: 'conflict' });
+
+      const { storeId, targetStatus, expectedStatus } = loaded.lease.payload || {};
       if ((targetStatus !== 'OPEN' && targetStatus !== 'CLOSED') || (expectedStatus !== 'OPEN' && expectedStatus !== 'CLOSED')) {
         return jsonResponse(400, { status: 'invalid_request' });
       }
 
-      // Preflight GET /stores to verify store identity and current workingStatus
       const pre = await tgo.getStores({ page: 0, size: 50 });
       if (!pre.ok || !pre.matched) {
         if (pre.status === 401 || pre.status === 403) return jsonResponse(401, { status: 'auth_failed' });
         return jsonResponse(503, { status: 'unknown' });
+      }
+      // N1: refuse if command payload storeId disagrees with verified store
+      if (storeId != null && String(storeId) !== pre.matched.id) {
+        return jsonResponse(409, { status: 'conflict', verifiedStoreId: pre.matched.id });
       }
       if (pre.matched.workingStatus === targetStatus) {
         return jsonResponse(200, {
@@ -289,20 +292,11 @@ export function createTrendyolProxyHandler({ config, tgo, ports }) {
         });
       }
 
-      // Single PUT attempt only; never cancels active orders
       const put = await tgo.setStoreStatus({ storeId: pre.matched.id, status: targetStatus });
-      if (put.status === 400) {
-        return jsonResponse(409, { status: 'conflict' });
-      }
-      if (put.status === 401 || put.status === 403) {
-        return jsonResponse(401, { status: 'auth_failed' });
-      }
-      if (!put.ok) {
-        // 5xx / timeout / ambiguous -> unknown (reconcile read-only later, NEVER blind retry)
-        return jsonResponse(200, { status: 'unknown', verifiedStoreId: pre.matched.id });
-      }
+      if (put.status === 400) return jsonResponse(409, { status: 'conflict' });
+      if (put.status === 401 || put.status === 403) return jsonResponse(401, { status: 'auth_failed' });
+      if (!put.ok) return jsonResponse(200, { status: 'unknown', verifiedStoreId: pre.matched.id });
 
-      // Readback verification via GET /stores
       const post = await tgo.getStores({ page: 0, size: 50 });
       if (!post.ok || !post.matched) {
         return jsonResponse(200, { status: 'unknown', verifiedStoreId: pre.matched.id });

@@ -1,9 +1,10 @@
 // Fixed-host HTTPS client for official Uber Eats Trendyol GO Meal APIs.
 // Enforces: no redirects, bounded timeout, bounded response body, Basic Auth,
-// strict typed projection (zero email / zero raw credential or PII logging).
+// strict typed projection matching Windows normalizeTgoPackage (B4 + N2 KVKK).
 
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024; // 2 MB
 const DEFAULT_TIMEOUT_MS = 10_000;
+const MASKED_RE = /(\*|xxx|•••)/i;
 
 function toBase64(str) {
   if (typeof btoa === 'function') {
@@ -19,6 +20,10 @@ function cleanStr(v, maxLen = 240) {
   if (typeof v !== 'string') return null;
   const s = v.trim();
   return s ? s.slice(0, maxLen) : null;
+}
+
+function isMasked(s) {
+  return typeof s === 'string' && MASKED_RE.test(s);
 }
 
 function projectWorkingHours(list) {
@@ -50,31 +55,65 @@ function projectAddressParts(addr) {
     addr.addressDescription,
   ]
     .map((p) => (typeof p === 'string' ? p.trim() : ''))
-    .filter((p) => p.length > 0 && !p.includes('*'));
+    .filter((p) => p.length > 0 && !isMasked(p));
   return parts.length > 0 ? parts.join(', ').slice(0, 400) : null;
 }
 
 function projectPhone(addr) {
   if (!addr || typeof addr !== 'object') return null;
   const p = cleanStr(addr.phone, 40);
-  if (!p || p.includes('*')) return null;
+  if (!p || isMasked(p)) return null;
   return p;
 }
 
-// Typed allowlist matching Windows normalizeTgoPackage + owner-requested receipt fields
-// (customerPhone, deliveryAddress, deliveryType; KVKK-minimized, zero email).
+function projectIngredients(list) {
+  if (!Array.isArray(list)) return [];
+  return list
+    .filter((x) => x && typeof x === 'object')
+    .map((x) => ({
+      id: x.id != null ? String(x.id) : null,
+      name: cleanStr(x.name, 120) || '',
+      price: typeof x.price === 'number' ? x.price : Number(x.price || 0),
+    }))
+    .filter((x) => x.name.length > 0);
+}
+
+function projectModifiers(list, depth = 0) {
+  if (!Array.isArray(list) || depth > 4) return [];
+  return list
+    .filter((m) => m && typeof m === 'object')
+    .map((m) => ({
+      name: cleanStr(m.name, 120) || '',
+      price: typeof m.price === 'number' ? m.price : Number(m.price || 0),
+      removedIngredients: projectIngredients(m.removedIngredients),
+      extraIngredients: projectIngredients(m.extraIngredients),
+      modifierProducts: projectModifiers(m.modifierProducts, depth + 1),
+    }));
+}
+
+// Typed allowlist matching Windows normalizeTgoPackage + owner-approved receipt fields
+// (unitSellingPrice, removedIngredients, extraIngredients, nested modifierProducts,
+// payment.paymentType, storePickupSelected; KVKK-minimized, zero email).
 export function projectPackage(raw) {
   if (!raw || typeof raw !== 'object') return null;
   const id = raw.id != null ? String(raw.id) : null;
   if (!id) return null;
   const addr = raw.address && typeof raw.address === 'object' ? raw.address : null;
   const deliveryType = cleanStr(raw.deliveryType, 24) || 'UNKNOWN';
-  const isRestaurantCourier = deliveryType.toUpperCase() === 'STORE';
+  const storePickupSelected = Boolean(raw.storePickupSelected);
+  const exposeDeliveryContact = deliveryType.toUpperCase() === 'STORE' && !storePickupSelected;
+
   const lines = Array.isArray(raw.lines)
     ? raw.lines
         .filter((l) => l && typeof l === 'object')
         .map((l) => ({
           name: cleanStr(l.name, 160) || '',
+          unitSellingPrice:
+            typeof l.unitSellingPrice === 'number'
+              ? l.unitSellingPrice
+              : typeof l.price === 'number'
+                ? l.price
+                : Number(l.unitSellingPrice ?? l.price ?? 0),
           price: typeof l.price === 'number' ? l.price : Number(l.price || 0),
           items: Array.isArray(l.items)
             ? l.items.map((it) => ({
@@ -82,12 +121,9 @@ export function projectPackage(raw) {
                 isCancelled: Boolean(it?.isCancelled),
               }))
             : [],
-          modifierProducts: Array.isArray(l.modifierProducts)
-            ? l.modifierProducts.map((m) => ({
-                name: cleanStr(m?.name, 120) || '',
-                price: typeof m?.price === 'number' ? m.price : Number(m?.price || 0),
-              }))
-            : [],
+          removedIngredients: projectIngredients(l.removedIngredients),
+          extraIngredients: projectIngredients(l.extraIngredients),
+          modifierProducts: projectModifiers(l.modifierProducts, 0),
         }))
     : [];
 
@@ -97,15 +133,19 @@ export function projectPackage(raw) {
     orderNumber: cleanStr(raw.orderNumber, 64),
     packageStatus: cleanStr(raw.packageStatus, 32) || 'Unknown',
     deliveryType,
+    storePickupSelected,
+    payment: {
+      paymentType: cleanStr(raw.payment?.paymentType, 48),
+    },
     totalPrice: typeof raw.totalPrice === 'number' ? raw.totalPrice : Number(raw.totalPrice || 0),
     packageCreationDate: typeof raw.packageCreationDate === 'number' ? raw.packageCreationDate : null,
     packageModificationDate: typeof raw.packageModificationDate === 'number' ? raw.packageModificationDate : null,
     customerNote: cleanStr(raw.customerNote, 300),
     customerFirstName: cleanStr(raw.customer?.firstName, 80),
     customerLastName: cleanStr(raw.customer?.lastName, 80),
-    // KVKK minimization: expose unmasked contact/address only for restaurant-managed delivery
-    customerPhone: isRestaurantCourier ? projectPhone(addr) : null,
-    deliveryAddress: isRestaurantCourier ? projectAddressParts(addr) : null,
+    // KVKK minimization: expose unmasked contact/address ONLY for restaurant-managed delivery (never Gel-Al / GO)
+    customerPhone: exposeDeliveryContact ? projectPhone(addr) : null,
+    deliveryAddress: exposeDeliveryContact ? projectAddressParts(addr) : null,
     lines,
   };
 }
@@ -237,10 +277,13 @@ export function createTgoClient(config, { fetchImpl = fetch, timeoutMs = DEFAULT
     },
 
     async acceptPackage({ packageId, preparationTime }) {
+      if (!Number.isInteger(preparationTime) || preparationTime < 5 || preparationTime > 120) {
+        throw new Error('invalid_preparation_time');
+      }
       return request(
         'PUT',
         `/integrator/order/meal/suppliers/${config.supplierId}/packages/picked`,
-        { packageId: String(packageId), preparationTime: Number(preparationTime) },
+        { packageId: String(packageId), preparationTime },
       );
     },
 
