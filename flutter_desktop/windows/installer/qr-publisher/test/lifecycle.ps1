@@ -5,7 +5,8 @@ if ($env:GITHUB_ACTIONS -ne 'true' -or -not $env:RUNNER_TEMP) {
   throw 'Publisher lifecycle test runs only on an isolated GitHub Actions runner.'
 }
 # Capture the runner's installed Node before replacing profile environment.
-$node = (Get-Command node.exe -CommandType Application -ErrorAction Stop).Source
+$node = (Get-Command node.exe -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
+if ([string]::IsNullOrWhiteSpace($node) -or -not (Test-Path -LiteralPath $node -PathType Leaf)) { throw 'CI Node executable not found.' }
 $version = & $node --version
 if ($LASTEXITCODE -ne 0 -or $version -notmatch '^v([0-9]+)\.' -or [int]$Matches[1] -lt 22) {
   throw 'CI requires a working Node.js 22+ executable.'
