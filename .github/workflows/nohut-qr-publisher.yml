@@ -86,3 +86,20 @@ jobs:
           cd supabase/functions/qr-publisher
           npm install --no-save --ignore-scripts --package-lock=false postgres@3.4.7
           QR_TEST_CA="$RUNNER_TEMP/qr-tls/server.crt" QR_TEST_WRONG_CA="$RUNNER_TEMP/qr-tls/wrong.crt" node database-tls.integration.mjs
+
+  image-wasm-review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      DENO_DIR: ${{ runner.temp }}/qr-image-deno
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Resolve and typecheck pinned experimental codec
+        run: deno check --no-lock supabase/functions/qr-publisher/image-wasm.integration.ts
+      - name: Decode synthetic raster fixtures without network or write permissions
+        run: |
+          set -euo pipefail
+          timeout 60s deno run --no-lock --cached-only --allow-read="$DENO_DIR" supabase/functions/qr-publisher/image-wasm.integration.ts
