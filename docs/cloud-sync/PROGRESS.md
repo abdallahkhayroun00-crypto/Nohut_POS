@@ -83,6 +83,19 @@ EVIDENCE:
 
 **Blockers / owner actions:** live Trendyol read-only check needs explicit owner authorization (R1); physical iPhone HTTPS/Safari test (L4); any FCM project needs owner approval (N4); KVKK gate unchanged.
 
+## Antigravity (Gemini) temporary backend continuation — Hardening Pass: Privacy Allowlist, Provenance Freshness & QR v2 Reconcile Alignment (2026-11-28)
+
+- **Branch / PR:** `gemini/backend-continuation` (**PR #46** draft targeting `chatgpt/pr-05b-cloud-rpcs`).
+- **Status:** `Implemented / Tested` (NOT self-verified; independent re-review requested from ChatGPT / Codex & Claude).
+- **Resolves review blockers `#7230391428`, `#7230501923`, `#7230678865`:**
+  - `supabase/migrations/20261127171000_nohut_read_privacy_freshness_hardening.sql`:
+    1. **Financial Privacy Allowlist (`public.nohut_daily_report_view`):** Enforces `p_client = 'yonetici'` + `dashboard.view`, constructs output strictly field-by-field matching Claude's `daily_report.dart` `redactDailyReport` matrix (`amountsHidden: true` without `sales.view`; all 12 monetary fields strictly absent without `sales.view`; `expenses`/`estimatedResultCents`/`estimateNote` absent without `finance.view`). Ingest rejects unknown top-level keys and rejects `staffHours`/`workingHours`/`employeeHours` at **any nesting depth**.
+    2. **Provenance-Bound Stale Metadata (`nohut_private.projection_watermarks` + `projection_freshness`):** Tracks `(restaurant_id, projection_key, authority_epoch, source_revision, calculated_at, updated_at)` across all 5 projections (`workforce_summaries`, `shift_plans`, `qr_menu_state`, `notifications`, `daily_reports`), detecting `no_sync`, `sync_aged`, `projection_missing`, `epoch_mismatch`, `revision_ahead`, and `projection_aged`. Forces `preliminary: true` on stale daily reports.
+    3. **Full `unreadCount`:** `public.nohut_notifications_list` computes `unreadCount` across ALL visible unread items (independent of `p_limit`).
+    4. **QR Recovery & Digest Alignment (`#7230501923` / Claude `aea2861`):** `qr_menu_reconcile` enforces exact `{targetRequestId: UUID, mode: 'reconcile' | 'cancel_before_attempt'}` and denies legacy `{}`; `qr_menu_publish` supports optional `draftSha256` (64-hex) validated against `expectedStamp` (first 16 hex).
+- **Validation (synthetic data only):**
+  - Local Docker Postgres 16: **58/58 migrations & 31/31 SQL test suites passed** under both `postgres` superuser and `cloud_migrator` (`NOSUPERUSER NOBYPASSRLS`).
+
 ## Antigravity (Gemini) temporary backend continuation — Increment C: Cloud Notifications & Gün Sonu Raporu Projections (2026-11-27)
 
 - **Branch / PR:** `gemini/backend-continuation` (**PR #46** draft targeting `chatgpt/pr-05b-cloud-rpcs`).

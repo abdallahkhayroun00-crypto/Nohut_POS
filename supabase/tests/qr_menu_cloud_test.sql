@@ -94,7 +94,8 @@ begin
   exception when insufficient_privilege then null;
   end;
 
-  -- 2. Apply valid synthetic QR menu projection
+  -- 2. Apply valid synthetic QR menu projection (checkpoint already at 11)
+  update nohut_private.sync_checkpoints set last_acked_revision = 11 where restaurant_id = r1 and authority_epoch = ep1;
   perform nohut_private.apply_qr_menu_projection(r1, 11, jsonb_build_object(
     'available', true,
     'stamp', stamp1,
@@ -149,13 +150,35 @@ begin
     jsonb_build_object('expectedStamp', stamp1, 'action', 'set_price', 'id', 'falafel-wrap', 'priceCents', 17000));
   if res->>'status' <> 'conflict' then raise exception 'expected conflict qr_menu_write: %', res; end if;
 
-  -- 5. Personel enqueues qr_menu_publish, qr_menu_reconcile, qr_menu_image, qr_menu_sync
+  -- 5. Personel enqueues qr_menu_publish (with matching draftSha256), qr_menu_reconcile (exact v2 payload), qr_menu_image, qr_menu_sync
   res := public.nohut_enqueue_command(d_staff, 'personel', pv_staff, req2, 'qr_menu_publish',
-    jsonb_build_object('expectedStamp', stamp1, 'confirmed', true));
+    jsonb_build_object('expectedStamp', stamp1, 'confirmed', true, 'draftSha256', stamp1 || repeat('0', 48)));
   if res->>'status' <> 'accepted' then raise exception 'personel publish failed: %', res; end if;
 
-  res := public.nohut_enqueue_command(d_staff, 'personel', pv_staff, req3, 'qr_menu_reconcile', '{}'::jsonb);
+  res := public.nohut_enqueue_command(d_staff, 'personel', pv_staff, req3, 'qr_menu_reconcile',
+    jsonb_build_object('targetRequestId', req2::text, 'mode', 'reconcile'));
   if res->>'status' <> 'accepted' then raise exception 'personel reconcile failed: %', res; end if;
+
+  -- Legacy {} qr_menu_reconcile and mismatched draftSha256 MUST be rejected (#7230501923)
+  begin
+    perform public.nohut_enqueue_command(d_staff, 'personel', pv_staff, req6, 'qr_menu_reconcile', '{}'::jsonb);
+    raise exception 'legacy empty qr_menu_reconcile accepted';
+  exception when invalid_parameter_value then null;
+  end;
+
+  begin
+    perform public.nohut_enqueue_command(d_staff, 'personel', pv_staff, req6, 'qr_menu_reconcile',
+      jsonb_build_object('targetRequestId', req2::text, 'mode', 'invalid_mode'));
+    raise exception 'invalid reconcile mode accepted';
+  exception when invalid_parameter_value then null;
+  end;
+
+  begin
+    perform public.nohut_enqueue_command(d_staff, 'personel', pv_staff, req6, 'qr_menu_publish',
+      jsonb_build_object('expectedStamp', stamp1, 'confirmed', true, 'draftSha256', repeat('f', 64)));
+    raise exception 'mismatched draftSha256 accepted';
+  exception when invalid_parameter_value then null;
+  end;
 
   res := public.nohut_enqueue_command(d_staff, 'personel', pv_staff, req4, 'qr_menu_image',
     jsonb_build_object('expectedStamp', stamp1, 'id', 'falafel-wrap', 'mime', 'image/webp', 'storagePath', 'qr-uploads/synthetic_img_1.webp', 'sizeBytes', 240000));
