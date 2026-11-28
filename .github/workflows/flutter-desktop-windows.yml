@@ -51,6 +51,9 @@ jobs:
       - name: Unit tests
         working-directory: flutter_desktop
         run: flutter test --reporter expanded
+      - name: Isolated TEST build rules (test / 00000, no live actions)
+        working-directory: flutter_desktop
+        run: flutter test test/test_build_test.dart --dart-define=NOHUT_TEST_BUILD=true
       - uses: actions/setup-node@v4
         with:
           node-version: '22'

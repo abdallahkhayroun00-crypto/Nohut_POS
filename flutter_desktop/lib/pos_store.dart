@@ -14,6 +14,7 @@ import 'operations.dart';
 import 'order_sync_identity.dart';
 import 'receipt_sync_history.dart';
 import 'payment_ledger_sync.dart';
+import 'test_build.dart';
 
 /// Compatible with the Python LAN prototype's state_snapshot schema.
 /// All order data lives on the restaurant laptop, not in GitHub Pages.
@@ -58,11 +59,13 @@ class PosStore extends ChangeNotifier {
   static String resolvePath(String? databaseFile) {
     if (databaseFile != null) return databaseFile;
     final env = Platform.environment['NOHUT_POS_DATABASE'];
-    if (env != null) return env;
+    // A TEST build never opens the restaurant database.
+    if (env != null && !nohutTestBuild) return env;
     final defaultFolder =
         Platform.environment['APPDATA'] ??
         paths.join(Directory.current.path, 'local-data');
-    final folder = Directory(paths.join(defaultFolder, 'NohutFalafel'));
+    final folder = Directory(paths.join(defaultFolder,
+        nohutTestBuild ? testBuildDataFolder : 'NohutFalafel'));
     folder.createSync(recursive: true);
     return paths.join(folder.path, 'nohut-pos.sqlite3');
   }

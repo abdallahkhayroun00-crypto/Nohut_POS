@@ -6,6 +6,7 @@ import 'package:file_selector/file_selector.dart';
 import 'package:path/path.dart' as paths;
 
 import 'qr_publisher_client.dart';
+import 'test_build.dart';
 
 /// Version the bundled `QRPublisher/server.mjs` reports on /health. Bump both
 /// together: a running publisher with another version is restarted.
@@ -452,6 +453,7 @@ class QrPublisherSupervisor {
       _flight ??= _start(keyFile).whenComplete(() => _flight = null);
 
   Future<PublisherDiagnosis> _start(String? chosenKey) async {
+    if (nohutTestBuild) return diagnose();
     await host.deleteFile(legacyStartupShortcut);
     final before = await diagnose();
     if (before.issue == PublisherIssue.running) return before;
@@ -512,6 +514,7 @@ class QrPublisherSupervisor {
   /// POS launch: bring the publisher up quietly when everything it needs is
   /// present. Never prompts, never changes credentials.
   Future<PublisherDiagnosis> ensureRunning() async {
+    if (nohutTestBuild) return diagnose();
     if (host.isWindows) await host.deleteFile(legacyStartupShortcut);
     final d = await diagnose();
     if (d.issue == PublisherIssue.stopped ||

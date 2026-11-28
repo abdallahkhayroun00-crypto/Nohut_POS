@@ -67,6 +67,8 @@ import 'notifications_ui.dart';
 import 'first_sync_ui.dart';
 import 'platform_management.dart';
 import 'platform_management_ui.dart';
+import 'test_build.dart';
+import 'test_build_seed.dart';
 
 part 'order_composer.dart';
 
@@ -76,6 +78,10 @@ const emerald = Color(0xff3b7550);
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  if (nohutTestBuild) {
+    installTestBuildGuards();
+    prepareTestBuildStore();
+  }
   runApp(const NohutFalafelApp());
 }
 
@@ -135,8 +141,15 @@ class NohutFalafelApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) => MaterialApp(
     debugShowCheckedModeBanner: false,
-    title: 'Nohut Falafel · Yönetici Paneli',
+    title: nohutTestBuild ? 'Nohut Falafel · TEST' : 'Nohut Falafel · Yönetici Paneli',
     theme: NohutBrand.theme(),
+    builder: nohutTestBuild ? (context, child) => Column(children: [
+      Material(color: const Color(0xffB3261E), child: SafeArea(bottom: false, child: SizedBox(
+        width: double.infinity, height: 28,
+        child: const Center(child: Text(testBuildBanner, key: ValueKey('test-build-banner'),
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 13)))))),
+      Expanded(child: child ?? const SizedBox()),
+    ]) : null,
     home: ManagerDesktop(
       databaseFile: databaseFile,
       startServer: startServer,
@@ -260,6 +273,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     onlineAlarm.setAudioEnabled(settings['onlineOrderSound'] != false);
     inpos = InposPayments(store, widget.inposGateway ?? UnavailableInpos());
     localAuth = LocalAuth(store.authDatabase)..loadSettings();
+    if (nohutTestBuild) unawaited(seedTestAccount(localAuth));
     lan = PosLanServer(
       store,
       authGate: LanAuthGate(localAuth),

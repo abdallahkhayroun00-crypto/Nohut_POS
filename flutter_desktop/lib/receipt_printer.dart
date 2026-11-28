@@ -10,6 +10,7 @@ import 'pos_logic.dart';
 import 'pos_store.dart';
 import 'receipt_layout.dart';
 import 'trendyol_go_readonly.dart';
+import 'test_build.dart';
 
 typedef PrintTransport = Future<void> Function(String text, String printer);
 
@@ -179,6 +180,7 @@ class ReceiptPrinter {
 }
 
 Future<void> windowsPrint(String text, String printer, {Map? settings}) async {
+  if (nohutTestBuild) throw const TestBuildBlocked('yazdırma');
   if (!Platform.isWindows) {
     throw const FormatException('Windows yazıcısı gerekir');
   }

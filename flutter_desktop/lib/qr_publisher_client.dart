@@ -6,6 +6,7 @@ import 'package:path/path.dart' as paths;
 
 import 'pos_logic.dart';
 import 'windows_vault.dart';
+import 'test_build.dart';
 
 /// The publisher answered with an HTTP error: the request was refused and
 /// nothing was written (e.g. 409 when the GitHub revision changed).
@@ -88,6 +89,8 @@ class QrPublisherClient {
   Future<Map<String,dynamic>> call(
     String method, String endpoint, String path, [Json? data]
   ) async {
+    // A TEST build must never reach the real publisher (live QR menu).
+    if(nohutTestBuild)throw const FormatException('TEST sürümünde QR yayınlama kapalı.');
     final base=checkEndpoint(endpoint);
     final url=base.resolve(path.replaceFirst(RegExp(r'^/'), ''));
     if(url.host!=base.host||url.port!=base.port||url.scheme!=base.scheme)
