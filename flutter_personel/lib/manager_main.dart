@@ -12,6 +12,7 @@ import 'owner_api.dart';
 import 'menu_admin_page.dart';
 import 'owner_payroll.dart';
 import 'team_performance_page.dart';
+import 'demand_page.dart';
 import 'pos_api.dart';
 import 'style.dart';
 import 'work_page.dart' show WorkFormat;
@@ -441,7 +442,9 @@ class _OwnerHomeState extends State<OwnerHome> {
         payrollPanel(),
         title(day==ReportPeriod.day(ReportPeriod.today())?'Bugün ekip':'Ekip · ${dayLabel(day)}'),
         teamPanel(),
-        title('Saatlik yoğunluk'),
+        NohutSection('Saatlik yoğunluk',action:TextButton(key:const ValueKey('home-demand'),
+          onPressed:offline?null:()=>Navigator.of(context).push(MaterialPageRoute<void>(
+            builder:(_)=>DemandPage(request:api.request))),child:const Text('Haftalık'))),
         hourly(),
         NohutSection('Son siparişler',action:TextButton(onPressed:()=>setState(()=>section='tables'),child:const Text('Tümü'))),
         ...orderList('orders').take(6),
@@ -508,6 +511,11 @@ class _OwnerHomeState extends State<OwnerHome> {
         FilledButton.icon(onPressed:()=>Navigator.of(context).push(MaterialPageRoute<void>(
           builder:(_)=>Scaffold(appBar:AppBar(title:const Text('Raporlar · PDF')),body:ManagerFinancePage(store:finance)))),
           icon:const Icon(Icons.picture_as_pdf),label:const Text('Tam Yönetim Raporu · Tek PDF')),
+        const SizedBox(height:8),
+        OutlinedButton.icon(key:const ValueKey('reports-demand'),
+          onPressed:offline?null:()=>Navigator.of(context).push(MaterialPageRoute<void>(
+            builder:(_)=>DemandPage(request:api.request))),
+          icon:const Icon(Icons.grid_on_outlined),label:const Text('Yoğunluk · Gün ve Saat')),
         ...stats(),
       ];
       case 'finance':return [

@@ -200,4 +200,16 @@ void main() {
     expect(b, 200);
     expect((((bb as Map)['team'] as Map)['totals'] as Map).containsKey('salesCents'), true);
   });
+
+  test('Yoğunluk: login required, counts only', () async {
+    final (u, _, _) = await call('GET', '/api/yonetici/demand?range=last4');
+    expect(u, 401);
+    final owner = await login('sahip', 'owner-pass-1');
+    final (a, ab, _) = await call('GET', '/api/yonetici/demand?range=last4', cookie: owner);
+    expect(a, 200, reason: '$ab');
+    final d = (ab as Map)['demand'] as Map;
+    expect(d['range'], 'last4');
+    expect((d['heatmap'] as List).length, 7);
+    expect(d.keys.any((k) => '$k'.contains('Cents')), isFalse);
+  });
 }
