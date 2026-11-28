@@ -39,7 +39,7 @@ void main() {
     ('phone-dark', const Size(412, 915), 1.0, Brightness.dark),
     ('compact', const Size(320, 640), 1.3, Brightness.light),
   ]) {
-    for (final tab in ['Masalar', 'Sipariş', 'Siparişler', 'Masa 1']) {
+    for (final tab in ['Masalar', 'Sipariş', 'Siparişler', 'Masa 1', 'Sepet']) {
       testWidgets('$tab $label', (t) async {
         final c = busyController();
         await renderScreen(t, 'order-${tab.toLowerCase().replaceAll(' ', '')}-$label', MaterialApp(
@@ -50,7 +50,19 @@ void main() {
           home: StaffHome(controller: c, onUnpair: () {})),
           size: size, brightness: mode,
           before: (t) async {
-            if (tab == 'Masa 1') {
+            if (tab == 'Sepet') {
+              // A free table, three items.
+              await t.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Masalar')));
+              await t.pumpAndSettle();
+              await t.tap(find.text('Masa 1'));
+              await t.pumpAndSettle();
+              final add = find.byTooltip('Sepete Ekle');
+              await t.tap(add.first);
+              await t.tap(add.first);
+              await t.tap(add.at(1));
+              await t.pumpAndSettle();
+              await t.tap(find.byKey(const ValueKey('go-cart')));
+            } else if (tab == 'Masa 1') {
               // Choosing a free table opens the product list for it.
               await t.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Masalar')));
               await t.pumpAndSettle();

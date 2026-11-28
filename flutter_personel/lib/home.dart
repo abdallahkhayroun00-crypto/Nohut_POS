@@ -500,7 +500,11 @@ class _StaffHomeState extends State<StaffHome> {
             const SizedBox(height: 8),
             SizedBox(width: double.infinity, child: FilledButton.tonal(
               key: const ValueKey('go-cart'),
-              onPressed: () => setState(() => tab = 2),
+              onPressed: () {
+                // "sepete eklendi" notes would cover the send button.
+                ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                setState(() => tab = 2);
+              },
               child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                 const Icon(Icons.shopping_cart_outlined, size: 18),
                 const SizedBox(width: 8),
@@ -577,8 +581,72 @@ class _StaffHomeState extends State<StaffHome> {
     ]);
   }
 
+  Widget _cartLine(CartEntry line) {
+    final nc = context.nohut;
+    final details = [
+      if (line.removed.isNotEmpty) 'Çıkar: ${line.removed.join(', ')}',
+      if (line.note.trim().isNotEmpty) line.note.trim(),
+    ];
+    return Card(margin: const EdgeInsets.only(bottom: 8), child: Padding(
+      padding: const EdgeInsets.fromLTRB(14, 12, 8, 8),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(line.name, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16.5)),
+            const SizedBox(height: 2),
+            Text('${line.qty} × ${money(line.unitCents)}',
+              style: TextStyle(color: nc.muted, fontSize: 13)),
+          ])),
+          Padding(padding: const EdgeInsets.only(right: 6), child: Text(money(line.totalCents),
+            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16))),
+        ]),
+        if (details.isNotEmpty)
+          Padding(padding: const EdgeInsets.only(top: 6), child: Text(details.join(' · '),
+            key: ValueKey('cart-details-${line.productId}'),
+            style: TextStyle(color: nc.heading, fontSize: 13, fontWeight: FontWeight.w600))),
+        const SizedBox(height: 6),
+        Row(children: [
+          DecoratedBox(
+            decoration: BoxDecoration(
+              border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+              borderRadius: BorderRadius.circular(24)),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              IconButton(
+                key: ValueKey('cart-minus-${line.productId}'),
+                tooltip: line.qty == 1 ? 'Sepetten çıkar' : 'Bir azalt',
+                visualDensity: VisualDensity.compact,
+                onPressed: () => setState(() {
+                  _dirty();
+                  line.qty--;
+                  if (line.qty == 0) cart.remove(line);
+                }),
+                icon: Icon(line.qty == 1 ? Icons.delete_outline : Icons.remove)),
+              SizedBox(width: 28, child: Text('${line.qty}', textAlign: TextAlign.center,
+                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16))),
+              IconButton(
+                key: ValueKey('cart-plus-${line.productId}'),
+                tooltip: 'Bir artır',
+                visualDensity: VisualDensity.compact,
+                onPressed: () => setState(() {
+                  _dirty();
+                  line.qty++;
+                }),
+                icon: const Icon(Icons.add)),
+            ])),
+          Expanded(child: Align(alignment: Alignment.centerRight, child: TextButton.icon(
+            onPressed: () => _edit(line),
+            icon: const Icon(Icons.edit_note_outlined),
+            label: Text(details.isEmpty ? 'Not / Malzeme' : 'Düzenle', overflow: TextOverflow.ellipsis)))),
+        ]),
+      ]),
+    ));
+  }
+
   Widget _cartPage(double width) {
-    return ListView(padding: const EdgeInsets.all(15), children: [
+    final nc = context.nohut;
+    final addition = source == 'Masa' && targetOrderId != null;
+    return Column(children: [
+      Expanded(child: ListView(padding: const EdgeInsets.fromLTRB(15, 15, 15, 8), children: [
       Row(children: [
         Expanded(child: _heading('Sipariş Sepeti', '$count ürün')),
         if (!widget.ownerMode && cart.isNotEmpty)
@@ -643,60 +711,52 @@ class _StaffHomeState extends State<StaffHome> {
           keyboardType: TextInputType.datetime,
           decoration: const InputDecoration(labelText: 'Teslim saati (isteğe bağlı)')),
       ],
+      if (addition)
+        Padding(padding: const EdgeInsets.only(top: 10), child: Row(children: [
+          Icon(Icons.info_outline, size: 18, color: nc.heading),
+          const SizedBox(width: 8),
+          Expanded(child: Text('Masa $tableNumber açık: ürünler mevcut siparişe ek sipariş olarak eklenir.',
+            key: const ValueKey('cart-addition-hint'),
+            style: TextStyle(color: nc.heading, fontSize: 13, fontWeight: FontWeight.w600))),
+        ])),
       const SizedBox(height: 14),
       if (cart.isEmpty) Card(child: NohutEmpty(
         icon: Icons.shopping_basket_outlined, message: 'Sepet henüz boş',
         action: 'Ürün Ekle', onAction: () => setState(() => tab = 1))),
-      for (final line in cart)
-        Card(margin: const EdgeInsets.only(bottom: 8), child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(children: [
+      for (final line in cart) _cartLine(line),
+      ])),
+      DecoratedBox(
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          border: Border(top: BorderSide(color: Theme.of(context).colorScheme.outlineVariant))),
+        child: SafeArea(top: false, child: Padding(
+          padding: const EdgeInsets.fromLTRB(15, 12, 15, 12),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             Row(children: [
-              Expanded(child: Text(line.name, style: const TextStyle(
-                fontWeight: FontWeight.w700, fontSize: 17))),
-              Text(money(line.totalCents),
-                style: const TextStyle(fontWeight: FontWeight.w800)),
+              Expanded(child: Text(
+                source == 'Masa' ? 'Masa $tableNumber${addition ? ' · Ek sipariş' : ''} · $count ürün'
+                    : 'Gel-Al · $pickupChannel · $count ürün',
+                style: TextStyle(color: nc.muted, fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis)),
+              Text(money(total), key: const ValueKey('cart-total'), style: TextStyle(
+                fontWeight: FontWeight.w800, fontSize: 22, color: nc.heading)),
             ]),
-            Row(children: [
-              IconButton.outlined(
-                onPressed: () => setState(() {
-                  _dirty();
-                  line.qty--;
-                  if (line.qty == 0) cart.remove(line);
-                }), icon: const Icon(Icons.remove)),
-              Text('${line.qty}',
-                style: const TextStyle(fontWeight: FontWeight.bold)),
-              IconButton.outlined(
-                onPressed: () => setState(() {
-                  _dirty();
-                  line.qty++;
-                }), icon: const Icon(Icons.add)),
-              Expanded(child: Align(alignment: Alignment.centerRight, child: TextButton.icon(
-                onPressed: () => _edit(line),
-                icon: const Icon(Icons.edit_note_outlined),
-                label: const Text('Not / Malzeme', overflow: TextOverflow.ellipsis)))),
-            ]),
+            const SizedBox(height: 10),
+            FilledButton.icon(
+              key: const ValueKey('cart-send'),
+              onPressed: sending || cart.isEmpty || !c.online ? null : _send,
+              icon: sending
+                  ? const SizedBox(height: 17, width: 17,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.send),
+              label: const Text('Siparişi Laptopa Kaydet')),
+            if (MediaQuery.sizeOf(context).height >= 700) ...[const SizedBox(height: 6),
+            Text(c.online ? 'Windows POS onaylayınca kaydedilir. Bağlantı kesilirse sepet korunur.'
+                : 'Laptop bağlantısı yok. Sepet korunuyor; bağlanınca gönderebilirsiniz.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, color: nc.muted))],
           ]),
         )),
-      const Divider(height: 24),
-      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-        const Text('Toplam', style: TextStyle(fontSize: 21)),
-        Text(money(total), style: TextStyle(
-          fontWeight: FontWeight.w800, fontSize: 24,
-          color: context.nohut.heading)),
-      ]),
-      const SizedBox(height: 13),
-      FilledButton.icon(
-        onPressed: sending || cart.isEmpty || !c.online ? null : _send,
-        icon: sending
-            ? const SizedBox(height: 17, width: 17,
-                child: CircularProgressIndicator(strokeWidth: 2))
-            : const Icon(Icons.send),
-        label: const Text('Siparişi Laptopa Kaydet')),
-      const SizedBox(height: 8),
-      Text('Yalnızca Windows POS siparişi onayladıktan sonra '
-        'kayıt başarılı sayılır. Bağlantı kesilirse sepet korunur.',
-        style: TextStyle(fontSize: 12, color: context.nohut.muted)),
+      ),
     ]);
   }
 
@@ -902,7 +962,10 @@ class _StaffHomeState extends State<StaffHome> {
         final shown = widget.ownerMode ? tab
             : tab == 1 ? 2 : tab == 5 ? 4 : tab;
         final selectedIndex = nav.indexWhere((n) => n.$1 == shown).clamp(0, nav.length - 1);
-        void go(int i) => setState(() => tab = nav[i].$1);
+        void go(int i) {
+          if (nav[i].$1 == 2) ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          setState(() => tab = nav[i].$1);
+        }
         final screen = switch (tab) {
           _home when !widget.ownerMode => _homePage(),
           0 => _tablePage(contentWidth),
