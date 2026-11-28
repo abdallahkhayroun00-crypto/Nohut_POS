@@ -17,6 +17,19 @@
 /// * The manifest records schema/revision/time/app version/table counts and
 ///   the SHA-256 of the uncompressed database, re-checked after decryption.
 ///
+/// Format 2 (only when the owner's backup includes integration credentials,
+/// see `integration_secrets.dart`) appends a second AES-256-GCM box:
+///
+/// ```text
+/// ... header | db ciphertext | db tag | secrets ciphertext | secrets tag
+/// ```
+///
+/// The header (still the AAD of both boxes) gains
+/// `sections.integrations = {nonce, cipherLength}`; the secrets box uses the
+/// same Argon2id key, its own random nonce and AAD = header + "|integrations".
+/// Backups without credentials stay format 1, byte-compatible with older
+/// apps. The section is never written to SQLite.
+///
 /// Restore is staged: decrypt + verify + `PRAGMA integrity_check` into a
 /// staging file, write a pending marker, and apply only at the next start,
 /// before the database is opened, with a safety copy and automatic rollback.
@@ -34,10 +47,15 @@ import 'package:path/path.dart' as paths;
 import 'package:sqlite3/sqlite3.dart';
 
 import 'entity_storage.dart';
+import 'integration_secrets.dart';
 import 'pos_store.dart';
+import 'trendyol_go_readonly.dart';
+import 'windows_vault.dart';
 
 const backupMagic = 'NOHUTBK1';
 const backupFormatVersion = 1;
+const backupFormatWithSecrets = 2;
+const _secretsAad = '|integrations';
 const backupExtension = '.nohutbak';
 
 /// Argon2id parameters stored in each header (so they can be raised later
@@ -239,6 +257,7 @@ class BackupContainer {
     Directory directory, {
     required String recoveryKey,
     String appVersion = 'unknown',
+    Map<String, dynamic>? integrations,
   }) async {
     RecoveryKey.normalize(recoveryKey);
     await directory.create(recursive: true);
@@ -257,17 +276,29 @@ class BackupContainer {
         bytes: plain,
       );
       final salt = _bytes(16), nonce = _bytes(12);
+      final secretNonce = _bytes(12);
+      final secretPlain = integrations == null ? null
+          : utf8.encode(jsonEncode(integrations));
       final header = utf8.encode(jsonEncode({
-        'format': backupFormatVersion,
+        'format': secretPlain == null ? backupFormatVersion : backupFormatWithSecrets,
         'cipher': 'AES-256-GCM',
         'compression': 'gzip',
         'kdf': kdf.toJson(salt),
         'nonce': base64Encode(nonce),
         'manifest': manifest.toJson(),
+        if (secretPlain != null)
+          'sections': {
+            'integrations': {
+              'nonce': base64Encode(secretNonce),
+              // AES-GCM ciphertext has the plaintext's length.
+              'cipherLength': secretPlain.length,
+            },
+          },
       }));
+      final key = await _key(recoveryKey, kdf, salt);
       final box = await AesGcm.with256bits().encrypt(
         gzip.encode(plain),
-        secretKey: await _key(recoveryKey, kdf, salt),
+        secretKey: key,
         nonce: nonce,
         aad: header,
       );
@@ -277,6 +308,19 @@ class BackupContainer {
         ..add(header)
         ..add(box.cipherText)
         ..add(box.mac.bytes);
+      if (secretPlain != null) {
+        try {
+          final secrets = await AesGcm.with256bits().encrypt(
+            secretPlain,
+            secretKey: key,
+            nonce: secretNonce,
+            aad: [...header, ...utf8.encode(_secretsAad)],
+          );
+          out..add(secrets.cipherText)..add(secrets.mac.bytes);
+        } finally {
+          secretPlain.fillRange(0, secretPlain.length, 0);
+        }
+      }
       final bytes = out.takeBytes();
       final name = 'nohut-${stamp.toIso8601String().substring(0, 19).replaceAll(':', '')}'
           'Z-r${manifest.revision}$backupExtension';
@@ -321,26 +365,46 @@ class BackupContainer {
     File file,
     String outputPath, {
     required String recoveryKey,
+    void Function(Map<String, dynamic> integrations)? onIntegrations,
   }) async {
     final parsed = _parse(await file.readAsBytes());
     final header = parsed.header;
-    if (header['format'] != backupFormatVersion ||
+    if (!(header['format'] == backupFormatVersion ||
+            header['format'] == backupFormatWithSecrets) ||
         header['cipher'] != 'AES-256-GCM' ||
         header['compression'] != 'gzip') {
       throw const BackupException('Bu yedek biçimi desteklenmiyor.');
     }
     final (params, salt) = BackupKdf.fromJson(header['kdf'] as Map);
     final List<int> compressed;
+    Map<String, dynamic>? integrations;
     try {
+      final key = await _key(recoveryKey, params, salt);
       compressed = await AesGcm.with256bits().decrypt(
         SecretBox(
           parsed.cipherText,
           nonce: base64Decode(header['nonce'] as String),
           mac: Mac(parsed.tag),
         ),
-        secretKey: await _key(recoveryKey, params, salt),
+        secretKey: key,
         aad: parsed.headerBytes,
       );
+      if (parsed.secrets != null) {
+        final (cipher, nonce, tag) = parsed.secrets!;
+        final clear = await AesGcm.with256bits().decrypt(
+          SecretBox(cipher, nonce: nonce, mac: Mac(tag)),
+          secretKey: key,
+          aad: [...parsed.headerBytes, ...utf8.encode(_secretsAad)],
+        );
+        try {
+          integrations = (jsonDecode(utf8.decode(clear)) as Map)
+              .cast<String, dynamic>();
+        } catch (_) {
+          throw const BackupException('Yedekteki entegrasyon bölümü okunamadı.');
+        } finally {
+          clear.fillRange(0, clear.length, 0);
+        }
+      }
     } on SecretBoxAuthenticationError {
       throw const BackupException(
         'Yedek açılamadı: kurtarma anahtarı yanlış veya dosya değiştirilmiş.',
@@ -372,14 +436,22 @@ class BackupContainer {
       await out.delete();
       rethrow;
     }
+    if (integrations != null) onIntegrations?.call(integrations);
     return manifest;
   }
+
+  /// Whether [file] carries an integration credentials section (unverified).
+  static bool hasIntegrations(File file) =>
+      _parse(file.readAsBytesSync()).secrets != null;
 }
 
 class _Parsed {
-  const _Parsed(this.headerBytes, this.header, this.cipherText, this.tag);
+  const _Parsed(this.headerBytes, this.header, this.cipherText, this.tag,
+      [this.secrets]);
   final List<int> headerBytes, cipherText, tag;
   final Map header;
+  /// (ciphertext, nonce, tag) of the format-2 integrations box.
+  final (List<int>, List<int>, List<int>)? secrets;
 }
 
 _Parsed _parse(List<int> bytes) {
@@ -403,11 +475,29 @@ _Parsed _parse(List<int> bytes) {
   } catch (_) {
     throw const BackupException('Yedek başlığı okunamadı.');
   }
+  var dbEnd = bytes.length;
+  (List<int>, List<int>, List<int>)? secrets;
+  if (header['format'] == backupFormatWithSecrets) {
+    final section = (header['sections'] as Map?)?['integrations'];
+    final length = section is Map ? section['cipherLength'] : null;
+    final nonce = section is Map ? section['nonce'] : null;
+    if (length is! int || length < 2 || length > 65536 || nonce is! String ||
+        end + 16 + length + 16 > bytes.length) {
+      throw const BackupException('Yedek başlığı bozuk.');
+    }
+    dbEnd = bytes.length - length - 16;
+    secrets = (
+      bytes.sublist(dbEnd, dbEnd + length),
+      base64Decode(nonce),
+      bytes.sublist(bytes.length - 16),
+    );
+  }
   return _Parsed(
     headerBytes,
     header,
-    bytes.sublist(end, bytes.length - 16),
-    bytes.sublist(bytes.length - 16),
+    bytes.sublist(end, dbEnd - 16),
+    bytes.sublist(dbEnd - 16, dbEnd),
+    secrets,
   );
 }
 
@@ -416,18 +506,34 @@ _Parsed _parse(List<int> bytes) {
 
 /// Outcome of applying a pending restore at startup (shown once in the UI).
 class RestoreOutcome {
-  const RestoreOutcome(this.applied, this.message, {this.safetyCopy});
+  const RestoreOutcome(this.applied, this.message,
+      {this.safetyCopy, this.trendyol = IntegrationRestore.none});
   final bool applied;
   final String message;
   final String? safetyCopy;
+  final IntegrationRestore trendyol;
 }
 
 class RestoreManager {
-  RestoreManager(this.databasePath);
+  RestoreManager(
+    this.databasePath, {
+    SecretRecordVault Function(File file)? vaultFor,
+    SecretRecordVault? trendyolVault,
+  }) : _vaultFor = vaultFor ?? ((f) => WindowsVault(f)),
+       _trendyolVault = trendyolVault;
   final String databasePath;
+  final SecretRecordVault Function(File file) _vaultFor;
+  final SecretRecordVault? _trendyolVault;
 
   File get stagedFile => File('$databasePath.restore-staged');
   File get pendingMarker => File('$databasePath.restore-pending.json');
+  /// Restored integration credentials between staging and applying, wrapped
+  /// by THIS PC's protection (DPAPI), never as plaintext.
+  File get pendingIntegrations =>
+      File('$databasePath.restore-integrations.dpapi');
+  SecretRecordVault get _pendingVault => _vaultFor(pendingIntegrations);
+  SecretRecordVault get trendyolVault => _trendyolVault ??
+      _vaultFor(TgoWindowsVault.defaultFile(databasePath));
 
   /// Step 1 (owner-confirmed in the UI): verify and stage. Nothing in the
   /// live database changes. The app must restart to apply.
@@ -438,16 +544,28 @@ class RestoreManager {
     BackupContainer? container,
   }) async {
     await cancelPending();
+    Map<String, dynamic>? integrations;
     final manifest = await (container ?? BackupContainer()).decryptTo(
       backup,
       stagedFile.path,
       recoveryKey: recoveryKey,
+      onIntegrations: (v) => integrations = v,
     );
+    try {
+      if (integrations != null) {
+        // Refuse a crafted section before anything is kept.
+        _pendingVault.write(checkIntegrationPayload(integrations));
+      }
+    } catch (e) {
+      await cancelPending();
+      throw BackupException('Yedekteki entegrasyon bilgileri hazırlanamadı: $e');
+    }
     await pendingMarker.writeAsString(jsonEncode({
       'stagedAt': DateTime.now().toUtc().toIso8601String(),
       'source': backup.path,
       'confirmedBy': confirmedBy,
       'manifest': manifest.toJson(),
+      'integrations': integrations != null,
     }), flush: true);
     return manifest;
   }
@@ -455,6 +573,30 @@ class RestoreManager {
   Future<void> cancelPending() async {
     if (await pendingMarker.exists()) await pendingMarker.delete();
     if (await stagedFile.exists()) await stagedFile.delete();
+    if (await pendingIntegrations.exists()) await pendingIntegrations.delete();
+  }
+
+  /// Applies staged integration credentials. Runs after a successful
+  /// database restore, and again at a later start if writing failed.
+  IntegrationRestore applyPendingIntegrations() {
+    if (!pendingIntegrations.existsSync() || pendingMarker.existsSync()) {
+      return IntegrationRestore.none;
+    }
+    Map<String, dynamic>? payload;
+    try {
+      payload = _pendingVault.read();
+    } catch (_) {
+      payload = null;
+    }
+    if (payload == null) {
+      pendingIntegrations.deleteSync();
+      return IntegrationRestore.invalid;
+    }
+    final stamp = DateTime.now().toUtc().toIso8601String()
+        .substring(0, 19).replaceAll(':', '');
+    final result = restoreTrendyol(payload, trendyolVault, stamp: stamp);
+    if (result != IntegrationRestore.failed) pendingIntegrations.deleteSync();
+    return result;
   }
 
   bool get hasPending => pendingMarker.existsSync() && stagedFile.existsSync();
@@ -466,7 +608,9 @@ class RestoreManager {
   RestoreOutcome applyPending() {
     if (!hasPending) {
       if (pendingMarker.existsSync()) pendingMarker.deleteSync();
-      return const RestoreOutcome(false, '');
+      // A credential write that failed after an earlier restore is retried.
+      final retry = applyPendingIntegrations();
+      return RestoreOutcome(false, integrationRestoreText(retry), trendyol: retry);
     }
     final marker = jsonDecode(pendingMarker.readAsStringSync()) as Map;
     final stamp = DateTime.now().toUtc().toIso8601String()
@@ -485,12 +629,15 @@ class RestoreManager {
       _suppressReplay(databasePath, marker);
       pendingMarker.deleteSync();
       final manifest = marker['manifest'] as Map;
+      final trendyol = applyPendingIntegrations();
+      final extra = integrationRestoreText(trendyol);
       return RestoreOutcome(
         true,
         'Yedek geri yüklendi: ${manifest['createdAt']} · revizyon '
         '${manifest['revision']} · ${manifest['orderCount']} sipariş. '
-        'Eski yazdırma işleri tekrar basılmadı.',
+        'Eski yazdırma işleri tekrar basılmadı.${extra.isEmpty ? '' : ' $extra'}',
         safetyCopy: safety,
+        trendyol: trendyol,
       );
     } catch (e) {
       // Roll back: put the original database files back exactly.
@@ -529,6 +676,11 @@ class RestoreManager {
           order['kitchenPrintState'] = 'Kontrol gerekli';
         }
       }
+      // The first Trendyol poll after a restore is a baseline: orders that
+      // changed since the backup are fetched (7-day window) but raise no
+      // new-order alerts and queue no kitchen tickets.
+      final tgoInfo = state['tgoSyncInfo'];
+      if (tgoInfo is Map) tgoInfo.remove('lastSync');
       // Per-entity storage keeps queues in their own tables.
       if (isNormalized(db)) suppressNormalizedReplay(db);
       final settings = state.putIfAbsent('settings', () => <String, dynamic>{})

@@ -67,6 +67,26 @@ void main() {
     }), throwsA(isA<FormatException>()));
   });
 
+  test('correcting a manual Mesai keeps its break in both audit snapshots (Codex #39)', () {
+    final st = store.read();
+    final data = {...st.data, 'shifts': [
+      {'id': 900, 'employeeId': 2, 'source': 'manual', 'start': '2026-11-24T07:00:00.000Z',
+       'end': '2026-11-24T15:00:00.000Z', 'breakMinutes': 30},
+    ]};
+    expect(store.replace(data, st.revision).ok, true);
+    // A corrected interval no longer than the break is refused.
+    expect(() => correctShift(store, {'requestId': 'fix_brk_00000001', 'staffId': 1, 'shiftId': 900,
+      'end': '2026-11-24T07:30:00.000Z', 'reason': 'Yanlış saat'}), throwsA(isA<FormatException>()));
+    correctShift(store, {'requestId': 'fix_brk_00000002', 'staffId': 1, 'shiftId': 900,
+      'end': '2026-11-24T14:00:00.000Z', 'reason': 'Erken çıktı'});
+    final shift = shiftsOf(store.read().data).single;
+    final c = asMaps(shift['corrections']).single;
+    expect((c['before'] as Map)['breakMinutes'], 30);
+    expect((c['after'] as Map)['breakMinutes'], 30);
+    expect((c['after'] as Map)['end'], '2026-11-24T14:00:00.000Z');
+    expect(shift['breakMinutes'], 30);
+  });
+
   test('remote clock-in needs shifts.self and uses the envelope employee', () {
     Map<String, dynamic> env(List<String> grants, {String id = 'cmd_shift_0001'}) {
       final payload = {'action': 'clockIn', 'staffId': 999};

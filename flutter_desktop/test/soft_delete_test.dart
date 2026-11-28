@@ -86,7 +86,7 @@ void main() {
     expect(archived['order'], victim);
     expect(orderPaidCents(archived['order'] as Json), 14000);
     expect(asMaps((archived['related'] as Map)['printJobs']), jobs);
-    expect(archived['deletedBy'], 'Mehmet');
+    expect(archived['deletedBy'], 'Test Personel A');
     expect(archived['deletedByStaffId'], 2);
     expect(archived['reason'], 'Yanlış masa girildi');
     expect(archived['requestId'], 'staff_sd_del1');

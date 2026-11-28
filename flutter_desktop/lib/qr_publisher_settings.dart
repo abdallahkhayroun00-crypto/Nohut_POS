@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'operations_ui.dart';
 import 'pos_logic.dart';
 import 'qr_publisher_client.dart';
+import 'qr_publisher_service.dart';
 
 class QrPublisherSettingsPanel extends StatefulWidget {
   const QrPublisherSettingsPanel({super.key,
@@ -60,53 +61,23 @@ class _QrPublisherSettingsPanelState extends State<QrPublisherSettingsPanel>{
       if(mounted)setState(()=>status='Bağlantı kurulamadı. Yerel servis ve erişim anahtarını kontrol edin.');
     }finally{if(mounted)setState(()=>busy=false);}
   }
+  /// Start (or repair) the local publisher without PowerShell windows; the
+  /// key file picker opens only when the key is missing and the owner asked.
   Future<void> startLocalService() async {
-    if(!Platform.isWindows) {
-      setState(()=>status='Bu kurulum yalnızca Windows içindir.');
-      return;
-    }
-    final base=paths.dirname(Platform.resolvedExecutable);
-    final localAppData=Platform.environment['LOCALAPPDATA'];
-    final candidates=<String>[
-      paths.join(base,'QRPublisher','start-windows.ps1'),
-      if(localAppData!=null&&localAppData.isNotEmpty)
-        paths.join(localAppData,'Programs','Nohut Falafel POS',
-          'QRPublisher','start-windows.ps1'),
-    ];
-    File? script;
-    for(final location in candidates){
-      final file=File(location);
-      if(await file.exists()){script=file;break;}
-    }
-    if(script==null){
-      if(!mounted)return;
-      setState(()=>status='QR Publisher başlatma dosyası bulunamadı. '
-        'Windows-Flutter ZIP ile eski sürümde yalnızca EXE yüklenmiş olabilir. '
-        'Yeni NohutFalafel-Windows-Setup paketini kurun veya '
-        'Windows-Flutter klasöründe QRPublisher\\start-windows.ps1 '
-        'dosyasının bulunduğundan emin olun. '
-        'Çalıştırılan EXE klasörü: $base');
-      return;
-    }
-    try {
-      final address=QrPublisherClient.checkEndpoint(url.text);
-      if(address.scheme!='http'||address.host!='127.0.0.1'||address.port==8787) {
-        if(mounted)setState(()=>status=
-          'Yerel QR Publisher için http://127.0.0.1:18787 kullanın. '
-          '8787 portu Personel Paneli içindir.');
-        return;
+    setState(()=>busy=true);
+    try{
+      final supervisor=QrPublisherSupervisor(endpoint:url.text.trim(),client:client);
+      var d=await supervisor.diagnose();
+      if(d.issue==PublisherIssue.nodeMissing){
+        await Process.start('explorer.exe',['https://nodejs.org/tr/download'],
+          mode:ProcessStartMode.detached);
+      }else if(!d.ok&&d.fix!=null){
+        d=await supervisor.start(allowPrompt:d.fix==PublisherFix.chooseKey);
       }
-      await Process.start('powershell.exe',[
-        '-NoProfile','-STA','-ExecutionPolicy','Bypass',
-        '-File',script.path,'-Port',address.port.toString(),
-      ],mode:ProcessStartMode.detached);
-      if(mounted)setState(()=>status='QR Publisher için $address başlatma komutu gönderildi. '
-        'Node.js 22+ ve GitHub App .pem dosyası gerekli. '
-        'Bağlantıyı Test Et ile doğrulayın.');
+      if(mounted)setState(()=>status='${d.title}. ${d.help}');
     }catch(_){
-      if(mounted)setState(()=>status='PowerShell başlatılamadı. '
-        'Başlat menüsünde Nohut QR Publisher Kurulum seçin.');
-    }
+      if(mounted)setState(()=>status='Yayınlama hizmeti başlatılamadı.');
+    }finally{if(mounted)setState(()=>busy=false);}
   }
 
   @override
@@ -154,7 +125,7 @@ class _QrPublisherSettingsPanelState extends State<QrPublisherSettingsPanel>{
             OutlinedButton.icon(
               onPressed:busy?null:startLocalService,
               icon:const Icon(Icons.play_arrow_outlined),
-              label:const Text('Yerel Yayınlama Servisini Başlat'),
+              label:const Text('Yayınlama Hizmetini Başlat / Onar'),
             ),
             OutlinedButton.icon(
               onPressed:busy?null:() async {

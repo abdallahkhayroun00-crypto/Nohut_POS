@@ -30,11 +30,13 @@ class WriteResult {
   PosSnapshot get snapshot => _load();
 }
 
+/// Test-only: synthetic people for a fresh store. Production installs start
+/// with no employees; the owner adds real people in Windows › Personel.
+List<Map<String, dynamic>>? debugSeedEmployees;
+
 Map<String, dynamic> emptyPosState() => {
   'employees': [
-    {'id': 1, 'name': 'Ömer', 'role': 'Yönetici', 'active': true},
-    {'id': 2, 'name': 'Mehmet', 'role': 'Personel', 'active': true},
-    {'id': 3, 'name': 'Abdallah', 'role': 'Personel', 'active': true},
+    for (final e in debugSeedEmployees ?? const <Map<String, dynamic>>[]) {...e},
   ],
   'orders': <dynamic>[],
   'nextId': 1200,
@@ -85,6 +87,7 @@ class PosStore extends ChangeNotifier {
     _db.execute(
       'CREATE TABLE IF NOT EXISTS command_receipts (request_id TEXT PRIMARY KEY, payload TEXT NOT NULL, result TEXT NOT NULL)',
     );
+    _indexReceiptsByOrder();
     _db.execute(
       'CREATE TABLE IF NOT EXISTS deleted_requests (request_id TEXT PRIMARY KEY)',
     );
@@ -248,6 +251,47 @@ class PosStore extends ChangeNotifier {
       'UPDATE state_snapshot SET revision=?,payload=?,updated_at=? WHERE id=1',
       [revision, jsonEncode(next), stamp],
     );
+  }
+
+
+  /// Receipts carry the order they touched in indexed columns, so deleting
+  /// an order finds its receipts without scanning every row. Older
+  /// databases are backfilled once from the stored JSON.
+  void _indexReceiptsByOrder() {
+    final cols = {
+      for (final r in _db.select('PRAGMA table_info(command_receipts)')) r['name'],
+    };
+    if (!cols.contains('order_id') || !cols.contains('result_order_id')) {
+      _db.execute('BEGIN IMMEDIATE');
+      try {
+        if (!cols.contains('order_id')) {
+          _db.execute('ALTER TABLE command_receipts ADD COLUMN order_id INTEGER');
+        }
+        if (!cols.contains('result_order_id')) {
+          _db.execute('ALTER TABLE command_receipts ADD COLUMN result_order_id INTEGER');
+        }
+        final update = _db.prepare(
+            'UPDATE command_receipts SET order_id=?, result_order_id=? WHERE request_id=?');
+        for (final r in _db.select('SELECT request_id,payload,result FROM command_receipts')) {
+          Object? id(String json) {
+            try {
+              final v = jsonDecode(json);
+              return v is Map ? _intOrNull(v['orderId']) : null;
+            } catch (_) {
+              return null;
+            }
+          }
+          update.execute([id(r['payload'] as String), id(r['result'] as String), r['request_id']]);
+        }
+        update.close();
+        _db.execute('COMMIT');
+      } catch (_) {
+        _db.execute('ROLLBACK');
+        rethrow;
+      }
+    }
+    _db.execute('CREATE INDEX IF NOT EXISTS command_receipts_order ON command_receipts(order_id)');
+    _db.execute('CREATE INDEX IF NOT EXISTS command_receipts_result_order ON command_receipts(result_order_id)');
   }
 
   void _remember(Map<String, dynamic> next, int revision, String stamp) {
@@ -457,8 +501,9 @@ class PosStore extends ChangeNotifier {
       final stamp = DateTime.now().toUtc().toIso8601String();
       final cached = _commitState(next, revision, stamp);
       _db.execute(
-        'INSERT INTO command_receipts(request_id,payload,result) VALUES(?,?,?)',
-        [requestId, encoded, jsonEncode(result)],
+        'INSERT INTO command_receipts(request_id,payload,result,order_id,result_order_id) VALUES(?,?,?,?,?)',
+        [requestId, encoded, jsonEncode(result), _intOrNull(payload['orderId']),
+          _intOrNull(result['orderId'])],
       );
       _db.execute('COMMIT');
       _remember(cached, revision, stamp);
@@ -550,14 +595,13 @@ class PosStore extends ChangeNotifier {
         'related': related,
       });
       final linked = <String>[];
+      // Indexed lookup: no JSON decoding of every receipt inside the lock.
       for (final r in _db.select(
-        'SELECT request_id,payload,result FROM command_receipts',
+        'SELECT request_id FROM command_receipts WHERE order_id=? '
+        'UNION SELECT request_id FROM command_receipts WHERE result_order_id=?',
+        [orderId, orderId],
       )) {
-        final p = jsonDecode(r['payload'] as String) as Map,
-            result = jsonDecode(r['result'] as String) as Map;
-        if (p['orderId'] == orderId || result['orderId'] == orderId) {
-          linked.add(r['request_id'] as String);
-        }
+        linked.add(r['request_id'] as String);
       }
       validate(state);
       debugWriteObserver?.call(state);
@@ -684,3 +728,5 @@ class PosStore extends ChangeNotifier {
     super.dispose();
   }
 }
+
+int? _intOrNull(Object? v) => v is int ? v : null;

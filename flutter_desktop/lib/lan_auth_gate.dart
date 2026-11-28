@@ -109,8 +109,14 @@ class LanAuthGate {
   }
 
   /// The acting employee is the signed-in user, not what the phone claims.
+  /// A signed-in account that is not linked to an employee can never act
+  /// as one: the phone's `staffId` is ignored, never trusted.
   static Json withIdentity(Json payload, AuthContext? ctx) {
-    if (ctx == null || ctx.employeeId == null) return payload;
+    if (ctx == null) return payload;
+    if (ctx.employeeId == null) {
+      throw const FormatException(
+          'Hesabınız bir personele bağlı değil. Windows › Kullanıcılar’dan bağlayın.');
+    }
     return {...payload, 'staffId': ctx.employeeId};
   }
 
@@ -160,6 +166,28 @@ class LanAuthGate {
             if (e.code == 'invalid_credentials') _fail(ip);
             rethrow;
           }
+        case 'activate':
+          // İlk Aktivasyon: one-time code from Windows › Kullanıcılar.
+          if (_throttled(ip)) {
+            return const GateReply(429, {'error': 'too_many_attempts',
+              'message': 'Çok fazla hatalı deneme. Biraz sonra tekrar deneyin.'});
+          }
+          try {
+            final r = await auth.activate(
+              username: '${body['username'] ?? ''}',
+              code: '${body['code'] ?? ''}',
+              password: '${body['password'] ?? ''}',
+              pin: '${body['pin'] ?? ''}',
+              deviceId: '${body['deviceId'] ?? ''}',
+              client: client,
+              label: '${body['label'] ?? ''}',
+            );
+            if (token != null && token != r.token) auth.logout(token);
+            return GateReply(200, {'session': r.context.toJson()}, setToken: r.token);
+          } on LocalAuthException catch (e) {
+            if (e.code == 'invalid_activation') _fail(ip);
+            rethrow;
+          }
         case 'unlock':
           if (token == null) return const GateReply(401, {'error': 'auth_required'});
           if (_throttled(ip)) return const GateReply(429, {'error': 'too_many_attempts'});
@@ -174,7 +202,19 @@ class LanAuthGate {
           return GateReply(200, {'session': ctx.toJson()});
         case 'pin':
           if (token == null) return const GateReply(401, {'error': 'auth_required'});
-          await auth.setPin(token, client, '${body['pin'] ?? ''}');
+          if (body['password'] != null && _throttled(ip)) return const GateReply(429, {'error': 'too_many_attempts'});
+          try {
+            await auth.setPin(token, client, '${body['pin'] ?? ''}',
+                password: body['password'] == null ? null : '${body['password']}');
+          } on LocalAuthException catch (e) {
+            if (e.code == 'invalid_credentials') _fail(ip);
+            // A wrong password while changing the PIN keeps the session:
+            // 403, so the page stays on the PIN form instead of signing out.
+            if (e.code == 'invalid_credentials' || e.code == 'locked_out') {
+              return GateReply(403, {'error': e.code});
+            }
+            rethrow;
+          }
           return const GateReply(200, {'ok': true});
         case 'mfa':
           if (token == null) return const GateReply(401, {'error': 'auth_required'});

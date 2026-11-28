@@ -203,7 +203,7 @@ void main() {
     try {
       final s = state();
       s['employees'] = [
-        {'id': 2, 'name': 'Mehmet', 'role': 'Personel', 'active': true},
+        {'id': 2, 'name': 'Test Personel A', 'role': 'Personel', 'active': true},
       ];
       expect(store.replace(s, store.read().revision).ok, true);
       submitStaffOrder(store, {
@@ -220,7 +220,7 @@ void main() {
       final data = store.read().data;
       final job = asMaps(data['printJobs']).single;
       expectPickupTicket(data, job);
-      expect(receiptText(data, job), contains('Mehmet'));
+      expect(receiptText(data, job), contains('Test Personel A'));
     } finally {
       store.dispose();
       dir.deleteSync(recursive: true);

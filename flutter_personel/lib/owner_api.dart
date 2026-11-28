@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:nohut_core/management_sections.dart';
 
 import 'expense_drafts.dart';
 import 'pos_api.dart';
@@ -12,6 +11,8 @@ import 'pos_api.dart';
 class OwnerApi extends NohutApi {
   final _ownerStorage = const FlutterSecureStorage();
   ExpenseDraftStore? get finance => serverId == null ? null : ExpenseDraftStore.forServer(serverId!);
+  /// Display name from the Windows owner profile (never hardcoded).
+  String? ownerName;
   @override
   bool get paired => host != null && serverId != null && employeeId != null;
   @override
@@ -22,13 +23,14 @@ class OwnerApi extends NohutApi {
     host = data['host'] as String;
     serverId = data['serverId'] as String;
     employeeId = data['ownerId'].toString();
+    ownerName = data['ownerName'] as String?;
     finance!.host = host;
     if (!await finance!.configured()) {
       host = null; serverId = null; employeeId = null;
     }
   }
   Future<void> _persist() => _ownerStorage.write(key:'owner_pairing_v1',
-    value:jsonEncode({'host':host,'serverId':serverId,'ownerId':employeeId}));
+    value:jsonEncode({'host':host,'serverId':serverId,'ownerId':employeeId,'ownerName':ownerName}));
   Future<void> enroll(String raw) async {
     if (paired) throw const FormatException('Önce mevcut cihaz bağlantısını kaldırın.');
     final data = Map<String,dynamic>.from(jsonDecode(raw.trim()) as Map);
@@ -42,10 +44,11 @@ class OwnerApi extends NohutApi {
     try {
       await f.configure(data['key'] as String);
       final hello = await f.managerRequest({'operation':'ownerHello'});
-      if (hello['ownerName'] != managementOwnerName || hello['ownerId'] is! int) {
-        throw const FormatException('Ömer Yılmaz yönetici yetkisi gerekli.');
+      if (hello['ownerId'] is! int) {
+        throw const FormatException('İşletme sahibi yetkisi gerekli.');
       }
       employeeId = hello['ownerId'].toString();
+      ownerName = hello['ownerName'] is String ? hello['ownerName'] as String : null;
       await _persist();
     } catch (_) {
       await f.disconnect();
@@ -66,6 +69,26 @@ class OwnerApi extends NohutApi {
     if (f == null || !paired) throw const FormatException('Yönetim eşleştirmesi gerekli.');
     f.host=host;
     return f.managerRequest(payload);
+  }
+  /// Menü Yönetimi over the paired owner channel (owner: every edit).
+  @override
+  Future<(int, Json)> menu(String method, String path, {Json? body}) async {
+    if (method == 'GET') {
+      final r = await request({'operation': 'ownerMenu'});
+      final view = r['menu'];
+      if (view is! Map) throw const FormatException('Menü yanıtı geçersiz.');
+      return (200, Map<String, dynamic>.from(view));
+    }
+    final op = switch (path) {
+      'publish' => 'ownerMenuPublish',
+      'reconcile' => 'ownerMenuReconcile',
+      'sync' => 'ownerMenuSync',
+      'image' => 'ownerMenuImage',
+      _ => 'ownerMenuWrite',
+    };
+    final r = await request({'operation': op, 'data': {...?body}});
+    if (r['ok'] == false && r['error'] == 'conflict') return (409, r);
+    return (200, r);
   }
   @override
   Future<Json> bootstrap() async {
@@ -105,9 +128,10 @@ class OwnerApi extends NohutApi {
       socket.send(utf8.encode('NOHUT_DISCOVER_V1:' + serverId!),InternetAddress('255.255.255.255'),8788);
       host=(await found.future.timeout(const Duration(seconds:3))).toString();
       final hello=await request({'operation':'ownerHello'});
-      if(hello['ownerId'].toString()!=employeeId || hello['ownerName']!=managementOwnerName) {
+      if(hello['ownerId'].toString()!=employeeId) {
         throw const FormatException('Yönetici doğrulanamadı.');
       }
+      if (hello['ownerName'] is String) ownerName = hello['ownerName'] as String;
       await _persist();
       return true;
     } catch (_) {

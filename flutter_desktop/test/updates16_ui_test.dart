@@ -43,20 +43,31 @@ void main() {
         expect(t.takeException(), isNull);
       }
       await helpers.click(t, 'Ayarlar');
+      // QR settings now live exclusively in QR Menü Yönetimi.
+      expect(find.text('Menü & QR'), findsNothing);
+      expect(find.byKey(const ValueKey('settings-nav-Menü')), findsNothing);
       for (final tab in [
-        'Menü',
-        'Yazıcı',
+        'Yazıcı & Fiş',
         'Entegrasyonlar',
-        'Yedekleme',
-        'Genel',
+        'Yedekleme & Geri Yükleme',
+        'Kullanıcılar & Güvenlik',
+        'Genel Bakış',
       ]) {
         await helpers.click(t, tab);
         expect(t.takeException(), isNull);
       }
       expect(find.text('inPOS'), findsNothing);
       // Audio controls were intentionally consolidated under Bildirimler.
-      await helpers.click(t, 'Bildirimler');
+      await helpers.click(t, 'Bildirimler & Sesler');
       expect(find.text('Yeni sipariş sesi'), findsOneWidget);
+      // Settings search narrows the navigation to matching pages.
+      final search = find.byKey(const ValueKey('settings-search'));
+      if (search.evaluate().isNotEmpty) {
+        await t.enterText(search.first, 'yedek');
+        await t.pumpAndSettle();
+        expect(find.text('Yedekleme & Geri Yükleme'), findsWidgets);
+        expect(find.text('Yazıcı & Fiş'), findsNothing);
+      }
     },
   );
   testWidgets(

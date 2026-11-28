@@ -113,7 +113,7 @@ void main() {
       final fields = find.byType(DropdownButtonFormField<int>);
       await tester.tap(fields.first);
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Abdallah').last);
+      await tester.tap(find.text('Test Personel B').last);
       await tester.pumpAndSettle();
       await tester.tap(fields.last);
       await tester.pumpAndSettle();

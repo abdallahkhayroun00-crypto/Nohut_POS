@@ -763,7 +763,8 @@ Future<Uint8List> generateManagementPdf(Json state, ReportPeriod period) async {
     ? value : value.substring(0, max - 1) + '…';
   final local = payments.fold<int>(0, (n, p) => n + p.amount);
   final materialTotal = sum(materials, 'totalCents');
-  final payrollTotal = sum(payroll, 'grossCents');
+  final payrollTotal = sum(payroll, 'grossCents') +
+      ledgerPayrollCents(state, period.includes);
   final otherTotal = sum(other, 'amountCents');
   final fixedByCategory = <String,int>{};
   var fixedTotal = 0, excludedFixed = 0, onlineNet = 0;

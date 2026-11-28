@@ -48,9 +48,26 @@ void main() {
       home: StaffHome(controller: c, onUnpair: () {}),
     ));
     expect(find.byType(NavigationBar), findsOneWidget);
+    // §24.3: staff open on Ana Sayfa with the quick actions.
+    expect(find.text('Hoş geldiniz'), findsOneWidget);
+    for (final label in ['Ana Sayfa', 'Masalar', 'Sipariş', 'Siparişler', 'Daha Fazla']) {
+      expect(find.descendant(of: find.byType(NavigationBar), matching: find.text(label)), findsOneWidget);
+    }
+    await tester.tap(find.text('Masalar').last);
+    await tester.pumpAndSettle();
     expect(find.text('Masa 1'), findsOneWidget);
     expect(find.text('Masa 5'), findsOneWidget);
-    await tester.tap(find.text('Ürünler'));
+    await tester.tap(find.text('Ana Sayfa').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Sipariş Al'));
+    await tester.pumpAndSettle();
+    expect(find.text('Falafel Dürüm'), findsOneWidget);
+    await tester.tap(find.byTooltip('Sepete Ekle').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('go-cart')));
+    await tester.pumpAndSettle();
+    expect(find.text('Sipariş Sepeti'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('add-more')));
     await tester.pumpAndSettle();
     expect(find.text('Falafel Dürüm'), findsOneWidget);
   });

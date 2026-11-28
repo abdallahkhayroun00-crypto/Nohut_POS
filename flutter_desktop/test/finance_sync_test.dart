@@ -46,6 +46,56 @@ void main() {
     expect(view.containsKey('settings'), false);
   });
 
+  test('Yönetici Hızlı Gider: create once, versioned edit, void, legacy untouched', () {
+    final dir = Directory.systemTemp.createTempSync('nohut-quick-expense-test');
+    final store = PosStore(databaseFile: dir.path + '/test.sqlite3');
+    addTearDown(() { store.dispose(); dir.deleteSync(recursive: true); });
+    final initial = store.read();
+    saveMaterialPurchase(initial.data, date: '2026-11-10', title: 'Nohut',
+      unit: 'kg', quantityMilli: 2000, pricePerUnitCents: 6450,
+      storeBrand: 'BİM', market: 'BİM', paymentMethod: 'Nakit');
+    expect(store.replace(initial.data, initial.revision).ok, true);
+    Map<String, dynamic> cmd(String id, String action, Map<String, dynamic> data) => {
+      'requestId': id, 'operation': 'managerWrite', 'action': action, 'data': data};
+    final create = cmd('quick_create_test_123456', 'quick_save', {
+      'date': '2026-11-16', 'storeBrand': 'A101', 'market': 'A101',
+      'amountsCents': [5050, 1999], 'paymentMethod': 'Nakit', 'note': 'fiş'});
+    final ack = FinanceSyncServer.managerWrite(store, create);
+    expect(FinanceSyncServer.managerWrite(store, create), ack); // lost ACK retry
+    var quick = financeRows(store.read().data, 'materials')
+      .where(isQuickMaterial).toList();
+    expect(quick.length, 1);
+    expect(quick.single['totalCents'], 7049);
+    final id = quick.single['id'];
+    final version = quick.single['updatedAt'];
+    expect(() => FinanceSyncServer.managerWrite(store, cmd('quick_stale_test_1234567',
+      'quick_save', {'id': id, 'expectedVersion': 'old', 'date': '2026-11-16',
+        'storeBrand': 'A101', 'market': 'A101', 'amountsCents': [100],
+        'paymentMethod': 'Nakit', 'note': ''})),
+      throwsA(isA<FinanceVersionConflict>()));
+    FinanceSyncServer.managerWrite(store, cmd('quick_edit_test_12345678',
+      'quick_save', {'id': id, 'expectedVersion': version, 'date': '2026-11-16',
+        'storeBrand': 'Diğer', 'market': 'Manav', 'amountsCents': [10000, 2500],
+        'paymentMethod': 'Kart', 'note': ''}));
+    quick = financeRows(store.read().data, 'materials').where(isQuickMaterial).toList();
+    expect(quick.single['totalCents'], 12500);
+    expect(quick.single['market'], 'Manav');
+    final view = FinanceSyncServer.monthView(store.read().data, '2026-11');
+    final rows = (view['materials'] as List).cast<Map>();
+    expect(rows.firstWhere((r) => r['id'] == id)['amountsCents'], [10000, 2500]);
+    expect((view['summary'] as Map)['materialsCents'], 12900 + 12500);
+    // Quick actions never touch itemized history.
+    final legacy = rows.firstWhere((r) => r['recordType'] != 'quick');
+    expect(() => FinanceSyncServer.managerWrite(store, cmd('quick_void_legacy_12345',
+      'quick_void', {'id': legacy['id'], 'expectedVersion': legacy['updatedAt'],
+        'reason': 'x'})), throwsA(isA<FinanceVersionConflict>()));
+    FinanceSyncServer.managerWrite(store, cmd('quick_void_test_12345678',
+      'quick_void', {'id': id, 'expectedVersion': quick.single['updatedAt'],
+        'reason': 'Yanlış kayıt'}));
+    final after = FinanceSyncServer.monthView(store.read().data, '2026-11');
+    expect((after['summary'] as Map)['materialsCents'], 12900);
+  });
+
   test('encrypted finance envelopes reject wrong restaurant, key and response context', () async {
     final key = FinanceWire.createKey();
     final payload = <String, dynamic>{'operation': 'pull', 'afterId': 0};

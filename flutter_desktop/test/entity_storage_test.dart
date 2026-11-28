@@ -184,7 +184,7 @@ void main() {
       final restoreTo = '${dir.path}/pc2/nohut-pos.sqlite3';
       Directory('${dir.path}/pc2').createSync();
       final manager = RestoreManager(restoreTo);
-      await manager.stage(backup.file, recoveryKey: key, confirmedBy: 'Ömer',
+      await manager.stage(backup.file, recoveryKey: key, confirmedBy: 'Test Yönetici',
           container: container);
       expect(manager.applyPending().applied, true);
       final restored = PosStore(databaseFile: restoreTo);

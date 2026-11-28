@@ -78,7 +78,7 @@ void main() {
           2,
           'İndirim',
           [],
-          'Ömer',
+          'Test Yönetici',
           adjustmentCents: -1000,
         ),
         throwsFormatException,
@@ -217,7 +217,7 @@ void main() {
         table: 1,
         productLines: [row()],
       );
-      addGuest(o, 'Mehmet');
+      addGuest(o, 'Test Personel A');
       addGuest(o, 'Bassil');
       allocateProduct(o, 1, '1:0', 14000);
       allocateProduct(o, 2, '1:0', 14000);

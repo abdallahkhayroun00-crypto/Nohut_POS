@@ -74,7 +74,7 @@ void main() {
     enableOutbox(probe);
     final s = store.read().data
       ..['employees'] = [
-        {'id': 2, 'name': 'Mehmet', 'role': 'Personel', 'active': true},
+        {'id': 2, 'name': 'Test Personel A', 'role': 'Personel', 'active': true},
       ];
     store.replace(s, store.read().revision);
     final before = pendingOutbox(probe).length;
