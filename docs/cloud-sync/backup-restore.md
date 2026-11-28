@@ -90,3 +90,44 @@ Code: `lib/backup_service.dart`, `lib/backup_ui.dart`, the `backup_history` tabl
 | UI | Disabled without a key; lists, verifies and restores with a key |
 
 **Owner-only rule:** per-user permission checks (`backup.restore` is owner-only) arrive with Phase 3 accounts. Until then the Recovery Key plus typed confirmation is the gate.
+
+## Portable Trendyol Go credentials (owner request, #44 7230877753)
+
+The Trendyol seller ID, e-mail, API key and API secret live in
+`%APPDATA%\NohutFalafel\trendyol-go-credentials.dpapi`, wrapped by the
+original Windows user's DPAPI. A replacement PC cannot read that file, so the
+owner backup now carries the credentials itself.
+
+- **Format 2** (`lib/backup_container.dart`): only when this PC's Trendyol
+  vault is readable and valid. A second AES-256-GCM box follows the database
+  box; same Argon2id key from the Recovery Key, its own nonce, AAD = header +
+  `|integrations`. The header records `sections.integrations.{nonce,
+  cipherLength}`. Without credentials the backup stays format 1 (older apps
+  keep restoring it); format 1 backups still restore unchanged.
+- **Allowlist** (`lib/integration_secrets.dart`): `{schema:1, trendyolGo:
+  {supplierId, apiKey, apiSecret, email}}`. Anything else is refused at
+  restore. The QR GitHub App key, the recovery key and other vaults are never
+  included.
+- **Never in SQLite, sync, projections, logs, exports or client APIs.** The
+  secret goes vault → encrypted backup box → (staging) a DPAPI file of the new
+  PC (`<db>.restore-integrations.dpapi`) → the new PC's Trendyol vault.
+- **Restore** (`RestoreManager`): staging decrypts and validates both boxes;
+  wrong key or any tampering stages nothing. After the database is applied,
+  credentials are written to this PC's vault:
+  - no vault → written (*restored*);
+  - same credentials → *alreadyPresent*;
+  - different working credentials → kept, backup's not written (*keptExisting*);
+  - unreadable vault (old profile's DPAPI file) → moved to
+    `….unreadable-<stamp>`, then written;
+  - a write failure keeps the pending record and retries at the next start;
+    the database restore is not undone.
+- **No replays:** the first Trendyol poll after a restore is a baseline
+  (`tgoSyncInfo.lastSync` cleared): orders since the backup are fetched, but no
+  new-order alerts or kitchen tickets are raised. The poll is read-only and
+  doubles as connection verification.
+- **UI:** Yedekleme shows *Trendyol Bağlantısı: Yedekte (şifreli) / Kayıtlı
+  değil / Kasa okunamadı*; the restore confirmation says credentials will be
+  moved; the restart message says what happened.
+- **Tests:** `test/integration_secrets_test.dart` (8, fake per-profile vault
+  that fails like DPAPI on another user/PC). **Owner physical gate:** restore a
+  real backup on a second Windows PC/user (QA D-47).

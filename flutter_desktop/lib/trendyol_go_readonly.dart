@@ -28,20 +28,20 @@ class TgoCredentials {
 }
 
 class TgoWindowsVault {
-  TgoWindowsVault(String databasePath, {File? credentialFile})
-    : file =
-          credentialFile ??
-          File(
-            paths.join(
-              Platform.environment['APPDATA'] ?? paths.dirname(databasePath),
-              'NohutFalafel',
-              'trendyol-go-credentials.dpapi',
-            ),
-          );
+  TgoWindowsVault(String databasePath, {File? credentialFile, SecretRecordVault? record})
+    : file = credentialFile ?? defaultFile(databasePath),
+      _record = record;
   final File file;
+  final SecretRecordVault? _record;
+  SecretRecordVault get record => _record ?? WindowsVault(file);
 
-  Future<TgoCredentials?> load() async {
-    final fields = await WindowsVault(file).load();
+  static File defaultFile(String databasePath) => File(paths.join(
+    Platform.environment['APPDATA'] ?? paths.dirname(databasePath),
+    'NohutFalafel',
+    'trendyol-go-credentials.dpapi',
+  ));
+
+  static TgoCredentials? fromFields(Map<String, dynamic>? fields) {
     if (fields == null) return null;
     return TgoCredentials(
       fields['supplierId'] as String,
@@ -51,18 +51,22 @@ class TgoWindowsVault {
     );
   }
 
+  static Map<String, dynamic> toFields(TgoCredentials value) => {
+    'supplierId': value.supplierId,
+    'apiKey': value.apiKey,
+    'apiSecret': value.apiSecret,
+    'email': value.email,
+  };
+
+  Future<TgoCredentials?> load() async => fromFields(record.read());
+
   Future<void> save(TgoCredentials value) async {
     if (!value.valid) {
       throw const FormatException(
         'Satıcı ID, API Key, API Secret ve e-posta gerekli.',
       );
     }
-    await WindowsVault(file).save({
-      'supplierId': value.supplierId,
-      'apiKey': value.apiKey,
-      'apiSecret': value.apiSecret,
-      'email': value.email,
-    });
+    record.write(toFields(value));
   }
 }
 

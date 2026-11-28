@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 import 'package:path/path.dart' as paths;
 
 import 'backup_container.dart';
+import 'integration_secrets.dart';
 import 'backup_service.dart';
 import 'operations_ui.dart';
 
@@ -199,6 +200,10 @@ class _BackupPanelState extends State<BackupPanel> {
       }
     });
     if (v == null || !mounted) return;
+    var withTrendyol = false;
+    try {
+      withTrendyol = BackupContainer.hasIntegrations(info.file);
+    } catch (_) {}
     final sure = await confirmAction(
       context,
       'Geri yükleme planlansın mı?',
@@ -207,7 +212,9 @@ class _BackupPanelState extends State<BackupPanel> {
           'Program yeniden başlatıldığında mevcut veriler bir güvenlik '
           'kopyasına taşınır ve bu yedek yüklenir. Yedekten sonra girilen '
           'kayıtlar yüklenen veride olmaz (güvenlik kopyasında kalır). '
-          'Eski fişler otomatik basılmaz.',
+          'Eski fişler otomatik basılmaz.'
+          '${withTrendyol ? '\nTrendyol bağlantı bilgileri de bu bilgisayarın güvenli kasasına aktarılır; '
+              'burada çalışan farklı bilgiler varsa korunur.' : ''}',
       confirm: 'Planla',
     );
     if (!sure) return;
@@ -237,6 +244,15 @@ class _BackupPanelState extends State<BackupPanel> {
               ok: last != null, icon: Icons.history),
           _Tile('Kurtarma Anahtarı', hasKey ? 'Bu bilgisayarda' : 'Yok',
               ok: hasKey, icon: Icons.key_outlined),
+          if (service.lastTrendyolCapture != null)
+            _Tile('Trendyol Bağlantısı',
+                switch (service.lastTrendyolCapture!) {
+                  IntegrationCapture.included => 'Yedekte (şifreli)',
+                  IntegrationCapture.notConfigured => 'Kayıtlı değil',
+                  IntegrationCapture.unreadable => 'Kasa okunamadı',
+                },
+                ok: service.lastTrendyolCapture != IntegrationCapture.unreadable,
+                icon: Icons.delivery_dining_outlined),
           _Tile('Otomatik Yedekleme',
               settings['backupAuto'] == true ? 'Açık · günde 1' : 'Kapalı',
               ok: settings['backupAuto'] == true, icon: Icons.schedule),
