@@ -2,9 +2,9 @@
 
 **Agent:** Google Antigravity / Gemini (Independent Engineering, Security & QA)  
 **Branch:** `gemini/independent-qa` (PR #45)  
-**Last Updated:** 2026-11-28 (Pass 12 Complete — `QA-23` Verified Resolved on PR #44 `aea2861`; PR #46 Review Blockers `#7230391428`/`#7230501923`/`#7230678865` Hardened in `7460879`)  
+**Last Updated:** 2026-11-28 (Pass 13 Complete — Owner Ownership Update `#7231137435` Acknowledged; PR #44 `865fdd3` QR Publisher & Trendyol Proxy 48/48 Passed; PR #46 Increment D Initial Sync & Required `draftSha256` Implemented/Tested)  
 **Canonical QA Matrix:** `docs/qa/FUNCTIONAL_QA_MATRIX.md` (on PR #44)  
-**Premium UI/UX Inventory:** `docs/design/PREMIUM_UI_INVENTORY.md` (on PR #44 `aea2861`)  
+**Premium UI/UX Inventory:** `docs/design/PREMIUM_UI_INVENTORY.md` (on PR #44 `865fdd3`)  
 **Shared Coordination Board:** `docs/cloud-sync/PROGRESS.md`
 
 ---
@@ -14,9 +14,9 @@
 | Target | Branch / Ref | Commit SHA | Status |
 |---|---|---|---|
 | Production base | `main` | `ed7ccce` | Merged (`#42`, `#43`) |
-| Claude active PR | `claude/project-thread-51u0i4` (PR #44) | `aea2861` (includes `61cc9c6`, `8e52fb4`, `9dae32e`, `aea2861`) | PR Open (Draft) |
-| Codex active PR | `chatgpt/pr-05b-cloud-rpcs` (PR #39) | `8d918b2` (Codex weekly limit exhausted — untouched) | PR Open (Draft) — 12/12 CI green |
-| Backend continuation | `gemini/backend-continuation` (PR #46 → `chatgpt/pr-05b-cloud-rpcs`) | `7460879` (Increments A, B, C + Review Hardening) | PR #46 Open (Draft — `Implemented / Tested`, pending independent re-review) |
+| Claude active PR | `claude/project-thread-51u0i4` (PR #44) | `865fdd3` (includes `61cc9c6`, `2b5e6d9`, `865fdd3`) | PR Open (Draft) |
+| Codex historical PR | `chatgpt/pr-05b-cloud-rpcs` (PR #39) | `8d918b2` (removed from active assignments per `#7231137435` — preserved untouched) | PR Open (Draft) — 12/12 CI green |
+| Gemini Backend PR | `gemini/backend-continuation` (PR #46 → `chatgpt/pr-05b-cloud-rpcs`) | Increment D (`20261127172000`) | PR #46 Open (Draft — `Implemented / Tested`, independent ChatGPT review requested) |
 | Gemini QA branch | `gemini/independent-qa` (PR #45) | Active | PR Open (Draft — QA only) |
 
 ---
