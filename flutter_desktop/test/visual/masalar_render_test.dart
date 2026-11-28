@@ -137,7 +137,14 @@ void main() {
     for (var n = 1; n <= 5; n++) {
       expect(find.byKey(ValueKey('table-tile-$n')), findsOneWidget);
     }
-    expect(find.text('Boş · Yeni sipariş'), findsNWidgets(2));
+    expect(find.text('Boş'), findsNWidgets(2));
+    expect(find.text('Yeni sipariş'), findsNWidgets(2));
+    // QA-23: every tile in a row is the same height.
+    final heights = {
+      for (var n = 1; n <= 5; n++)
+        t.getSize(find.byKey(ValueKey('table-tile-$n'))).height,
+    };
+    expect(heights, hasLength(1));
     expect(find.text('Ödendi · Masa açık'), findsOneWidget);
   });
 

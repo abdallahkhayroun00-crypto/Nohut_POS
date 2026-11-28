@@ -117,10 +117,14 @@ class RestaurantFloorPlan extends StatelessWidget {
             ),
             if (editing) ...[
               const SizedBox(height: 8),
-              const Text(
-                '✥ Sürükle · Yeni konumları kaydet veya iptal et.',
-                style: TextStyle(color: Color(0xff718275), fontSize: 12),
-              ),
+              const Row(children: [
+                Icon(Icons.open_with, size: 15, color: Color(0xff718275)),
+                SizedBox(width: 6),
+                Expanded(child: Text(
+                  'Sürükle · Yeni konumları kaydet veya iptal et.',
+                  style: TextStyle(color: Color(0xff718275), fontSize: 12),
+                )),
+              ]),
             ],
             const SizedBox(height: 12),
             LayoutBuilder(
@@ -455,7 +459,7 @@ class TableStatusTile extends StatelessWidget {
     final tone = TableTone.of(o);
     final long = minutes >= 90;
     final status = o == null
-        ? 'Boş · Yeni sipariş'
+        ? 'Boş'
         : orderDueCents(o) == 0 ? 'Ödendi · Masa açık' : 'Dolu';
     return Material(
       color: tone.fill,
@@ -475,38 +479,41 @@ class TableStatusTile extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Wrap(
-                spacing: 8,
-                runSpacing: 2,
-                alignment: WrapAlignment.spaceBetween,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  Text('Masa $number', style: TextStyle(
-                    fontSize: 16, fontWeight: FontWeight.w900, color: tone.ink)),
-                  if (o == null)
-                    Icon(Icons.add_circle_outline, size: 18, color: tone.accent)
-                  else
-                    Row(mainAxisSize: MainAxisSize.min, children: [
-                      Icon(Icons.timer_outlined, size: 13,
-                        color: long ? const Color(0xffB3261E) : tone.ink),
-                      const SizedBox(width: 2),
-                      Flexible(
-                        child: Text(minutes < 60 ? '$minutes dk'
-                            : '${minutes ~/ 60} sa ${minutes % 60} dk',
-                          maxLines: 1, overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: long ? const Color(0xffB3261E) : tone.ink)),
-                      ),
-                    ]),
-                ],
-              ),
+              Row(children: [
+                Expanded(child: Text('Masa $number', maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900,
+                    color: tone.ink))),
+                const SizedBox(width: 6),
+                if (o == null)
+                  Icon(Icons.add_circle_outline, size: 18, color: tone.accent)
+                else
+                  Flexible(child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.timer_outlined, size: 13,
+                      color: long ? const Color(0xffB3261E) : tone.ink),
+                    const SizedBox(width: 2),
+                    Flexible(
+                      child: Text(minutes < 60 ? '$minutes dk'
+                          : '${minutes ~/ 60} sa ${minutes % 60} dk',
+                        maxLines: 1, overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: long ? const Color(0xffB3261E) : tone.ink)),
+                    ),
+                  ])),
+              ]),
               const SizedBox(height: 4),
               Text(status, maxLines: 1, overflow: TextOverflow.ellipsis,
                 style: TextStyle(fontSize: 12.5, color: tone.ink,
                   fontWeight: FontWeight.w600)),
-              if (o != null) ...[
-                const SizedBox(height: 6),
+              // Every tile has the same three lines, so rows stay level.
+              const SizedBox(height: 6),
+              if (o == null)
+                Text('Yeni sipariş', maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900,
+                    color: tone.ink))
+              else ...[
                 Text(orderDueCents(o) == 0
                     ? 'Ödenen ${formatTry(orderPaidCents(o))}'
                     : 'Kalan ${formatTry(orderDueCents(o))}', maxLines: 1,

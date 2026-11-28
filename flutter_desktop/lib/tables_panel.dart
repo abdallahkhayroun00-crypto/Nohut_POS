@@ -422,7 +422,22 @@ class MasalarBoard extends StatelessWidget {
             onTable: onTable,
             onMove: onMove,
           );
-          if (editing) return plan;
+          if (editing) {
+            if (box.maxWidth < 1150) return plan;
+            // Same plan size as normal use (tables do not jump, the plan does
+            // not grow past the window); the side shows the editing rules.
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(flex: 3, child: plan),
+                const SizedBox(width: 12),
+                SizedBox(
+                  width: math.min(420, box.maxWidth * 0.34),
+                  child: const _LayoutRules(),
+                ),
+              ],
+            );
+          }
           final panel = OpenOrdersPanel(
             state: state,
             now: now,
@@ -471,6 +486,44 @@ class MasalarBoard extends StatelessWidget {
             ],
           ),
       ],
+    );
+  }
+}
+
+class _LayoutRules extends StatelessWidget {
+  const _LayoutRules();
+
+  @override
+  Widget build(BuildContext context) {
+    Widget rule(IconData icon, String text) => Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Icon(icon, size: 18, color: NohutBrand.green),
+        const SizedBox(width: 10),
+        Expanded(child: Text(text, style: const TextStyle(fontSize: 13))),
+      ]),
+    );
+    return Container(
+      key: const ValueKey('floor-edit-rules'),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xffF4F6F2),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Yerleşim Kuralları', style: TextStyle(
+            fontSize: 15, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 12),
+          rule(Icons.open_with, 'Masayı tutup sürükleyin.'),
+          rule(Icons.block, 'Masalar birbirine değemez; kapı önü boş kalır.'),
+          rule(Icons.receipt_long_outlined,
+            'Masa numaraları ve açık hesaplar değişmez.'),
+          rule(Icons.save_outlined,
+            'Düzeni Kaydet ile kalıcı olur; Vazgeç eski yerleşime döner.'),
+        ],
+      ),
     );
   }
 }
