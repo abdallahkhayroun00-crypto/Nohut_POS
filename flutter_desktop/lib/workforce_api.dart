@@ -9,6 +9,7 @@ import 'lan_auth_gate.dart';
 import 'local_accounts.dart';
 import 'pos_logic.dart';
 import 'pos_store.dart';
+import 'personal_performance.dart';
 import 'payroll.dart' show payrollStatus, payRateOn, payrollPaymentsFor;
 import 'workforce.dart';
 
@@ -60,6 +61,15 @@ class WorkforceApi {
             (view['employee'] as Map)..['payType'] = rate?.$1..['payRateCents'] = rate?.$2;
           }
           return GateReply(200, {'today': today, 'self': who == ctx.employeeId, 'week': view});
+        case ('GET', 'performance'):
+          // Own numbers only; a phone never chooses whose.
+          final d = guard('shifts.self', touch: query['poll'] != '1');
+          if (!d.allowed) return GateReply(d.status, {'error': d.error});
+          final who = d.context!.employeeId;
+          if (who == null) return const GateReply(409, {'error': 'no_employee',
+            'message': 'Hesabınız bir personele bağlı değil. Windows › Kullanıcılar’dan bağlayın.'});
+          return GateReply(200, {'today': today, 'performance': personalPerformance(
+              store.read().data, who, performanceRangeOf(query['range']), today)});
         case ('GET', 'schedule'):
           final d = guard('shifts.self', touch: query['poll'] != '1');
           if (!d.allowed) return GateReply(d.status, {'error': d.error});

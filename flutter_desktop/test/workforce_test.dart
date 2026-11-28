@@ -242,6 +242,12 @@ void main() {
     expect(spy, 200);
     expect(((sb['week'] as Map)['employee'] as Map)['id'], ayse);
     expect(sb['self'], true);
+    // Performansım: own numbers only, range chosen by the phone.
+    final (pf, pb) = await call('GET', '/api/work/performance?range=week', cookie: staff);
+    expect(pf, 200);
+    expect((pb['performance'] as Map)['range'], 'week');
+    expect((pb['performance'] as Map)['collectionsAttributed'], false);
+    expect((await call('GET', '/api/work/performance')).$1, 401);
     // Staff cannot see the team view or edit another person's plan.
     expect((await call('GET', '/api/work/team', cookie: staff)).$1, 403);
     final (p1, _) = await call('POST', '/api/work/write', cookie: staff, body: {'requestId': 'lan-plan-0001',

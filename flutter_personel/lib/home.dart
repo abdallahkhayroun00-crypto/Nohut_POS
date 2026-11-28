@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 
 import 'expense_drafts.dart';
+import 'performance_page.dart';
 import 'personel_dashboard.dart';
 import 'models.dart';
 import 'pos_api.dart';
@@ -748,6 +749,11 @@ class _StaffHomeState extends State<StaffHome> {
               trailing: const Icon(Icons.chevron_right), onTap: () => _openWork(1)),
             ListTile(leading: const Icon(Icons.payments_outlined), title: const Text('Maaş & Avans'),
               trailing: const Icon(Icons.chevron_right), onTap: () => _openWork(2)),
+            ListTile(key: const ValueKey('open-performance'),
+              leading: const Icon(Icons.insights_outlined), title: const Text('Performansım'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                builder: (_) => PerformancePage(api: c.api)))),
           ],
           if (hasDrafts)
             ListTile(leading: const Icon(Icons.account_balance_wallet_outlined), title: const Text('Giderler'),
