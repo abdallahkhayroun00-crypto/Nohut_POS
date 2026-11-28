@@ -13,6 +13,7 @@ import 'menu_admin_page.dart';
 import 'owner_payroll.dart';
 import 'team_performance_page.dart';
 import 'demand_page.dart';
+import 'sales_page.dart';
 import 'pos_api.dart';
 import 'style.dart';
 import 'work_page.dart' show WorkFormat;
@@ -511,6 +512,11 @@ class _OwnerHomeState extends State<OwnerHome> {
         FilledButton.icon(onPressed:()=>Navigator.of(context).push(MaterialPageRoute<void>(
           builder:(_)=>Scaffold(appBar:AppBar(title:const Text('Raporlar · PDF')),body:ManagerFinancePage(store:finance)))),
           icon:const Icon(Icons.picture_as_pdf),label:const Text('Tam Yönetim Raporu · Tek PDF')),
+        const SizedBox(height:8),
+        OutlinedButton.icon(key:const ValueKey('reports-sales'),
+          onPressed:offline?null:()=>Navigator.of(context).push(MaterialPageRoute<void>(
+            builder:(_)=>SalesPage(request:api.request))),
+          icon:const Icon(Icons.bar_chart_outlined),label:const Text('Satış Analizi · En Çok Satanlar')),
         const SizedBox(height:8),
         OutlinedButton.icon(key:const ValueKey('reports-demand'),
           onPressed:offline?null:()=>Navigator.of(context).push(MaterialPageRoute<void>(

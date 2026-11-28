@@ -212,4 +212,15 @@ void main() {
     expect((d['heatmap'] as List).length, 7);
     expect(d.keys.any((k) => '$k'.contains('Cents')), isFalse);
   });
+
+  test('Satış Analizi: sales.view and the finance gate', () async {
+    final owner = await login('sahip', 'owner-pass-1');
+    final (h, hb, _) = await call('GET', '/api/yonetici/sales?range=week', cookie: owner);
+    expect(h, 403);
+    expect((hb as Map)['error'], 'https_required');
+    auth.setSetting('local_finance_http', '1');
+    final (a, ab, _) = await call('GET', '/api/yonetici/sales?range=week', cookie: owner);
+    expect(a, 200, reason: '$ab');
+    expect(((ab as Map)['sales'] as Map)['totals'], isA<Map>());
+  });
 }

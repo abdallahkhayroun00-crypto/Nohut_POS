@@ -16,6 +16,7 @@ import 'finance_logic.dart' show financeRows;
 import 'payroll.dart';
 import 'personal_performance.dart';
 import 'demand_view.dart';
+import 'sales_view.dart';
 import 'workforce.dart' show addDays, isCalendarDay, istanbulDayOfInstant, weekStartOf;
 import 'finance_sync_server.dart';
 import 'lan_auth_gate.dart';
@@ -75,6 +76,13 @@ class YoneticiApi {
             'session': ctx.toJson(),
             'financeAllowed': financeAllowed(secure: secure),
           });
+        case ('GET', 'sales'):
+          // Satış Analizi: amounts, so sales.view and the finance gate.
+          final d = _guard(token, 'sales.view');
+          if (!d.allowed) return GateReply(d.status, {'error': d.error});
+          if (!financeAllowed(secure: secure)) return const GateReply(403, {'error': 'https_required'});
+          return GateReply(200, {'sales': salesView(store.read().data,
+              '${query['range'] ?? ''}', istanbulDayOfInstant(DateTime.now()))});
         case ('GET', 'demand'):
           // Yoğunluk: order counts only (no amounts or people).
           final d = _guard(token, 'dashboard.view');
