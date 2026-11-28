@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:nohut_personel/manager_main.dart';
 import 'package:nohut_personel/pair_page.dart';
 import 'package:nohut_personel/style.dart';
 
@@ -44,4 +45,12 @@ void main() {
     await t.pump();
     expect(find.textContaining('6 haneli PIN'), findsOneWidget);
   });
+
+  for (final (label, mode) in [('phone', Brightness.light), ('phone-dark', Brightness.dark)]) {
+    testWidgets('owner pair $label', (t) async {
+      await renderScreen(t, 'owner-pair-$label', const NohutOwnerApp(), size: const Size(412, 915), brightness: mode);
+      expect(find.byKey(const ValueKey('owner-pair-scan')), findsOneWidget);
+      expect(t.takeException(), isNull);
+    });
+  }
 }

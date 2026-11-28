@@ -147,7 +147,7 @@ class _PairPageState extends State<PairPage> {
                 )),
               ], done: found != null),
               const SizedBox(height: 8),
-              _step(context, 2, 'Tek seferlik PIN', 'QR kodunun altında yazan 6 haneli kod. Birkaç dakika geçerlidir.', [
+              _step(context, 2, 'Tek seferlik PIN', 'QR kodunun altında yazan 6 haneli kod. 15 dakika geçerlidir.', [
                 TextField(
                   key: const ValueKey('pair-pin'),
                   controller: pin,

@@ -92,28 +92,59 @@ class _OwnerPairState extends State<_OwnerPair> {
     }
   }
   @override
-  Widget build(BuildContext context)=>Scaffold(
-    appBar:AppBar(title:const Text('Nohut Yönetim')),
-    body:Center(child:ConstrainedBox(constraints:const BoxConstraints(maxWidth:530),
-      child:ListView(padding:const EdgeInsets.all(24),children:[
-        const NohutBrandHeader(subtitle:'İşletme paneli'),
-        const SizedBox(height:20),
-        const Text('İşletme sahibi girişi',style:TextStyle(fontSize:27,fontFamily:'Bree')),
-        const Text('Yalnızca yönetici cihazı. Windows > Ayarlar > Yönetim APK Eşleştir.'),
-        const SizedBox(height:18),
-        if(scanning) SizedBox(height:280,child:MobileScanner(onDetect:(capture){
-          final raw=capture.barcodes.firstOrNull?.rawValue;
-          if(raw!=null && !busy) unawaited(pair(raw));
-        })),
-        OutlinedButton.icon(onPressed:busy?null:()=>setState(()=>scanning=!scanning),
-          icon:const Icon(Icons.qr_code_scanner),label:Text(scanning?'Kamerayı kapat':'Yönetim QR okut')),
-        TextField(controller:code,obscureText:true,decoration:const InputDecoration(labelText:'Yönetim eşleştirme kodu')),
-        const SizedBox(height:10),
-        FilledButton(onPressed:busy?null:()=>pair(code.text),child:const Text('Güvenli Bağlan')),
-        if(busy) const LinearProgressIndicator(),
-        if(error!=null)Text(error!),
-      ]))),
-  );
+  Widget build(BuildContext context) {
+    final nc=context.nohut;
+    final scheme=Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar:AppBar(title:const Text('Nohut Yönetim')),
+      body:Center(child:ConstrainedBox(constraints:const BoxConstraints(maxWidth:530),
+        child:ListView(padding:const EdgeInsets.fromLTRB(16,16,16,24),children:[
+          const NohutBrandHeader(subtitle:'İşletme sahibi paneli'),
+          const SizedBox(height:18),
+          Card(child:Padding(padding:const EdgeInsets.fromLTRB(16,16,16,16),child:Column(
+            crossAxisAlignment:CrossAxisAlignment.stretch,children:[
+            Row(children:[
+              Icon(Icons.admin_panel_settings_outlined,color:nc.heading),
+              const SizedBox(width:10),
+              const Expanded(child:Text('Bu telefonu yönetici cihazı yapın',
+                style:TextStyle(fontWeight:FontWeight.w800,fontSize:16))),
+            ]),
+            Padding(padding:const EdgeInsets.only(top:6,bottom:14),child:Text(
+              'Windows POS’ta Ayarlar › Yönetim APK Eşleştir’i açın ve QR kodunu okutun. '
+              'Bu kodu yalnızca işletme sahibi oluşturabilir.',
+              style:TextStyle(color:nc.muted,fontSize:13,height:1.35))),
+            if(scanning) Padding(padding:const EdgeInsets.only(bottom:10),child:SizedBox(height:280,
+              child:ClipRRect(borderRadius:BorderRadius.circular(14),child:MobileScanner(onDetect:(capture){
+                final raw=capture.barcodes.firstOrNull?.rawValue;
+                if(raw!=null && !busy) unawaited(pair(raw));
+              })))),
+            FilledButton.icon(key:const ValueKey('owner-pair-scan'),
+              onPressed:busy?null:()=>setState(()=>scanning=!scanning),
+              icon:Icon(scanning?Icons.close:Icons.qr_code_scanner),
+              label:Text(scanning?'Kamerayı Kapat':'Yönetim QR Kodunu Tara')),
+            Theme(data:Theme.of(context).copyWith(dividerColor:Colors.transparent),child:ExpansionTile(
+              tilePadding:EdgeInsets.zero,
+              title:Text('Kamera yoksa kodu elle girin',
+                style:TextStyle(fontSize:13.5,color:nc.muted,fontWeight:FontWeight.w600)),
+              children:[
+                TextField(key:const ValueKey('owner-pair-code'),controller:code,obscureText:true,
+                  decoration:const InputDecoration(labelText:'Yönetim eşleştirme kodu',prefixIcon:Icon(Icons.key_outlined))),
+                const SizedBox(height:10),
+                OutlinedButton(key:const ValueKey('owner-pair-submit'),
+                  onPressed:busy?null:()=>pair(code.text),child:const Text('Güvenli Bağlan')),
+              ])),
+            if(busy) const Padding(padding:EdgeInsets.only(top:8),child:LinearProgressIndicator()),
+            if(error!=null) Padding(padding:const EdgeInsets.only(top:10),child:Text(error!,
+              key:const ValueKey('owner-pair-error'),
+              style:TextStyle(color:scheme.error,fontWeight:FontWeight.w600))),
+          ]))),
+          const SizedBox(height:12),
+          Text('Telefon ve Windows POS aynı restoran Wi-Fi ağında olmalıdır. Finans ve maaş verileri '
+            'telefonda şifreli saklanır. Telefon kaybolursa Windows’ta yeni Yönetim QR kodu oluşturun; eski telefonun erişimi biter.',
+            textAlign:TextAlign.center,style:TextStyle(fontSize:12.5,color:nc.muted,height:1.4)),
+        ]))),
+    );
+  }
 }
 
 class OwnerHome extends StatefulWidget {
