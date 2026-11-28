@@ -25,13 +25,13 @@ begin
  perform nohut_private.enroll_device(u,wd,ws,'windows','Synthetic Windows');
  token:=nohut_private.enroll_windows_agent(u,ws,wd,'aal2',1,wd,e)->>'token';
  draft_digest:=encode(sha256(convert_to(draft_json,'UTF8')),'hex'); draft_stamp:=left(draft_digest,16);
- perform nohut_private.enqueue_command(u,s,d,'yonetici',1,q,'qr_menu_publish',jsonb_build_object('confirmed',true,'expectedStamp',draft_stamp)::text);
+ perform nohut_private.enqueue_command(u,s,d,'yonetici',1,q,'qr_menu_publish',jsonb_build_object('confirmed',true,'expectedStamp',draft_stamp,'draftSha256',draft_digest)::text);
  perform nohut_private.apply_qr_menu_projection(r,1,jsonb_build_object('available',true,'stamp',draft_stamp,'revision',revision,'offline',false,'catalog',draft_json::jsonb));
  insert into nohut_private.sync_transactions(restaurant_id,authority_epoch,tx_id,source_revision,first_seq,last_seq,event_count,schema_version,body_sha256)
  values(r,e,tx,1,1,1,1,1,repeat('a',64));
  insert into nohut_private.sync_event_ids(restaurant_id,authority_epoch,tx_id,event_id,event_ordinal,seq,entity_type,entity_id,op,body_sha256)
  values(r,e,tx,gen_random_uuid()::text,1,1,'qrMenuState','core','upsert',repeat('b',64));
- perform nohut_private.enqueue_command(u,s,d,'yonetici',1,q2,'qr_menu_publish','{"confirmed":true,"expectedStamp":"0123456789abcdef"}');
+ perform nohut_private.enqueue_command(u,s,d,'yonetici',1,q2,'qr_menu_publish','{"confirmed":true,"expectedStamp":"0123456789abcdef","draftSha256":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}');
  perform public.nohut_agent_claim(token,20);
  select nohut_private.command_envelope_sha256(envelope) into strict envhash from nohut_private.commands where restaurant_id=r and request_id=q::text;
  select nohut_private.command_envelope_sha256(envelope) into strict envhash2 from nohut_private.commands where restaurant_id=r and request_id=q2::text;

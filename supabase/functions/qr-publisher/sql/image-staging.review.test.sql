@@ -62,7 +62,7 @@ begin
  draft:=jsonb_build_object('categories','[]'::jsonb,'products',jsonb_build_array(jsonb_build_object('id',1,'image',path)),'campaigns','[]'::jsonb)::text;
  digest:=encode(sha256(convert_to(draft,'UTF8')),'hex'); stamp:=left(digest,16);
  update nohut_private.qr_menu_state set draft_stamp=stamp,catalog=draft::jsonb where restaurant_id=r;
- perform nohut_private.enqueue_command(u,s,d,'yonetici',1,pub,'qr_menu_publish',jsonb_build_object('confirmed',true,'expectedStamp',stamp)::text);
+ perform nohut_private.enqueue_command(u,s,d,'yonetici',1,pub,'qr_menu_publish',jsonb_build_object('confirmed',true,'expectedStamp',stamp,'draftSha256',digest)::text);
  perform public.nohut_agent_claim(token,20);
  select nohut_private.command_envelope_sha256(envelope) into strict pubhash from nohut_private.commands where restaurant_id=r and request_id=pub::text;
  result:=nohut_private.qr_publish_claim(token,pub::text,1,pubhash,digest,revision);

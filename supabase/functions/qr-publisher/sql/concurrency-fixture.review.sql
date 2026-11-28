@@ -28,8 +28,8 @@ begin
   perform nohut_private.enroll_device(u,d,s,'yonetici','Synthetic');
   perform nohut_private.enroll_device(u,wd,ws,'windows','Synthetic Windows');
   token:=nohut_private.enroll_windows_agent(u,ws,wd,'aal2',1,wd,e)->>'token';
-  perform nohut_private.enqueue_command(u,s,d,'yonetici',1,q,'qr_menu_publish',jsonb_build_object('confirmed',true,'expectedStamp',stamp)::text);
-  perform nohut_private.enqueue_command(u,s,d,'yonetici',1,rec,'qr_menu_reconcile','{}');
+  perform nohut_private.enqueue_command(u,s,d,'yonetici',1,q,'qr_menu_publish',jsonb_build_object('confirmed',true,'expectedStamp',stamp,'draftSha256',digest)::text);
+  perform nohut_private.enqueue_command(u,s,d,'yonetici',1,rec,'qr_menu_reconcile',jsonb_build_object('targetRequestId',q::text,'mode','reconcile')::text);
   perform nohut_private.apply_qr_menu_projection(r,1,jsonb_build_object('available',true,'stamp',stamp,'revision',revision,'offline',false,'catalog',draft_json::jsonb));
   insert into nohut_private.sync_transactions(restaurant_id,authority_epoch,tx_id,source_revision,first_seq,last_seq,event_count,schema_version,body_sha256)
   values(r,e,tx,1,1,1,1,1,repeat('a',64));
