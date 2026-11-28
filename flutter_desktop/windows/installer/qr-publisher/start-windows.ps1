@@ -3,7 +3,7 @@
 # Generates a private random access code and stores it in Windows DPAPI for POS.
 # -NoPrompt: used by POS auto-start, the Startup shortcut and Setup. Never
 # opens the file picker; a missing key is reported in status.json instead.
-param([string]$PrivateKeyFile = "",[int]$Port = 18787,[switch]$NoPrompt)
+param([string]$PrivateKeyFile = "",[int]$Port = 18787,[switch]$NoPrompt,[string]$NodeExecutable = "")
 $ErrorActionPreference = 'Stop'
 if ($Port -lt 1024 -or $Port -gt 65535) { throw 'Invalid port.' }
 $base = Join-Path $env:APPDATA 'NohutFalafel'
@@ -28,8 +28,19 @@ Write-Status 'starting' 'Başlatılıyor.'
 # POS uses -NoProfile, so fnm may not be active in PATH.
 # Query node --version rather than node -p to avoid PowerShell quoting issues.
 $nodeCandidates = New-Object 'System.Collections.Generic.List[string]'
-$onPath = Get-Command node.exe -ErrorAction SilentlyContinue
-if ($onPath) { $nodeCandidates.Add($onPath.Source) }
+# An explicit path is useful for isolated installer/lifecycle tests. It is
+# still subject to the same executable and Node 22+ version checks.
+if (-not [string]::IsNullOrWhiteSpace($NodeExecutable)) {
+  if (-not [IO.Path]::IsPathRooted($NodeExecutable) -or
+      [IO.Path]::GetFileName($NodeExecutable) -ne 'node.exe' -or
+      -not (Test-Path -LiteralPath $NodeExecutable -PathType Leaf)) {
+    Stop-With 'node_missing' 'Belirtilen Node.js yolu geçersiz.' 2
+  }
+  $nodeCandidates.Add($NodeExecutable)
+}
+foreach ($onPath in @(Get-Command node.exe -CommandType Application -All -ErrorAction SilentlyContinue)) {
+  if ($onPath.Source) { $nodeCandidates.Add($onPath.Source) }
+}
 $programFilesNode = Join-Path $env:ProgramFiles 'nodejs\node.exe'
 if (Test-Path -LiteralPath $programFilesNode -PathType Leaf) {
   $nodeCandidates.Add($programFilesNode)
@@ -51,14 +62,33 @@ foreach ($root in $fnmRoots) {
 $availableNodes = @()
 foreach ($candidate in ($nodeCandidates | Select-Object -Unique)) {
   try {
-    $nodeVersion = (& $candidate --version 2>$null | Select-Object -First 1)
-    $match = [regex]::Match([string]$nodeVersion,'^v([0-9]+)\.([0-9]+)\.([0-9]+)')
-    if ($LASTEXITCODE -eq 0 -and $match.Success) {
-      $availableNodes += [pscustomobject]@{
-        Path = $candidate
-        Version = [version]($match.Groups[1].Value + '.' + $match.Groups[2].Value + '.' + $match.Groups[3].Value)
+    # Avoid PowerShell 5.1 native stderr/pipeline semantics and stale
+    # LASTEXITCODE. Inspect the actual child process result directly.
+    $probeInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $probeInfo.FileName = $candidate
+    $probeInfo.Arguments = '--version'
+    $probeInfo.UseShellExecute = $false
+    $probeInfo.CreateNoWindow = $true
+    $probeInfo.RedirectStandardOutput = $true
+    $probeInfo.RedirectStandardError = $true
+    $probe = [Diagnostics.Process]::Start($probeInfo)
+    try {
+      $stdout = $probe.StandardOutput.ReadToEndAsync()
+      $stderr = $probe.StandardError.ReadToEndAsync()
+      if (-not $probe.WaitForExit(5000)) {
+        $probe.Kill()
+        $probe.WaitForExit()
+        continue
       }
-    }
+      $nodeVersion = $stdout.GetAwaiter().GetResult().Trim()
+      $match = [regex]::Match($nodeVersion,'^v([0-9]+)\.([0-9]+)\.([0-9]+)$')
+      if ($probe.ExitCode -eq 0 -and $match.Success) {
+        $availableNodes += [pscustomobject]@{
+          Path = $candidate
+          Version = [version]($match.Groups[1].Value + '.' + $match.Groups[2].Value + '.' + $match.Groups[3].Value)
+        }
+      }
+    } finally { $probe.Dispose() }
   } catch { continue }
 }
 $selectedNode = $availableNodes | Where-Object { $_.Version.Major -ge 22 } |

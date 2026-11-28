@@ -12,6 +12,7 @@ import 'package:nohut_falafel_desktop/brand.dart';
 import 'package:nohut_falafel_desktop/pos_logic.dart';
 import 'package:nohut_falafel_desktop/pos_store.dart';
 import 'package:nohut_falafel_desktop/qr_menu_management.dart';
+import 'package:nohut_falafel_desktop/qr_menu_sync.dart';
 import 'package:nohut_falafel_desktop/qr_publisher_client.dart';
 import 'package:nohut_falafel_desktop/qr_publisher_service.dart';
 import 'qr_publisher_service_test.dart' as svc;
@@ -72,11 +73,12 @@ class FakePublisher extends QrPublisherClient {
 
 class Host extends StatefulWidget {
   const Host({super.key, required this.initial, required this.store, required this.publisher,
-    this.supervisor});
+    this.supervisor,this.sync});
   final Json initial;
   final PosStore store;
   final FakePublisher publisher;
   final QrPublisherSupervisor? supervisor;
+  final QrMenuAutoSync? sync;
   @override
   State<Host> createState() => HostState();
 }
@@ -100,6 +102,7 @@ class HostState extends State<Host> {
         readPublicMenu: () async => github()..['source'] = 'public-website',
         networkImages: false,
         supervisor: widget.supervisor,
+        sync: widget.sync,
         now: () => DateTime.utc(2026, 11, 27, 19, 55),
       );
 }
@@ -110,7 +113,7 @@ final boundary = GlobalKey();
 
 Future<GlobalKey<HostState>> mount(WidgetTester t, FakePublisher f,
     {Json? state, Size size = const Size(1536, 864), Brightness brightness = Brightness.light,
-    QrPublisherSupervisor? supervisor}) async {
+    QrPublisherSupervisor? supervisor,QrMenuAutoSync? sync}) async {
   t.view.physicalSize = size;
   t.view.devicePixelRatio = 1;
   addTearDown(() {
@@ -142,7 +145,7 @@ Future<GlobalKey<HostState>> mount(WidgetTester t, FakePublisher f,
         body: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 22),
           child: Host(key: key, initial: {...emptyPosState(), ...?state}, store: store, publisher: f,
-            supervisor: supervisor),
+            supervisor: supervisor,sync:sync),
         ),
       ),
     ),
@@ -200,6 +203,33 @@ void main() {
   tearDown(() {
     store.dispose();
     dir.deleteSync(recursive: true);
+  });
+
+  testWidgets('QR workspace owns POS sync settings and disabled manual sync', (t) async {
+    final sync=QrMenuAutoSync(store);
+    addTearDown(sync.dispose);
+    final host=await mount(t,FakePublisher(),sync:sync);
+    expect(text(t,'qr-fact-sync'),'İlk kontrol bekleniyor');
+    expect(text(t,'qr-fact-sync-time'),'—');
+    await tapKey(t,'qr-more');
+    await t.tap(find.text('Eşitleme Ayarları'));
+    await t.pumpAndSettle();
+    expect(find.text('QR Menü otomatik eşitleme'),findsOneWidget);
+    expect(find.text('Yalnızca POS · Yerel fiyatlar'),findsNothing);
+    await t.tap(find.byType(SwitchListTile));
+    await t.pumpAndSettle();
+    expect(host.currentState!.data['settings']['qrAutoSync'],false);
+    expect(find.text('Yalnızca POS · Yerel fiyatlar'),findsOneWidget);
+    expect(t.widget<OutlinedButton>(find.ancestor(of:find.text('Şimdi Eşitle'),matching:find.byWidgetPredicate((w)=>w is OutlinedButton))).onPressed,isNull);
+    await t.tap(find.text('Kapat'));
+    await t.pumpAndSettle();
+    expect(text(t,'qr-fact-sync'),'Kapalı');
+    await tapKey(t,'qr-more');
+    expect(t.widget<PopupMenuItem<String>>(find.widgetWithText(PopupMenuItem<String>,'Şimdi Eşitle')).enabled,false);
+    await t.tapAt(const Offset(5,5));
+    await t.pumpAndSettle();
+    expect(t.takeException(),isNull);
+    await t.pumpWidget(const SizedBox.shrink());
   });
 
   testWidgets('service down: public menu opens as an offline draft; reconnect follows GitHub', (t) async {

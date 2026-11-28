@@ -4,6 +4,14 @@ $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true' -or -not $env:RUNNER_TEMP) {
   throw 'Publisher lifecycle test runs only on an isolated GitHub Actions runner.'
 }
+# Capture the runner's installed Node before replacing profile environment.
+$node = (Get-Command node.exe -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
+if ([string]::IsNullOrWhiteSpace($node) -or -not (Test-Path -LiteralPath $node -PathType Leaf)) { throw 'CI Node executable not found.' }
+$version = & $node --version
+if ($LASTEXITCODE -ne 0 -or $version -notmatch '^v([0-9]+)\.' -or [int]$Matches[1] -lt 22) {
+  throw 'CI requires a working Node.js 22+ executable.'
+}
+Write-Host "CI Node $version"
 $root = Split-Path -Parent $PSScriptRoot
 $script = Join-Path $root 'start-windows.ps1'
 $work = Join-Path $env:RUNNER_TEMP ('qrpub-' + [guid]::NewGuid())
@@ -15,21 +23,27 @@ $service = Join-Path $env:APPDATA 'NohutFalafel\QrPublisher'
 $statusFile = Join-Path $service 'status.json'
 $port = 18917
 function Get-Status { Get-Content -LiteralPath $statusFile -Raw -Encoding UTF8 | ConvertFrom-Json }
-function Invoke-Start([switch]$Wait) {
+function Invoke-Start([switch]$Wait,[switch]$DiscoverNode) {
   $argList = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ('"' + $script + '"'), '-Port', $port, '-NoPrompt')
+  if (-not $DiscoverNode) { $argList += @('-NodeExecutable', ('"' + $node + '"')) }
   if ($Wait) { return Start-Process powershell.exe -ArgumentList $argList -Wait -PassThru -WindowStyle Hidden }
   return Start-Process powershell.exe -ArgumentList $argList -PassThru -WindowStyle Hidden
 }
 function Get-Health {
   try { return Invoke-RestMethod -Uri "http://127.0.0.1:$port/health" -TimeoutSec 2 } catch { return $null }
 }
-function Wait-Health {
-  for ($i = 0; $i -lt 60; $i++) { $h = Get-Health; if ($h) { return $h }; Start-Sleep -Milliseconds 500 }
+function Wait-Health($process) {
+  for ($i = 0; $i -lt 60; $i++) {
+    if ($process.HasExited) { throw ('Publisher exited early (' + $process.ExitCode + '). Status: ' + (Get-Content -LiteralPath $statusFile -Raw)) }
+    $h = Get-Health
+    if ($h) { return $h }
+    Start-Sleep -Milliseconds 500
+  }
   throw ('Publisher never answered. Status: ' + (Get-Content -LiteralPath $statusFile -Raw))
 }
 
 # 1. No key and -NoPrompt: a clear key_missing, no file picker, exit 3.
-$p = Invoke-Start -Wait
+$p = Invoke-Start -Wait -DiscoverNode
 if ($p.ExitCode -ne 3 -or (Get-Status).state -ne 'key_missing') {
   throw "Expected key_missing/3, got $((Get-Status).state)/$($p.ExitCode)"
 }
@@ -37,9 +51,9 @@ Write-Host 'OK key_missing without prompt'
 
 # 2. GitHub's original key file name in Downloads: picked up, protected, started.
 $pem = Join-Path $downloads 'nohut-qr-publisher.2026-11-28.private-key.pem'
-node -e "process.stdout.write(require('crypto').generateKeyPairSync('rsa',{modulusLength:2048}).privateKey.export({type:'pkcs8',format:'pem'}))" | Set-Content -LiteralPath $pem -Encoding ascii
+& $node -e "process.stdout.write(require('crypto').generateKeyPairSync('rsa',{modulusLength:2048}).privateKey.export({type:'pkcs8',format:'pem'}))" | Set-Content -LiteralPath $pem -Encoding ascii
 $running = Invoke-Start
-$health = Wait-Health
+$health = Wait-Health $running
 $expected = [regex]::Match((Get-Content -LiteralPath (Join-Path $root 'server.mjs') -Raw), "const VERSION='([^']+)'").Groups[1].Value
 if ($health.version -ne $expected) { throw "Version $($health.version) != $expected" }
 if ((Get-Status).state -ne 'running') { throw "Status should be running: $((Get-Status).state)" }
