@@ -1,23 +1,36 @@
 # Contract: Initial Database Synchronization, Resumable Snapshots & Recovery (`v1`)
 
-- **Owner:** Backend Continuation (`gemini/backend-continuation`, PR #46)
-- **Migration:** `supabase/migrations/20261127172000_nohut_initial_sync_and_strict_qr_digest.sql`
-- **Status:** `Implemented / Tested` (pending independent review by ChatGPT)
+- **Owner:** Backend (`gemini/backend-continuation`, PR #46)
+- **Migrations:**
+  - `supabase/migrations/20261127172000_nohut_initial_sync_and_strict_qr_digest.sql`
+  - `supabase/migrations/20261127173000_nohut_initial_sync_hardening.sql`
+- **Status:** `Implemented / Tested` (pending independent re-review)
 
-## Authority & Security Rules
+## Authority, Privacy & Integrity Guarantees
 
-1. **Windows-only:** Every initial-sync and recovery RPC requires a valid, unrevoked scoped Windows agent token (`nohut_private.authenticate_windows_agent(p_token)`). Remote mobile/browser clients cannot call or enqueue initial-sync or resync operations.
+1. **Windows-only:** Initial-sync RPCs require a valid, unrevoked scoped Windows agent token (`nohut_private.authenticate_windows_agent(p_token)`). Remote mobile/browser clients cannot call or enqueue initial-sync or resync operations.
 2. **Pre-sync encrypted backup required:** `public.nohut_agent_begin_initial_sync` refuses to start unless `p_backup_verified = true`.
-3. **No premature activation:** Cloud `sync_checkpoints` is initialized/updated ONLY when `public.nohut_agent_activate_initial_sync` verifies exact `manifest_sha256` and exact committed `migration_batches` count.
-4. **Resumable & Idempotent:** Every RPC (`begin`, `upload_snapshot_batch`, `activate`) is idempotent on its UUID (`accepted` / `duplicate` / `conflict`). After an offline drop or crash, Windows queries `public.nohut_agent_migration_status` and skips already-committed `batch_id`s.
-5. **Strict QR Publish Digest:** `qr_menu_publish` now **requires** full 64-hex `draftSha256` whose first 16 hex chars equal `expectedStamp`.
-
-## RPC Surface
-
-| RPC | Purpose |
-|---|---|
-| `public.nohut_agent_begin_initial_sync(p_token, p_migration_id, p_snapshot_revision, p_snapshot_seq, p_manifest_sha256, p_backup_verified)` | Starts an initial sync migration in `uploading` state after verified backup. |
-| `public.nohut_agent_upload_snapshot_batch(p_token, p_migration_id, p_batch_id, p_category, p_item_count, p_body_sha256, p_events)` | Atomically ingests one snapshot category batch and records it in `nohut_private.migration_batches`. |
-| `public.nohut_agent_activate_initial_sync(p_token, p_migration_id, p_expected_batches, p_expected_manifest_sha256)` | Verifies batch count & manifest, activates migration, and sets `sync_checkpoints` to `(snapshot_seq, snapshot_revision)`. |
-| `public.nohut_agent_abort_initial_sync(p_token, p_migration_id, p_reason)` | Safely aborts an incomplete migration (`safely_aborted`); refuses to abort an active migration. |
-| `public.nohut_agent_migration_status(p_token, p_migration_id)` | Returns current migration state, committed batches, and checkpoint for offline resume. |
+3. **Strict Batch & Manifest Verification:**
+   - Each batch is capped at **≤ 500 events** and **≤ 4 MB** (`4,194,304` bytes).
+   - On upload, Postgres verifies `jsonb_array_length(p_events) = p_item_count` AND `sha256(utf8(canonical_command_json(p_events))) = p_body_sha256`.
+   - At activation, Postgres rejects `NULL` or negative `p_expected_batches`, verifies exact committed batch count, and recomputes:
+     ```text
+     manifest_sha256 = sha256(utf8(
+       join('\n', sort_by_batch_id_asc(
+         "${category}:${batch_id}:${item_count}:${body_sha256}"
+       ))
+     ))
+     ```
+     (For 0 batches: `sha256(utf8(""))`.) Activation succeeds only when the recomputed manifest equals BOTH stored `sync_migrations.manifest_sha256` and `p_expected_manifest_sha256`.
+4. **Stage + Promote (Zero Premature Visibility & Clean Abort):**
+   - `nohut_agent_upload_snapshot_batch` stages verified batches in private `nohut_private.migration_staged_batches` — **zero writes to live projection tables occur while `uploading`**, so phones never see partial/unactivated snapshot data.
+   - `nohut_agent_abort_initial_sync` purges all staged batches for that migration, stores `abort_reason` & `aborted_at`, and records an `initial_sync_aborted` entry in `nohut_private.security_audit`.
+   - `nohut_agent_activate_initial_sync` atomically promotes all staged events in strict dependency order inside a single Postgres transaction, purges staged payloads, marks the migration `'active'`, and initializes `sync_checkpoints` to `(snapshot_seq, snapshot_revision)`.
+5. **Second Full Sync ("Yeniden eşitle") — Authority Epoch Rotation:**
+   - Within an authority epoch, only one migration can be `'active'`.
+   - To perform a second full sync (*Yeniden eşitle* or replacement-PC restore), the owner calls **`public.nohut_owner_rotate_authority_epoch(p_device_id, p_permission_version, p_reason)`** from Windows with an **owner `aal2` MFA session** (`sync.full_resync`).
+   - This atomically retires the old `authority_epoch`, revokes all old-epoch `windows_agents`, creates a fresh active `authority_epoch`, and writes an `authority_epoch_rotated` audit row. Windows then re-enrolls its scoped agent against `new_authority_epoch` and runs `begin` → `upload_snapshot_batch` → `activate_initial_sync`.
+6. **Status Query Semantics (`nohut_agent_migration_status`):**
+   - With `p_migration_id = NULL`: returns the latest migration for the agent's current active `authority_epoch`.
+   - With an explicit `p_migration_id`: returns that migration even if it belongs to a retired epoch of the same restaurant (useful for audit/diagnostics).
+7. **Strict QR Publish Digest:** `qr_menu_publish` requires full 64-hex `draftSha256` whose first 16 hex chars equal `expectedStamp`.

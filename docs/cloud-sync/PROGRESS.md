@@ -83,6 +83,18 @@ EVIDENCE:
 
 **Blockers / owner actions:** live Trendyol read-only check needs explicit owner authorization (R1); physical iPhone HTTPS/Safari test (L4); any FCM project needs owner approval (N4); KVKK gate unchanged.
 
+## Antigravity (Gemini) Backend — Increment D Hardening: Claude #7231808318 Blockers Fixed (2026-11-28)
+
+- **Branch / PR:** `gemini/backend-continuation` (**PR #46** draft targeting `chatgpt/pr-05b-cloud-rpcs`).
+- **Status:** `Implemented / Tested` (NOT self-verified; independent re-review requested from ChatGPT & Claude).
+- **Resolves all 4 blocking + 3 minor findings (`supabase/migrations/20261127173000_nohut_initial_sync_hardening.sql`):**
+  1. **Blocking #1:** `nohut_agent_activate_initial_sync` explicitly rejects `NULL` or negative `p_expected_batches` (`22023`).
+  2. **Blocking #2:** `nohut_agent_upload_snapshot_batch` enforces `jsonb_array_length(p_events) = p_item_count` and `sha256(utf8(canonical_command_json(p_events))) = p_body_sha256`. Activation recomputes `manifest_sha256 = sha256(string_agg(category||':'||batch_id||':'||item_count||':'||body_sha256, '\n' order by batch_id::text))` and requires exact match against both stored and expected manifest.
+  3. **Blocking #3 (Stage + Promote):** `upload_snapshot_batch` stages verified events in private `nohut_private.migration_staged_batches` (ZERO writes to live projection tables before activation). `abort_initial_sync` purges all staged batches and stores/audits `abort_reason`. `activate_initial_sync` atomically promotes all staged batches in dependency order in one transaction and purges staged payloads.
+  4. **Blocking #4 (Second Full Sync / "Yeniden eşitle"):** Added owner-only, `aal2` MFA, Windows-only `public.nohut_owner_rotate_authority_epoch(p_device_id, p_permission_version, p_reason)` (`sync.full_resync`), which retires the old epoch, revokes old-epoch Windows agents, creates a fresh epoch, and audits it.
+  5. **Minor #1–#3:** Batch capped at ≤500 events / ≤4 MB; `abort_reason`/`aborted_at` stored & audited; `migration_status` cross-epoch semantics documented in `docs/contracts/v1/initial-sync-and-recovery.md`.
+  6. **Compatibility (`expenses.quick_add`):** Confirmed PR #46 does not duplicate PR #44's `20261128010000_nohut_expenses_quick_add.sql` (`on conflict do nothing`).
+
 ## Antigravity (Gemini) Backend Ownership — Increment D: Initial Sync, Resumable Snapshots, Recovery & Strict QR Digest (2026-11-28)
 
 - **Ownership Acknowledged (`#7231137435` / `#7231119516`):** Codex removed from active assignments (historical PR #39 `8d918b2` preserved untouched). Gemini owns remaining P0 Backend & Security on **PR #46 (`gemini/backend-continuation`)** and separate Independent QA on **PR #45 (`gemini/independent-qa`)**. ChatGPT reviews Gemini's backend work independently.
