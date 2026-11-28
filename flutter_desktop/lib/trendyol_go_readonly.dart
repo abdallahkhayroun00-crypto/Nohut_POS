@@ -8,6 +8,7 @@ import 'package:path/path.dart' as paths;
 import 'pos_logic.dart';
 import 'order_reporting.dart';
 import 'pos_store.dart';
+import 'trendyol_transport.dart';
 import 'windows_vault.dart';
 
 // Official MEAL order reader, with explicitly gated lifecycle operations.
@@ -390,6 +391,13 @@ class TrendyolGoReadonly extends ChangeNotifier {
       status = 'Güvenli kasa okunamadı';
     }
     if (_closed) return;
+    // One polling path only (#50): when the cloud proxy is the authority
+    // this PC never polls with its local credentials, and vice versa.
+    if (!TrendyolSourceMode.of(store.read().data['settings'] as Map?).localPolls) {
+      status = 'Trendyol bulut bağlantısıyla yönetiliyor';
+      notifyListeners();
+      return;
+    }
     notifyListeners();
     if (!liveSyncEnabled) return;
     final meta = store.read().data['tgoSyncInfo'];
