@@ -14,7 +14,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as paths;
-import 'package:sqlite3/sqlite3.dart' show Database, sqlite3;
+import 'package:sqlite3/sqlite3.dart' show Database;
 
 import 'backup_service.dart';
 import 'initial_sync.dart';
@@ -60,11 +60,12 @@ class FirstSyncController extends ChangeNotifier {
     plan = currentInitialSyncPlan(db);
   }
 
-  /// Production wiring: its own connection to the POS database (WAL) and
-  /// the scoped agent credentials from this Windows user's DPAPI vault.
+  /// Production wiring: the store's own database connection (no second
+  /// handle that would keep the file open) and the scoped agent credentials
+  /// from this Windows user's DPAPI vault.
   factory FirstSyncController.forStore(PosStore store, BackupService backups) =>
       FirstSyncController(
-        db: sqlite3.open(store.filePath),
+        db: store.authDatabase,
         store: store,
         backup: () => backups.runNow(reason: 'first_sync'),
         transport: () async {
