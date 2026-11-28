@@ -285,10 +285,12 @@ String tgoKitchenTicket(Json order) {
     '#${displayOrderNumber(order)} · Trendyol Go · $type',
     'Platform no: ${order['orderNumber']}${code.isEmpty ? '' : ' · Kod: $code'}',
     if (customer.isNotEmpty) 'Müşteri: $customer',
+    receiptStamp(order['createdAt']),
+    // Added after the original header (unchanged), printed as a compact
+    // left-aligned block by the receipt renderer.
     if (courier != null) 'Kurye: $courier',
     if (phone.isNotEmpty) 'Tel: $phone',
     if (address.isNotEmpty) 'Adres: $address',
-    receiptStamp(order['createdAt']),
     for (final line in lines) ...[
       unit(line) > 0
           ? '${line['qty']} × ${line['name']} · '
