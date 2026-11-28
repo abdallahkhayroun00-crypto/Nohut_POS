@@ -112,6 +112,14 @@ void main() {
       expect(t.takeException(), isNull);
       await shot(t, 'flow-$name-2-hesap');
       expect(find.byType(Dialog), findsOneWidget);
+      // İptal and Sil live together at the bottom, once each.
+      final zone = find.byKey(const ValueKey('order-danger-zone'));
+      await t.ensureVisible(zone);
+      await t.pumpAndSettle();
+      expect(find.byKey(const ValueKey('order-cancel')), findsOneWidget);
+      expect(find.byKey(const ValueKey('order-delete')), findsOneWidget);
+      expect(find.text('Siparişi İptal Et'), findsNothing);
+      await shot(t, 'flow-$name-2b-hesap-kaldir');
       await t.sendKeyEvent(LogicalKeyboardKey.escape);
       await t.pumpAndSettle();
 

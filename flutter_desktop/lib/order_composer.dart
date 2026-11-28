@@ -330,10 +330,13 @@ class _OrderComposerState extends State<_OrderComposer> {
           ],
         ),
         const SizedBox(height: 10),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: [
+        // A Wrap, not a horizontal scroller: a mouse wheel cannot scroll
+        // sideways on Windows, so hidden categories were unreachable.
+        Wrap(
+          key: const ValueKey('composer-categories'),
+          spacing: 6,
+          runSpacing: 6,
+          children: [
               for (final x in [
                 ('campaign', 'Kampanyalar'),
                 ('all', 'Tümü'),
@@ -346,18 +349,14 @@ class _OrderComposerState extends State<_OrderComposer> {
                 ('dessert', 'Tatlılar'),
                 ('drink', 'İçecekler'),
               ])
-                Padding(
-                  padding: const EdgeInsets.only(right: 6),
-                  child: ChoiceChip(
-                    label: Text(x.$2),
-                    showCheckmark: false,
-                    visualDensity: VisualDensity.compact,
-                    selected: category == x.$1,
-                    onSelected: (_) => setState(() => category = x.$1),
-                  ),
+                ChoiceChip(
+                  label: Text(x.$2),
+                  showCheckmark: false,
+                  visualDensity: VisualDensity.compact,
+                  selected: category == x.$1,
+                  onSelected: (_) => setState(() => category = x.$1),
                 ),
-            ],
-          ),
+          ],
         ),
         const SizedBox(height: 10),
         Expanded(
