@@ -164,8 +164,7 @@ class _OpenAccountsPanelState extends State<OpenAccountsPanel> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text('Açık Hesaplar', style: Theme.of(context).textTheme.headlineMedium),
-        const SizedBox(height: 5),
+        // The window header already names this page.
         const Text('Gel-Al · Ödenmemiş ve kısmen ödenmiş hesaplar. Bakiye gerçek ödeme kayıtlarından hesaplanır.'),
         const SizedBox(height: 16),
         Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [

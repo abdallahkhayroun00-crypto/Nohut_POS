@@ -1927,7 +1927,7 @@ class _FinancePanelState extends State<FinancePanel> {
           Expanded(child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Finans', style: Theme.of(context).textTheme.headlineSmall),
+              // The window header already names this page.
               const Text('Günlük alımlar · Haftalık maaşlar · Aylık giderler',
                 style: TextStyle(color: NohutBrand.muted)),
             ],

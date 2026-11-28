@@ -46,9 +46,9 @@ The Functional column records test coverage.
 | Online orders (Trendyol Go, alarms) | `online_orders.dart`, `trendyol_go_ui.dart`, `platform_ui.dart` | 🔄 board reviewed, unchanged (3 stage columns, provider chips, honest empty states) | tests ✓ | No live platform actions in testing. Rendered at 1536 and 1280 in `pos_flow_render_test`; populated-order cards still to review |
 | Google business, reviews | `google_business_ui.dart`, `review_display.dart`, `compact_review_card.dart` | ⬜ | tests ✓ | |
 | QR Menü Yönetimi | `qr_menu_management.dart` | 🔄 owner screenshot review (relay 7228172987) addressed, awaiting re-review | 14 ✓ | Single heading (window header only); compact publisher status card with one fix button and folded *Teknik ayrıntılar*; offline draft no longer shown as a red error; stable **Önizle** button; *Yayınlanamaz: …* reason when changes exist but publishing is blocked; aligned column headers (Ürün, Kategori, Fiyat, Stok, QR); atlas photos (wraps, sides, salads, fatte) cropped to the one dish the public menu shows, never the whole sheet |
-| Açık hesaplar | `open_accounts_ui.dart` | ⬜ | tests ✓ | |
-| Raporlar, Yoğunluk, Gün Sonu | `sales_reports.dart`, `daily_report_ui.dart`, `report_activity.dart`, `dashboard_sales.dart` | ⬜ | tests ✓ | Data viz palette |
-| Finans, giderler | `finance_ui.dart` | ⬜ | tests ✓ | |
+| Açık hesaplar | `open_accounts_ui.dart` | 🔄 duplicate page title removed (window header names the page) | tests ✓ | |
+| Raporlar, Yoğunluk, Gün Sonu | `sales_reports.dart`, `daily_report_ui.dart`, `report_activity.dart`, `dashboard_sales.dart` | 🔄 duplicate page title removed; section renders in `sections_render_test` (all 11 sidebar sections, 1536 and 1280) | tests ✓ | Data viz palette |
+| Finans, giderler | `finance_ui.dart` | 🔄 duplicate page title removed; cards and pills already on the shared tokens | tests ✓ | |
 | Market takibi | `market_prices.dart`, `market_price_tracking.dart` | ⬜ | tests ✓ | |
 | Personel, Mesai, Vardiya, Maaş | `operations_ui.dart`, `workforce.dart`, `payroll.dart`, `shifts.dart` | ⬜ | tests ✓ | |
 | Bildirimler | `notifications_ui.dart`, `notification_center.dart` | ⬜ | tests ✓ | |
