@@ -284,7 +284,7 @@ class _SalesReportsState extends State<SalesReports> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Raporlar', style: Theme.of(context).textTheme.titleLarge),
+                  // The window header already names this page.
                   Text(
                     from.isEmpty
                         ? 'Tüm geçmiş · ${source == 'Tümü' ? 'tüm kaynaklar' : source}'

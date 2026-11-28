@@ -233,12 +233,47 @@ class _OrderComposerState extends State<_OrderComposer> {
           'note': '',
           'removed': <String>[],
         };
+    // Two or more of the same product share one line, so removals and notes
+    // would apply to all of them. Offer to edit a single unit on its own.
+    var splitOne = false;
+    if (line != null && (line['qty'] as int? ?? 1) > 1) {
+      final choice = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => SimpleDialog(
+          title: Text('${line['name']} · ${line['qty']} adet'),
+          children: [
+            SimpleDialogOption(
+              key: const ValueKey('customize-one-unit'),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Sadece 1 adedi ayrı düzenle'),
+            ),
+            SimpleDialogOption(
+              key: const ValueKey('customize-all-units'),
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Hepsini birlikte düzenle'),
+            ),
+          ],
+        ),
+      );
+      if (choice == null || !mounted) return;
+      splitOne = choice;
+    }
     final result = await customizeLineDialog(
       context,
-      original,
+      splitOne ? (copyJson(line!)..['qty'] = 1) : original,
       description: p.descriptionTr ?? '',
     );
     if (result == null || !mounted) return;
+    if (splitOne) {
+      setState(() {
+        line!['qty'] = (line['qty'] as int) - 1;
+        if (result['qty'] != 0) {
+          draft.insert(draft.indexOf(line) + 1,
+              {...result, '_draftId': nextLine++});
+        }
+      });
+      return;
+    }
     if (line == null) {
       if (result['qty'] == 0 || draft.length >= 200) return;
       add(p);
@@ -297,6 +332,40 @@ class _OrderComposerState extends State<_OrderComposer> {
       .where((l) => l['productId'] == p.id && l['customItem'] != true)
       .fold<int>(0, (n, l) => n + (l['qty'] as int));
 
+  /// Ek Sipariş: the products already on the account, one tap to add one
+  /// more of each (no search needed to repeat a Çay).
+  Widget quickRepeat() {
+    final counts = <Object, int>{};
+    for (final l in activeLines(widget.originalOrder!)) {
+      final id = l['productId'];
+      if (id == null || l['customItem'] == true) continue;
+      counts[id] = (counts[id] ?? 0) + ((l['qty'] as num?)?.toInt() ?? 0);
+    }
+    final chips = <Widget>[];
+    for (final e in counts.entries) {
+      final p = products.where((x) => x.id == e.key && x.active).firstOrNull;
+      if (p == null) continue;
+      chips.add(ActionChip(
+        key: ValueKey('quick-add-${p.id}'),
+        avatar: const Icon(Icons.add_circle_outline, size: 18),
+        label: Text('${p.name} · ${e.value}'),
+        visualDensity: VisualDensity.compact,
+        onPressed: () => add(p),
+      ));
+    }
+    if (chips.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('Hesaptakiler · bir dokunuşla ekle',
+            style: TextStyle(fontSize: 12.5, color: NohutBrand.muted,
+                fontWeight: FontWeight.w700)),
+        const SizedBox(height: 6),
+        Wrap(spacing: 6, runSpacing: 6, children: chips),
+      ]),
+    );
+  }
+
   Widget productList() {
     final visibleProducts = products
         .where(
@@ -309,6 +378,7 @@ class _OrderComposerState extends State<_OrderComposer> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (widget.adding && widget.originalOrder != null) quickRepeat(),
         Row(
           children: [
             Expanded(
@@ -365,9 +435,12 @@ class _OrderComposerState extends State<_OrderComposer> {
                   style: TextStyle(color: NohutBrand.muted)))
               : GridView.builder(
                   padding: const EdgeInsets.only(bottom: 8),
-                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                  // Premium pass: tiles only reserve room for a description
+                  // when this category has one (no empty white blocks).
+                  gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
                     maxCrossAxisExtent: 250,
-                    mainAxisExtent: 176,
+                    mainAxisExtent: visibleProducts.any((p) =>
+                        (p.descriptionTr ?? '').trim().isNotEmpty) ? 138 : 106,
                     crossAxisSpacing: 10,
                     mainAxisSpacing: 10,
                   ),
@@ -396,7 +469,9 @@ class _OrderComposerState extends State<_OrderComposer> {
       color: count > 0 ? const Color(0xffF3F8F4) : Colors.white,
       child: InkWell(
         onTap: available ? () => add(p) : null,
-        child: Padding(
+        child: LayoutBuilder(builder: (context, box) {
+          final tileWidth = box.maxWidth - 20;
+          return Padding(
           padding: const EdgeInsets.fromLTRB(10, 10, 10, 6),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -434,36 +509,54 @@ class _OrderComposerState extends State<_OrderComposer> {
                         fontWeight: FontWeight.w700, fontSize: 14, height: 1.2),
                     ),
                   ),
-                  if (count > 0)
-                    Container(
-                      margin: const EdgeInsets.only(left: 4),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 7, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: NohutBrand.green,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text('×$count', style: const TextStyle(
-                        color: Colors.white, fontSize: 12,
-                        fontWeight: FontWeight.w800)),
+                  const SizedBox(width: 12),
+                  // Price and quantity badge stack on the right; on narrow
+                  // tiles the price scales down instead of overflowing.
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: tileWidth < 0 ? 0 : tileWidth * 0.4),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            available ? formatTry(cents(p.price)) : 'Fiyat yok',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800, fontSize: 14.5,
+                              color: available
+                                  ? NohutBrand.ink : NohutBrand.muted),
+                          ),
+                        ),
+                        if (count > 0)
+                          Container(
+                            margin: const EdgeInsets.only(top: 4),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 7, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: NohutBrand.green,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text('×$count', style: const TextStyle(
+                              color: Colors.white, fontSize: 12,
+                              fontWeight: FontWeight.w800)),
+                          ),
+                      ],
                     ),
+                  ),
                 ],
               ),
-              const SizedBox(height: 6),
-              Text(
-                p.descriptionTr ?? '',
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 11.5,
-                  color: NohutBrand.muted, height: 1.25),
-              ),
+              if ((p.descriptionTr ?? '').trim().isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(
+                  p.descriptionTr!,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 11.5,
+                    color: NohutBrand.muted, height: 1.25),
+                ),
+              ],
               const Spacer(),
-              Text(
-                available ? formatTry(cents(p.price)) : 'Fiyat yok',
-                style: TextStyle(
-                  fontWeight: FontWeight.w800, fontSize: 15,
-                  color: available ? NohutBrand.ink : NohutBrand.muted),
-              ),
               Row(
                 children: [
                   FilledButton.tonalIcon(
@@ -491,7 +584,8 @@ class _OrderComposerState extends State<_OrderComposer> {
               ),
             ],
           ),
-        ),
+        );
+        }),
       ),
     );
   }

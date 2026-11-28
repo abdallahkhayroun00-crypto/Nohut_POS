@@ -88,24 +88,16 @@ void main() {
         await tester.ensureVisible(find.widgetWithText(FilterChip, 'Yemeksepeti'));
         await tester.tap(find.widgetWithText(FilterChip, 'Yemeksepeti'));
         await tester.pumpAndSettle();
-        final demo = find.text('Yemeksepeti test alanı');
-        await tester.ensureVisible(demo);
-        await tester.tap(demo);
+        // Owner decision: no platform management inside Online Siparişler.
+        expect(find.text('Yemeksepeti test alanı'), findsNothing);
+        expect(find.textContaining('Mağazayı'), findsNothing);
+        await tester.ensureVisible(find.text('Platform Yönetimi').first);
+        await tester.tap(find.text('Platform Yönetimi').first);
         await tester.pumpAndSettle();
-        for (final tab in [
-          'Mağaza',
-          'Menü',
-          'İade Talepleri',
-          'Değerlendirmeler',
-          'Faturalar',
-          'Senkronizasyon',
-          'Siparişler',
-        ]) {
-          await tester.ensureVisible(find.text(tab).last);
-          await tester.tap(find.text(tab).last);
-          await tester.pumpAndSettle();
-          expect(tester.takeException(), isNull, reason: tab);
+        for (final p in ['trendyol_go', 'yemeksepeti', 'migros_yemek']) {
+          expect(find.byKey(ValueKey('platform-card-$p')), findsOneWidget);
         }
+        expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox.shrink());
         await tester.pumpAndSettle();
       },

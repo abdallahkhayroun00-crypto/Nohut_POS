@@ -11,6 +11,10 @@ import 'entity_storage.dart';
 import 'sync_outbox.dart';
 import 'pos_logic.dart';
 import 'operations.dart';
+import 'order_sync_identity.dart';
+import 'receipt_sync_history.dart';
+import 'payment_ledger_sync.dart';
+import 'test_build.dart';
 
 /// Compatible with the Python LAN prototype's state_snapshot schema.
 /// All order data lives on the restaurant laptop, not in GitHub Pages.
@@ -55,11 +59,13 @@ class PosStore extends ChangeNotifier {
   static String resolvePath(String? databaseFile) {
     if (databaseFile != null) return databaseFile;
     final env = Platform.environment['NOHUT_POS_DATABASE'];
-    if (env != null) return env;
+    // A TEST build never opens the restaurant database.
+    if (env != null && !nohutTestBuild) return env;
     final defaultFolder =
         Platform.environment['APPDATA'] ??
         paths.join(Directory.current.path, 'local-data');
-    final folder = Directory(paths.join(defaultFolder, 'NohutFalafel'));
+    final folder = Directory(paths.join(defaultFolder,
+        nohutTestBuild ? testBuildDataFolder : 'NohutFalafel'));
     folder.createSync(recursive: true);
     return paths.join(folder.path, 'nohut-pos.sqlite3');
   }
@@ -87,6 +93,17 @@ class PosStore extends ChangeNotifier {
     _db.execute(
       'CREATE TABLE IF NOT EXISTS command_receipts (request_id TEXT PRIMARY KEY, payload TEXT NOT NULL, result TEXT NOT NULL)',
     );
+    _db.execute('''
+      CREATE TABLE IF NOT EXISTS remote_command_receipts(
+        request_id TEXT PRIMARY KEY, envelope_sha256 TEXT NOT NULL,
+        result TEXT NOT NULL
+      )
+    ''');
+    _db.execute('''
+      CREATE TABLE IF NOT EXISTS remote_command_report_acks(
+        request_id TEXT PRIMARY KEY, envelope_sha256 TEXT NOT NULL
+      )
+    ''');
     _indexReceiptsByOrder();
     _db.execute(
       'CREATE TABLE IF NOT EXISTS deleted_requests (request_id TEXT PRIMARY KEY)',
@@ -207,6 +224,13 @@ class PosStore extends ChangeNotifier {
     }
     // The same SQLite transaction covers domain rows and local events.
     // Recording remains disabled until the future owner-authorized wizard.
+    if(outboxEnabled(_db)){
+      prepareOrderSyncIdentities(_cache!,next);
+    }
+    // Local print history must survive even before cloud is configured.
+    prepareReceiptSyncHistory(_cache!,next,stamp);
+    preparePaymentLedgerSync(_cache!,next,stamp,cashIdentities:outboxEnabled(_db));
+    debugWriteObserver?.call(next);
     final changes = outboxEnabled(_db)
         ? collectOutboxChanges(_cache!, next)
         : const <OutboxChange>[];
@@ -244,6 +268,16 @@ class PosStore extends ChangeNotifier {
   int _headRevision() =>
       _db.select('SELECT revision FROM state_snapshot WHERE id=1').single['revision']
           as int;
+
+  /// Owner-controlled first-sync preparation, before taking its pinned
+  /// snapshot. Only additive IDs change; business facts remain untouched.
+  void prepareCloudOrderIdentities(){
+    final snapshot=read(),next=snapshot.data;
+    prepareOrderSyncIdentities(next,next,force:true);
+    prepareReceiptSyncHistory(next,next,utcNow(),force:true);
+    preparePaymentLedgerSync(next,next,utcNow(),cashIdentities:true,force:true);
+    if(!replace(next,snapshot.revision).ok)throw const FormatException('POS changed during identity preparation');
+  }
 
   /// Writes the snapshot row; the caller holds the transaction.
   void _writeSnapshot(Map<String, dynamic> next, int revision, String stamp) {
@@ -455,6 +489,78 @@ class PosStore extends ChangeNotifier {
     }
   }
 
+  (String, String)? _remoteContext;
+  bool Function()? _remoteExecutionGuard;
+
+  bool get remoteExecutionAllowed => syncStateValue(_db, 'remote_execution_blocked') == null;
+
+  /// Bind a cloud envelope to the receipt written by the existing handler.
+  /// Synchronous only: no network call or await may enter this context.
+  T withRemoteCommand<T>(String requestId, String envelopeSha256, T Function() run, {bool Function()? guard}) {
+    if (_remoteContext != null) throw StateError('Remote command already running');
+    _remoteContext = (requestId, envelopeSha256);
+    _remoteExecutionGuard = guard;
+    try {
+      return run();
+    } finally {
+      _remoteContext = null;
+      _remoteExecutionGuard = null;
+    }
+  }
+
+  Map<String, dynamic>? remoteCommandReceipt(String requestId, String envelopeSha256) {
+    final rows = _db.select(
+      'SELECT envelope_sha256,result FROM remote_command_receipts WHERE request_id=?',
+      [requestId],
+    );
+    if (rows.isEmpty) return null;
+    if (rows.single['envelope_sha256'] != envelopeSha256) {
+      throw const FormatException('Request ID reused with different payload');
+    }
+    return Map<String, dynamic>.from(jsonDecode(rows.single['result'] as String) as Map);
+  }
+
+  void _recordRemoteReceipt(String requestId, Map<String, dynamic> result) {
+    final context = _remoteContext;
+    if (context == null) return;
+    if (context.$1 != requestId) throw StateError('Remote request identity mismatch');
+    _db.execute(
+      'INSERT INTO remote_command_receipts(request_id,envelope_sha256,result) VALUES(?,?,?)',
+      [requestId, context.$2, jsonEncode(result)],
+    );
+  }
+
+  /// Durable business receipts/attempts not yet acknowledged by the cloud.
+  /// An interrupted provider call is reported as uncertain, never repeated.
+  List<Map<String, dynamic>> pendingRemoteReports({int limit = 100}) => [
+    for (final row in _db.select('''
+      SELECT r.request_id,r.envelope_sha256,r.result,'confirmed' AS state
+      FROM remote_command_receipts r
+      WHERE NOT EXISTS(SELECT 1 FROM remote_command_report_acks a
+        WHERE a.request_id=r.request_id AND a.envelope_sha256=r.envelope_sha256)
+      UNION ALL
+      SELECT p.request_id,p.payload_sha256 AS envelope_sha256,p.result,p.state
+      FROM platform_command_attempts p
+      WHERE NOT EXISTS(SELECT 1 FROM remote_command_report_acks a
+        WHERE a.request_id=p.request_id AND a.envelope_sha256=p.payload_sha256)
+      LIMIT ?
+    ''', [limit]))
+      {
+        'request_id': row['request_id'],
+        'envelope_sha256': row['envelope_sha256'],
+        'result': {
+          ...Map<String, dynamic>.from(jsonDecode(row['result'] as String) as Map),
+          'state': row['state'] == 'processing' ? 'reconciliation_required' : row['state'],
+          'code': row['state'] == 'confirmed' ? 'ok' : row['state'] == 'rejected' ? 'invalid_request' : 'reconciliation_required',
+        },
+      },
+  ];
+
+  void acknowledgeRemoteReport(String requestId, String envelopeSha256) => _db.execute(
+    'INSERT OR REPLACE INTO remote_command_report_acks(request_id,envelope_sha256) VALUES(?,?)',
+    [requestId, envelopeSha256],
+  );
+
   /// Executes a synchronous domain command while holding the SQLite writer lock.
   /// Retries reuse a persisted receipt; the same ID with another payload fails.
   Map<String, dynamic> command(
@@ -468,6 +574,7 @@ class PosStore extends ChangeNotifier {
     _db.execute('BEGIN IMMEDIATE');
     Map<String, dynamic> result;
     try {
+      _checkRemoteFence();
       final receipt = _db.select(
         'SELECT payload,result FROM command_receipts WHERE request_id=?',
         [requestId],
@@ -489,6 +596,7 @@ class PosStore extends ChangeNotifier {
         result = Map<String, dynamic>.from(
           jsonDecode(receipt.single['result'] as String) as Map,
         );
+        _recordRemoteReceipt(requestId, result);
         _db.execute('COMMIT');
         return result;
       }
@@ -505,6 +613,7 @@ class PosStore extends ChangeNotifier {
         [requestId, encoded, jsonEncode(result), _intOrNull(payload['orderId']),
           _intOrNull(result['orderId'])],
       );
+      _recordRemoteReceipt(requestId, result);
       _db.execute('COMMIT');
       _remember(cached, revision, stamp);
     } catch (_) {
@@ -537,6 +646,7 @@ class PosStore extends ChangeNotifier {
       throw const FormatException('İstek kimliği geçersiz');
     _db.execute('BEGIN IMMEDIATE');
     try {
+      _checkRemoteFence();
       if (_db.select(
         'SELECT request_id FROM deleted_requests WHERE request_id=?',
         [requestId],
@@ -615,6 +725,7 @@ class PosStore extends ChangeNotifier {
           [id],
         );
       }
+      _recordRemoteReceipt(requestId, {'ok': true, 'revision': revision + 1});
       _db.execute('COMMIT');
       _remember(cached, revision + 1, stamp);
       notifyListeners();
@@ -622,6 +733,12 @@ class PosStore extends ChangeNotifier {
     } catch (_) {
       _db.execute('ROLLBACK');
       rethrow;
+    }
+  }
+
+  void _checkRemoteFence() {
+    if (_remoteContext != null && (!remoteExecutionAllowed || _remoteExecutionGuard?.call() == false)) {
+      throw const FormatException('Remote execution fence expired');
     }
   }
 

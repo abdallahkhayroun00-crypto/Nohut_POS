@@ -55,7 +55,6 @@ import 'operations_ui.dart';
 import 'backup_container.dart';
 import 'backup_service.dart';
 import 'backup_ui.dart';
-import 'platform_ui.dart';
 import 'platform_workflows.dart';
 import 'review_sync_service.dart';
 import 'tgo_review_api.dart';
@@ -65,6 +64,11 @@ import 'lan_auth_gate.dart';
 import 'accounts_ui.dart';
 import 'notification_events.dart';
 import 'notifications_ui.dart';
+import 'first_sync_ui.dart';
+import 'platform_management.dart';
+import 'platform_management_ui.dart';
+import 'test_build.dart';
+import 'test_build_seed.dart';
 
 part 'order_composer.dart';
 
@@ -74,6 +78,10 @@ const emerald = Color(0xff3b7550);
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  if (nohutTestBuild) {
+    installTestBuildGuards();
+    prepareTestBuildStore();
+  }
   runApp(const NohutFalafelApp());
 }
 
@@ -133,8 +141,15 @@ class NohutFalafelApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) => MaterialApp(
     debugShowCheckedModeBanner: false,
-    title: 'Nohut Falafel · Yönetici Paneli',
+    title: nohutTestBuild ? 'Nohut Falafel · TEST' : 'Nohut Falafel · Yönetici Paneli',
     theme: NohutBrand.theme(),
+    builder: nohutTestBuild ? (context, child) => Column(children: [
+      Material(color: const Color(0xffB3261E), child: SafeArea(bottom: false, child: SizedBox(
+        width: double.infinity, height: 28,
+        child: const Center(child: Text(testBuildBanner, key: ValueKey('test-build-banner'),
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 13)))))),
+      Expanded(child: child ?? const SizedBox()),
+    ]) : null,
     home: ManagerDesktop(
       databaseFile: databaseFile,
       startServer: startServer,
@@ -160,6 +175,9 @@ class ManagerDesktop extends StatefulWidget {
 class _ManagerDesktopState extends State<ManagerDesktop> {
   late final PosStore store;
   late final BackupService backups;
+  FirstSyncController? _firstSync;
+  FirstSyncController get firstSync => _firstSync ??= FirstSyncController.forStore(store, backups);
+
   late final RestoreManager restorer;
   RestoreOutcome? restoreOutcome;
   late final InposPayments inpos;
@@ -169,6 +187,8 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
   late final LocalAuth localAuth;
   late final QrMenuAutoSync qrSync;
   late final TrendyolGoReadonly tgo;
+  /// One source for Platform Yönetimi and the Ana Sayfa quick widget.
+  late final PlatformControl platformControl = PendingPlatformControl(tgo: tgo);
   late final ReviewSyncService reviewSync;
   final List<Json> _pendingReviewPopups = [];
   Timer? _reviewPopupTimer;
@@ -202,7 +222,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
 
   static const _sectionIcons = <IconData>[
     Icons.dashboard_outlined, Icons.table_restaurant_outlined,
-    Icons.delivery_dining_outlined, Icons.star_outline, Icons.storefront_outlined,
+    Icons.delivery_dining_outlined, Icons.toggle_on_outlined, Icons.star_outline, Icons.storefront_outlined,
     Icons.menu_book_outlined, Icons.account_balance_wallet_outlined,
     Icons.point_of_sale_outlined, Icons.bar_chart_outlined,
     Icons.account_balance_wallet_outlined, Icons.trending_up_outlined,
@@ -253,12 +273,14 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     onlineAlarm.setAudioEnabled(settings['onlineOrderSound'] != false);
     inpos = InposPayments(store, widget.inposGateway ?? UnavailableInpos());
     localAuth = LocalAuth(store.authDatabase)..loadSettings();
+    if (nohutTestBuild) unawaited(seedTestAccount(localAuth));
     lan = PosLanServer(
       store,
       authGate: LanAuthGate(localAuth),
       googleProvider: () => google,
       platformWritable: () => tgo.canWrite && !tgo.writing,
       platformAction: _staffPlatformAction,
+      platforms: DeferredPlatformControl(() => platformControl),
       menuRemote: QrMenuRemoteService(
         store,
         publisher: () => QrPublisherClient(store.filePath),
@@ -1748,7 +1770,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     child: Column(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(14, 24, 14, 20),
+          padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
           child: Row(
             children: [
               Container(
@@ -1800,7 +1822,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
             children: [
               for (final item in sections)
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 3),
+                  padding: const EdgeInsets.only(bottom: 2),
                   child: Tooltip(
                     message: item.$3,
                     child: ListTile(
@@ -1934,6 +1956,8 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
         );
       case 'online':
         return _online(db);
+      case 'platform':
+        return PlatformManagementPage(control: platformControl);
       case 'google':
         return GoogleBusinessPanel(google: google);
       case 'reviews':
@@ -2048,6 +2072,8 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
         onlineWarning: _onlineDataWarning,
         onNavigate: _switch,
       ),
+      const SizedBox(height: 16),
+      PlatformQuickPanel(control: platformControl, onOpenPage: () => _switch('platform')),
       const SizedBox(height: 16),
       StaffPerformanceChart(state: db, day: businessDay),
     ],
@@ -2971,7 +2997,6 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     integration: tgo,
     businessDay: businessDay,
     initialSource: onlinePlatform,
-    demo: () => _platformDemo(db),
     // Only a ticket whose earlier send is uncertain can be sent again; the
     // operator checks the printer first (same rule as the Masa print queue).
     onReprint: (order) async {
@@ -2994,32 +3019,6 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
       });
     },
   );
-
-  Widget _platformDemo(Json db) {
-    platformDemo ??= {...emptyPosState(), 'localMenu': asMaps(db['localMenu'])};
-    seedPlatformMenu(
-      platformDemo!,
-      asMaps(platformDemo!['localMenu'])
-          .where((p) => p['active'] != false)
-          .toList(),
-    );
-    return PlatformPanel(
-      state: platformDemo!,
-      fixedSource: 'Yemeksepeti',
-      edit: (change) {
-        try {
-          final next = copyJson(platformDemo!);
-          change(next);
-          PosStore.validate(next);
-          setState(() => platformDemo = next);
-          return true;
-        } catch (e) {
-          _notify('$e', error: true);
-          return false;
-        }
-      },
-    );
-  }
 
   Widget _payments(Json db) {
     final locals = asMaps(db['orders'])
@@ -3612,6 +3611,7 @@ class _ManagerDesktopState extends State<ManagerDesktop> {
     staffPanel: _staff(db),
     wifiPanel: _wifi(db),
     backupPanel: BackupPanel(service: backups, restore: restorer),
+    cloudPanel: FirstSyncPanel(controller: firstSync),
     notificationHistory: NotificationHistoryPanel(store: store),
     accountsPanel: AccountsPanel(auth: localAuth, employees: asMaps(db['employees']),
         yoneticiUrl: lan.staffUrl.replaceFirst('/personel', '/yonetici')),

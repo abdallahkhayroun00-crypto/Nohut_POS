@@ -103,6 +103,39 @@ void main() {
     expect(asMaps(store.read().data['orders']), hasLength(1));
   });
 
+  test('lost ACK after restart and expiry returns the committed receipt', () {
+    final e = envelope('create_order', newOrder());
+    final first = run(e);
+    expect(first.outcome, CommandOutcome.confirmed);
+    store.dispose();
+    store = PosStore(databaseFile: '${dir.path}/db');
+    final retry = run(e, now: t0.add(const Duration(hours: 1)));
+    expect(retry.outcome, CommandOutcome.confirmed);
+    expect(retry.result, first.result);
+    expect(asMaps(store.read().data['orders']), hasLength(1));
+  });
+
+  test('a cached receipt cannot be reused with another action or actor', () {
+    final e = envelope('create_order', newOrder());
+    expect(run(e).outcome, CommandOutcome.confirmed);
+    expect(run({...e, 'actor': {...e['actor'] as Map, 'employee_id': 3}}).code,
+        'idempotency_payload_mismatch');
+    expect(run({...e, 'authority_epoch': 'different'}).code,
+        'idempotency_payload_mismatch');
+  });
+
+  test('authorization is checked before returning a committed receipt', () {
+    final e = envelope('create_order', newOrder());
+    expect(run(e).outcome, CommandOutcome.confirmed);
+    expect(run({...e, 'actor': {...e['actor'] as Map, 'grants': <String>[]}}).code, 'forbidden');
+  });
+
+  test('failed business transaction does not leave a remote receipt', () {
+    final e = envelope('create_order', newOrder()..['expectedRevision'] = -1);
+    expect(run(e).outcome, CommandOutcome.conflict);
+    expect(store.remoteCommandReceipt('${e['request_id']}', envelopeSha256(e)), isNull);
+  });
+
   test('Windows-only operations are refused for every remote client, even the owner', () {
     for (final type in ['sync_manual', 'backup_manual', 'restore_request', 'first_sync', 'full_resync']) {
       for (final client in ['personel', 'yonetici']) {
@@ -168,6 +201,17 @@ void main() {
     expect(orderDueCents(asMaps(store.read().data['orders']).single), 0);
   });
 
+  test('cloud custom product prices use exact kuruş without changing the hashed request', () {
+    final payload = newOrder()
+      ..['lines'] = [{'customItem': true, 'name': 'Synthetic custom item', 'unitPriceCents': 1234,
+        'qty': 2, 'removed': <String>[], 'note': ''}];
+    final e = envelope('create_order', payload);
+    expect(run(e).outcome, CommandOutcome.confirmed);
+    expect(orderTotalCents(asMaps(store.read().data['orders']).single), 2468);
+    expect((payload['lines'] as List).single, isNot(contains('price')));
+    expect(run(e).outcome, CommandOutcome.confirmed);
+  });
+
   test('stale expected revision is a conflict, not a silent overwrite', () {
     final p = newOrder()..['expectedRevision'] = store.read().revision - 1;
     final r = run(envelope('create_order', p));
@@ -206,10 +250,18 @@ class _FakeTransport implements CommandTransport {
   bool failComplete = false;
 
   @override
-  Future<List<Map<String, dynamic>>> claim({required int max}) async => queue.take(max).toList();
+  Future<List<CommandClaim>> claim({required int max}) async => queue.take(max).map((e) => CommandClaim(
+      envelope: e, generation: 1, leaseUntil: t0.add(const Duration(minutes: 1)))).toList();
 
   @override
-  Future<void> complete(String requestId, Map<String, dynamic> result) async {
+  Future<bool> validate(CommandClaim claim) async => true;
+
+  @override
+  Future<void> complete(CommandClaim claim, Map<String, dynamic> result) =>
+      reportReceipt(claim.requestId, envelopeSha256(claim.envelope), result);
+
+  @override
+  Future<void> reportReceipt(String requestId, String fingerprint, Map<String, dynamic> result) async {
     if (failComplete) throw const SocketException('offline');
     queue.removeWhere((e) => e['request_id'] == requestId);
     completed.add(result);

@@ -130,8 +130,24 @@ void main() {
       await t.sendKeyEvent(LogicalKeyboardKey.escape);
       await t.pumpAndSettle();
 
+      // Payment dialog from the account.
+      await click(t, find.text('Masa Planı').last);
+      await click(t, onPlan('Masa 3'));
+      await click(t, find.text('Nakit / Kart').last);
+      expect(t.takeException(), isNull);
+      await shot(t, 'flow-$name-5-odeme-dialog');
+      await t.sendKeyEvent(LogicalKeyboardKey.escape);
+      await t.pumpAndSettle();
+      await t.sendKeyEvent(LogicalKeyboardKey.escape);
+      await t.pumpAndSettle();
+
       await click(t, find.text('Ödeme Bekleyen').last);
       await shot(t, 'flow-$name-4-odeme-bekleyen');
+      expect(t.takeException(), isNull);
+
+      // Last, so a slow tab switch cannot affect the steps above.
+      await click(t, find.text('Online Siparişler').last);
+      await shot(t, 'flow-$name-6-online');
       expect(t.takeException(), isNull);
     });
   }

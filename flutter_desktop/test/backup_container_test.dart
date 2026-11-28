@@ -142,6 +142,8 @@ void main() {
     });
     try {
       final data = restored.read().data;
+      expect(restored.remoteExecutionAllowed, false,
+          reason: 'restore must fence cloud execution until authority reconciliation');
       expect(asMaps(data['orders']).length, asMaps(before.data['orders']).length);
       expect(paidTotal(data), paidTotal(before.data));
       expect(asMaps(data['trendyolGoOrders']).length,

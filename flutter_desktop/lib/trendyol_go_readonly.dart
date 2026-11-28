@@ -117,14 +117,13 @@ Json normalizeTgoPackage(Json p) {
       number = '${p['orderNumber'] ?? p['orderId'] ?? ''}';
   if (id.isEmpty || number.isEmpty)
     throw const FormatException('Geçersiz platform paketi.');
-  final lines = <Json>[];
+  final lines = <Json>[],lineFacts=<Json>[];
   for (final l in asMaps(p['lines'])) {
     final items = asMaps(l['items']);
     final qty = items.isEmpty
         ? 1
         : items.where((e) => e['isCancelled'] != true).length;
-    if (qty <= 0) continue;
-    lines.add({
+    final commercial=<String,dynamic>{
       'name': '${l['name'] ?? ''}',
       'qty': qty,
       'unitPriceCents': tgoCents(l['unitSellingPrice'] ?? l['price']),
@@ -135,7 +134,16 @@ Json normalizeTgoPackage(Json p) {
       ],
       'removed': tgoIngredientNames(l['removedIngredients']),
       'extras': tgoIngredientNames(l['extraIngredients']),
+    };
+    // Additive durable commercial facts. Existing active lines and all
+    // printing/financial behavior below remain unchanged.
+    lineFacts.add({...commercial,
+      'originalQty':items.isEmpty?null:items.length,'quantityKnown':items.isNotEmpty,
+      'unitPriceKnown':num.tryParse('${l['unitSellingPrice']??l['price']}')?.isFinite==true,
+      'itemIds':[for(final item in items)if('${item['packageItemId']??''}'.trim().isNotEmpty)'${item['packageItemId']}'.trim()],
+      'cancelledItemIds':[for(final item in items)if(item['isCancelled']==true&&'${item['packageItemId']??''}'.trim().isNotEmpty)'${item['packageItemId']}'.trim()],
     });
+    if(qty>0)lines.add(commercial);
   }
   final payment = p['payment'] is Map
       ? p['payment'] as Map
@@ -216,6 +224,8 @@ Json normalizeTgoPackage(Json p) {
     'pickup': p['storePickupSelected'] == true,
     'testPackage': p['testPackage'] == true,
     'lines': lines,
+    'lineFacts':lineFacts,
+    'totalKnown':num.tryParse('${p['totalPrice']}')?.isFinite==true,
   };
 }
 
@@ -253,6 +263,22 @@ String tgoKitchenTicket(Json order) {
       ? order['totalCents'] as int
       : sum;
   final customer = '${order['customerName'] ?? ''}'.trim();
+  // Owner request 7236654585: courier type, and contact details only when
+  // the restaurant itself delivers (STORE). Trendyol GO couriers and Gel-Al
+  // need no address on the kitchen ticket; masked values are never printed.
+  final delivery = '${order['deliveryType'] ?? ''}'.trim().toUpperCase();
+  final pickup = order['pickup'] == true;
+  final courier = pickup ? null : switch (delivery) {
+    'GO' => 'Trendyol GO Kuryesi',
+    'STORE' => 'Restoran Kuryesi',
+    _ => null,
+  };
+  bool masked(String v) => v.contains('*') || RegExp(r'[xX•]{3,}').hasMatch(v);
+  String contact(String key) {
+    final v = '${order[key] ?? ''}'.trim();
+    return !pickup && delivery == 'STORE' && v.isNotEmpty && !masked(v) ? v : '';
+  }
+  final phone = contact('customerPhone'), address = contact('deliveryAddress');
   return [
     'NOHUT FALAFEL · SİPARİŞ FİŞİ',
     'MALİ FİŞ DEĞİLDİR',
@@ -260,6 +286,11 @@ String tgoKitchenTicket(Json order) {
     'Platform no: ${order['orderNumber']}${code.isEmpty ? '' : ' · Kod: $code'}',
     if (customer.isNotEmpty) 'Müşteri: $customer',
     receiptStamp(order['createdAt']),
+    // Added after the original header (unchanged), printed as a compact
+    // left-aligned block by the receipt renderer.
+    if (courier != null) 'Kurye: $courier',
+    if (phone.isNotEmpty) 'Tel: $phone',
+    if (address.isNotEmpty) 'Adres: $address',
     for (final line in lines) ...[
       unit(line) > 0
           ? '${line['qty']} × ${line['name']} · '

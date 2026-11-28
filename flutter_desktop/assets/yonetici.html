@@ -15,6 +15,13 @@ main{padding:14px 16px calc(84px + env(safe-area-inset-bottom));max-width:980px;
 nav{position:fixed;left:0;right:0;bottom:0;z-index:5;display:flex;background:#fff;border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
 nav button{flex:1;border:0;border-radius:0;background:transparent;font-size:13px;padding:8px 2px;min-height:56px;color:var(--muted)}nav button[aria-selected=true]{color:var(--green);box-shadow:inset 0 3px 0 var(--gold)}
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+.more-list{padding:4px}.more-item{display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent;padding:14px 10px;text-align:left;color:inherit}.more-item:last-child{border-bottom:0}.more-item .muted{font-size:13px}
+.pl-pill{display:inline-flex;align-items:center;gap:6px;border-radius:99px;padding:3px 10px;font-size:12.5px;font-weight:800;white-space:nowrap;color:var(--muted);border:1px solid var(--line)}.pl-pill:before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}.pl-pill.ok{color:#2E7D4F}.pl-pill.bad{color:#B3261E}.pl-pill.wait{color:#A66A00}
+.pl-head{display:flex;justify-content:space-between;align-items:center;gap:8px}.pl-head h3{margin:0;font-family:"Bree Serif",Georgia,serif;font-weight:400;font-size:19px}
+.pl-actions{display:flex;gap:8px;margin:12px 0 4px}.pl-actions .primary{flex:1}.pl-sub{color:var(--muted);font-size:13px;margin:2px 0}
+.pl-card details{border-top:1px solid var(--line);padding:8px 0}.pl-card summary{cursor:pointer;font-weight:600}
+.pl-row{display:grid;grid-template-columns:auto minmax(0,1fr) 66px;align-items:center;gap:8px;padding:6px 0}.pl-row>span:first-child{white-space:nowrap}.pl-row .pl-pill{justify-self:end;max-width:100%;white-space:normal;font-size:11.5px;padding:3px 8px;line-height:1.2}.pl-row button{padding:6px 2px;min-width:0;min-height:40px;font-size:14px}.pl-head .ghost{padding:6px 4px;min-height:40px}
+#pl-confirm{border:1px solid var(--line);border-radius:16px;background:var(--card);color:inherit;max-width:min(420px,calc(100vw - 32px))}#pl-confirm::backdrop{background:rgba(0,0,0,.35)}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:12px}
 .stat{background:#fff;border:1px solid var(--line);border-radius:13px;padding:12px}.stat small{color:var(--muted);font-size:13px}.stat strong{display:block;font-size:22px;font-variant-numeric:tabular-nums}
 .row{display:flex;gap:10px;align-items:center}.spread{justify-content:space-between}.wrap{flex-wrap:wrap}
@@ -86,7 +93,7 @@ nav button{background:transparent}nav button[aria-selected=true]{color:var(--ink
 <header><img src="/assets/nohut-logo.webp" width="38" height="38" alt="Nohut Falafel"><div class="grow"><h1>Yönetici</h1><small id="who" role="status">Bağlanılıyor…</small></div><button id="notify-btn" type="button" aria-label="Bildirimler" hidden>🔔<span id="notify-count" hidden>0</span></button><button id="pin-btn" type="button">PIN</button><button id="logout">Çıkış</button></header>
 <main>
 <section data-screen="ozet"><div class="row spread wrap"><h2>Günün özeti</h2><label class="row"><span class="sr-only">Gün</span><input type="date" id="day" style="width:auto"></label></div>
-<div id="money-note" class="notice" hidden></div><div id="pay-alert" class="notice" hidden></div><div id="daily-mini" class="rep-mini" hidden></div><div class="grid" id="stats"></div>
+<div id="money-note" class="notice" hidden></div><div id="pay-alert" class="notice" hidden></div><div id="daily-mini" class="rep-mini" hidden></div><div id="pl-quick" class="card" hidden></div><div class="grid" id="stats"></div>
 <div class="card"><h2>Saatlik siparişler</h2><div class="bars" id="hourly"></div><div class="bar-labels" id="hourly-labels"></div></div>
 <div class="card"><h2>Açık hesaplar</h2><ul class="list" id="open"></ul></div>
 <div class="card"><h2>Online siparişler</h2><ul class="list" id="online"></ul></div></section>
@@ -111,9 +118,12 @@ nav button{background:transparent}nav button[aria-selected=true]{color:var(--ink
 <div class="card" id="payroll-card"><h2>Haftalık bordro</h2><ul class="list" id="payroll"></ul></div>
 <div class="card"><h2>Rapor</h2><p class="muted">Seçili ayın yönetim raporu (PDF).</p><button id="report">PDF indir</button></div></div></section>
 <section data-screen="gunsonu" hidden><div class="row spread wrap"><button type="button" id="rep-back" class="ghost">‹ Özet</button><label class="row"><span class="sr-only">Gün</span><input type="date" id="rep-day" style="width:auto"></label></div><div id="rep"></div></section>
+<section data-screen="daha" hidden><h2>Daha Fazla</h2><div class="card more-list"><button type="button" class="more-item" id="more-menu"><strong>Menü Yönetimi</strong><span class="muted">QR menü ve Windows POS menüsü</span></button><button type="button" class="more-item" id="more-platform" hidden><strong>Platform Yönetimi</strong><span class="muted">Trendyol GO, Yemeksepeti, Migros Yemek · Aç/Kapat ve durum</span></button></div></section>
+<section data-screen="platform" hidden><div class="row spread wrap"><button type="button" id="pl-back" class="ghost">‹ Daha Fazla</button><button type="button" id="pl-reload" class="ghost">Yenile</button></div><h2>Platform Yönetimi</h2><p class="muted">Restoranın online platformlardaki açık/kapalı durumu. Siparişler Siparişler bölümünde kalır.</p><div id="pl-msg" class="notice" hidden></div><div id="pl-cards"></div></section>
+<dialog id="pl-confirm"><form method="dialog"><h3 id="pl-confirm-title"></h3><p id="pl-confirm-text"></p><div class="row"><button value="cancel" class="ghost">Vazgeç</button><button value="ok" class="primary" id="pl-confirm-ok">Evet</button></div></form></dialog>
 <section data-screen="menu" hidden><div class="card"><h2>Menü Yönetimi</h2><div id="mn-root"><p class="mn-muted">Yükleniyor…</p></div></div><div class="card"><h2>Windows POS menüsü</h2><ul class="list" id="menu"></ul></div></section>
 </main>
-<nav aria-label="Yönetici bölümleri"><button data-view="ozet" aria-selected="true">Özet</button><button data-view="siparis" aria-selected="false">Siparişler</button><button data-view="personel" aria-selected="false" id="nav-personel">Personel</button><button data-view="finans" aria-selected="false" id="nav-finans">Finans</button><button data-view="menu" aria-selected="false">Menü</button></nav>
+<nav aria-label="Yönetici bölümleri"><button data-view="ozet" aria-selected="true">Özet</button><button data-view="siparis" aria-selected="false">Siparişler</button><button data-view="personel" aria-selected="false" id="nav-personel">Personel</button><button data-view="finans" aria-selected="false" id="nav-finans">Finans</button><button data-view="daha" aria-selected="false" id="nav-daha">Daha Fazla</button></nav>
 <div id="toast" role="status" hidden></div>
 <div id="notify-panel" hidden><div class="sheet" role="dialog" aria-labelledby="notify-title"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h2 id="notify-title" style="margin:0">Bildirimler</h2><button type="button" id="notify-close">Kapat</button></div><p style="font-size:13px;color:var(--muted)">Bildirim onay değildir; güncel durum için ekranı yenileyin.</p><button type="button" id="notify-all">Tümünü okundu say</button><ul id="notify-list"></ul></div></div>
 <script>
@@ -139,13 +149,13 @@ $('auth-alt').onclick=()=>showAuth('password','');$('auth-skip').onclick=()=>{$(
 $('logout').onclick=async()=>{if(!confirm('Bu cihazda oturum kapatılsın mı?'))return;await auth('logout',{}).catch(()=>{});session=null;showAuth('login','')};
 document.addEventListener('pointerdown',()=>{const n=Date.now();if(!session||n-lastActivity<60000)return;lastActivity=n;auth('activity',{}).catch(()=>{})},{passive:true});
 const can=op=>!!session&&(session.isOwner||(session.grants||[]).includes(op));
-function setView(v){view=v;for(const s of document.querySelectorAll('[data-screen]'))s.hidden=s.dataset.screen!==v;for(const b of document.querySelectorAll('nav button'))b.setAttribute('aria-selected',String(b.dataset.view===v));if(v==='finans')loadMonth();if(v==='personel'){loadTeam();loadPayroll()}}
+function setView(v){view=v;for(const s of document.querySelectorAll('[data-screen]'))s.hidden=s.dataset.screen!==v;const nv=['menu','platform','daha'].includes(v)?'daha':v;for(const b of document.querySelectorAll('nav button'))b.setAttribute('aria-selected',String(b.dataset.view===nv));if(v==='platform')plLoad();if(v==='daha')$('more-platform').hidden=!can('platform.view');if(v==='finans')loadMonth();if(v==='personel'){loadTeam();loadPayroll()}}
 for(const b of document.querySelectorAll('nav button'))b.onclick=()=>setView(b.dataset.view);
 function list(id,items,render,empty){$(id).innerHTML=items.length?items.map(render).join(''):`<li class="empty">${empty}</li>`}
 function li(title,sub,right){return`<li><div><div>${title}</div>${sub?`<div class="sub">${sub}</div>`:''}</div><div class="num">${right??''}</div></li>`}
 async function load(poll){const day=$('day').value||localDay();const[st,b]=await call('GET','/api/yonetici/overview?day='+encodeURIComponent(day)+(poll?'&poll=1':''));if(st===403){$('who').textContent=MESSAGES[b.error]||'Erişim yok';return}if(st!==200){if(st!==401)$('who').textContent='Bağlantı yok · yeniden deneniyor';return}
 session=b.session;if(authMode!=='setpin')$('auth-gate').hidden=true;$('who').textContent=`${session.username} · ${session.isOwner?'İşletme sahibi':session.role} · ${time(new Date())}`;
-const v=b.view,money='cashCents'in v;$('nav-personel').hidden=!('staff'in v)&&!can('shifts.manage')&&!can('payroll.view');$('nav-finans').hidden=!can('finance.view');
+const v=b.view,money='cashCents'in v;$('nav-personel').hidden=!('staff'in v)&&!can('shifts.manage')&&!can('payroll.view');$('nav-finans').hidden=!can('finance.view');plQuick();
 $('money-note').hidden=money;$('money-note').textContent=b.financeAllowed?'Satış tutarlarını görme yetkiniz yok.':'Satış tutarları ve finans bu ağda kapalı. İşletme sahibi, yerel HTTPS bir iPhone’da doğrulandıktan sonra Windows › Ayarlar › Güvenlik’ten açabilir.';
 const open=v.openAccounts||[];
 $('stats').innerHTML=[['Sipariş',v.orderCount],...(money?[['Nakit',tl(v.cashCents)],['Kart',tl(v.cardCents)]]:[]),['Açık hesap',open.length+' · '+tl(open.reduce((n,o)=>n+(o.dueCents||0),0))],['Online',(v.online||[]).length]].map(([k,x])=>`<div class="stat"><small>${k}</small><strong>${esc(x)}</strong></div>`).join('');
@@ -309,4 +319,33 @@ else if(b.dataset.mnRow){const k=MN.tab,r=c[k].find(x=>String(x.id)===b.dataset.
 else if(b.dataset.mnNamed){const k=MN.tab;mnEditNamed(k,c[k].find(x=>String(x.id)===b.dataset.mnNamed))}})}
 mnBind($('mn-root'),'yonetici',toast);
 {const _sv=setView;setView=function(v){_sv(v);if(v==='menu')mnLoad()}}
+
+// Platform Yönetimi: Windows decides label and enabled state with the
+// shared PlatformCard model; this page only shows them and sends one
+// confirmed command per tap.
+let plData=null;
+const plTone=l=>l==='Açık'?'ok':l==='Kapalı'?'bad':(l==='İşleniyor'||l==='Doğrulanıyor')?'wait':'';
+const plPill=d=>`<span class="pl-pill ${plTone(d.label)}">${esc(d.label)}</span>`;
+const plVerb=d=>d.target==='OPEN'?'Aç':d.target==='CLOSED'?'Kapat':'Aç / Kapat';
+async function plFetch(){const[st,b]=await call('GET','/api/yonetici/platforms?poll=1');if(st!==200){plData=null;return st}plData=b;return 200}
+function plMsg(t){const m=$('pl-msg');m.hidden=!t;m.textContent=t||''}
+function plCard(c){const d=c.display,on=c.connectionState==='connected',caps=c.capabilities||{};
+return `<div class="card pl-card" data-provider="${esc(c.provider)}"><div class="pl-head"><h3>${esc(d.name)}</h3>${plPill(d)}</div>
+${on?`<p class="pl-sub">${esc(c.verifiedStoreName?c.verifiedStoreName+' · '+c.verifiedStoreId:'Mağaza doğrulanmadı')}</p><p class="pl-sub">${esc(d.verified)}</p>`:`<p class="pl-sub">${esc(c.note||'Bu platformun resmî entegrasyonu henüz bağlı değil.')}</p>`}
+<div class="pl-actions"><button type="button" class="primary" data-pl-toggle="${esc(c.provider)}" ${d.blocked?'disabled':''}>${plVerb(d)}</button><button type="button" data-pl-refresh="${esc(c.provider)}" ${on?'':'disabled'}>Yenile</button></div>
+${d.blocked&&on?`<p class="pl-sub">${esc(d.blocked)}</p>`:''}
+<details><summary>Çalışma Saatleri</summary>${d.hours.length?d.hours.map(h=>`<p class="pl-sub">${esc(h)}</p>`).join(''):'<p class="pl-sub">Platformdan doğrulanmış çalışma saati yok.</p>'}</details>
+<details><summary>Ürün/Kategori Durumu</summary><p class="pl-sub">${caps.toggleCatalog?'Ürün ve kategori açma/kapatma ayrı yetkiyle yapılır.':'Henüz bağlı değil. POS ve QR menü bundan etkilenmez.'}</p></details>
+<details><summary>İşlem Geçmişi</summary>${d.audit.length?d.audit.map(a=>`<p class="pl-sub">${esc(a)}</p>`).join(''):'<p class="pl-sub">Henüz işlem yok.</p>'}</details></div>`}
+function plBind(root){for(const b of root.querySelectorAll('[data-pl-toggle]'))b.onclick=()=>plToggle(b.dataset.plToggle);for(const b of root.querySelectorAll('[data-pl-refresh]'))b.onclick=()=>plRefresh(b.dataset.plRefresh)}
+async function plLoad(){$('pl-cards').innerHTML='<p class="muted">Yükleniyor…</p>';const st=await plFetch();if(st!==200){$('pl-cards').innerHTML=`<div class="notice">${st===403?'Bu bölüm için yetkiniz yok.':'Platform durumu Windows’tan okunamadı.'}</div>`;return}$('pl-cards').innerHTML=plData.cards.map(plCard).join('');plBind($('pl-cards'));plQuickRender()}
+function plQuickRender(){const q=$('pl-quick');if(!plData){q.hidden=true;return}q.hidden=false;q.innerHTML=`<div class="pl-head"><strong>Platformlar</strong><button type="button" class="ghost" id="pl-quick-open">Platform Yönetimi ›</button></div>`+plData.cards.map(c=>`<div class="pl-row"><span>${esc(c.display.name)}</span>${plPill(c.display)}<button type="button" class="ghost" data-pl-toggle="${esc(c.provider)}" ${c.display.blocked?'disabled':''} title="${esc(c.display.blocked||'')}">${c.display.target==='OPEN'?'Aç':c.display.target==='CLOSED'?'Kapat':'Aç/Kapat'}</button></div>`).join('');$('pl-quick-open').onclick=()=>setView('platform');plBind(q)}
+async function plQuick(){if(!can('platform.view')){$('pl-quick').hidden=true;return}if(await plFetch()===200)plQuickRender();else $('pl-quick').hidden=true}
+function plAsk(title,text,ok){return new Promise(res=>{const dlg=$('pl-confirm');$('pl-confirm-title').textContent=title;$('pl-confirm-text').textContent=text;$('pl-confirm-ok').textContent=ok;dlg.onclose=()=>res(dlg.returnValue==='ok');dlg.returnValue='';dlg.showModal()})}
+async function plToggle(provider){const c=plData&&plData.cards.find(x=>x.provider===provider);if(!c||c.display.blocked||!c.display.target)return;const open=c.display.target==='OPEN',n=c.display.name;
+if(!await plAsk(`${n}: restoranı ${open?'aç':'kapat'}?`,open?`Restoran ${n} üzerinde yeniden sipariş almaya başlar.`:'Yeni sipariş gelmez. Mevcut ve hazırlanan siparişler etkilenmez, iptal edilmez.',open?'Evet, aç':'Evet, kapat'))return;
+let msg;try{const[st,b]=await call('POST','/api/yonetici/platform',{action:'store',provider,target:c.display.target,expected:c.workingStatus,confirmed:true});msg=st===200?'İstek gönderildi. Sonuç platformdan doğrulanınca görünecek.':(b.message||MESSAGES[b.error]||'İstek doğrulanamadı.')}catch{msg='İstek doğrulanamadı. Durumu Yenile ile kontrol edin; tekrar göndermeyin.'}
+plMsg(msg);toast(msg);if(view==='platform')await plLoad();else await plQuick()}
+async function plRefresh(provider){const[st,b]=await call('POST','/api/yonetici/platform',{action:'refresh',provider});if(st!==200)plMsg(b.message||'Yenilenemedi.');await plLoad()}
+$('more-menu').onclick=()=>setView('menu');$('more-platform').onclick=()=>setView('platform');$('pl-back').onclick=()=>setView('daha');$('pl-reload').onclick=()=>plLoad();
 </script></body></html>

@@ -18,7 +18,7 @@ const _sectionNames = {
   'menu': 'Menü', 'sync': 'Bulut & Senkronizasyon', 'backup': 'Yedekleme',
   'permissions': 'Yetkiler', 'tables': 'Masalar', 'orders': 'Siparişler',
   'pickup': 'Gel-Al', 'payments': 'Ödemeler', 'receipts': 'Fişler',
-  'online': 'Online siparişler', 'shifts': 'Vardiyalar', 'payroll': 'Bordro',
+  'online': 'Online siparişler', 'platform': 'Platform Yönetimi', 'shifts': 'Vardiyalar', 'payroll': 'Bordro',
   'dashboard': 'Genel bakış', 'sales': 'Satışlar', 'finance': 'Finans',
   'reports': 'Raporlar', 'staff': 'Personel', 'accounts': 'Cari hesaplar',
   'integrations': 'Entegrasyonlar', 'reviews': 'Yorumlar', 'audit': 'Denetim',
@@ -41,7 +41,9 @@ const operationNames = {
   'pickup.contact.view': 'Gel-Al müşteri iletişimini görme',
   'payments.take': 'Ödeme alma', 'payments.correct': 'Ödeme düzeltme', 'payments.refund': 'İade',
   'receipts.print': 'Fiş yazdırma', 'online.view': 'Online siparişleri görme',
-  'online.act': 'Online siparişi işleme', 'shifts.self': 'Kendi mesai ve vardiyası',
+  'online.act': 'Online siparişi işleme',
+  'platform.view': 'Platform durumunu görme', 'platform.store.toggle': 'Restoranı platformda açma/kapatma',
+  'platform.schedule.edit': 'Platform çalışma saatlerini değiştirme', 'platform.catalog.toggle': 'Platformda ürün/kategori açma/kapatma', 'shifts.self': 'Kendi mesai ve vardiyası',
   'payroll.self.view': 'Kendi ücretini görme', 'dashboard.view': 'Genel bakış',
   'sales.view': 'Satış tutarlarını görme', 'finance.view': 'Finansı görme',
   'finance.edit': 'Finans düzenleme', 'expenses.quick_add': 'Hızlı gider ekleme',
@@ -352,7 +354,7 @@ class _AccountsPanelState extends State<AccountsPanel> {
     final users = auth.users();
     final owner = users.where((u) => u['isOwner'] == true).firstOrNull;
     if (owner == null) {
-      return _card('Kullanıcılar & Yetkiler',
+      return _card('İşletme sahibi hesabı',
           'Bireysel girişleri başlatmak için önce işletme sahibi hesabını oluşturun. '
           'Personel paneli bu ayar açılana kadar bugünkü gibi çalışmaya devam eder.', [
         Align(alignment: Alignment.centerLeft, child: FilledButton.icon(

@@ -77,6 +77,7 @@ final _priced = RegExp(r'^(\d+) × (.*?) · (-?[\d.,]+ ₺)$');
 final _plainItem = RegExp(r'^(\d+) × (.+)$');
 final _total = RegExp(r'^(Toplam|Net tahsilat|Ödenen|Kalan) (-?[\d.,]+ ₺)$');
 final _amountRow = RegExp(r'^(.*\S) (-?[\d.,]+ ₺)$');
+final _deliveryInfo = RegExp(r'^(Kurye|Tel|Adres): (.+)$');
 
 String? _cachedKey;
 Future<ReceiptArtwork>? _cachedArtwork;
@@ -258,7 +259,7 @@ Future<ReceiptArtwork> _renderReceipt(String text, {Map? settings}) async {
   y += logoSize + 14;
   line(receiptTitle(text), size: 29, heading: true, align: TextAlign.center);
   rule();
-  var header = true, first = true;
+  var header = true, first = true, infoBlock = false;
   for (final raw in receiptBody(text)) {
     if (raw.trim().isEmpty) continue;
     final priced = _priced.firstMatch(raw),
@@ -295,6 +296,18 @@ Future<ReceiptArtwork> _renderReceipt(String text, {Map? settings}) async {
             0,
           ) + 6;
         }
+      } else if (_deliveryInfo.firstMatch(raw) case final info?) {
+        // Delivery block (Trendyol GO): compact, left-aligned, the label in
+        // its own column so a long address wraps under itself.
+        if (!infoBlock) y += 6;
+        infoBlock = true;
+        const labelWidth = 72.0;
+        final l = rich([('${info[1]}:', true)], labelWidth, size: 21),
+            r = rich([(info[2]!, false)], w - labelWidth, size: 21);
+        final h = math.max(l.height, r.height);
+        put(l, 0);
+        put(r, labelWidth);
+        y += h + 3;
       } else {
         y += put(rich([(raw, false)], w, size: 21, align: TextAlign.center),
             0) + 4;

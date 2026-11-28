@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'package:path/path.dart' as paths;
 
 import 'pos_logic.dart';
 import 'windows_vault.dart';
+import 'test_build.dart';
 
 /// The publisher answered with an HTTP error: the request was refused and
 /// nothing was written (e.g. 409 when the GitHub revision changed).
@@ -67,6 +69,18 @@ class QrPublisherClient {
     await vault.save({'token':value.trim()});
   }
 
+  /// The access code POS and its local publisher share. Kept only in this
+  /// Windows user's DPAPI vault; created once with a secure random source.
+  Future<String> localAccessCode() async {
+    if (testToken != null) return testToken!;
+    final saved = (await vault.load())?['token'];
+    if (saved is String && saved.length >= 32) return saved;
+    final r = Random.secure();
+    final code = base64Url.encode(List<int>.generate(48, (_) => r.nextInt(256))).replaceAll('=', '');
+    await vault.save({'token': code});
+    return code;
+  }
+
   Future<bool> hasToken() async =>
       testToken!=null||(await vault.load())?['token'] is String;
 
@@ -75,6 +89,8 @@ class QrPublisherClient {
   Future<Map<String,dynamic>> call(
     String method, String endpoint, String path, [Json? data]
   ) async {
+    // A TEST build must never reach the real publisher (live QR menu).
+    if(nohutTestBuild)throw const FormatException('TEST sürümünde QR yayınlama kapalı.');
     final base=checkEndpoint(endpoint);
     final url=base.resolve(path.replaceFirst(RegExp(r'^/'), ''));
     if(url.host!=base.host||url.port!=base.port||url.scheme!=base.scheme)

@@ -1,10 +1,27 @@
 // Nohut QR Publisher • Node 22+ • private localhost bridge, never ship private keys with POS.
 import http from 'node:http';
-import {readFileSync} from 'node:fs';
+import {readFileSync,writeFileSync,appendFileSync,renameSync,statSync} from 'node:fs';
+import {join} from 'node:path';
+import {format} from 'node:util';
 import {createSign,timingSafeEqual} from 'node:crypto';
 
 // Keep in step with qrPublisherVersion in lib/qr_publisher_service.dart.
-const VERSION='2026.11.28';
+const VERSION='2026.11.28.2';
+// Started directly by Windows POS (no PowerShell): the publisher keeps its
+// own logs and secret-free status.json, which POS reads for diagnostics.
+const logDir=process.env.QR_PUBLISH_LOG_DIR||'';
+const statusFile=process.env.QR_PUBLISH_STATUS_FILE||'';
+function logTo(name){
+  const file=join(logDir,name);
+  try{if(statSync(file).size>512*1024)renameSync(file,file+'.1')}catch{}
+  return(...a)=>{try{appendFileSync(file,format(...a)+'\n')}catch{}};
+}
+if(logDir){console.log=logTo('publisher.log');console.error=logTo('publisher-error.log')}
+function writeStatus(state,message){
+  if(!statusFile)return;
+  try{writeFileSync(statusFile,JSON.stringify({state,at:new Date().toISOString(),message,
+    port:Number(process.env.QR_PUBLISH_PORT||'18787')}))}catch{}
+}
 const repo='nohutfalafel/qr-menu',branch='main',api='https://api.github.com';
 const appId=process.env.GITHUB_APP_ID || '5845851';
 const privateKey=(process.env.GITHUB_APP_PRIVATE_KEY_FILE
@@ -13,6 +30,7 @@ const privateKey=(process.env.GITHUB_APP_PRIVATE_KEY_FILE
 const adminToken=process.env.QR_PUBLISH_ADMIN_TOKEN || '';
 const port=Number(process.env.QR_PUBLISH_PORT || '18787');
 if(!privateKey.includes('BEGIN')||adminToken.length<32) {
+  writeStatus('failed','GitHub App anahtarı veya erişim kodu eksik.');
   throw new Error('Set GITHUB_APP_PRIVATE_KEY_FILE and QR_PUBLISH_ADMIN_TOKEN (32+ characters).');
 }
 if(!Number.isInteger(port)||port<1024||port>65535)throw new Error('Invalid port');
@@ -234,8 +252,13 @@ server.on('error',e=>{
   console.error(e.code==='EADDRINUSE'
     ?'PORT_IN_USE 127.0.0.1:'+port+' başka bir program tarafından kullanılıyor.'
     :'SERVER_ERROR '+(e.code||e.message));
+  writeStatus(e.code==='EADDRINUSE'?'port_busy':'exited',e.code==='EADDRINUSE'
+    ?'127.0.0.1:'+port+' başka bir program tarafından kullanılıyor.'
+    :'Hizmet kapandı. Teknik ayrıntılara bakın.');
   process.exit(e.code==='EADDRINUSE'?98:1);
 });
+process.on('exit',code=>{if(code===0)writeStatus('stopped','Hizmet durduruldu.')});
 server.listen(port,'127.0.0.1',()=>{
+  writeStatus('running','127.0.0.1:'+port+' · Node '+process.versions.node);
   console.log('Nohut QR Publisher '+VERSION+' only on http://127.0.0.1:'+port);
 });

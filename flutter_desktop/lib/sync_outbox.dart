@@ -19,6 +19,11 @@ import 'package:sqlite3/sqlite3.dart';
 
 import 'entity_storage.dart';
 import 'sync_field_registry.dart';
+import 'finance_sync_history.dart';
+import 'catalog_sync_history.dart';
+import 'receipt_sync_history.dart' show cloudPrintJobs, privateReceiptText;
+import 'payment_ledger_sync.dart' show paymentLedgerCoreValue;
+import 'pos_logic.dart' show orderTotalCents, orderPaidCents, orderDueCents;
 
 void createSyncTables(Database db) {
   db.execute('''
@@ -38,6 +43,10 @@ void createSyncTables(Database db) {
       last_error TEXT
     )
   ''');
+  // Additive for existing databases too: keep ordered pending reads bounded
+  // independently of the retained acknowledged event history.
+  db.execute('CREATE INDEX IF NOT EXISTS sync_outbox_pending '
+      'ON sync_outbox(seq) WHERE acked_at IS NULL');
   db.execute(
     'CREATE TABLE IF NOT EXISTS sync_state(key TEXT PRIMARY KEY, value TEXT NOT NULL)',
   );
@@ -90,18 +99,47 @@ String canonicalJson(Object? value) {
 }
 
 class OutboxChange {
-  const OutboxChange(this.entityType, this.entityId, this.op, this.row);
+  const OutboxChange(this.entityType, this.entityId, this.op, this.row, {this.previousRow});
   final String entityType, entityId, op;
 
   /// Full local row (projected before storing); null for `delete`.
   final Object? row;
+  final Object? previousRow;
 }
 
 /// Projects one entity row through the cloud allowlist.
 Object? projectRow(String stateKey, Object? row) {
   final projected = projectForCloud({stateKey: [row]});
   final list = projected[stateKey];
-  return list is List && list.isNotEmpty ? list.single : null;
+  if(list is! List||list.isEmpty)return null;
+  final result=list.single;
+  void enrich(Map original,Map projected){
+    final order=Map<String,dynamic>.from(original);
+    projected['_windowsTotals']={'total_kurus':orderTotalCents(order),
+      'paid_kurus':orderPaidCents(order),'due_kurus':orderDueCents(order)};
+    final events=original['events'],ids=original['syncEventIds'];
+    if(events is List){
+      projected['_audit']=[for(var i=0;i<events.length;i++){
+        'id':ids is List&&i<ids.length?ids[i]:null,
+        // Existing customer-directory links embed a local customer name.
+        // Retain the commercial action/time, never replicate that name.
+        'message':'${events[i]}'.startsWith('Müşteri kaydı ile eşleştirildi · ')
+          ? 'Müşteri bağlantısı değiştirildi · ${'${events[i]}'.split(' · ').last}'
+          : '${events[i]}'.replaceAll(RegExp(r'(?<![0-9])(?:\+?90)?0?5[0-9]{9}(?![0-9])'),'[yerel iletişim bilgisi]'),
+      }];
+    }
+  }
+  if(row is Map&&result is Map){
+    if(stateKey=='orders')enrich(row,result);
+    if(stateKey=='deletedOrders'&&row['order'] is Map&&result['order'] is Map)enrich(row['order'] as Map,result['order'] as Map);
+    if(stateKey=='trendyolGoOrders'&&row['customerNote'] is String){
+      var note=privateReceiptText(row['customerNote'] as String,{'name':row['customerName'],'phone':row['customerPhone']});
+      final address='${row['deliveryAddress']??''}'.trim();
+      if(address.isNotEmpty)note=note.replaceAll(address,'[yerel iletişim bilgisi]');
+      result['customerNote']=note;
+    }
+  }
+  return result;
 }
 
 /// Projects one core top-level value; null when the key is not syncable.
@@ -109,8 +147,8 @@ Object? projectCore(String key, Object? value) =>
     projectForCloud({key: value})[key];
 
 /// Diff the previous and next committed state using the cloud projection.
-/// Receipt snapshots are intentionally deferred to their dedicated Phase 2
-/// contract. Local-only keys must not produce even deletion events.
+/// Frozen receipts use their dedicated typed audit contract. Local-only keys
+/// must not produce even deletion events.
 /// This only records local events; it is not a cloud transport or an
 /// authorization to activate sync on production data.
 List<OutboxChange> collectOutboxChanges(
@@ -121,9 +159,8 @@ List<OutboxChange> collectOutboxChanges(
   final entityKeys = {for (final kind in entityKinds) kind.stateKey};
   for (final kind in entityKinds) {
     final key = kind.stateKey;
-    if (key == 'printJobs') continue;
     Map<String, Object?> byId(Map<String, dynamic> state) {
-      final rows = state[key];
+      final rows = key=='printJobs'?cloudPrintJobs(state):state[key];
       if (rows is! List) return {};
       if (rows.any((row) => row is! Map)) {
         throw const FormatException('Invalid sync entity row');
@@ -149,15 +186,42 @@ List<OutboxChange> collectOutboxChanges(
   }
   for (final key in {...previous.keys, ...next.keys}) {
     if (entityKeys.contains(key)) continue;
-    if (jsonEquals(previous[key], next[key])) continue;
-    final oldProjection = projectCore(key, previous[key]);
-    final newProjection = projectCore(key, next[key]);
+    final before=paymentLedgerCoreValue(previous,key),after=paymentLedgerCoreValue(next,key);
+    if (jsonEquals(before, after)) continue;
+    final oldProjection = projectCore(key, before);
+    final newProjection = projectCore(key, after);
     if (jsonEquals(oldProjection, newProjection)) continue;
     changes.add(OutboxChange(
-      key, 'core', newProjection == null ? 'delete' : 'upsert', next[key],
+      key, 'core', newProjection == null ? 'delete' : 'upsert', after, previousRow: before,
     ));
   }
   return changes;
+}
+
+/// The (op, payload) an outbox event carries for [change], or null when the
+/// change is not syncable. Shared by the outbox writer and the first-sync
+/// snapshot so both produce the same projection.
+(String, Object?)? outboxPayload(Database db, OutboxChange change, String createdAt) {
+  Object? payload;
+  var operation = change.op;
+  if (change.op == 'delete') {
+    payload = null;
+  } else {
+    payload = change.entityId == 'core'
+        ? projectCore(change.entityType, change.row)
+        : projectRow(change.entityType, change.row);
+    // Not syncable (e.g. device settings, contact directory): skip.
+    if (payload == null) return null;
+    if (change.entityType == 'finance' && payload is Map<String,dynamic>) {
+      payload = captureFinanceReversals(db,change.previousRow,payload,createdAt);
+    }
+  }
+  if(catalogSyncSources.contains(change.entityType)){
+    payload=captureCatalogRemovals(db,change.entityType,
+        projectCore(change.entityType,change.previousRow),payload,createdAt);
+    operation='upsert';
+  }
+  return (operation, payload);
 }
 
 /// Writes the events for one committed revision. Call inside the business
@@ -180,23 +244,16 @@ int writeOutboxEvents(
   var written = 0;
   try {
     for (final change in changes) {
-      final Object? payload;
-      if (change.op == 'delete') {
-        payload = null;
-      } else {
-        payload = change.entityId == 'core'
-            ? projectCore(change.entityType, change.row)
-            : projectRow(change.entityType, change.row);
-        // Not syncable (e.g. device settings, contact directory): skip.
-        if (payload == null) continue;
-      }
+      final projected = outboxPayload(db, change, createdAt);
+      if (projected == null) continue;
+      final (operation, payload) = projected;
       final body = canonicalJson(payload);
       insert.execute([
         '$epoch:$revision:${change.entityType}:${change.entityId}',
         revision,
         change.entityType,
         change.entityId,
-        change.op,
+        operation,
         body,
         hash.sha256.convert(utf8.encode(body)).toString(),
         createdAt,
@@ -221,12 +278,23 @@ List<Map<String, Object?>> pendingOutbox(Database db, {int limit = 500}) => [
 /// Marks events up to and including [seq] acknowledged by the cloud. Only
 /// a contiguous watermark may be acknowledged (spec §18.1: never skip a gap).
 void ackOutboxThrough(Database db, int seq, String at) {
-  final gap = db.select(
-    'SELECT min(seq) AS m FROM sync_outbox WHERE acked_at IS NULL',
-  ).single['m'];
-  if (gap == null) return;
-  db.execute(
-    'UPDATE sync_outbox SET acked_at=? WHERE acked_at IS NULL AND seq<=?',
-    [at, seq],
-  );
+  db.execute('BEGIN IMMEDIATE');
+  try {
+    final previous = int.tryParse(syncStateValue(db, 'last_acked_seq') ?? '') ??
+        db.select('SELECT coalesce(max(seq),0) AS n FROM sync_outbox WHERE acked_at IS NOT NULL').single['n'] as int;
+    if (seq <= previous) { db.execute('COMMIT'); return; }
+    final rows = db.select('SELECT seq,revision FROM sync_outbox WHERE acked_at IS NULL AND seq<=? ORDER BY seq', [seq]);
+    if (rows.isEmpty || rows.first['seq'] != previous + 1 || rows.last['seq'] != seq || rows.length != seq - previous ||
+        db.select('SELECT 1 FROM sync_outbox WHERE revision=? AND seq>? LIMIT 1', [rows.last['revision'], seq]).isNotEmpty) {
+      throw const FormatException('ACK must cover complete contiguous transactions');
+    }
+    db.execute('UPDATE sync_outbox SET acked_at=? WHERE acked_at IS NULL AND seq<=?', [at, seq]);
+    setSyncState(db, 'last_acked_seq', '$seq');
+    setSyncState(db, 'last_acked_revision', '${rows.last['revision']}');
+    setSyncState(db, 'last_sync_at', at);
+    db.execute('COMMIT');
+  } catch (_) {
+    db.execute('ROLLBACK');
+    rethrow;
+  }
 }

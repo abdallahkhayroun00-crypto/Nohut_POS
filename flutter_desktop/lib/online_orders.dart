@@ -31,14 +31,12 @@ class OnlineOrders extends StatefulWidget {
     required this.orders,
     required this.onReprint,
     required this.initialSource,
-    required this.demo,
   });
 
   final TrendyolGoReadonly integration;
   final String businessDay, initialSource;
   final List<Json> orders;
   final ValueChanged<Json> onReprint;
-  final Widget Function() demo;
 
   @override
   State<OnlineOrders> createState() => _OnlineOrdersState();
@@ -526,14 +524,6 @@ class _OnlineOrdersState extends State<OnlineOrders> {
             ),
           ],
         ],
-        if (source == 'Yemeksepeti')
-          Card(
-            child: ExpansionTile(
-              title: const Text('Yemeksepeti test alanı'),
-              subtitle: const Text('Canlı siparişlerle karıştırılmaz'),
-              children: [Builder(builder: (_) => widget.demo())],
-            ),
-          ),
       ],
     );
   }

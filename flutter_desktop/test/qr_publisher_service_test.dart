@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'dart:io';
 import 'dart:ui';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nohut_falafel_desktop/qr_publisher_client.dart';
@@ -15,7 +17,11 @@ class FakeHost extends PublisherHost {
   Map<String, dynamic>? healthBody;
   bool portIsOpen = false;
   final launches = <List<String>>[];
-  /// What happens when the script is launched.
+  final launchEnv = <Map<String, String>>[];
+  final deleted = <String>[];
+  final runArgs = <List<String>>[];
+  bool shutdownWorks = false;
+  /// What happens when node is launched.
   void Function(List<String> args)? onLaunch;
 
   @override bool get isWindows => windows;
@@ -25,23 +31,41 @@ class FakeHost extends PublisherHost {
     'LOCALAPPDATA': p.join('C:', 'Local'),
     'USERPROFILE': p.join('C:', 'User'),
     'ProgramFiles': p.join('C:', 'PF'),
+    'USERNAME': 'kasa',
+    'USERDOMAIN': 'NOHUT-PC',
   };
   @override Future<bool> fileExists(String path) async => files.containsKey(path);
   @override Future<List<String>> listFiles(String dir) async =>
       files.keys.where((f) => p.dirname(f) == dir).toList();
   @override Future<List<String>> listDirs(String dir) async => dirs[dir] ?? const [];
   @override Future<String?> readText(String path) async => files[path];
-  @override Future<String?> run(String exe, List<String> args) async => runs[exe];
+  @override Future<String?> run(String exe, List<String> args) async {
+    runArgs.add([exe, ...args]);
+    return runs[exe];
+  }
   @override Future<Map<String, dynamic>?> health(Uri base) async => healthBody;
   @override Future<bool> portOpen(Uri base) async => portIsOpen || healthBody != null;
-  @override Future<void> launch(String exe, List<String> args) async {
+  @override Future<int?> launch(String exe, List<String> args,
+      {Map<String, String>? environment, String? workingDirectory}) async {
     launches.add([exe, ...args]);
+    launchEnv.add(environment ?? const {});
     onLaunch?.call(args);
+    return 4242;
+  }
+  @override Future<void> writeText(String path, String text) async => files[path] = text;
+  @override Future<void> copyFile(String from, String to) async => files[to] = files[from]!;
+  @override Future<void> deleteFile(String path) async {
+    deleted.add(path);
+    files.remove(path);
+  }
+  @override Future<bool> shutdown(Uri base, String token) async {
+    if (shutdownWorks) healthBody = null;
+    return shutdownWorks;
   }
   @override Future<void> wait(Duration d) async {}
 }
 
-final script = p.join('C:', 'POS', 'QRPublisher', 'start-windows.ps1');
+final script = p.join('C:', 'POS', 'QRPublisher', 'server.mjs');
 final node = p.join('C:', 'PF', 'nodejs', 'node.exe');
 final key = p.join('C:', 'AppData', 'NohutFalafel', 'QrPublisher',
   'github-app-private-key.pem');
@@ -51,12 +75,34 @@ FakeHost ready() => FakeHost()
   ..files[script] = ''
   ..files[node] = ''
   ..runs[node] = 'v22.11.0\n'
-  ..files[key] = 'never read';
+  ..runs['icacls.exe'] = 'ok'
+  ..files[key] = '-----BEGIN PRIVATE KEY-----\nnever read\n-----END PRIVATE KEY-----';
 
 QrPublisherSupervisor sup(FakeHost h, {String endpoint = 'http://127.0.0.1:18787'}) =>
     QrPublisherSupervisor(endpoint: endpoint,
       client: QrPublisherClient('db', testToken: 'x' * 40), host: h,
       startTimeout: const Duration(milliseconds: 50));
+
+/// The real machine with a throwaway profile (Windows CI only).
+class IsolatedHost extends PublisherHost {
+  IsolatedHost(this.root);
+  final String root;
+  @override bool get isWindows => true;
+  @override String get executableDir => p.join(root, 'POS');
+  @override Map<String, String> get env => {
+    ...Platform.environment,
+    'APPDATA': p.join(root, 'AppData'),
+    'LOCALAPPDATA': p.join(root, 'Local'),
+    'USERPROFILE': p.join(root, 'User'),
+    'USERNAME': Platform.environment['USERNAME'] ?? 'ci',
+  };
+  // Off Windows (local runs only) stand in for where.exe and icacls.exe.
+  @override Future<String?> run(String exe, List<String> args) async {
+    if (!Platform.isWindows && exe == 'where.exe') return super.run('which', ['node']);
+    if (!Platform.isWindows && exe == 'icacls.exe') return 'ok';
+    return super.run(exe, args);
+  }
+}
 
 void main() {
   test('each missing prerequisite gets its own honest diagnosis', () async {
@@ -101,15 +147,34 @@ void main() {
     expect(d.help, 'Hizmet kapandı (kod 1).');
   });
 
-  test('start launches the bundled script hidden, without prompts, and waits for health', () async {
+  test('start runs node directly (no PowerShell) with the key and code in its environment', () async {
     final h = ready();
     h.onLaunch = (_) => h.healthBody = {'service': 'Nohut QR Publisher',
       'version': qrPublisherVersion};
     final d = await sup(h).start();
     expect(d.ok, isTrue);
-    expect(h.launches.single, containsAllInOrder(
-      ['powershell.exe', '-NoProfile', '-WindowStyle', 'Hidden', '-File', script,
-       '-Port', '18787', '-NoPrompt']));
+    expect(h.launches.single, [node, script]);
+    final env = h.launchEnv.single;
+    expect(env['GITHUB_APP_PRIVATE_KEY_FILE'], key);
+    expect(env['QR_PUBLISH_ADMIN_TOKEN'], 'x' * 40);
+    expect(env['QR_PUBLISH_PORT'], '18787');
+    expect(env['QR_PUBLISH_STATUS_FILE'], status);
+    expect(h.runArgs.any((r) => r.first.toLowerCase().contains('powershell')), isFalse);
+    expect(h.runArgs.where((r) => r.first == 'icacls.exe').single,
+      [ 'icacls.exe', key, '/inheritance:r', '/grant:r', r'NOHUT-PC\kasa:(F)']);
+    expect(h.files[p.join('C:', 'AppData', 'NohutFalafel', 'QrPublisher', 'publisher.pid')], '4242');
+    expect(h.deleted, contains(p.join('C:', 'AppData', 'Microsoft', 'Windows', 'Start Menu',
+      'Programs', 'Startup', 'Nohut QR Publisher.lnk')), reason: 'old PowerShell sign-in shortcut removed');
+  });
+
+  test('a file that is not a private key is refused before anything starts', () async {
+    final h = ready()..files.remove(key);
+    final bad = p.join('C:', 'User', 'Desktop', 'notes.pem');
+    h.files[bad] = 'hello';
+    final d = await sup(h).start(keyFile: bad);
+    expect(h.launches, isEmpty);
+    expect(d.issue, PublisherIssue.keyMissing);
+    expect(h.files[status], contains('private key'));
   });
 
   test('a start that never answers becomes startFailed, not a silent stop', () async {
@@ -131,25 +196,33 @@ void main() {
     }
   });
 
-  test('choosing the key is the only path that allows the file picker', () async {
+  test('a chosen key is copied into the protected folder before start', () async {
     final h = ready()..files.remove(key);
+    final chosen = p.join('C:', 'User', 'Desktop', 'app.pem');
+    h.files[chosen] = '-----BEGIN RSA PRIVATE KEY-----\nk\n-----END RSA PRIVATE KEY-----';
     h.onLaunch = (_) => h.healthBody = {'service': 'Nohut QR Publisher',
       'version': qrPublisherVersion};
     expect((await sup(h).start()).issue, PublisherIssue.keyMissing);
     expect(h.launches, isEmpty);
-    expect((await sup(h).start(allowPrompt: true)).ok, isTrue);
-    expect(h.launches.single, isNot(contains('-NoPrompt')));
+    expect((await sup(h).start(keyFile: chosen)).ok, isTrue);
+    expect(h.files[key], h.files[chosen]);
   });
 
-  test('outdated publisher is replaced by running the bundled script', () async {
-    final h = ready()..healthBody = {'service': 'Nohut QR Publisher'};
+  test('outdated publisher is asked to stop, then the bundled one starts', () async {
+    final h = ready()..healthBody = {'service': 'Nohut QR Publisher'}..shutdownWorks = true;
     h.onLaunch = (_) => h.healthBody = {'service': 'Nohut QR Publisher',
       'version': qrPublisherVersion};
     expect((await sup(h).ensureRunning()).ok, isTrue);
-    expect(h.launches.single, contains('-NoPrompt'));
-    // If the old one cannot be replaced, it stays reported as outdated.
-    final stuck = ready()..healthBody = {'service': 'Nohut QR Publisher'};
+    expect(h.launches.single, [node, script]);
+    // If the old one cannot be replaced, it stays reported as outdated and
+    // only a node.exe owning exactly this port is ever targeted.
+    final stuck = ready()..healthBody = {'service': 'Nohut QR Publisher'}
+      ..runs['netstat.exe'] = '  TCP    127.0.0.1:18787   0.0.0.0:0   LISTENING   777\r\n'
+          '  TCP    127.0.0.1:8787    0.0.0.0:0   LISTENING   555\r\n';
     expect((await sup(stuck).start()).issue, PublisherIssue.outdated);
+    expect(stuck.runArgs.where((r) => r.first == 'taskkill.exe').single,
+      ['taskkill.exe', '/PID', '777', '/F', '/FI', 'IMAGENAME eq node.exe']);
+    expect(stuck.launches, isEmpty);
   });
 
   test('diagnostics never include key contents or tokens', () async {
@@ -171,4 +244,32 @@ void main() {
       isNull);
     expect(isQrAtlas('assets/products/kibbe-6003492c.jpg'), isFalse);
   });
+  // Replaces the old PowerShell lifecycle script: real node.exe, real
+  // icacls, real /health and /shutdown, in an isolated profile.
+  test('Windows: POS starts, replaces and stops the real publisher without PowerShell', () async {
+    final root = Directory.systemTemp.createTempSync('nohut-qrpub-').path;
+    final pos = Directory(p.join(root, 'POS', 'QRPublisher'))..createSync(recursive: true);
+    File(p.join('windows', 'installer', 'qr-publisher', 'server.mjs')).copySync(p.join(pos.path, 'server.mjs'));
+    final gen = await Process.run('node', ['-e',
+      "process.stdout.write(require('crypto').generateKeyPairSync('rsa',{modulusLength:2048}).privateKey.export({type:'pkcs8',format:'pem'}))"]);
+    final chosen = p.join(root, 'User', 'Desktop', 'nohut.pem');
+    File(chosen)..createSync(recursive: true)..writeAsStringSync('${gen.stdout}');
+    final host = IsolatedHost(root);
+    final s = QrPublisherSupervisor(endpoint: 'http://127.0.0.1:18919',
+        client: QrPublisherClient('db', testToken: 'w' * 48), host: host);
+    expect((await s.diagnose()).issue, PublisherIssue.keyMissing);
+    final d = await s.start(keyFile: chosen);
+    expect(d.ok, isTrue, reason: '${d.title} ${d.help} ${d.logTail}');
+    expect(File(s.keyFile).existsSync(), isTrue);
+    expect(jsonDecode(File(s.statusFile).readAsStringSync())['state'], 'running');
+    expect(await host.shutdown(Uri.parse('http://127.0.0.1:18919/'), 'w' * 48), isTrue);
+    for (var i = 0; i < 40 && await host.portOpen(Uri.parse('http://127.0.0.1:18919/')); i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+    }
+    expect((await s.diagnose()).issue, PublisherIssue.stopped);
+    expect((await s.ensureRunning()).ok, isTrue, reason: 'auto start reuses the protected key');
+    await host.shutdown(Uri.parse('http://127.0.0.1:18919/'), 'w' * 48);
+  }, skip: (Platform.isWindows && Platform.environment['GITHUB_ACTIONS'] == 'true') ||
+          Platform.environment['NOHUT_PUBLISHER_LIFECYCLE'] == '1'
+      ? false : 'Windows CI only (or NOHUT_PUBLISHER_LIFECYCLE=1)', timeout: const Timeout(Duration(minutes: 2)));
 }

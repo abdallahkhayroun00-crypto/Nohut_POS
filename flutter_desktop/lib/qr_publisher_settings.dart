@@ -72,7 +72,7 @@ class _QrPublisherSettingsPanelState extends State<QrPublisherSettingsPanel>{
         await Process.start('explorer.exe',['https://nodejs.org/tr/download'],
           mode:ProcessStartMode.detached);
       }else if(!d.ok&&d.fix!=null){
-        d=await supervisor.start(allowPrompt:d.fix==PublisherFix.chooseKey);
+        d=await startPublisherFromButton(supervisor,d);
       }
       if(mounted)setState(()=>status='${d.title}. ${d.help}');
     }catch(_){

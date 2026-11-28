@@ -7,6 +7,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
 import 'operations_ui.dart';
@@ -306,7 +307,7 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
     setState(()=>busy=true);
     PublisherDiagnosis? after;
     try{
-      after=await sup.start(allowPrompt:d.fix==PublisherFix.chooseKey);
+      after=await startPublisherFromButton(sup,d);
     }catch(e){
       after=null;
       say('Yayınlama hizmeti başlatılamadı: $e',error:true);
@@ -1025,17 +1026,13 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
       say('Görsel yükleme Windows üzerinde desteklenir.',error:true);
       return;
     }
-    const script=r'Add-Type -AssemblyName System.Windows.Forms; $d=New-Object System.Windows.Forms.OpenFileDialog; $d.Filter="Images (*.png;*.jpg;*.jpeg;*.webp)|*.png;*.jpg;*.jpeg;*.webp"; if($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK){ [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($d.FileName)) }';
-    final encoded=base64Encode([for(final ch in script.codeUnits)...[ch&255,ch>>8]]);
     setState(()=>busy=true);
     try{
-      final selected=await Process.run('powershell.exe',
-        ['-STA','-NoProfile','-NonInteractive','-EncodedCommand',encoded])
-        .timeout(const Duration(seconds:90));
-      if(selected.exitCode!=0)throw const FormatException('Windows dosya seçimi başarısız.');
-      final path=selected.stdout.toString().trim();
-      if(path.isEmpty)return;
-      final filename=utf8.decode(base64Decode(path));
+      // Native Windows file dialog (no PowerShell).
+      final picked=await openFile(acceptedTypeGroups:const [
+        XTypeGroup(label:'Görseller',extensions:['png','jpg','jpeg','webp'])]);
+      if(picked==null)return;
+      final filename=picked.path;
       final file=File(filename),bytes=await file.readAsBytes();
       final lower=filename.toLowerCase();
       final mime=lower.endsWith('.png')?'image/png':
@@ -1183,7 +1180,7 @@ class _QrMenuManagementState extends State<QrMenuManagement> {
     title:const Text('QR Yayınlama Kurulumu'),
     content:SizedBox(width:560,child:Text(
       '1. Yayınlama hizmeti: Nohut QR Publisher bu bilgisayarda $endpoint '
-      'adresinde çalışır (start-windows.ps1 başlatır). Personel paneli 8787 '
+      'adresinde çalışır (POS kendisi başlatır). Personel paneli 8787 '
       'portunu kullanır; yayınlama adresi olarak 8787 girilmemelidir.\n\n'
       '2. Yönetici anahtarı: Ayarlar > Entegrasyonlar > Nohut QR Publisher '
       'bölümüne kaydedilir; yalnızca bu Windows kullanıcısı okuyabilir (DPAPI).\n\n'

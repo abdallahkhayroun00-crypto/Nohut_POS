@@ -1,8 +1,11 @@
 import 'dart:io';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:nohut_falafel_desktop/brand.dart';
 import 'package:nohut_falafel_desktop/pos_logic.dart';
 import 'package:nohut_falafel_desktop/pos_store.dart';
+import 'package:nohut_falafel_desktop/receipt_layout.dart';
 import 'package:nohut_falafel_desktop/receipt_printer.dart';
 import 'package:nohut_falafel_desktop/trendyol_go_readonly.dart';
 
@@ -174,5 +177,59 @@ void main() {
     final data = store.read().data;
     expect((data['settings'] as Map)['autoPrint'], true);
     expect((data['settings'] as Map)['printerName'], 'XP-237B', reason: 'the concurrent write is preserved');
+  });
+
+  test('courier type always when known; contact only for restaurant delivery, never masked', () {
+    Json order(Map<String, dynamic> extra) => normalizeTgoPackage({
+      ...{'id': 'pkg-9', 'orderNumber': '9', 'packageStatus': 'Picking', 'packageCreationDate': 1763503200000,
+        'customer': {'firstName': 'Test', 'lastName': 'Müşteri'}, 'lines': const []},
+      ...extra,
+    });
+    const long = 'Atatürk Mahallesi Cumhuriyet Caddesi No: 128 Daire: 14 Kat: 5';
+    final address = {'phone': '05550000000', 'address1': long, 'district': 'Kadıköy', 'city': 'İstanbul'};
+    final store = tgoKitchenTicket(order({'deliveryType': 'STORE', 'address': address}));
+    expect(store, contains('Kurye: Restoran Kuryesi'));
+    expect(store, contains('Tel: 05550000000'));
+    expect(store, contains('Adres: $long · Kadıköy · İstanbul'));
+    final go = tgoKitchenTicket(order({'deliveryType': 'GO', 'address': address}));
+    expect(go, contains('Kurye: Trendyol GO Kuryesi'));
+    expect(go, isNot(contains('Tel:')));
+    expect(go, isNot(contains('Adres:')));
+    final pickup = tgoKitchenTicket(order({'deliveryType': 'STORE', 'storePickupSelected': true, 'address': address}));
+    expect(pickup, contains('· Gel-Al'));
+    expect(pickup, isNot(contains('Kurye:')));
+    expect(pickup, isNot(contains('Tel:')));
+    final masked = tgoKitchenTicket(order({'deliveryType': 'STORE',
+      'address': {'phone': '0555***0000', 'address1': 'Atatürk Mah. ****'}}));
+    expect(masked, contains('Kurye: Restoran Kuryesi'));
+    expect(masked, isNot(contains('Tel:')));
+    expect(masked, isNot(contains('Adres:')));
+    final missing = tgoKitchenTicket(order({}));
+    expect(missing, isNot(contains('Kurye:')), reason: 'unknown courier type is not invented');
+    expect(missing, isNot(contains('Tel:')));
+    expect(missing, isNot(contains('@')));
+  });
+
+  testWidgets('long Turkish address wraps inside the 56 mm receipt', (t) async {
+    String ticket(String street) => tgoKitchenTicket({'dailyNumber': 17, ...normalizeTgoPackage({'id': 'p', 'orderNumber': '1',
+      'packageStatus': 'Picking', 'deliveryType': 'STORE', 'customer': {'firstName': 'Test', 'lastName': 'Müşteri'},
+      'lines': [{'name': 'Falafel Dürüm', 'items': [{'isCancelled': false}]}],
+      'address': {'phone': '05550000000', 'address1': street, 'district': 'Şişli', 'city': 'İstanbul'}})});
+    final settings = {'paperWidthMm': 58, 'printableWidthMm': 48};
+    await t.runAsync(() async {
+      final body = FontLoader(NohutBrand.bodyFont)
+        ..addFont(rootBundle.load('assets/brand/fonts/Barlow-Regular.ttf'))
+        ..addFont(rootBundle.load('assets/brand/fonts/Barlow-Bold.ttf'));
+      final heading = FontLoader(NohutBrand.headingFont)
+        ..addFont(rootBundle.load('assets/brand/fonts/BreeSerif-Regular.ttf'));
+      await Future.wait([body.load(), heading.load()]);
+    });
+    final short = await t.runAsync(() => renderReceipt(ticket('Çiğdem Sk. 12'), settings: settings));
+    final long = await t.runAsync(() => renderReceipt(ticket(
+        'Çiğdem Sokak Güneşli Apartmanı No: 12/4 İç Kapı Zil Üçüncü Kat Sağdaki Daire Bahçe Girişi'), settings: settings));
+    expect(long!.width, short!.width, reason: 'same printable width; nothing is cut or scaled');
+    expect(long.height, greaterThan(short.height), reason: 'the long address wraps onto more lines');
+    final out = Platform.environment['NOHUT_RENDER_DIR'];
+    if (out != null) File('$out/tgo-store-delivery-receipt.png')..createSync(recursive: true)..writeAsBytesSync(long.png);
   });
 }

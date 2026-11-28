@@ -23,11 +23,13 @@ import 'pos_logic.dart';
 import 'pos_store.dart';
 import 'qr_menu_remote.dart';
 import 'windows_vault.dart';
+import 'platform_api.dart';
+import 'platform_management.dart';
 
 /// Independent, physically enrolled financial capability. Never grant it to
 /// an ordinary staff bearer token. The key is held in the Windows DPAPI vault.
 class FinanceSyncServer {
-  FinanceSyncServer(this.store, {this.staffProjection, this.googleProvider, this.ownerEmployeeIds, this.menuRemote}) :
+  FinanceSyncServer(this.store, {this.staffProjection, this.googleProvider, this.ownerEmployeeIds, this.menuRemote, this.platforms}) :
     vault = WindowsVault(File(store.filePath + '.finance-sync.dpapi'));
 
   final PosStore store;
@@ -37,6 +39,8 @@ class FinanceSyncServer {
   final List<int> Function()? ownerEmployeeIds;
   /// QR publish / verify / POS sync with Windows' key (owner channel).
   final QrMenuRemoteService? menuRemote;
+  /// Platform Yönetimi, same control as the Windows page.
+  final PlatformControl? platforms;
 
   Json _owner(Json state) => owner(state, ownerIds: ownerEmployeeIds?.call() ?? const []);
 
@@ -552,6 +556,12 @@ class FinanceSyncServer {
           } on QrMenuConflict catch (e) {
             result = {'ok': false, 'error': 'conflict', 'message': e.message};
           }
+        } else if (op == 'ownerPlatforms' || op == 'ownerPlatform') {
+          final c = platforms ?? (throw const FormatException('Platform Yönetimi bu bilgisayarda kapalı.'));
+          result = op == 'ownerPlatforms'
+              ? await platformsView(c, canToggle: true)
+              : await platformCommand(c, payload['data'] is Map
+                  ? Map<String, dynamic>.from(payload['data'] as Map) : <String, dynamic>{}, canToggle: true);
         } else if (op == 'ownerGoogle') {
           final google = googleProvider?.call();
           if (google == null || !google.connected) {

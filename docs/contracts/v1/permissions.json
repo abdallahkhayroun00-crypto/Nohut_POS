@@ -456,6 +456,59 @@
       ]
     },
     {
+      "id": "platform.view",
+      "section": "platform",
+      "sensitivity": "normal",
+      "defaults": [
+        "Müdür",
+        "Yönetici"
+      ],
+      "clients": [
+        "windows",
+        "personel",
+        "yonetici"
+      ]
+    },
+    {
+      "id": "platform.store.toggle",
+      "section": "platform",
+      "sensitivity": "elevated",
+      "defaults": [
+        "Yönetici"
+      ],
+      "clients": [
+        "windows",
+        "personel",
+        "yonetici"
+      ]
+    },
+    {
+      "id": "platform.schedule.edit",
+      "section": "platform",
+      "sensitivity": "elevated",
+      "defaults": [
+        "Yönetici"
+      ],
+      "clients": [
+        "windows",
+        "personel",
+        "yonetici"
+      ]
+    },
+    {
+      "id": "platform.catalog.toggle",
+      "section": "platform",
+      "sensitivity": "elevated",
+      "defaults": [
+        "Yönetici"
+      ],
+      "clients": [
+        "windows",
+        "personel",
+        "yonetici"
+      ]
+    },
+    {
       "id": "shifts.self",
       "section": "shifts",
       "sensitivity": "normal",

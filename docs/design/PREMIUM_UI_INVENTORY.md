@@ -38,19 +38,19 @@ The Functional column records test coverage.
 
 | Surface | Code | Visual | Functional | Notes / known gaps |
 |---|---|---|---|---|
-| Login, owner MFA, Kullanıcılar & Güvenlik | `main.dart`, `accounts_ui.dart` | ⬜ | tests ✓ | Needs the shared form, sheet and state components |
+| Login, owner MFA, Kullanıcılar & Güvenlik | `main.dart`, `accounts_ui.dart` | 🔄 Kullanıcılar: inner card no longer repeats the section title. Login/MFA dialogs still to review | tests ✓ | Needs the shared form, sheet and state components |
 | Masalar (floor plan, table detail) | `tables_panel.dart`, `floor_plan.dart` | 🔄 board done, owner review pending | tests ✓ (`masalar_render_test`, `tables_panel_test`) | `MasalarBoard`: shared `TableTone` colours; legend pills; status tiles under 740 px (was plain buttons); open-orders list moves below the plan under 1150 px (it used to disappear) in 2 columns; layout-editing banner. Rendered 1536/1100/720/420 and 1.3× text. Windows POS has no dark theme yet (light only). Table detail dialog next |
-| Sipariş composer, product customization | `order_composer.dart`, `product_customization.dart` | ⬜ | tests ✓ | |
-| Payment, split, refund, mixed card | `payment_dialog.dart`, `group_payments.dart`, `card_terminal.dart` | ⬜ | tests ✓ | Financial logic frozen; visual only |
+| Sipariş composer, product customization | `order_composer.dart`, `product_customization.dart` | 🔄 product grid done, owner review pending | tests ✓ (`pos_flow_render_test`, `campaign_ui_test`) | Price beside the product name, quantity badge under it; tiles reserve description space only when a category has one (176 → 106 px), so more products fit without scrolling. Before/after at 1280 and 1536 in the project Library (screens/premium). Sepet with items and the customize dialog reviewed (`composer_cart_render_test`): already clear, unchanged |
+| Payment, split, refund, mixed card | `payment_dialog.dart`, `group_payments.dart`, `card_terminal.dart` | 🔄 payment dialog reviewed, unchanged; Hesap ve Sipariş rows compacted (`operations_ui.dart`) | tests ✓ | Financial logic frozen; visual only. Without guests, Adet İptal sits on the product row. Split/refund dialogs still to review |
 | Receipts preview, printer | `receipt_preview.dart`, `printer_management.dart` | ⬜ | tests ✓ | Receipt layout is printed output; not changed |
-| Online orders (Trendyol Go, alarms) | `online_orders.dart`, `trendyol_go_ui.dart`, `platform_ui.dart` | ⬜ | tests ✓ | No live platform actions in testing |
+| Online orders (Trendyol Go, alarms) | `online_orders.dart`, `trendyol_go_ui.dart`, `platform_ui.dart` | 🔄 board reviewed, unchanged (3 stage columns, provider chips, honest empty states) | tests ✓ | No live platform actions in testing. Rendered at 1536 and 1280 in `pos_flow_render_test`; populated-order cards still to review |
 | Google business, reviews | `google_business_ui.dart`, `review_display.dart`, `compact_review_card.dart` | ⬜ | tests ✓ | |
 | QR Menü Yönetimi | `qr_menu_management.dart` | 🔄 owner screenshot review (relay 7228172987) addressed, awaiting re-review | 14 ✓ | Single heading (window header only); compact publisher status card with one fix button and folded *Teknik ayrıntılar*; offline draft no longer shown as a red error; stable **Önizle** button; *Yayınlanamaz: …* reason when changes exist but publishing is blocked; aligned column headers (Ürün, Kategori, Fiyat, Stok, QR); atlas photos (wraps, sides, salads, fatte) cropped to the one dish the public menu shows, never the whole sheet |
-| Açık hesaplar | `open_accounts_ui.dart` | ⬜ | tests ✓ | |
-| Raporlar, Yoğunluk, Gün Sonu | `sales_reports.dart`, `daily_report_ui.dart`, `report_activity.dart`, `dashboard_sales.dart` | ⬜ | tests ✓ | Data viz palette |
-| Finans, giderler | `finance_ui.dart` | ⬜ | tests ✓ | |
+| Açık hesaplar | `open_accounts_ui.dart` | 🔄 duplicate page title removed (window header names the page) | tests ✓ | |
+| Raporlar, Yoğunluk, Gün Sonu | `sales_reports.dart`, `daily_report_ui.dart`, `report_activity.dart`, `dashboard_sales.dart` | 🔄 duplicate page title removed; section renders in `sections_render_test` (all 11 sidebar sections, 1536 and 1280) | tests ✓ | Data viz palette |
+| Finans, giderler | `finance_ui.dart` | 🔄 duplicate page title removed; cards and pills already on the shared tokens | tests ✓ | |
 | Market takibi | `market_prices.dart`, `market_price_tracking.dart` | ⬜ | tests ✓ | |
-| Personel, Mesai, Vardiya, Maaş | `operations_ui.dart`, `workforce.dart`, `payroll.dart`, `shifts.dart` | ⬜ | tests ✓ | |
+| Personel, Mesai, Vardiya, Maaş | `operations_ui.dart`, `workforce.dart`, `payroll.dart`, `shifts.dart` | 🔄 Ayarlar › Personel: duplicate title removed, normal-size Personel Ekle button. Windows weekly payroll and expenses live in Finans tabs, rendered by `sections_render_test` (Haftalık Maaşlar, Günlük Malzeme, Sabit, Diğer): already on the shared tokens, no change needed. Populated-data states still to review | tests ✓ | |
 | Bildirimler | `notifications_ui.dart`, `notification_center.dart` | ⬜ | tests ✓ | |
 | Ayarlar (9 pages), Yedekleme, Bulut | `simple_settings.dart`, `backup_ui.dart` | 🔄 (IA regrouped) | tests ✓ | Sync/backup stay Windows-only |
 | Dialogs, menus, empty/error/offline states | across | ⬜ | — | Shared components first |

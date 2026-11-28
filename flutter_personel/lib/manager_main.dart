@@ -5,6 +5,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:nohut_core/management_sections.dart';
 import 'package:nohut_core/report_period.dart';
 
+import 'platform_page.dart';
 import 'expense_drafts.dart';
 import 'home.dart';
 import 'manager_finance.dart';
@@ -159,7 +160,7 @@ class OwnerHome extends StatefulWidget {
 class _OwnerHomeState extends State<OwnerHome> {
   static const icons=<IconData>[
     Icons.dashboard_outlined,Icons.table_restaurant_outlined,Icons.delivery_dining_outlined,
-    Icons.star_outline,Icons.storefront_outlined,Icons.menu_book_outlined,
+    Icons.toggle_on_outlined,Icons.star_outline,Icons.storefront_outlined,Icons.menu_book_outlined,
     Icons.account_balance_wallet_outlined,Icons.point_of_sale_outlined,
     Icons.bar_chart_outlined,Icons.account_balance_wallet_outlined,
     Icons.trending_up_outlined,Icons.settings_outlined,
@@ -173,6 +174,8 @@ class _OwnerHomeState extends State<OwnerHome> {
   Timer? timer;
   OwnerApi get api=>widget.api;
   ExpenseDraftStore get finance=>api.finance!;
+  /// Platform Yönetimi: the Windows cards over the owner channel.
+  late final PlatformSource platforms=OwnerPlatformSource(api.request);
   @override
   void initState(){
     super.initState();
@@ -301,7 +304,7 @@ class _OwnerHomeState extends State<OwnerHome> {
     } catch(_){if(mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Yanıt doğrulanamadı.')));}
   }
   static const _groups=<(String,List<String>)>[
-    ('Operasyon',['dashboard','tables','online','open-accounts','payments']),
+    ('Operasyon',['dashboard','tables','online','platform','open-accounts','payments']),
     ('Müşteri',['reviews','google','qr-menu']),
     ('Yönetim',['staff','reports','finance','market-prices','settings']),
   ];
@@ -470,6 +473,8 @@ class _OwnerHomeState extends State<OwnerHome> {
             caption:data?['activeTables'] is int?'Aktif masa ${data!['activeTables']} / 5':null),
           NohutMetric(label:'Açık hesap',value:data==null?'—':'${entries('openAccounts').length}',icon:Icons.pending_actions_outlined),
         ]),
+        const SizedBox(height:10),
+        PlatformQuickCard(source:platforms,offline:offline,onOpen:()=>go('platform')),
         title('Haftalık Maaş Ödemeleri'),
         payrollPanel(),
         title(day==ReportPeriod.day(ReportPeriod.today())?'Bugün ekip':'Ekip · ${dayLabel(day)}'),
@@ -505,6 +510,7 @@ class _OwnerHomeState extends State<OwnerHome> {
         if(data!=null&&entries('employees').isEmpty)notice('Personel kaydı yok veya henüz eşitlenmedi.'),
         notice('Saatlik ücretler ve ekip programı şimdilik yerel Yönetici sayfasında; kullanıcılar, yetkiler ve cihazlar Windows POS’ta yönetilir.'),
       ];
+      case 'platform':return [PlatformPage(source:platforms,offline:offline)];
       case 'online':return [...orderList('online'),notice('Platform API ayarları ve desteklenen sipariş durumları Windows üzerinden yönetilir.')];
       case 'reviews':return [
         title('Google yorumları'),...googleContent(),

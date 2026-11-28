@@ -20,19 +20,22 @@ import 'workforce_api.dart';
 import 'qr_menu_lan_api.dart';
 import 'qr_menu_remote.dart';
 import 'notification_events.dart';
+import 'platform_management.dart';
 
 /// Native Flutter Windows HTTP server for employee phones. No Python process.
 class PosLanServer extends ChangeNotifier {
   PosLanServer(this.store, {this.port = 8787, String? staffHtml, String? yoneticiHtml,
-      this.googleProvider, this.platformAction, this.platformWritable, this.authGate, this.menuRemote})
+      this.googleProvider, this.platformAction, this.platformWritable, this.authGate, this.menuRemote, this.platforms})
     : _staffHtml = staffHtml, _yoneticiHtml = yoneticiHtml;
   String? _yoneticiHtml;
-  late final YoneticiApi? yonetici = authGate == null ? null : YoneticiApi(store, authGate!);
+  late final YoneticiApi? yonetici = authGate == null ? null : YoneticiApi(store, authGate!, platforms: platforms);
   late final WorkforceApi? workforce = authGate == null ? null : WorkforceApi(store, authGate!);
   late final QrMenuLanApi? menuApi =
       authGate == null ? null : QrMenuLanApi(store, authGate!, remote: menuRemote);
   /// Phones' QR publish / photo / POS sync, done with Windows' own key.
   final QrMenuRemoteService? menuRemote;
+  /// Platform Yönetimi control shared with the Windows page.
+  final PlatformControl? platforms;
   late final LanNotificationsApi? notifications =
       authGate == null ? null : LanNotificationsApi(store, authGate!.auth);
   /// Individual LAN logins (spec §23.4). Null = legacy shared panel only.
@@ -45,7 +48,7 @@ class PosLanServer extends ChangeNotifier {
   final bool Function()? platformWritable;
   final GoogleBusiness Function()? googleProvider;
   late final MobilePairing pairing = MobilePairing(store);
-  late final FinanceSyncServer financeSync = FinanceSyncServer(store, menuRemote: menuRemote, staffProjection: _staffState,
+  late final FinanceSyncServer financeSync = FinanceSyncServer(store, menuRemote: menuRemote, platforms: platforms, staffProjection: _staffState,
       googleProvider: googleProvider, ownerEmployeeIds: () => authGate?.auth.ownerEmployeeIds() ?? const []);
   HttpServer? _server;
   RawDatagramSocket? _discovery;

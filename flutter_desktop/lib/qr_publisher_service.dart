@@ -2,13 +2,15 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:file_selector/file_selector.dart';
 import 'package:path/path.dart' as paths;
 
 import 'qr_publisher_client.dart';
+import 'test_build.dart';
 
 /// Version the bundled `QRPublisher/server.mjs` reports on /health. Bump both
 /// together: a running publisher with another version is restarted.
-const qrPublisherVersion = '2026.11.28';
+const qrPublisherVersion = '2026.11.28.2';
 
 /// Why the local QR publisher is (not) available, most specific first.
 enum PublisherIssue {
@@ -41,7 +43,7 @@ class PublisherDiagnosis {
   final String endpoint;
   final String? script, node, runningVersion;
   final bool keyFound;
-  /// `status.json` written by start-windows.ps1 (state + message, no secrets).
+  /// `status.json` written by POS and the publisher (state + message, no secrets).
   final Map<String, dynamic>? lastStatus;
   final List<String> logTail;
 
@@ -192,13 +194,52 @@ class PublisherHost {
       return false;
     }
   }
-  Future<void> launch(String exe, List<String> args) =>
-      Process.start(exe, args, mode: ProcessStartMode.detached);
+  /// Starts [exe] directly (no shell, no PowerShell, no console window).
+  Future<int?> launch(String exe, List<String> args,
+      {Map<String, String>? environment, String? workingDirectory}) async {
+    final p = await Process.start(exe, args, mode: ProcessStartMode.detached,
+        environment: environment, workingDirectory: workingDirectory);
+    return p.pid;
+  }
+  Future<void> writeText(String path, String text) async {
+    final f = File(path);
+    await f.parent.create(recursive: true);
+    final part = File('$path.part');
+    await part.writeAsString(text, flush: true);
+    await part.rename(path);
+  }
+  Future<void> copyFile(String from, String to) async {
+    await File(to).parent.create(recursive: true);
+    await File(from).copy(to);
+  }
+  Future<void> deleteFile(String path) async {
+    try {
+      await File(path).delete();
+    } catch (_) {}
+  }
+  /// Asks a running publisher to stop (authenticated, never mid-publish).
+  Future<bool> shutdown(Uri base, String token) async {
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 3);
+    try {
+      final req = await client.postUrl(base.resolve('shutdown'))
+          .timeout(const Duration(seconds: 4));
+      req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
+      final res = await req.close().timeout(const Duration(seconds: 4));
+      await res.drain<void>();
+      return res.statusCode == 200;
+    } catch (_) {
+      return false;
+    } finally {
+      client.close(force: true);
+    }
+  }
   Future<void> wait(Duration d) => Future<void>.delayed(d);
 }
 
 /// Finds, starts, restarts and explains the local Nohut QR Publisher, so the
-/// owner never has to open PowerShell for routine use.
+/// owner never has to open PowerShell for routine use. Node.js is started
+/// directly by POS with the key path and access code in its environment:
+/// no PowerShell, no ExecutionPolicy change, no Startup shortcut.
 class QrPublisherSupervisor {
   QrPublisherSupervisor({
     required this.endpoint,
@@ -217,6 +258,12 @@ class QrPublisherSupervisor {
   String get statusFile => paths.join(serviceDir, 'status.json');
   String get logFile => paths.join(serviceDir, 'publisher.log');
   String get errorLogFile => paths.join(serviceDir, 'publisher-error.log');
+  String get keyFile => paths.join(serviceDir, 'github-app-private-key.pem');
+  String get pidFile => paths.join(serviceDir, 'publisher.pid');
+  /// Older versions started the publisher at sign-in through PowerShell
+  /// with ExecutionPolicy Bypass. POS removes that shortcut.
+  String get legacyStartupShortcut => paths.join(_appData, 'Microsoft', 'Windows',
+      'Start Menu', 'Programs', 'Startup', 'Nohut QR Publisher.lnk');
 
   Uri? get _local {
     try {
@@ -232,17 +279,17 @@ class QrPublisherSupervisor {
   Future<String?> findScript() async {
     final local = host.env['LOCALAPPDATA'];
     for (final p in [
-      paths.join(host.executableDir, 'QRPublisher', 'start-windows.ps1'),
+      paths.join(host.executableDir, 'QRPublisher', 'server.mjs'),
       if (local != null && local.isNotEmpty)
         paths.join(local, 'Programs', 'Nohut Falafel POS', 'QRPublisher',
-          'start-windows.ps1'),
+          'server.mjs'),
     ]) {
       if (await host.fileExists(p)) return p;
     }
     return null;
   }
 
-  /// Same search as start-windows.ps1: PATH, Program Files, fnm installs.
+  /// Node.js 22+: PATH, Program Files, fnm installs.
   Future<String?> findNode() async {
     final candidates = <String>[];
     final where = await host.run('where.exe', ['node.exe']);
@@ -280,13 +327,12 @@ class QrPublisherSupervisor {
     return best;
   }
 
-  /// The key the script would pick without asking: the protected copy, or
-  /// GitHub's original file name in the protected folder or Downloads.
-  Future<bool> findKey() async {
-    if (await host.fileExists(
-        paths.join(serviceDir, 'github-app-private-key.pem'))) {
-      return true;
-    }
+  /// The key POS uses without asking: the protected copy, or GitHub's
+  /// original file name in the protected folder or Downloads.
+  Future<bool> findKey() async => await _keySource() != null;
+
+  Future<String?> _keySource() async {
+    if (await host.fileExists(keyFile)) return keyFile;
     final profile = host.env['USERPROFILE'];
     for (final dir in [
       serviceDir,
@@ -295,11 +341,55 @@ class QrPublisherSupervisor {
       for (final f in await host.listFiles(dir)) {
         final name = paths.basename(f).toLowerCase();
         if (name.startsWith('nohut-qr-publisher') && name.endsWith('.pem')) {
-          return true;
+          return f;
         }
       }
     }
-    return false;
+    return null;
+  }
+
+  Future<void> _writeStatus(String state, String message) => host.writeText(statusFile,
+      jsonEncode({'state': state, 'at': DateTime.now().toUtc().toIso8601String(),
+        'message': message, 'port': _local?.port}));
+
+  /// Copies the chosen (or found) key into this Windows user's protected
+  /// folder and restricts it to this user. Returns an error message or null.
+  Future<String?> _installKey(String? chosen) async {
+    final source = chosen ?? await _keySource();
+    if (source == null) return 'GitHub App anahtarı (.pem) bulunamadı. Anahtar Dosyasını Seç ile bir kez seçin.';
+    final text = await host.readText(source);
+    if (text == null || !RegExp(r'-----BEGIN (RSA )?PRIVATE KEY-----').hasMatch(text)) {
+      return 'Seçilen dosya GitHub App private key (.pem) değil.';
+    }
+    if (paths.normalize(source) != paths.normalize(keyFile)) {
+      await host.copyFile(source, keyFile);
+    }
+    final user = host.env['USERNAME'];
+    final domain = host.env['USERDOMAIN'];
+    if (user == null || user.isEmpty) return 'Windows kullanıcısı belirlenemedi.';
+    final account = domain == null || domain.isEmpty ? user : '$domain\\$user';
+    final acl = await host.run('icacls.exe',
+        [keyFile, '/inheritance:r', '/grant:r', '$account:(F)']);
+    return acl == null ? 'Anahtar dosyası izinleri ayarlanamadı.' : null;
+  }
+
+  /// Stops an older publisher on our port: first by asking it, then only
+  /// a node.exe that owns exactly this localhost port.
+  Future<bool> _stopOld(Uri local, String token) async {
+    Future<bool> freed() async {
+      for (var i = 0; i < 20; i++) {
+        if (!await host.portOpen(local)) return true;
+        await host.wait(const Duration(milliseconds: 250));
+      }
+      return false;
+    }
+    if (await host.shutdown(local, token) && await freed()) return true;
+    final netstat = await host.run('netstat.exe', ['-ano', '-p', 'TCP']);
+    final row = RegExp('^\\s*TCP\\s+127\\.0\\.0\\.1:${local.port}\\s+\\S+\\s+LISTENING\\s+(\\d+)\\s*\$',
+        multiLine: true).firstMatch(netstat ?? '');
+    if (row == null) return false;
+    await host.run('taskkill.exe', ['/PID', row.group(1)!, '/F', '/FI', 'IMAGENAME eq node.exe']);
+    return freed();
   }
 
   Future<Map<String, dynamic>?> _status() async {
@@ -357,37 +447,55 @@ class QrPublisherSupervisor {
   }
 
   /// Starts (or restarts an outdated) publisher and waits for /health.
-  /// [allowPrompt] lets the script open the Windows file picker for the key;
-  /// automatic starts never prompt.
-  Future<PublisherDiagnosis> start({bool allowPrompt = false}) =>
-      _flight ??= _start(allowPrompt).whenComplete(() => _flight = null);
+  /// [keyFile] is a key the owner just chose in the Windows file dialog;
+  /// automatic starts only use a key already on this computer.
+  Future<PublisherDiagnosis> start({String? keyFile}) =>
+      _flight ??= _start(keyFile).whenComplete(() => _flight = null);
 
-  Future<PublisherDiagnosis> _start(bool allowPrompt) async {
+  Future<PublisherDiagnosis> _start(String? chosenKey) async {
+    if (nohutTestBuild) return diagnose();
+    await host.deleteFile(legacyStartupShortcut);
     final before = await diagnose();
     if (before.issue == PublisherIssue.running) return before;
-    // The script replaces an older publisher itself (only node.exe running
-    // QRPublisher\server.mjs on this port), so outdated is startable too.
     final startable = before.issue == PublisherIssue.stopped ||
         before.issue == PublisherIssue.startFailed ||
         before.issue == PublisherIssue.outdated ||
-        (allowPrompt && before.issue == PublisherIssue.keyMissing);
+        (chosenKey != null && before.issue == PublisherIssue.keyMissing);
     if (!startable || before.script == null) return before;
-    await host.launch('powershell.exe', [
-      '-NoProfile', '-STA', '-WindowStyle', 'Hidden',
-      '-ExecutionPolicy', 'Bypass', '-File', before.script!,
-      '-Port', '${_local!.port}',
-      if (!allowPrompt) '-NoPrompt',
-    ]);
+    final local = _local!;
+    final node = (before.node ?? await findNode())?.split(' · ').last;
+    if (node == null) return diagnose();
+    final token = await client.localAccessCode();
+    if (before.issue == PublisherIssue.outdated && !await _stopOld(local, token)) {
+      return diagnose();
+    }
+    final keyError = await _installKey(chosenKey);
+    if (keyError != null) {
+      await _writeStatus('key_missing', keyError);
+      return diagnose();
+    }
+    await _writeStatus('starting', 'Başlatılıyor.');
+    final pid = await host.launch(node, [before.script!],
+        workingDirectory: paths.dirname(before.script!),
+        environment: {
+          'GITHUB_APP_ID': '5845851',
+          'GITHUB_APP_PRIVATE_KEY_FILE': keyFile,
+          'QR_PUBLISH_ADMIN_TOKEN': token,
+          'QR_PUBLISH_PORT': '${local.port}',
+          'QR_PUBLISH_LOG_DIR': serviceDir,
+          'QR_PUBLISH_STATUS_FILE': statusFile,
+        });
+    if (pid != null) await host.writeText(pidFile, '$pid');
     final launched = DateTime.now().toUtc()
         .subtract(const Duration(seconds: 2)).toIso8601String();
     final deadline = DateTime.now().add(
-        allowPrompt ? startTimeout * 6 : startTimeout);
+        startTimeout);
     while (DateTime.now().isBefore(deadline)) {
       await host.wait(const Duration(milliseconds: 500));
-      final h = await host.health(_local!);
+      final h = await host.health(local);
       if (h != null && h['version'] == qrPublisherVersion) return diagnose();
       final report = await _status();
-      // The script reports a definite failure (no Node, no key, port...).
+      // The publisher reports a definite failure (port taken, bad key...).
       if (report?['state'] is String &&
           !{'starting', 'running'}.contains(report!['state']) &&
           '${report['at']}'.compareTo(launched) > 0) {
@@ -406,6 +514,8 @@ class QrPublisherSupervisor {
   /// POS launch: bring the publisher up quietly when everything it needs is
   /// present. Never prompts, never changes credentials.
   Future<PublisherDiagnosis> ensureRunning() async {
+    if (nohutTestBuild) return diagnose();
+    if (host.isWindows) await host.deleteFile(legacyStartupShortcut);
     final d = await diagnose();
     if (d.issue == PublisherIssue.stopped ||
         d.issue == PublisherIssue.outdated) {
@@ -413,4 +523,20 @@ class QrPublisherSupervisor {
     }
     return d;
   }
+}
+
+/// The Windows file dialog for the GitHub App key (no PowerShell).
+Future<String?> chooseQrPublisherKey() async {
+  final file = await openFile(acceptedTypeGroups: const [
+    XTypeGroup(label: 'GitHub App Private Key (*.pem)', extensions: ['pem']),
+  ], confirmButtonText: 'Seç');
+  return file?.path;
+}
+
+/// Start for a button press: asks for the key file only when it is missing.
+Future<PublisherDiagnosis> startPublisherFromButton(
+    QrPublisherSupervisor sup, PublisherDiagnosis d) async {
+  if (d.fix != PublisherFix.chooseKey) return sup.start();
+  final key = await chooseQrPublisherKey();
+  return key == null ? d : sup.start(keyFile: key);
 }
