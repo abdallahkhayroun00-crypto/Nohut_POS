@@ -75,7 +75,8 @@ class _StaffHomeState extends State<StaffHome> {
     setState(() {
       _dirty();
       final id = product['id'];
-      final index = cart.indexWhere((e) => e.productId == id);
+      final index = cart.indexWhere((e) => e.productId == id &&
+          e.note.isEmpty && e.removed.isEmpty);
       if (index >= 0) {
         cart[index].qty++;
       } else {
@@ -123,9 +124,35 @@ class _StaffHomeState extends State<StaffHome> {
     if (selection == 'add') _target(n, existing);
   }
 
+  /// Edit a cart line. With several units the staff chooses whether the note
+  /// and removed ingredients apply to one unit or to all of them.
   Future<void> _edit(CartEntry line) async {
-    final note = TextEditingController(text: line.note);
-    final removed = TextEditingController(text: line.removed.join(', '));
+    var single = false;
+    if (line.qty > 1) {
+      final choice = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => SimpleDialog(
+          title: Text('${line.name} · ${line.qty} adet'),
+          children: [
+            SimpleDialogOption(
+              key: const ValueKey('customize-one-unit'),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Sadece 1 adedi ayrı düzenle')),
+            SimpleDialogOption(
+              key: const ValueKey('customize-all-units'),
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Hepsini birlikte düzenle')),
+          ],
+        ),
+      );
+      if (choice == null || !mounted) return;
+      single = choice;
+    }
+    final target = single
+        ? CartEntry(line.product, qty: 1, note: line.note, removed: [...line.removed])
+        : line;
+    final note = TextEditingController(text: target.note);
+    final removed = TextEditingController(text: target.removed.join(', '));
     final result = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
@@ -133,17 +160,18 @@ class _StaffHomeState extends State<StaffHome> {
         padding: EdgeInsets.fromLTRB(20, 18, 20,
             MediaQuery.viewInsetsOf(ctx).bottom + 22),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Text(line.name, style: const TextStyle(
-            fontFamily: 'Bree', fontSize: 24)),
+          Text(single ? '${line.name} · 1 adet' : line.name,
+            style: const TextStyle(fontFamily: 'Bree', fontSize: 24)),
           const SizedBox(height: 16),
-          TextField(controller: note, maxLength: 500,
+          TextField(key: const ValueKey('edit-note'), controller: note, maxLength: 500,
             decoration: const InputDecoration(labelText: 'Ürün notu')),
           const SizedBox(height: 8),
-          TextField(controller: removed,
+          TextField(key: const ValueKey('edit-removed'), controller: removed,
             decoration: const InputDecoration(
               labelText: 'Çıkarılacak malzemeler (virgülle ayırın)')),
           const SizedBox(height: 14),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true),
+          FilledButton(key: const ValueKey('edit-save'),
+            onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Kaydet')),
         ]),
       ),
@@ -151,13 +179,47 @@ class _StaffHomeState extends State<StaffHome> {
     if (result == true && mounted) {
       setState(() {
         _dirty();
-        line.note = note.text.trim();
-        line.removed = removed.text.split(',').map((s) => s.trim())
+        target.note = note.text.trim();
+        target.removed = removed.text.split(',').map((s) => s.trim())
             .where((s) => s.isNotEmpty).toList();
+        if (single) {
+          line.qty--;
+          cart.insert(cart.indexOf(line) + 1, target);
+        }
       });
     }
-    note.dispose();
-    removed.dispose();
+    // Not disposed here: the sheet is still animating out and would read them.
+    // A plain controller with no listeners is released with its widgets.
+  }
+
+  /// Items already on the open account, one tap each (Ek Sipariş).
+  Widget _quickRepeat() {
+    final order = c.orders.where((o) => o['id'] == targetOrderId).firstOrNull;
+    if (order == null) return const SizedBox.shrink();
+    final counts = <String, int>{};
+    for (final l in orderLines(order)) {
+      final n = '${l['name'] ?? ''}';
+      if (n.isEmpty) continue;
+      counts[n] = (counts[n] ?? 0) + ((l['qty'] as num?)?.toInt() ?? 1);
+    }
+    final chips = <Widget>[];
+    counts.forEach((n, q) {
+      final product = c.products.where((p) => p['name'] == n).firstOrNull;
+      if (product == null) return;
+      chips.add(ActionChip(
+        key: ValueKey('quick-add-${product['id']}'),
+        avatar: const Icon(Icons.add, size: 18),
+        label: Text('$n · $q'),
+        onPressed: () => _add(product)));
+    });
+    if (chips.isEmpty) return const SizedBox.shrink();
+    return Padding(padding: const EdgeInsets.only(top: 12), child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('Hesaptakiler · bir dokunuşla ekle', style: TextStyle(
+          color: context.nohut.heading, fontSize: 13, fontWeight: FontWeight.w700)),
+        const SizedBox(height: 6),
+        Wrap(spacing: 8, runSpacing: 6, children: chips),
+      ]));
   }
 
   void _openWork([int initialTab = 0]) => Navigator.of(context).push(MaterialPageRoute<void>(
@@ -596,6 +658,8 @@ class _StaffHomeState extends State<StaffHome> {
 
   Widget _cartLine(CartEntry line) {
     final nc = context.nohut;
+    final nth = cart.where((e) => e.productId == line.productId).toList().indexOf(line);
+    final kid = nth <= 0 ? '${line.productId}' : '${line.productId}-$nth';
     final details = [
       if (line.removed.isNotEmpty) 'Çıkar: ${line.removed.join(', ')}',
       if (line.note.trim().isNotEmpty) line.note.trim(),
@@ -615,7 +679,7 @@ class _StaffHomeState extends State<StaffHome> {
         ]),
         if (details.isNotEmpty)
           Padding(padding: const EdgeInsets.only(top: 6), child: Text(details.join(' · '),
-            key: ValueKey('cart-details-${line.productId}'),
+            key: ValueKey('cart-details-$kid'),
             style: TextStyle(color: nc.heading, fontSize: 13, fontWeight: FontWeight.w600))),
         const SizedBox(height: 6),
         Row(children: [
@@ -625,7 +689,7 @@ class _StaffHomeState extends State<StaffHome> {
               borderRadius: BorderRadius.circular(24)),
             child: Row(mainAxisSize: MainAxisSize.min, children: [
               IconButton(
-                key: ValueKey('cart-minus-${line.productId}'),
+                key: ValueKey('cart-minus-$kid'),
                 tooltip: line.qty == 1 ? 'Sepetten çıkar' : 'Bir azalt',
                 visualDensity: VisualDensity.compact,
                 onPressed: () => setState(() {
@@ -637,7 +701,7 @@ class _StaffHomeState extends State<StaffHome> {
               SizedBox(width: 28, child: Text('${line.qty}', textAlign: TextAlign.center,
                 style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16))),
               IconButton(
-                key: ValueKey('cart-plus-${line.productId}'),
+                key: ValueKey('cart-plus-$kid'),
                 tooltip: 'Bir artır',
                 visualDensity: VisualDensity.compact,
                 onPressed: () => setState(() {
@@ -732,6 +796,7 @@ class _StaffHomeState extends State<StaffHome> {
             key: const ValueKey('cart-addition-hint'),
             style: TextStyle(color: nc.heading, fontSize: 13, fontWeight: FontWeight.w600))),
         ])),
+      if (addition) _quickRepeat(),
       const SizedBox(height: 14),
       if (cart.isEmpty) Card(child: NohutEmpty(
         icon: Icons.shopping_basket_outlined, message: 'Sepet henüz boş',
