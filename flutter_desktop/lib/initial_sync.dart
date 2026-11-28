@@ -626,8 +626,13 @@ class InitialSyncRunner {
   InitialSyncProgress _finish(InitialSyncPlan plan, int total) {
     db.execute('BEGIN IMMEDIATE');
     try {
-      // The snapshot already contains every change up to snapshot_seq.
-      ackOutboxThrough(db, plan.snapshotSeq, _now);
+      // The snapshot already contains every change up to snapshot_seq, so
+      // the cloud checkpoint starts there (activate sets the same values).
+      db.execute('UPDATE sync_outbox SET acked_at=? WHERE acked_at IS NULL AND seq<=?',
+          [_now, plan.snapshotSeq]);
+      setSyncState(db, 'last_acked_seq', '${plan.snapshotSeq}');
+      setSyncState(db, 'last_acked_revision', '${plan.snapshotRevision}');
+      setSyncState(db, 'last_sync_at', _now);
       _setPlan(plan.migrationId, 'active', finished: true);
       setSyncState(db, 'initial_sync_state', 'active');
       db.execute('COMMIT');

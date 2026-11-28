@@ -17,11 +17,13 @@ class FakeServer implements SyncTransport {
   final appliedEvents = <String>[]; // event ids, in order
   int lastSeq = 0;
   int calls = 0;
-  bool loseNextAck = false, offline = false;
+  bool loseNextAck = false, offline = false, omitWatermark = false;
+  bool revoked = false;
 
   @override
   Future<IngestResult> ingest(SyncTransaction tx) async {
     calls++;
+    if (revoked) throw const SyncRejectedException('authentication_denied');
     if (offline) throw const SyncNetworkException('bağlantı yok');
     final known = committed[tx.txId];
     if (known != null) {
@@ -43,7 +45,8 @@ class FakeServer implements SyncTransport {
       loseNextAck = false;
       throw const SyncNetworkException('yanıt kayboldu'); // committed!
     }
-    return IngestResult(IngestStatus.accepted, ackedThroughSeq: lastSeq);
+    return IngestResult(IngestStatus.accepted,
+        ackedThroughSeq: omitWatermark ? null : lastSeq);
   }
 }
 
@@ -151,6 +154,32 @@ void main() {
     expect(worker.status().lastError, startsWith('gap'));
   });
 
+  test('batch target never cuts a transaction even when it is first', () {
+    final snap = store.read();
+    for (final order in (snap.data['orders'] as List).cast<Map>()) {
+      order['serviceStatus'] = 'Hazır';
+    }
+    store.replace(snap.data, snap.revision);
+    final expected = pendingOutbox(db).length;
+    expect(expected, greaterThan(1));
+    final group = groupPending(db, limitEvents: 1).single;
+    expect(group.events.length, expected);
+    expect(group.lastSeq - group.firstSeq + 1, expected);
+    expect(group.events.first.toJson()['payload_json'],
+        group.events.first.payloadJson);
+  });
+
+  test('success without a durable watermark must not acknowledge', () async {
+    change(0);
+    server.omitWatermark = true;
+    expect(await worker.flush(), 0);
+    expect(pendingOutbox(db), hasLength(1));
+    expect(worker.status().stopped, true);
+    expect(worker.status().lastError, contains('checkpoint'));
+    expect(await worker.flush(manual: true), 1);
+    expect(server.appliedEvents, hasLength(1));
+  });
+
   test('transaction ids and hashes are deterministic across retries', () {
     change(0);
     final a = groupPending(db).single, b = groupPending(db).single;
@@ -162,5 +191,34 @@ void main() {
     expect(json['event_count'], 1);
     expect(json['first_seq'], json['last_seq']);
     expect(asMaps(json['events']).single['payload'], isA<Map>());
+  });
+
+  test('permanent transport failure retains every event and stops automatic retries', () async {
+    change(0);
+    server.revoked = true;
+    expect(await worker.flush(), 0);
+    expect(worker.status().stopped, true);
+    expect(worker.status().lastError, contains('authentication_denied'));
+    expect(pendingOutbox(db), hasLength(1));
+    expect(await worker.flush(), 0);
+    expect(server.calls, 1);
+  });
+
+  test('restore fence blocks manual and automatic synchronization', () async {
+    change(0);
+    setSyncState(db, 'remote_execution_blocked', 'restore_reconciliation_required');
+    expect(await worker.flush(manual: true), 0);
+    expect(await worker.flush(), 0);
+    expect(server.calls, 0);
+    expect(pendingOutbox(db), hasLength(1));
+  });
+
+  test('ACK and its local checkpoint commit together', () async {
+    change(0);
+    final tx = groupPending(db).single;
+    expect(await worker.flush(), 1);
+    expect(syncStateValue(db, 'last_acked_seq'), '${tx.lastSeq}');
+    expect(syncStateValue(db, 'last_acked_revision'), '${tx.sourceRevision}');
+    expect(syncStateValue(db, 'last_sync_at'), now.toIso8601String());
   });
 }

@@ -87,14 +87,14 @@ const syncEntityRegistry = <String, SyncEntity>{
     cloudTarget: 'shift_plans',
     policy: 'V6.0 Vardiya (planned, manual, no approval); cancelled not '
         'deleted; edits audited in history; never becomes pay',
-    status: InventoryStatus.proposedV5,
+    status: InventoryStatus.inFlightPr,
   ),
   'timesheetWeeks': SyncEntity(
     classes: {DataClass.personalPii, DataClass.internal},
     cloudTarget: 'timesheet_weeks',
     policy: 'V6.1 weekly Mesai submission (communicated, not approved); '
         'every submission snapshot kept',
-    status: InventoryStatus.proposedV5,
+    status: InventoryStatus.inFlightPr,
   ),
   'staffNotices': SyncEntity(
     classes: {DataClass.internal},
