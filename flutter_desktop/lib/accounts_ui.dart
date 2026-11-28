@@ -24,6 +24,34 @@ const _sectionNames = {
   'users': 'Kullanıcılar',
 };
 
+/// Plain Turkish names for the grant editor; the id stays as a small caption
+/// so support can match it to the contract. A missing entry shows the id.
+const operationNames = {
+  'menu.view': 'Menüyü görme', 'menu.product.edit': 'Ürün düzenleme',
+  'menu.price.edit': 'Fiyat değiştirme', 'menu.category.edit': 'Kategori düzenleme',
+  'menu.campaign.edit': 'Kampanya düzenleme', 'menu.stock.toggle': 'Stok aç/kapat',
+  'menu.qr.publish': 'QR menüyü yayınlama',
+  'sync.view': 'Senkronizasyon durumunu görme', 'sync.manual': 'Elle senkronizasyon',
+  'sync.retry': 'Başarısız senkronizasyonu yeniden deneme', 'sync.auto.configure': 'Otomatik senkronizasyon ayarı',
+  'backup.view': 'Yedekleri görme', 'backup.manual': 'Elle yedek alma',
+  'backup.auto.configure': 'Otomatik yedek ayarı', 'backup.verify': 'Yedeği doğrulama',
+  'tables.view': 'Masaları görme', 'orders.create': 'Sipariş alma', 'orders.edit': 'Siparişi düzeltme',
+  'orders.move': 'Masa taşıma', 'orders.release': 'Masayı boşaltma',
+  'pickup.contact.view': 'Gel-Al müşteri iletişimini görme',
+  'payments.take': 'Ödeme alma', 'payments.correct': 'Ödeme düzeltme', 'payments.refund': 'İade',
+  'receipts.print': 'Fiş yazdırma', 'online.view': 'Online siparişleri görme',
+  'online.act': 'Online siparişi işleme', 'shifts.self': 'Kendi mesai ve vardiyası',
+  'payroll.self.view': 'Kendi ücretini görme', 'dashboard.view': 'Genel bakış',
+  'sales.view': 'Satış tutarlarını görme', 'finance.view': 'Finansı görme',
+  'finance.edit': 'Finans düzenleme', 'expenses.quick_add': 'Hızlı gider ekleme',
+  'reports.view': 'Raporları görme', 'reports.export': 'Rapor dışa aktarma',
+  'staff.view': 'Personeli ve ekip performansını görme', 'staff.manage': 'Personel düzenleme',
+  'shifts.manage': 'Vardiya planlama', 'payroll.view': 'Maaşları görme',
+  'payroll.manage': 'Maaş ödemesi işleme', 'accounts.view': 'Cari hesapları görme',
+  'accounts.settle': 'Cari hesap kapatma', 'integrations.view': 'Entegrasyonları görme',
+  'reviews.reply': 'Yorum yanıtlama', 'audit.view': 'Denetim kaydını görme',
+};
+
 class AccountsPanel extends StatefulWidget {
   const AccountsPanel({super.key, required this.auth, required this.employees, this.yoneticiUrl});
   final LocalAuth auth;
@@ -163,8 +191,9 @@ class _AccountsPanelState extends State<AccountsPanel> {
             CheckboxListTile(
               dense: true,
               value: grants.contains(op),
-              title: Text(op),
+              title: Text(operationNames[op] ?? op),
               subtitle: Text([
+                op,
                 if (permissionCatalogue[op]!.sensitivity == 'elevated') 'hassas',
                 permissionCatalogue[op]!.clients.join(' · '),
               ].join(' · ')),
