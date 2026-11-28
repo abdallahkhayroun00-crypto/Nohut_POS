@@ -263,12 +263,31 @@ String tgoKitchenTicket(Json order) {
       ? order['totalCents'] as int
       : sum;
   final customer = '${order['customerName'] ?? ''}'.trim();
+  // Owner request 7236654585: courier type, and contact details only when
+  // the restaurant itself delivers (STORE). Trendyol GO couriers and Gel-Al
+  // need no address on the kitchen ticket; masked values are never printed.
+  final delivery = '${order['deliveryType'] ?? ''}'.trim().toUpperCase();
+  final pickup = order['pickup'] == true;
+  final courier = pickup ? null : switch (delivery) {
+    'GO' => 'Trendyol GO Kuryesi',
+    'STORE' => 'Restoran Kuryesi',
+    _ => null,
+  };
+  bool masked(String v) => v.contains('*') || RegExp(r'[xX•]{3,}').hasMatch(v);
+  String contact(String key) {
+    final v = '${order[key] ?? ''}'.trim();
+    return !pickup && delivery == 'STORE' && v.isNotEmpty && !masked(v) ? v : '';
+  }
+  final phone = contact('customerPhone'), address = contact('deliveryAddress');
   return [
     'NOHUT FALAFEL · SİPARİŞ FİŞİ',
     'MALİ FİŞ DEĞİLDİR',
     '#${displayOrderNumber(order)} · Trendyol Go · $type',
     'Platform no: ${order['orderNumber']}${code.isEmpty ? '' : ' · Kod: $code'}',
     if (customer.isNotEmpty) 'Müşteri: $customer',
+    if (courier != null) 'Kurye: $courier',
+    if (phone.isNotEmpty) 'Tel: $phone',
+    if (address.isNotEmpty) 'Adres: $address',
     receiptStamp(order['createdAt']),
     for (final line in lines) ...[
       unit(line) > 0
