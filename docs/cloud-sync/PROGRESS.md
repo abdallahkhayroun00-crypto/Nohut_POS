@@ -92,6 +92,18 @@ Active engineers: **Claude** (Windows, Android, PWA/LAN, auth UI, UI/UX, all cli
 
 **Blockers / owner actions:** live Trendyol read-only check needs explicit owner authorization (R1); physical iPhone HTTPS/Safari test (L4); any FCM project needs owner approval (N4); KVKK gate unchanged.
 
+## Antigravity (Gemini) Backend — Increment E: Standalone Platform Yönetimi Control Plane (2026-11-28)
+
+- **Branch / PR:** `gemini/backend-continuation` (**PR #46** targeting `main`).
+- **Status:** `Implemented / Tested` (NOT self-verified; independent review requested from Claude).
+- **Implemented (`supabase/migrations/20261128030000_nohut_platform_management.sql`, `docs/contracts/v1/platform-management.md`):**
+  1. **Idempotent `platform.*` permissions:** `platform.view`, `platform.store.toggle`, `platform.schedule.edit`, `platform.catalog.toggle` mirrored in `docs/contracts/v1/permissions.json` and `flutter_desktop/lib/permission_roles.g.dart` (byte-for-byte compatible with PR #51 `20261128020000`).
+  2. **Authoritative Read Model (`public.nohut_platform_cards_view`):** Requires `platform.view`, returns all 3 providers in fixed order (`trendyol_go`, `yemeksepeti`, `migros_yemek`) matching `PlatformCard.fromJson` field-for-field.
+  3. **Durable Idempotent Store `Aç/Kapat` (`public.nohut_platform_enqueue_status_set`):** Requires `platform.store.toggle` + `p_confirmed = true`; enforces connected + `can_toggle_store`, verified store ID, ≤10 min fresh readback, no pending/unknown mutation in flight, and `expectedStatus == working_status`; enqueues `platform_store_status_set` (5m TTL) in `nohut_private.commands`; locks `pendingMutation`; appends to immutable `platform_status_audit`.
+  4. **Read-Only Refresh & Unknown-Outcome Reconciliation:** `public.nohut_platform_enqueue_refresh`, `public.nohut_platform_enqueue_reconcile`, and Windows-agent RPCs `public.nohut_agent_report_platform_state` & `public.nohut_agent_resolve_platform_mutation`.
+- **Validation (synthetic data only):**
+  - Local Docker Postgres 16 (exact CI harness): **66/66 migrations & 33/33 SQL test suites PASS** under both `postgres` superuser and `cloud_migrator` (`NOSUPERUSER NOBYPASSRLS`).
+
 ## Antigravity (Gemini) Backend — Increment D Clean Resync & Canonical JSON Contract (2026-11-28)
 
 - **Branch / PR:** `gemini/backend-continuation` (**PR #46** draft targeting `chatgpt/pr-05b-cloud-rpcs`).
