@@ -166,6 +166,28 @@ class LanAuthGate {
             if (e.code == 'invalid_credentials') _fail(ip);
             rethrow;
           }
+        case 'activate':
+          // İlk Aktivasyon: one-time code from Windows › Kullanıcılar.
+          if (_throttled(ip)) {
+            return const GateReply(429, {'error': 'too_many_attempts',
+              'message': 'Çok fazla hatalı deneme. Biraz sonra tekrar deneyin.'});
+          }
+          try {
+            final r = await auth.activate(
+              username: '${body['username'] ?? ''}',
+              code: '${body['code'] ?? ''}',
+              password: '${body['password'] ?? ''}',
+              pin: '${body['pin'] ?? ''}',
+              deviceId: '${body['deviceId'] ?? ''}',
+              client: client,
+              label: '${body['label'] ?? ''}',
+            );
+            if (token != null && token != r.token) auth.logout(token);
+            return GateReply(200, {'session': r.context.toJson()}, setToken: r.token);
+          } on LocalAuthException catch (e) {
+            if (e.code == 'invalid_activation') _fail(ip);
+            rethrow;
+          }
         case 'unlock':
           if (token == null) return const GateReply(401, {'error': 'auth_required'});
           if (_throttled(ip)) return const GateReply(429, {'error': 'too_many_attempts'});

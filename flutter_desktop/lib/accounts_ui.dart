@@ -5,6 +5,7 @@
 /// PIN or token is ever shown again after it is entered.
 library;
 
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
@@ -108,16 +109,27 @@ class _AccountsPanelState extends State<AccountsPanel> {
     String role = owner ? 'Yönetici' : 'Personel';
     int? employee;
     String? error;
+    // Staff normally get a one-time code and choose their own password.
+    var withCode = !owner;
     final ok = await showDialog<bool>(
       context: context,
       builder: (c) => StatefulBuilder(builder: (c, set) => AlertDialog(
         title: Text(owner ? 'İşletme sahibi hesabı' : 'Kullanıcı ekle'),
         content: SizedBox(width: 380, child: Column(mainAxisSize: MainAxisSize.min, children: [
           TextField(controller: name, decoration: const InputDecoration(labelText: 'Kullanıcı adı')),
-          TextField(controller: pass, obscureText: true,
-              decoration: const InputDecoration(labelText: 'Şifre (en az 8 karakter)')),
-          TextField(controller: pass2, obscureText: true,
-              decoration: const InputDecoration(labelText: 'Şifre (tekrar)')),
+          if (!owner) SwitchListTile(
+            key: const ValueKey('user-with-code'),
+            contentPadding: EdgeInsets.zero,
+            value: withCode,
+            onChanged: (v) => set(() => withCode = v),
+            title: const Text('Aktivasyon koduyla'),
+            subtitle: const Text('Kişi telefonunda kodu girip kendi şifresini ve PIN’ini belirler.')),
+          if (!withCode) ...[
+            TextField(controller: pass, obscureText: true,
+                decoration: const InputDecoration(labelText: 'Şifre (en az 8 karakter)')),
+            TextField(controller: pass2, obscureText: true,
+                decoration: const InputDecoration(labelText: 'Şifre (tekrar)')),
+          ],
           if (!owner) DropdownButtonFormField<String>(
             initialValue: role,
             decoration: const InputDecoration(labelText: 'Rol (varsayılan yetkiler)'),
@@ -140,15 +152,59 @@ class _AccountsPanelState extends State<AccountsPanel> {
         actions: [
           TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Vazgeç')),
           FilledButton(onPressed: () {
-            if (pass.text != pass2.text) return set(() => error = 'Şifreler aynı değil.');
+            if (!withCode && pass.text != pass2.text) return set(() => error = 'Şifreler aynı değil.');
             Navigator.pop(c, true);
           }, child: const Text('Oluştur')),
         ],
       )),
     );
     if (ok != true) return;
-    await _run(() => auth.createUser(username: name.text, password: pass.text, role: role,
-        employeeId: employee, isOwner: owner, actor: actor), 'Hesap oluşturuldu.');
+    if (!withCode) {
+      await _run(() => auth.createUser(username: name.text, password: pass.text, role: role,
+          employeeId: employee, isOwner: owner, actor: actor), 'Hesap oluşturuldu.');
+      return;
+    }
+    String? userId;
+    await _run(() async {
+      // A random password nobody knows until the code is used.
+      final rnd = Random.secure();
+      final placeholder = List.generate(32, (_) => rnd.nextInt(36).toRadixString(36)).join();
+      userId = await auth.createUser(username: name.text, password: placeholder, role: role,
+          employeeId: employee, actor: actor);
+    }, 'Hesap oluşturuldu.');
+    if (userId != null) await _issueActivation(userId!, name.text.trim(), confirm: false);
+  }
+
+  Future<void> _issueActivation(String userId, String username, {bool confirm = true}) async {
+    if (confirm && !await _confirm('Aktivasyon kodu oluştur',
+        '$username için yeni bir tek seferlik kod oluşturulsun mu? Mevcut şifresi ve açık oturumları geçersiz olur; '
+        'kişi telefonunda kodu girip yeni şifresini ve PIN’ini belirler.')) {
+      return;
+    }
+    ({String code, DateTime expiresAt})? issued;
+    await _run(() async => issued = await auth.issueActivation(userId, actor: actor), 'Aktivasyon kodu hazır.');
+    final i = issued;
+    if (i == null || !mounted) return;
+    final until = i.expiresAt.toLocal();
+    String two(int n) => n.toString().padLeft(2, '0');
+    await showDialog<void>(context: context, builder: (c) => AlertDialog(
+      title: const Text('Aktivasyon kodu'),
+      content: SizedBox(width: 380, child: Column(mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('Kullanıcı adı: $username', style: const TextStyle(fontWeight: FontWeight.w700)),
+        const SizedBox(height: 12),
+        Center(child: SelectableText(i.code, key: const ValueKey('activation-code'),
+          style: const TextStyle(fontSize: 34, fontWeight: FontWeight.w800, letterSpacing: 4,
+            color: NohutBrand.green))),
+        const SizedBox(height: 12),
+        Text('Son kullanım: ${two(until.day)}.${two(until.month)}.${until.year} ${two(until.hour)}:${two(until.minute)} · tek kullanımlık',
+          style: const TextStyle(color: NohutBrand.muted)),
+        const SizedBox(height: 8),
+        const Text('Kişi Nohut Personel uygulamasında “Aktivasyon kodum var”a dokunup kullanıcı adını ve bu kodu girer. '
+          'Kod bu pencere kapanınca bir daha gösterilmez; gerekirse yenisini oluşturun.'),
+      ])),
+      actions: [FilledButton(onPressed: () => Navigator.pop(c), child: const Text('Tamam'))],
+    ));
   }
 
   Future<void> _passwordDialog(Json user) async {
@@ -256,6 +312,8 @@ class _AccountsPanelState extends State<AccountsPanel> {
         return _run(() async => auth.revokeSessions(id, devicesToo: true, actor: actor), 'Cihazlar kaldırıldı.');
       case 'mfa':
         return _mfaDialog(user);
+      case 'activation':
+        return _issueActivation(id, '${user['username']}');
       case 'toggle':
         final active = user['active'] == true;
         if (active && !await _confirm('Hesabı devre dışı bırak', '${user['username']} artık giriş yapamaz. Geçmiş kayıtları korunur.')) return;
@@ -371,6 +429,9 @@ class _AccountsPanelState extends State<AccountsPanel> {
               if (_employeeName(u['employeeId']).isNotEmpty) _employeeName(u['employeeId']),
               '${u['devices']} cihaz',
               if (u['isOwner'] == true) u['mfa'] == true ? 'iki adımlı doğrulama açık' : 'iki adımlı doğrulama kapalı',
+              if (u['activation'] is Map)
+                (u['activation'] as Map)['expired'] == true ? 'aktivasyon kodu geçersiz, yenisini oluşturun'
+                    : 'aktivasyon bekliyor',
             ].join(' · ')),
             trailing: PopupMenuButton<String>(
               tooltip: 'İşlemler',
@@ -381,6 +442,8 @@ class _AccountsPanelState extends State<AccountsPanel> {
                   for (final r in localAuthRoles)
                     if (r != u['role']) PopupMenuItem(value: 'role:$r', child: Text('Rol: $r')),
                 ],
+                if (u['isOwner'] != true && u['active'] == true)
+                  const PopupMenuItem(value: 'activation', child: Text('Aktivasyon kodu oluştur')),
                 const PopupMenuItem(value: 'password', child: Text('Şifre sıfırla')),
                 const PopupMenuItem(value: 'pin', child: Text('PIN sıfırla')),
                 const PopupMenuItem(value: 'sessions', child: Text('Oturumları kapat')),

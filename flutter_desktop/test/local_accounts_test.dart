@@ -247,4 +247,50 @@ void main() {
     // RFC 6238 test vector (SHA-1, secret "12345678901234567890", T=59 s).
     expect(LocalAuth.totpCode('GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ', 1), '287082');
   });
+
+  test('İlk Aktivasyon: one-time code sets own password and this device PIN', () async {
+    final (owner, staff) = await seed();
+    await expectLater(auth.issueActivation(owner), throwsA(isA<LocalAuthException>()));
+    final old = await auth.login(username: 'deniz', password: 'sentetik-sifre-2', deviceId: dev1, client: 'personel');
+    final issued = await auth.issueActivation(staff, actor: owner);
+    expect(issued.code, matches(RegExp(r'^[A-Z0-9]{4}-[A-Z0-9]{4}$')));
+    expect(issued.expiresAt, now.add(LocalAuth.activationLifetime));
+    // Issuing is a reset: old password and sessions stop working.
+    expect(auth.check(old.token, 'personel').ok, isFalse);
+    await expectLater(auth.login(username: 'deniz', password: 'sentetik-sifre-2', deviceId: dev1, client: 'personel'),
+        throwsA(isA<LocalAuthException>()));
+    expect(auth.users().firstWhere((u) => u['userId'] == staff)['activation'], {'expiresAt': issued.expiresAt.toIso8601String(), 'expired': false});
+    // The code is never stored in clear.
+    expect(db.select('SELECT code_hash FROM auth_activations').single['code_hash'], isNot(contains(issued.code.replaceAll('-', ''))));
+    // Weak PIN refused before the code is used.
+    await expectLater(auth.activate(username: 'deniz', code: issued.code, password: 'kendi-sifrem-9',
+        pin: '12345', deviceId: dev2, client: 'personel'), throwsA(predicate((e) => e is LocalAuthException && e.code == 'weak_pin')));
+    final r = await auth.activate(username: 'Deniz ', code: issued.code.toLowerCase().replaceAll('-', ' '),
+        password: 'kendi-sifrem-9', pin: '48207', deviceId: dev2, client: 'personel', label: 'Android');
+    expect(r.context.ok, isTrue);
+    expect(auth.devices(userId: staff).firstWhere((d) => d['deviceId'] == dev2)['hasPin'], isTrue);
+    expect(auth.users().firstWhere((u) => u['userId'] == staff)['activation'], isNull);
+    // One use only; the new password works.
+    await expectLater(auth.activate(username: 'deniz', code: issued.code, password: 'kendi-sifrem-9',
+        pin: '48207', deviceId: dev2, client: 'personel'), throwsA(predicate((e) => e is LocalAuthException && e.code == 'invalid_activation')));
+    expect((await auth.login(username: 'deniz', password: 'kendi-sifrem-9', deviceId: dev2, client: 'personel')).context.ok, isTrue);
+  });
+
+  test('activation codes expire and five wrong tries void them', () async {
+    final (owner, staff) = await seed();
+    var issued = await auth.issueActivation(staff, actor: owner);
+    now = now.add(LocalAuth.activationLifetime);
+    await expectLater(auth.activate(username: 'deniz', code: issued.code, password: 'kendi-sifrem-9',
+        pin: '48207', deviceId: dev2, client: 'personel'), throwsA(isA<LocalAuthException>()));
+    expect(auth.activationOf(staff)!['expired'], isTrue);
+    issued = await auth.issueActivation(staff, actor: owner);
+    for (var i = 0; i < 5; i++) {
+      await expectLater(auth.activate(username: 'deniz', code: 'AAAA-AAAA', password: 'kendi-sifrem-9',
+          pin: '48207', deviceId: dev2, client: 'personel'), throwsA(isA<LocalAuthException>()));
+    }
+    await expectLater(auth.activate(username: 'deniz', code: issued.code, password: 'kendi-sifrem-9',
+        pin: '48207', deviceId: dev2, client: 'personel'), throwsA(isA<LocalAuthException>()));
+    await expectLater(auth.activate(username: 'nobody', code: issued.code, password: 'kendi-sifrem-9',
+        pin: '48207', deviceId: dev2, client: 'personel'), throwsA(isA<LocalAuthException>()));
+  });
 }

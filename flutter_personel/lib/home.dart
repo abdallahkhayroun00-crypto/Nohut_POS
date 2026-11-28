@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'expense_drafts.dart';
 import 'performance_page.dart';
 import 'personel_dashboard.dart';
+import 'activation_page.dart';
 import 'staff_expense_page.dart';
 import 'models.dart';
 import 'pos_api.dart';
@@ -238,7 +239,7 @@ class _StaffHomeState extends State<StaffHome> {
     final locked = c.api.sessionStatus == 'locked';
     final user = TextEditingController(), pass = TextEditingController();
     String? error;
-    var busy = false;
+    var busy = false, activate = false;
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -284,11 +285,23 @@ class _StaffHomeState extends State<StaffHome> {
             }
           }, child: busy ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2))
               : Text(locked ? 'Kilidi Aç' : 'Giriş Yap')),
+          if (!locked) ...[
+            const SizedBox(height: 6),
+            TextButton.icon(
+              key: const ValueKey('open-activation'),
+              onPressed: busy ? null : () { activate = true; Navigator.pop(sheet); },
+              icon: const Icon(Icons.key_outlined),
+              label: const Text('İlk kez mi? Aktivasyon kodum var')),
+          ],
         ])),
       )),
     );
     user.dispose();
     pass.dispose();
+    if (activate && mounted) {
+      await Navigator.of(context).push(MaterialPageRoute<bool>(
+          builder: (_) => ActivationPage(api: c.api)));
+    }
     if (mounted) setState(() => _dirty());
   }
 

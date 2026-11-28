@@ -232,4 +232,22 @@ void main() {
     expect(LanAuthGate.tokenFrom(cookie: 'a=b; nohut_lan=xyz'), 'xyz');
     expect(LanAuthGate.tokenFrom(authorization: 'Bearer pairing-token'), isNull);
   });
+
+  test('İlk Aktivasyon over LAN signs the person in with a cookie', () async {
+    final ayse = auth.users().firstWhere((u) => u['username'] == 'ayse')['userId'] as String;
+    final issued = await auth.issueActivation(ayse);
+    final (bad, badBody, _) = await call('POST', '/api/auth/activate', body: {
+      'username': 'ayse', 'code': 'AAAA-AAAA', 'password': 'ayse-yeni-sifre', 'pin': '48207',
+      'deviceId': 'android-aaaaaaaaaaaaaaaa', 'client': 'personel'});
+    expect(bad, 403);
+    expect(badBody['error'], 'invalid_activation');
+    final (ok, body, setCookie) = await call('POST', '/api/auth/activate', body: {
+      'username': 'ayse', 'code': issued.code, 'password': 'ayse-yeni-sifre', 'pin': '48207',
+      'deviceId': 'android-aaaaaaaaaaaaaaaa', 'client': 'personel', 'label': 'Android Personel'});
+    expect(ok, 200, reason: '$body');
+    expect((body['session'] as Map)['employeeId'], 7);
+    final (s, session, _) = await call('GET', '/api/auth/session', cookie: cookieOf(setCookie));
+    expect(s, 200);
+    expect((session['session'] as Map)['status'], 'ok');
+  });
 }
