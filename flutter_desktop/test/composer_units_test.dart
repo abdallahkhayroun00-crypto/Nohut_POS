@@ -2,7 +2,6 @@
 // already on the account (owner request 2026-11-28).
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nohut_falafel_desktop/pos_logic.dart';
 
 import 'visual/pos_flow_render_test.dart' show click, mount, onPlan, shot;
 
