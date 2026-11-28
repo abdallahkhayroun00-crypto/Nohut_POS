@@ -190,7 +190,7 @@ begin
   -- Invalid publish (confirmed: false) and invalid image path (..) MUST fail
   begin
     perform public.nohut_enqueue_command(d_staff, 'personel', pv_staff, req6, 'qr_menu_publish',
-      jsonb_build_object('expectedStamp', stamp1, 'confirmed', false));
+      jsonb_build_object('expectedStamp', stamp1, 'draftSha256', stamp1 || repeat('0', 48), 'confirmed', false));
     raise exception 'unconfirmed publish accepted';
   exception when invalid_parameter_value then null;
   end;
@@ -210,7 +210,7 @@ begin
   end if;
   begin
     perform public.nohut_enqueue_command(d_acct, 'yonetici', pv_acct, req6, 'qr_menu_publish',
-      jsonb_build_object('expectedStamp', stamp1, 'confirmed', true));
+      jsonb_build_object('expectedStamp', stamp1, 'draftSha256', stamp1 || repeat('0', 48), 'confirmed', true));
     raise exception 'muhasebe allowed to publish qr menu';
   exception when insufficient_privilege then null;
   end;

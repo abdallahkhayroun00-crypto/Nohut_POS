@@ -83,6 +83,22 @@ EVIDENCE:
 
 **Blockers / owner actions:** live Trendyol read-only check needs explicit owner authorization (R1); physical iPhone HTTPS/Safari test (L4); any FCM project needs owner approval (N4); KVKK gate unchanged.
 
+## Antigravity (Gemini) Backend Ownership — Increment D: Initial Sync, Resumable Snapshots, Recovery & Strict QR Digest (2026-11-28)
+
+- **Ownership Acknowledged (`#7231137435` / `#7231119516`):** Codex removed from active assignments (historical PR #39 `8d918b2` preserved untouched). Gemini owns remaining P0 Backend & Security on **PR #46 (`gemini/backend-continuation`)** and separate Independent QA on **PR #45 (`gemini/independent-qa`)**. ChatGPT reviews Gemini's backend work independently.
+- **Status:** `Implemented / Tested` (NOT self-verified; independent review requested from ChatGPT).
+- **Implemented (`supabase/migrations/20261127172000_nohut_initial_sync_and_strict_qr_digest.sql`):**
+  1. **Strict QR Publish Digest (P0 checklist):** `qr_menu_publish` now **requires** full 64-hex `draftSha256` (prefix matching 16-hex `expectedStamp`); omitting `draftSha256` is rejected (`22023`).
+  2. **First Database Synchronization & Snapshot/Recovery RPCs (Windows-agent authenticated only):**
+     - `public.nohut_agent_begin_initial_sync` (requires `p_backup_verified = true`, idempotent on `migration_id`, prevents concurrent active/uploading migrations per epoch).
+     - `public.nohut_agent_upload_snapshot_batch` (atomic multi-entity typed batch ingestion + `migration_batches` recording, idempotent/resumable across crashes/offline drops).
+     - `public.nohut_agent_activate_initial_sync` (verifies exact `manifest_sha256` and committed batch count before transitioning to `'active'` and initializing `sync_checkpoints`).
+     - `public.nohut_agent_abort_initial_sync` (marks incomplete migration `'safely_aborted'`; refuses to abort `'active'`).
+     - `public.nohut_agent_migration_status` (returns migration state, committed batches, and checkpoint for deterministic offline resume).
+  3. Contract & tests: `docs/contracts/v1/initial-sync-and-recovery.md`, `supabase/tests/initial_sync_and_recovery_test.sql`.
+- **Validation (synthetic data only):**
+  - Local Docker Postgres 16: **59/59 migrations & 32/32 SQL test suites passed** under both `postgres` superuser and `cloud_migrator` (`NOSUPERUSER NOBYPASSRLS`).
+
 ## Antigravity (Gemini) temporary backend continuation — Hardening Pass: Privacy Allowlist, Provenance Freshness & QR v2 Reconcile Alignment (2026-11-28)
 
 - **Branch / PR:** `gemini/backend-continuation` (**PR #46** draft targeting `chatgpt/pr-05b-cloud-rpcs`).
