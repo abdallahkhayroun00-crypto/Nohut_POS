@@ -96,6 +96,15 @@ Active engineers: **Claude** (Windows, Android, PWA/LAN, auth UI, UI/UX, all cli
 
 - ChatGPT — PR #47 (stacked on #44): **Implemented / CI pending**. Removed duplicate Ayarlar > Menü & QR navigation and product list. QR Menü Yönetimi owns the POS sync status, last successful check, Eşitleme Ayarları and Şimdi Eşitle; local-only prices remain editable only with auto-sync disabled. Existing auto-sync service, historical order snapshots and public QR publication are unchanged. Added widget regression. Claude to integrate after CI; Gemini to independently verify. No production data or public menu edits.
 
+### Windows first full sync — engine (Claude, 2026-11-28)
+
+- `flutter_desktop/lib/initial_sync.dart` against `docs/contracts/v1/initial-sync-and-recovery.md` (PR #46 `a77b072`). **Implemented / tested; category producers pending.**
+- `planInitialSync` freezes the snapshot of one revision in SQLite (`initial_sync_plan`, `initial_sync_batches`), turns the outbox on in the same transaction and records `snapshot_seq`; refuses if the POS committed meanwhile (`stale_snapshot`) or a plan is open.
+- `postgresCanonicalJson` equals `nohut_private.canonical_command_json` (UTF-8 key order, Postgres escaping, safe integers only; doubles/U+0000/astral keys refused). Batches ≤ 500 events and ≤ 4,000,000 bytes of `jsonb::text`; deterministic batch ids; manifest = the SQL `compute_migration_manifest_sha256` formula.
+- `InitialSyncRunner`: `migration_status` first → `begin` only with a `VerifiedBackup` covering the snapshot revision → uploads only missing batches (server batch with a different hash stops) → `activate` → acknowledges the outbox through `snapshot_seq`. Network errors keep the plan for resume; server `safely_aborted` (incl. `epoch_rotated`) marks it aborted. `SyncWorker` holds increments while a plan is not active.
+- Tests: `test/initial_sync_test.dart` (10); parity case runs real Postgres when `NOHUT_PG_HOST` is set (fixture `test/fixtures/canonical_command_json.sql`, copied from #46).
+- **Needs:** the typed Windows serializers on #46 (`cloud_*_serializer.dart`, `supabase_agent_transport.dart`) on main to build the `SnapshotCategory` list and the HTTPS transport; the Kurulum wizard step (backup → plan → run) follows.
+
 ## Phase status
 
 | Phase | Status | Evidence |

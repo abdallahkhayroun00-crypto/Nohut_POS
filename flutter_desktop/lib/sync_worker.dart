@@ -22,6 +22,7 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart' as hash;
 import 'package:sqlite3/sqlite3.dart';
 
+import 'initial_sync.dart' show initialSyncHoldsIncremental;
 import 'sync_outbox.dart';
 
 const syncSchemaVersion = 1;
@@ -228,6 +229,8 @@ class SyncWorker {
   Future<int> flush({bool manual = false}) async {
     if (_flushing) return 0;
     if (!outboxEnabled(db)) return 0;
+    // Increments wait until the first full snapshot is active in the cloud.
+    if (initialSyncHoldsIncremental(db)) return 0;
     if (syncStateValue(db, 'sync_stopped') == '1' && !manual) return 0;
     final next = DateTime.tryParse(syncStateValue(db, 'next_attempt_at') ?? '');
     if (!manual && next != null && _clock().isBefore(next)) return 0;
