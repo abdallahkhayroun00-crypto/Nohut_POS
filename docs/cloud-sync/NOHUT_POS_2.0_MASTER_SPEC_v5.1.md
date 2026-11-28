@@ -740,12 +740,12 @@ First sync must create all required dictionary/version references before publish
 | Operation ID | Section | Default: Personel | Müdür | Yönetici | Sensitivity |
 |---|---|---|---|---|---|
 | `menu.view` | Menü & Kampanya | ✓ | ✓ | ✓ | normal |
-| `menu.product.edit` | Menü & Kampanya | – | ✓ | ✓ | elevated (confirm) |
-| `menu.price.edit` | Menü & Kampanya | – | – | ✓ | elevated (confirm, shows old → new) |
-| `menu.category.edit` | Menü & Kampanya | – | ✓ | ✓ | elevated |
-| `menu.campaign.edit` | Menü & Kampanya | – | – | ✓ | elevated |
+| `menu.product.edit` | Menü & Kampanya | ✓ | ✓ | ✓ | elevated (confirm) |
+| `menu.price.edit` | Menü & Kampanya | ✓ | ✓ | ✓ | elevated (confirm, shows old → new) |
+| `menu.category.edit` | Menü & Kampanya | ✓ | ✓ | ✓ | elevated |
+| `menu.campaign.edit` | Menü & Kampanya | ✓ | ✓ | ✓ | elevated |
 | `menu.stock.toggle` | Menü & Kampanya | ✓ | ✓ | ✓ | normal |
-| `menu.qr.publish` | Menü & Kampanya | – | – | ✓ | elevated (public output; allowlist check) |
+| `menu.qr.publish` | Menü & Kampanya | ✓ | ✓ | ✓ | elevated (public output; review + confirm, revision-bound, audited) |
 | `sync.view` | Bulut & Senk. | – | ✓ | ✓ | normal |
 | `sync.manual` | Bulut & Senk. | – | ✓ | ✓ | normal |
 | `sync.retry` | Bulut & Senk. | – | ✓ | ✓ | normal |
@@ -759,6 +759,8 @@ First sync must create all required dictionary/version references before publish
 | `backup.verify` | Yedekleme | – | ✓ | ✓ | normal |
 | `backup.restore` | Yedekleme | – | – | owner | **owner-only, non-delegable**, MFA + local Windows confirmation |
 | `backup.delete` / any destructive cleanup | Yedekleme | – | – | owner | **owner-only**; V5 forbids silent deletion; requires retention policy + confirmation |
+
+**Owner decision 2026-11-27 (QR menu parity):** Personel, Müdür and Yönetici hold every `menu.*` operation by default, publishing included, on native Android, the iPhone PWA and the LAN browser alike. Publishing never needs an owner account or owner MFA for these roles; it needs an individual sign-in, the grant, an explicit review/confirmation of the exact draft (its fingerprint), a validated catalog bound to the published GitHub revision, and it is audited with the actor. The publisher key stays on Windows; phones only ask Windows to publish. The owner can still revoke any `menu.*` grant per user. No other section's defaults changed. Existing accounts received the grants once (Windows `LocalAuth` upgrade flag, Supabase migration `20261127221000`).
 
 Sensitive-action rules:
 1. **Owner-only non-delegable:** `sync.initial.start`, `sync.cloud.configure`, `sync.full_resync`, `backup.restore` and every destructive change. The grant UI cannot assign them; the server rejects them for any identity that is not the verified owner, regardless of stored grants.
@@ -1005,3 +1007,11 @@ One button **Hızlı Gider Ekle** in Windows Finans › Giderler, Yönetici Fina
 
 ### 24.9 Ownership, data and acceptance
 Claude: UX, auth/activation, LAN apps, notifications, Windows UI. ChatGPT Codex (#39): typed DB/ledger, projections, cloud commands and first sync for the new records. New schedule, attendance, submission, rate, payroll-payment and activation records get stable IDs and join the sync registry, backup/restore and audit. Windows stays authoritative and offline-first; Bulut & Yedek stay Windows-only; QR menu unchanged; free services only; no real payments or real data migration during development. Tests use synthetic data and cover the acceptance lists in the five source comments (Monday/Sunday rollover, late/revised submission, missing and historical rates, partial/mixed payments, paid-hours edits, duplicate/lost ACK, offline/reconnect, permission isolation, 21:30 and changed hours, late orders, refunds, stale data, dedup). Physical-device checks stay owner gates.
+
+## Premium UI/UX release gate (owner, 2026-11-27, relay 7227699704)
+Premium UI/UX is mandatory on every page, option, control and workflow of the Windows POS, the Android Personel and Yönetici APKs, the iPhone PWAs, and the cloud and LAN browser apps. Release requires both:
+- **Visual acceptance:** the owner approves the direction and Antigravity's visual and accessibility audit passes.
+- **Functional acceptance:** tests and the QA matrix.
+
+The two are tracked separately. The design system, the per-surface checklist and the review status live in `docs/design/PREMIUM_UI_INVENTORY.md`. Design work never changes business rules, authorization, financial correctness, offline-first behaviour or the public QR visitor site (that needs separate approval), and it never shows fake live data.
+

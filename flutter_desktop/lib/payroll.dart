@@ -21,6 +21,7 @@
 library;
 
 import 'finance_logic.dart' show financeBook, financeRows;
+import 'payroll_reminders.dart' show PayrollReminderSettings;
 import 'pos_logic.dart';
 import 'pos_store.dart';
 import 'workforce.dart';
@@ -149,7 +150,12 @@ List<Json> payrollPaymentsFor(Json state, int employeeId, String weekStart) => [
 ];
 
 /// Derived status for one employee and week. [today] decides Gecikmiş.
-Json payrollStatus(Json state, int employeeId, String weekStart, {required String today, int paydayOffset = 7}) {
+/// Payday contract (§24.6): due date = week's Monday + `paydayOffset` days,
+/// from `settings.payrollReminders.paydayOffset` (7–13, default 7 = the
+/// following Monday). No screen can change it today, so every historical
+/// due date is 7 days after its Monday; a future editor must add
+/// effective-dated history before changing it.
+Json payrollStatus(Json state, int employeeId, String weekStart, {required String today, int? paydayOffset}) {
   final earned = weeklyEarnings(state, employeeId, weekStart);
   final legacy = financeRows(state, 'weeklyPayroll')
       .where((r) => r['employeeId'] == employeeId && r['weekStart'] == weekStart).firstOrNull;
@@ -157,7 +163,7 @@ Json payrollStatus(Json state, int employeeId, String weekStart, {required Strin
   final paid = rows.fold<int>(0, (n, p) => n + (p['amountCents'] as int));
   final advances = rows.where((p) => p['kind'] == 'Avans').fold<int>(0, (n, p) => n + (p['amountCents'] as int));
   final e = earned['earnedCents'] as int?;
-  final due = addDays(weekStart, paydayOffset);
+  final due = addDays(weekStart, paydayOffset ?? PayrollReminderSettings.of(state).paydayOffset);
   final ack = financeRows(state, 'payrollReviews')
       .where((r) => r['employeeId'] == employeeId && r['weekStart'] == weekStart).lastOrNull;
   final nothingOwed = legacy == null && (earned['minutes'] as int) == 0 && paid == 0;

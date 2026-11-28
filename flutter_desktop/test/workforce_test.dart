@@ -6,7 +6,9 @@ import 'package:nohut_falafel_desktop/lan_auth_gate.dart';
 import 'package:nohut_falafel_desktop/lan_server.dart';
 import 'package:nohut_falafel_desktop/local_accounts.dart';
 import 'package:nohut_falafel_desktop/pos_logic.dart';
+import 'package:nohut_falafel_desktop/payroll.dart' show payrollStatus;
 import 'package:nohut_falafel_desktop/pos_store.dart';
+import 'package:nohut_falafel_desktop/shifts.dart' show correctShift;
 import 'package:nohut_falafel_desktop/workforce.dart';
 
 void main() {
@@ -102,6 +104,27 @@ void main() {
   });
 
   group('Mesai', () {
+    test('a stale employee form cannot overwrite a manager correction (Codex #39)', () {
+      final r = work('work-corr-1', {'action': 'work_save', 'date': '2026-11-18', 'start': '09:00', 'end': '17:00', 'breakMinutes': 30});
+      final version = r['updatedAt'];
+      final id = r['id'];
+      correctShift(store, {'requestId': 'fix_stale_00000001', 'staffId': mehmet, 'shiftId': id,
+        'end': asMaps(store.read().data['shifts']).single['end'], 'reason': 'Kontrol'});
+      final after = asMaps(store.read().data['shifts']).single;
+      expect(after['updatedAt'], isNot(version));
+      expect(() => work('work-corr-2', {'action': 'work_save', 'id': id, 'expectedUpdatedAt': version,
+          'date': '2026-11-18', 'start': '09:00', 'end': '18:00', 'breakMinutes': 30}),
+          throwsA(isA<WorkforceConflict>()));
+    });
+
+    test('payday follows the configured offset, the same one reminders use', () {
+      final s = store.read();
+      final data = {...s.data, 'settings': {...(s.data['settings'] as Map? ?? {}), 'payrollReminders': {'paydayOffset': 8}}};
+      store.replace(data, s.revision);
+      expect(payrollStatus(store.read().data, ayse, '2026-11-16', today: '2026-11-25')['dueDate'], '2026-11-24');
+      expect(payrollStatus(store.read().data, ayse, '2026-11-16', today: '2026-11-25', paydayOffset: 7)['dueDate'], '2026-11-23');
+    });
+
     test('manual own entry incl. past day, overnight, break; no future, no overlap', () {
       work('work-0001', {'action': 'work_save', 'date': '2026-11-18', 'start': '17:00', 'end': '01:30', 'breakMinutes': 30});
       final s = store.read().data;
@@ -173,7 +196,7 @@ void main() {
   test('LAN /api/work needs an individual login; acting employee comes from the session', () async {
     final auth = LocalAuth(store.authDatabase, iterations: 1000);
     await auth.createUser(username: 'sahip', password: 'owner-pass-1', role: 'Yönetici', isOwner: true);
-    await auth.createUser(username: 'ayse', password: 'staff-pass-1', role: 'Personel', employeeId: ayse);
+    final ayseUser = await auth.createUser(username: 'ayse', password: 'staff-pass-1', role: 'Personel', employeeId: ayse);
     await auth.createUser(username: 'mudur', password: 'mudur-pass-1', role: 'Müdür', employeeId: mehmet);
     final server = PosLanServer(store, port: 0, staffHtml: '<p>', yoneticiHtml: '<p>', authGate: LanAuthGate(auth));
     await server.start();
@@ -219,6 +242,34 @@ void main() {
     expect(spy, 200);
     expect(((sb['week'] as Map)['employee'] as Map)['id'], ayse);
     expect(sb['self'], true);
+    // Performansım: own numbers only, range chosen by the phone.
+    final (pf, pb) = await call('GET', '/api/work/performance?range=week', cookie: staff);
+    expect(pf, 200);
+    expect((pb['performance'] as Map)['range'], 'week');
+    expect((pb['performance'] as Map)['collectionsAttributed'], false);
+    expect((await call('GET', '/api/work/performance')).$1, 401);
+    // Hızlı Gider (§24.8): Personel needs the explicit grant.
+    final expense = {'requestId': 'lan-expense-0001', 'date': yesterday, 'storeBrand': 'BİM',
+      'market': '', 'amountsCents': [12550, 4000], 'paymentMethod': 'Nakit', 'note': 'ekmek'};
+    expect((await call('POST', '/api/work/expense', cookie: staff, body: expense)).$1, 403);
+    expect((await call('GET', '/api/work/expenses', cookie: staff)).$1, 403);
+    auth.setGrant(ayseUser, 'expenses.quick_add', true, actor: 'sahip');
+    final (e1, eb) = await call('POST', '/api/work/expense', cookie: staff,
+        body: {...expense, 'employeeId': mehmet});
+    expect(e1, 200, reason: '$eb');
+    expect(eb['totalCents'], 16550);
+    // Retrying the same request does not add a second row.
+    expect((await call('POST', '/api/work/expense', cookie: staff, body: expense)).$1, 200);
+    final mats = asMaps((store.read().data['finance'] as Map)['materials'])
+        .where((m) => m['note'] == 'ekmek').toList();
+    expect(mats, hasLength(1));
+    expect((mats.single['submittedByEmployeeId'], mats.single['recordType']), (ayse, 'quick'));
+    final (g, gb) = await call('GET', '/api/work/expenses', cookie: staff);
+    expect(g, 200);
+    expect((gb['expenses'] as List).single['totalCents'], 16550);
+    // Staff cannot edit or void through this route.
+    expect((await call('POST', '/api/work/expense', cookie: staff,
+        body: {...expense, 'requestId': 'lan-expense-0002', 'amountsCents': 'x'})).$1, 422);
     // Staff cannot see the team view or edit another person's plan.
     expect((await call('GET', '/api/work/team', cookie: staff)).$1, 403);
     final (p1, _) = await call('POST', '/api/work/write', cookie: staff, body: {'requestId': 'lan-plan-0001',

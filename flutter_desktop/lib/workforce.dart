@@ -81,6 +81,8 @@ String _stamp(DateTime now) => now.toUtc().toIso8601String();
 
 /// A new version stamp that is always later than [previous], so a stale
 /// `expectedUpdatedAt` can never match even within the same microsecond.
+String bumpVersion(Object? previous, DateTime now) => _bump(previous, now);
+
 String _bump(Object? previous, DateTime now) {
   final p = DateTime.tryParse('${previous ?? ''}');
   final t = now.toUtc();

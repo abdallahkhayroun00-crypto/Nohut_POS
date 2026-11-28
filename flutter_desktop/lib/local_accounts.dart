@@ -87,6 +87,27 @@ class LocalAuth {
     Random? random,
   }) : _clock = clock ?? DateTime.now, _random = random ?? Random.secure() {
     createTables(db);
+    _upgradeMenuParity();
+  }
+
+  /// Owner decision 2026-11-27 (relay 7226936601): Personel, Müdür and
+  /// Yönetici hold every `menu.*` operation by default, publishing included.
+  /// Runs once per database; a grant the owner removes afterwards stays removed.
+  /// Only `menu.*` changes, never finance, employee, system or backup grants.
+  void _upgradeMenuParity() {
+    const key = 'upgrade.menu_parity_2026_11_27';
+    if (db.select('SELECT 1 FROM auth_settings WHERE key=?', [key]).isNotEmpty) return;
+    for (final u in db.select('SELECT user_id, role, grants FROM auth_users WHERE active=1 AND is_owner=0')) {
+      final role = u['role'] as String;
+      final grants = (jsonDecode(u['grants'] as String) as List).cast<String>().toSet();
+      final missing = [for (final op in defaultGrants(role)) if (op.startsWith('menu.') && !grants.contains(op)) op]..sort();
+      if (missing.isEmpty) continue;
+      grants.addAll(missing);
+      db.execute('UPDATE auth_users SET grants=? WHERE user_id=?', [jsonEncode(grants.toList()..sort()), u['user_id']]);
+      _bump(u['user_id'] as String);
+      _audit('grant.add', target: u['user_id'] as String, detail: {'operations': missing, 'reason': 'menu_parity'});
+    }
+    db.execute('INSERT INTO auth_settings(key,value) VALUES(?,?)', [key, _now()]);
   }
 
   final Database db;
@@ -140,6 +161,12 @@ class LocalAuth {
       action TEXT NOT NULL,
       target TEXT,
       detail TEXT NOT NULL DEFAULT '{}')''');
+    db.execute('''CREATE TABLE IF NOT EXISTS auth_activations(
+      user_id TEXT PRIMARY KEY REFERENCES auth_users(user_id),
+      code_hash TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      failed INTEGER NOT NULL DEFAULT 0)''');
     db.execute('''CREATE TABLE IF NOT EXISTS auth_settings(
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL)''');
@@ -366,6 +393,7 @@ class LocalAuth {
         'active': u['active'] == 1, 'lastLoginAt': u['last_login_at'],
         'grants': jsonDecode(u['grants'] as String),
         'mfa': u['totp_secret'] != null,
+        'activation': activationOf(u['user_id'] as String),
         'devices': db.select('SELECT count(*) n FROM auth_devices WHERE user_id=? AND revoked_at IS NULL',
             [u['user_id']]).single['n'],
       },
@@ -383,6 +411,112 @@ class LocalAuth {
         'hasPin': d['pin_hash'] != null,
       },
   ];
+
+  // ------------------------------------------------------------ activation
+  /// İlk Aktivasyon (§24.2, W6 local): the owner gives a person a one-time
+  /// code instead of a password. Issuing a code is also a reset: the old
+  /// password stops working and open sessions end. The code is shown once
+  /// and stored only as a hash.
+  static const activationLifetime = Duration(hours: 72);
+  static const _codeAlphabet = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+
+  static String normalizeActivationCode(String raw) =>
+      raw.toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '');
+
+  Future<({String code, DateTime expiresAt})> issueActivation(String userId, {String? actor}) async {
+    final u = _user(userId) ?? (throw const LocalAuthException('unknown_user'));
+    if (u['is_owner'] == 1) {
+      throw const LocalAuthException('owner_activation', 'İşletme sahibi hesabı Windows’ta şifreyle açılır.');
+    }
+    if (u['active'] != 1) throw const LocalAuthException('inactive', 'Hesap devre dışı.');
+    final raw = List.generate(8, (_) => _codeAlphabet[_random.nextInt(_codeAlphabet.length)]).join();
+    final expires = _clock().toUtc().add(activationLifetime);
+    final codeHash = await _hash(raw);
+    final unusable = await _hash(_randomB64(24));
+    db.execute('UPDATE auth_users SET password_hash=?, failed_logins=0, locked_until=NULL WHERE user_id=?',
+        [unusable, userId]);
+    db.execute('INSERT OR REPLACE INTO auth_activations(user_id,code_hash,created_at,expires_at,failed) '
+        'VALUES(?,?,?,?,0)', [userId, codeHash, _now(), expires.toIso8601String()]);
+    revokeSessions(userId, actor: actor);
+    _bump(userId);
+    _audit('user.activation_issued', actor: actor, target: userId);
+    return (code: '${raw.substring(0, 4)}-${raw.substring(4)}', expiresAt: expires);
+  }
+
+  /// Pending activation for the Kullanıcılar list (never the code).
+  Json? activationOf(String userId) {
+    final r = db.select('SELECT expires_at, failed FROM auth_activations WHERE user_id=?', [userId]);
+    if (r.isEmpty) return null;
+    final expires = DateTime.parse(r.single['expires_at'] as String);
+    return {'expiresAt': r.single['expires_at'],
+      'expired': !_clock().toUtc().isBefore(expires) || (r.single['failed'] as int) >= 5};
+  }
+
+  /// The person's first sign-in: code + own password + this device's PIN.
+  /// Five wrong codes void the code; every refusal is the same generic one.
+  Future<LoginResult> activate({
+    required String username,
+    required String code,
+    required String password,
+    required String pin,
+    required String deviceId,
+    required String client,
+    String label = '',
+  }) async {
+    const refused = LocalAuthException('invalid_activation',
+        'Kullanıcı adı veya aktivasyon kodu hatalı ya da kodun süresi dolmuş.');
+    // Everything that could make sign-in fail is checked before the code is
+    // consumed (QA-25).
+    _checkPassword(password);
+    _checkPin(pin);
+    if (!localAuthClients.contains(client)) throw const LocalAuthException('client_not_allowed');
+    if (!RegExp(r'^[A-Za-z0-9_-]{16,64}$').hasMatch(deviceId)) {
+      throw const LocalAuthException('invalid_device');
+    }
+    final known = db.select('SELECT user_id, client, revoked_at FROM auth_devices WHERE device_id=?', [deviceId]);
+    final rows = db.select('SELECT a.*, u.active FROM auth_activations a JOIN auth_users u USING(user_id) '
+        'WHERE u.username=?', [username.trim()]);
+    // One PBKDF2 check on every path, and one generic refusal for unknown,
+    // expired, voided, inactive or wrong (QA-24).
+    final a = rows.isEmpty ? null : rows.single;
+    final ok = await _verify(normalizeActivationCode(code),
+        a?['code_hash'] as String? ?? 'pbkdf2-sha256\$$iterations\$AAAAAAAAAAAAAAAAAAAAAA==\$AA==');
+    if (a == null) throw refused;
+    final userId = a['user_id'] as String;
+    final usable = (a['failed'] as int) < 5 &&
+        _clock().toUtc().isBefore(DateTime.parse(a['expires_at'] as String)) && a['active'] == 1;
+    if (!ok || !usable) {
+      if (!ok) {
+        db.execute('UPDATE auth_activations SET failed=failed+1 WHERE user_id=?', [userId]);
+        _audit('activation.failed', target: userId);
+      }
+      throw refused;
+    }
+    if (known.isNotEmpty && (known.single['user_id'] != userId || known.single['client'] != client)) {
+      throw const LocalAuthException('device_mismatch', 'Bu cihaz başka bir hesaba bağlı.');
+    }
+    if (known.isNotEmpty && known.single['revoked_at'] != null) {
+      throw const LocalAuthException('device_revoked', 'Bu cihazın erişimi kaldırıldı.');
+    }
+    final hash = await _hash(password);
+    db.execute('BEGIN IMMEDIATE');
+    try {
+      db.execute('UPDATE auth_users SET password_hash=?, failed_logins=0, locked_until=NULL WHERE user_id=?',
+          [hash, userId]);
+      // The same code used twice at once: only one delete finds it.
+      db.execute('DELETE FROM auth_activations WHERE user_id=? AND code_hash=?', [userId, a['code_hash']]);
+      if (db.updatedRows != 1) throw refused;
+      db.execute('COMMIT');
+    } catch (_) {
+      db.execute('ROLLBACK');
+      rethrow;
+    }
+    _audit('user.activated', actor: userId, target: deviceId, detail: {'client': client});
+    final r = await login(username: username, password: password, deviceId: deviceId,
+        client: client, label: label);
+    await setPin(r.token, client, pin);
+    return r;
+  }
 
   // ---------------------------------------------------------------- client
   /// Password login from a device; enrolls the device as trusted.
@@ -502,10 +636,25 @@ class LocalAuth {
     return ctx.isOwner || ctx.grants.contains(operation) ? 'ok' : 'forbidden';
   }
 
-  Future<void> setPin(String token, String client, String pin) async {
+  /// Sets this device's PIN. Setting or replacing a PIN later than 5 minutes
+  /// after the password sign-in needs the account password again (same
+  /// lockout as unlock), so an unlocked phone left on a table cannot have its
+  /// PIN changed by someone else.
+  Future<void> setPin(String token, String client, String pin, {String? password}) async {
     final ctx = check(token, client);
     if (!ctx.ok) throw LocalAuthException(ctx.status);
     _checkPin(pin);
+    // The PIN step right after a password sign-in needs nothing more.
+    final created = DateTime.tryParse('${_session(token)?['created_at'] ?? ''}');
+    final fresh = created != null && _clock().toUtc().difference(created) < const Duration(minutes: 5);
+    // A password that was sent is always checked, even in that step.
+    // Outside it, a password is needed even for a first PIN (QA-17): an
+    // unlocked phone must not get a PIN its owner never chose.
+    if (password != null || !fresh) {
+      if (password == null || password.isEmpty) throw const LocalAuthException('password_required');
+      final again = await unlockWithPassword(token, client, password);
+      if (!again.ok) throw LocalAuthException(again.status);
+    }
     final hash = await _hash(pin);
     db.execute('UPDATE auth_devices SET pin_hash=?, pin_failed=0 WHERE device_id=?', [hash, ctx.deviceId]);
     _audit('pin.set', actor: ctx.userId, target: ctx.deviceId);

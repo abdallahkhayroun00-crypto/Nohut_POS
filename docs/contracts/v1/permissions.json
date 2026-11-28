@@ -539,6 +539,20 @@
       ]
     },
     {
+      "id": "expenses.quick_add",
+      "section": "finance",
+      "sensitivity": "normal",
+      "defaults": [
+        "Müdür",
+        "Yönetici"
+      ],
+      "clients": [
+        "windows",
+        "personel",
+        "yonetici"
+      ]
+    },
+    {
       "id": "reports.view",
       "section": "reports",
       "sensitivity": "normal",

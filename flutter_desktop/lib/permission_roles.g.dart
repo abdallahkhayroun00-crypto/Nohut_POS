@@ -42,6 +42,7 @@ const Map<String, List<String>> permissionRoleDefaults = {
   'sales.view': ['Müdür', 'Yönetici', 'Muhasebe'],
   'finance.view': ['Yönetici', 'Muhasebe'],
   'finance.edit': ['Yönetici'],
+  'expenses.quick_add': ['Müdür', 'Yönetici'],
   'reports.view': ['Müdür', 'Yönetici', 'Muhasebe'],
   'reports.export': ['Yönetici', 'Muhasebe'],
   'staff.view': ['Müdür', 'Yönetici'],

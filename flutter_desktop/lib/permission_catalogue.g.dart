@@ -42,6 +42,7 @@ const Map<String, ({String section, String sensitivity, List<String> clients})> 
   'sales.view': (section: 'sales', sensitivity: 'normal', clients: ['windows', 'yonetici']),
   'finance.view': (section: 'finance', sensitivity: 'normal', clients: ['windows', 'yonetici']),
   'finance.edit': (section: 'finance', sensitivity: 'elevated', clients: ['windows', 'yonetici']),
+  'expenses.quick_add': (section: 'finance', sensitivity: 'normal', clients: ['windows', 'personel', 'yonetici']),
   'reports.view': (section: 'reports', sensitivity: 'normal', clients: ['windows', 'yonetici']),
   'reports.export': (section: 'reports', sensitivity: 'normal', clients: ['windows', 'yonetici']),
   'staff.view': (section: 'staff', sensitivity: 'normal', clients: ['windows', 'yonetici']),

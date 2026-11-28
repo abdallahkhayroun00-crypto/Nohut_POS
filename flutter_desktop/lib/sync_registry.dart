@@ -163,6 +163,17 @@ const syncEntityRegistry = <String, SyncEntity>{
     cloudTarget: null,
     policy: 'Copy of published catalog the draft was based on; derived',
   ),
+  'qrMenuAudit': SyncEntity(
+    classes: {DataClass.internal},
+    cloudTarget: 'audit_logs',
+    policy: 'Rolling last 200 phone edits of the QR menu draft {at, by, byId, action, list, id}',
+  ),
+  'qrPublisherPendingPublish': SyncEntity(
+    classes: {DataClass.internal},
+    cloudTarget: null,
+    policy: 'Publish sent but unanswered {revision, at, changes}; local, '
+        'reconciled against GitHub before any retry',
+  ),
 
   // Customers (existing local Gel-Al directory, PR #17 on main).
   'customers': SyncEntity(

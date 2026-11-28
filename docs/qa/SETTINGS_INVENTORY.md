@@ -45,6 +45,8 @@ There is no Bulut & Senkronizasyon page yet. It will be added when Codex's sync 
 | Place | Setting | Scope | Storage | Sync | Audit |
 |---|---|---|---|---|---|
 | Hesabım | Pairing (server id, host, session) | Device | Secure storage | Never | Covered by `session_login_test` |
+| Daha Fazla › Çalışmam | Mesailerim, Vardiyalarım, Maaş & Avans, Giderler (when drafts exist) | Account | Server session | — | Links only; covered by `personel_test` |
+| Hesabım | PIN Değiştir (password + new 5-digit PIN, sent to Windows `/api/auth/pin`) | Account and device | Windows auth DB | Never | `session_login_test` (wrong password stays on the sheet, right one saves) |
 | Hesabım | Theme | Device | Follows the system light or dark setting | — | Rendered in both modes |
 | Hesabım | Sign out / forget pairing | Device | Secure storage | — | Not yet audited |
 
@@ -52,8 +54,11 @@ There is no Bulut & Senkronizasyon page yet. It will be added when Codex's sync 
 
 | Place | Setting | Scope | Storage | Sync | Audit |
 |---|---|---|---|---|---|
-| Ayarlar | Owner pairing key (`owner_pairing_v1`), cached overviews | Device | Secure storage | Never | Not yet audited |
-| Ayarlar | "Yönetim Bağlantısını Unut" | Device | Clears secure storage and keeps pending finance writes | — | Not yet audited |
+| Ayarlar › Hesap | Owner name and role (from the Windows pairing) | Account | Secure storage | Never | Read-only; rendered in light and dark |
+| Ayarlar › Bağlantı | Windows host and status, "Finansı Yenile" with last sync time | Device | Secure storage / memory | Never | Rendered; the sync button calls the real finance sync |
+| Ayarlar › Görünüm | Theme | Device | Follows the system light or dark setting | — | Rendered in both modes |
+| Ayarlar › Windows’ta yönetilenler | Printer, integrations and API keys, users/grants/devices, backup and cloud sync | — | Windows only | — | Listed as information only, with no control (no dead switch) |
+| Ayarlar › Bu cihaz | Owner pairing key (`owner_pairing_v1`), cached overviews, "Yönetim Bağlantısını Unut" | Device | Clears secure storage and keeps pending finance writes | Never | Confirm dialog; not yet tested on a device |
 
 ## Browser apps and PWAs
 
@@ -62,6 +67,8 @@ There is no Bulut & Senkronizasyon page yet. It will be added when Codex's sync 
 | Personel / Yönetici (LAN) | Session cookie `nohut_lan`, 5-digit PIN unlock | Account and device | Server session | Covered by `lan_auth_gate_test` |
 | Personel / Yönetici PWA | Profile, 5-digit PIN (`set_pin`) | Account | Supabase `nohut_private` | Covered by `auth_api_test.sql` |
 | All browser apps | Theme | Device | Follows the phone's light or dark setting | Rendered in both modes (D-29) |
+
+Browser PIN change (Personel and Yönetici LAN pages, "PIN Değiştir"): the server now asks for the account password to replace an existing PIN, except in the PIN step within 5 minutes of a password sign-in. A password that is sent is always checked, wrong ones count toward the login lockout, and the reply is 403 so the session stays. Covered by `local_accounts_test` and `lan_auth_gate_test`, plus a Playwright run of both pages (wrong password refused, right one saved, Vazgeç closes).
 
 ## Rules carried into the redesign
 

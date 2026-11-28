@@ -6,6 +6,20 @@ import 'package:path/path.dart' as paths;
 import 'pos_logic.dart';
 import 'windows_vault.dart';
 
+/// The publisher answered with an HTTP error: the request was refused and
+/// nothing was written (e.g. 409 when the GitHub revision changed).
+class QrPublisherRefused extends FormatException {
+  const QrPublisherRefused(super.message, this.statusCode);
+  final int statusCode;
+}
+
+/// The request may have reached GitHub but no answer came back (timeout,
+/// dropped connection, unreadable reply). A publish must be reconciled
+/// against GitHub before it is retried.
+class QrPublisherNoAnswer extends FormatException {
+  const QrPublisherNoAnswer(super.message);
+}
+
 /// QR publishing credentials are scoped to this Windows user via DPAPI.
 /// GitHub App private keys never enter the POS or its SQLite order database.
 class QrPublisherClient {
@@ -84,22 +98,49 @@ class QrPublisherClient {
         throw const FormatException('Yönlendirme kabul edilmez.');
       final raw=await utf8.decoder.bind(response).join().timeout(
         const Duration(seconds:45));
-      final decoded=jsonDecode(raw);
-      if(decoded is! Map)throw const FormatException('Yanıt geçersiz.');
+      Object? decoded;
+      try{decoded=jsonDecode(raw);}catch(_){decoded=null;}
+      if(decoded is! Map){
+        if(response.statusCode>=400)throw QrPublisherRefused(
+          'Yayınlama başarısız (HTTP ${response.statusCode}).',response.statusCode);
+        throw const QrPublisherNoAnswer('Yayınlama hizmetinin yanıtı okunamadı.');
+      }
       final map=Map<String,dynamic>.from(decoded);
       if(response.statusCode>=400){
         final message=(map['error']??'').toString();
-        throw FormatException(message.length<=220&&message.isNotEmpty
+        throw QrPublisherRefused(message.length<=220&&message.isNotEmpty
           ?message:'Yayınlama başarısız (HTTP '+
-            response.statusCode.toString()+').');
+            response.statusCode.toString()+').',response.statusCode);
       }
       return map;
     }on SocketException{
-      throw const FormatException(
+      throw const QrPublisherNoAnswer(
         'QR yayınlama hizmetine bağlanılamadı. Hizmet çalışıyor mu?');
+    }on HttpException{
+      throw const QrPublisherNoAnswer('Yayınlama hizmeti bağlantıyı kesti.');
     }on TimeoutException{
-      throw const FormatException(
+      throw const QrPublisherNoAnswer(
         'Yayınlama isteği zaman aşımına uğradı. Yeniden göndermeden önce GitHub kontrol edin.');
+    }finally{client.close(force:true);}
+  }
+  /// Unauthenticated liveness check: is the local publisher running at
+  /// [endpoint]? Answers true only for the publisher's own reply, so the
+  /// staff panel on :8787 is never mistaken for it.
+  Future<bool> health(String endpoint) async {
+    final base=checkEndpoint(endpoint);
+    final client=HttpClient()..connectionTimeout=const Duration(seconds:4);
+    try{
+      final request=await client.getUrl(base.resolve('health'))
+          .timeout(const Duration(seconds:5));
+      request.followRedirects=false;
+      final response=await request.close().timeout(const Duration(seconds:5));
+      final raw=await utf8.decoder.bind(response).join()
+          .timeout(const Duration(seconds:5));
+      final body=jsonDecode(raw);
+      return response.statusCode==200&&body is Map&&
+          body['service']=='Nohut QR Publisher';
+    }catch(_){
+      return false;
     }finally{client.close(force:true);}
   }
   Future<Map<String,dynamic>> catalog(String endpoint)=>

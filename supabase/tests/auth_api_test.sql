@@ -50,8 +50,37 @@ begin
   if public.nohut_whoami('f2000000-0000-0000-0000-00000000000a', 'yonetici')->>'status' <> 'device_revoked' then
     raise exception 'foreign device accepted';
   end if;
+  -- Setting a PIN needs a recent password sign-in (JWT amr), like Windows (QA-17).
+  begin
+    perform public.nohut_set_pin('f2000000-0000-0000-0000-00000000000b', '58291');
+    raise exception 'first PIN set without a recent password sign-in';
+  exception when insufficient_privilege then null;
+  end;
+  perform set_config('request.jwt.claims', jsonb_build_object('sub','f0000000-0000-0000-0000-00000000000b',
+    'session_id','f1000000-0000-0000-0000-00000000000b','aal','aal1','role','authenticated',
+    'amr', jsonb_build_array(jsonb_build_object('method','password','timestamp', extract(epoch from now())::bigint - 10)))::text, true);
   perform public.nohut_set_pin('f2000000-0000-0000-0000-00000000000b', '58291');
   if public.nohut_verify_pin('f2000000-0000-0000-0000-00000000000b', '58291') <> 'ok' then raise exception 'pin'; end if;
+  perform set_config('request.jwt.claims', '{"sub":"f0000000-0000-0000-0000-00000000000b","session_id":"f1000000-0000-0000-0000-00000000000b","aal":"aal1","role":"authenticated"}', true);
+  -- Replacing it later needs a recent password sign-in too.
+  begin
+    perform public.nohut_set_pin('f2000000-0000-0000-0000-00000000000b', '47302');
+    raise exception 'PIN replaced without a recent password sign-in';
+  exception when insufficient_privilege then null;
+  end;
+  perform set_config('request.jwt.claims', jsonb_build_object('sub','f0000000-0000-0000-0000-00000000000b',
+    'session_id','f1000000-0000-0000-0000-00000000000b','aal','aal1','role','authenticated',
+    'amr', jsonb_build_array(jsonb_build_object('method','password','timestamp', extract(epoch from now())::bigint - 3600)))::text, true);
+  begin
+    perform public.nohut_set_pin('f2000000-0000-0000-0000-00000000000b', '47302');
+    raise exception 'PIN replaced with an hour-old sign-in';
+  exception when insufficient_privilege then null;
+  end;
+  perform set_config('request.jwt.claims', jsonb_build_object('sub','f0000000-0000-0000-0000-00000000000b',
+    'session_id','f1000000-0000-0000-0000-00000000000b','aal','aal1','role','authenticated',
+    'amr', jsonb_build_array(jsonb_build_object('method','password','timestamp', extract(epoch from now())::bigint - 30)))::text, true);
+  perform public.nohut_set_pin('f2000000-0000-0000-0000-00000000000b', '47302');
+  if public.nohut_verify_pin('f2000000-0000-0000-0000-00000000000b', '47302') <> 'ok' then raise exception 'pin change'; end if;
   perform public.nohut_logout('f2000000-0000-0000-0000-00000000000b');
   if public.nohut_whoami('f2000000-0000-0000-0000-00000000000b', 'personel')->>'status' <> 'session_revoked' then raise exception 'logout'; end if;
 end $$;

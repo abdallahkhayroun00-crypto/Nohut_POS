@@ -8,7 +8,6 @@ import 'pos_store.dart';
 import 'operations_ui.dart';
 import 'online_orders.dart';
 import 'qr_menu_sync.dart';
-import 'qr_menu_preview.dart';
 import 'trendyol_go_readonly.dart';
 import 'trendyol_go_ui.dart';
 import 'partner_credentials.dart';
@@ -47,7 +46,7 @@ class SimpleSettings extends StatefulWidget {
 }
 
 class _SimpleSettingsState extends State<SimpleSettings> {
-  String tab = 'Genel', search = '';
+  String tab = 'Genel';
   Widget _quickTile(String name, IconData icon, String description) =>
       Material(
         color: Colors.white,
@@ -93,8 +92,6 @@ class _SimpleSettingsState extends State<SimpleSettings> {
         ('Entegrasyonlar', Icons.hub_outlined, 'Platform bağlantıları'),
         ('Yazıcı', Icons.print_outlined,
           (settings['printerName'] ?? 'XP-237B').toString()),
-        ('Menü', Icons.menu_book_outlined,
-          settings['qrAutoSync'] != false ? 'QR eşitleme açık' : 'QR eşitleme kapalı'),
         ('Güvenlik', Icons.shield_outlined, 'Kullanıcılar & Yetkiler'),
         ('Yedekleme', Icons.backup_outlined, 'Şifreli yedek ve geri yükleme'),
       ];
@@ -456,72 +453,6 @@ class _SimpleSettingsState extends State<SimpleSettings> {
             ),
           ),
         ],
-        if (tab == 'Menü')
-          section(
-            'Menü ve fiyatlar',
-            'Eşitleme eski siparişlerin fiyatlarını değiştirmez.',
-            [
-              QrMenuSyncPanel(
-                sync: widget.qrSync,
-                enabled: settings['qrAutoSync'] != false,
-                onToggle: (v) {
-                  if (widget.edit((s) {
-                        (s.putIfAbsent('settings', () => <String, dynamic>{})
-                                as Map)['qrAutoSync'] =
-                            v;
-                      }) &&
-                      v)
-                    widget.qrSync.syncNow();
-                },
-              ),
-              TextField(
-                decoration: const InputDecoration(
-                  labelText: 'Ürün ara',
-                  prefixIcon: Icon(Icons.search),
-                ),
-                onChanged: (v) => setState(() => search = v),
-              ),
-              for (final p in asMaps(widget.state['localMenu']).where(
-                (p) =>
-                    '${p['name']}'.toLowerCase().contains(search.toLowerCase()),
-              ))
-                ListTile(
-                  title: Text('${p['name']}'),
-                  subtitle: Text(
-                    p['price'] == null
-                        ? 'Satış dışı'
-                        : formatTry(cents(p['price'])),
-                  ),
-                  trailing: IconButton(
-                    tooltip: 'Fiyat Düzenle',
-                    onPressed: settings['qrAutoSync'] != false
-                        ? null
-                        : () async {
-                            final v = await askFields(
-                              context,
-                              'Yerel Ürün Fiyatı',
-                              [
-                                (
-                                  'Fiyat ₺ (boş = satış dışı)',
-                                  '${p['price'] ?? ''}',
-                                ),
-                              ],
-                            );
-                            if (v != null)
-                              widget.edit((s) {
-                                final row = (s['localMenu'] as List)
-                                    .cast<Map>()
-                                    .firstWhere((x) => x['id'] == p['id']);
-                                row['price'] = v[0].isEmpty
-                                    ? null
-                                    : fromCents(parseMoney(v[0]));
-                              });
-                          },
-                    icon: const Icon(Icons.edit_outlined),
-                  ),
-                ),
-            ],
-          ),
         if (tab == 'Yazıcı') ...[
           PrinterManagementPanel(state:widget.state,edit:widget.edit),
           const SizedBox(height:12),
@@ -825,8 +756,6 @@ class _SimpleSettingsState extends State<SimpleSettings> {
       'Sipariş sesleri ve bildirim geçmişi.', 'ses alarm uyarı bildirim'),
     const _SettingsPage('Entegrasyonlar', 'Entegrasyonlar', 'Operasyon', Icons.hub_outlined,
       'Trendyol Go, Yemeksepeti, Migros ve Google bağlantı durumu.', 'trendyol yemeksepeti migros google api'),
-    const _SettingsPage('Menü', 'Menü & QR', 'Operasyon', Icons.qr_code_2_outlined,
-      'Ürünler ve QR menü yayını.', 'ürün fiyat qr menü yayın'),
     const _SettingsPage('Yedekleme', 'Yedekleme & Geri Yükleme', 'Sistem', Icons.backup_outlined,
       'Şifreli yedek, doğrulama ve geri yükleme (yalnızca Windows).', 'yedek geri yükle veritabanı şifreli'),
   ];

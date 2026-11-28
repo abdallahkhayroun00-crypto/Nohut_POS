@@ -65,7 +65,7 @@ if (-not (Test-Path -LiteralPath $database -PathType Leaf)) {
 $dbHash = (Get-FileHash -LiteralPath $database).Hash
 Invoke-Setup $oldSetup ($silent + @('/TASKS=desktopicon', "/DIR=`"$installDir`""))
 $installedExe = Join-Path $installDir $exeName
-foreach ($file in @('server.mjs', 'start-windows.ps1')) {
+foreach ($file in @('server.mjs', 'start-windows.ps1', 'stop-windows.ps1')) {
     $source = Join-Path (Join-Path $release 'QRPublisher') $file
     $installed = Join-Path (Join-Path $installDir 'QRPublisher') $file
     if (-not (Test-Path -LiteralPath $source -PathType Leaf) -or

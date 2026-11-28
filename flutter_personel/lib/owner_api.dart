@@ -70,6 +70,26 @@ class OwnerApi extends NohutApi {
     f.host=host;
     return f.managerRequest(payload);
   }
+  /// Menü Yönetimi over the paired owner channel (owner: every edit).
+  @override
+  Future<(int, Json)> menu(String method, String path, {Json? body}) async {
+    if (method == 'GET') {
+      final r = await request({'operation': 'ownerMenu'});
+      final view = r['menu'];
+      if (view is! Map) throw const FormatException('Menü yanıtı geçersiz.');
+      return (200, Map<String, dynamic>.from(view));
+    }
+    final op = switch (path) {
+      'publish' => 'ownerMenuPublish',
+      'reconcile' => 'ownerMenuReconcile',
+      'sync' => 'ownerMenuSync',
+      'image' => 'ownerMenuImage',
+      _ => 'ownerMenuWrite',
+    };
+    final r = await request({'operation': op, 'data': {...?body}});
+    if (r['ok'] == false && r['error'] == 'conflict') return (409, r);
+    return (200, r);
+  }
   @override
   Future<Json> bootstrap() async {
     try { return await request({'operation':'ownerBootstrap'}); }
