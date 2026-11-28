@@ -280,10 +280,12 @@ Owner decision 2026-11-27: ChatGPT builds PR-05B (cloud functions), Claude build
 | Phase 3: accounts, PIN, auth, role + per-user permissions (owner: Claude; PR-05B: ChatGPT, must use the auth contract above) | Claude Code | 2026-11-27 | #40 |
 | Phase 4: PWA functional clients (§22) + Cloudflare Pages deploy workflow | Claude Code | done | #37 |
 | Phase 5A: Windows remote command worker | Claude Code | 2026-11-27 | this PR |
-| Phase 5B: cloud command-queue RPCs (`nohut_private.commands`, claim with lease, complete) | **open — suggested: ChatGPT** (continues PR-05B) | — | — |
+| Phase 5B: cloud command-queue RPCs (`nohut_private.commands`, claim with lease, complete) + Increments A–E (Workforce/Payroll, QR Menu Cloud, Notifications & Daily Report, Clean Resync, Platform Yönetimi, atomic claim read & expired-lock reap) | Gemini / Antigravity (`Implemented / Tested`, 7/7 CI GREEN, awaiting Claude independent review) | 2026-11-28 | #46 (`659267b`) |
+| Trendyol Cloud Proxy v1 (Edge Function: `verify`, `poll`, `execute` Kabul Et/Hazır, `reconcile`, `store_status_read`, `store_status_set` Aç/Kapat; Supabase Secrets; disabled by default) | Gemini / Antigravity (`Implemented / Tested`, 5/5 CI GREEN, B1–B4 & N1–N4 fixed, awaiting Claude re-review) | 2026-11-28 | #52 (`f35f796`) |
+| Cloud QR Publisher v2 (Edge Function: GitHub App via Supabase Secrets, 64-hex `draftSha256` binding, `NOHUT_QR_PUBLISHER_ENABLED` gate, `qr-publisher-check` read-only verifier) | Gemini / Antigravity (`Implemented / Tested`, 4/4 CI GREEN, awaiting Claude independent review) | 2026-11-28 | #53 (`eeda48f`) |
 | Phase 6 prerequisite: Windows `sales_daily`/`top_products`/`heatmap` projection functions (pure Dart, tested against `order_reporting.dart`) | **open** | — | — |
 | Phase 5 prerequisite: Windows shift entity + clock-in/out commands | Claude Code | done | #38 |
-| PR-05B: server RPCs (ingest transaction, reconcile, checkpoint), typed serializers, minimal grants | **open — suggested: ChatGPT** (continues #35) | — | — |
+| PR-05B: server RPCs (ingest transaction, reconcile, checkpoint), typed serializers, minimal grants | Gemini / Antigravity (merged into #46, 67/67 migrations & 33/33 SQL tests PASS) | 2026-11-28 | #46 (`659267b`) |
 
 ## Owner-configured services (2026-11-27, per owner)
 
