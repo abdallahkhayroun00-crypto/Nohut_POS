@@ -235,6 +235,39 @@ begin
   exception when insufficient_privilege then caught := true;
   end;
   if not caught then raise exception 'platform_status_audit delete must be denied'; end if;
+
+  -- 13. Expired unclaimed 'pending' lock auto-clears on read/enqueue (never clears 'unknown')
+  set local role authenticated;
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', u_owner, 'session_id', s_owner, 'aal', 'aal2')::text, true);
+  res := public.nohut_platform_enqueue_status_set(d_owner, 'yonetici', 1, req2, 'trendyol_go', 'OPEN', 'CLOSED', true, 'Reopen test');
+  if res->>'status' <> 'accepted' then raise exception 'expected req2 accepted, got %', res; end if;
+
+  -- Simulate TTL expiry while still unclaimed (lease_generation = 0, state = 'pending')
+  reset role;
+  update nohut_private.commands
+     set issued_at = now() - interval '6 minutes',
+         expires_at = now() - interval '1 minute',
+         envelope = envelope || jsonb_build_object(
+           'issued_at', now() - interval '6 minutes',
+           'expires_at', now() - interval '1 minute'
+         )
+   where restaurant_id = r1 and request_id = req2::text;
+
+  set local role authenticated;
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', u_owner, 'session_id', s_owner, 'aal', 'aal2')::text, true);
+  res := public.nohut_platform_cards_view(d_owner, 'yonetici', 1);
+  card := res->'cards'->0;
+  if (card->'pendingMutation') is distinct from 'null'::jsonb then
+    raise exception 'expired unclaimed pending lock must auto-clear, got %', card;
+  end if;
+
+  -- 14. Atomic public.nohut_agent_validate_and_read_claim (tenant + epoch scoped)
+  reset role;
+  set local role anon;
+  res := public.nohut_agent_validate_and_read_claim(agent_token, req2, 1, repeat('0', 64));
+  if (res->>'valid')::boolean is not false then
+    raise exception 'expired/unclaimed command must return valid=false, got %', res;
+  end if;
 end $$;
 
 rollback;
