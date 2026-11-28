@@ -5,6 +5,7 @@ import 'package:nohut_core/finance_wire.dart';
 import 'package:nohut_core/report_period.dart';
 
 import 'payroll.dart';
+import 'personal_performance.dart';
 import 'workforce.dart' as wf show addDays, isCalendarDay, istanbulDayOfInstant, sharedSchedule, weekStartOf, workMinutes;
 import 'finance_logic.dart';
 import 'google_business.dart';
@@ -510,6 +511,9 @@ class FinanceSyncServer {
           result = {'ok':true,'ownerId':employee['id'],'ownerName':employee['name']};
         } else if (op == 'ownerOverview') {
           result = {'ok':true,'view':ownerOverview(store.read().data, (payload['day'] ?? '').toString())};
+        } else if (op == 'ownerTeamPerformance') {
+          result = {'ok': true, 'team': teamPerformance(store.read().data,
+              performanceRangeOf('${payload['range'] ?? ''}'), wf.istanbulDayOfInstant(DateTime.now()))};
         } else if (op == 'ownerPayroll') {
           result = ownerPayroll(store, '${payload['weekStart'] ?? ''}',
               ownerIds: ownerEmployeeIds?.call() ?? [employee['id'] as int]);

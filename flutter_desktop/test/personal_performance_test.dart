@@ -64,4 +64,34 @@ void main() {
     final p = personalPerformance(state, other, PerformanceRange.day, today);
     expect((p['orders'], p['additions'], p['workedMinutes']), (1, 0, 480));
   });
+
+  test('team: each row equals that person\'s Performansım, unassigned kept apart', () {
+    final withPeople = {
+      ...state,
+      'employees': [
+        {'id': me, 'name': 'Ayşe', 'active': true},
+        {'id': other, 'name': 'Mehmet', 'active': true},
+        {'id': 11, 'name': 'Eski', 'active': false},
+        {'id': 12, 'name': 'Yeni', 'active': true},
+      ],
+      'orders': [
+        ...(state['orders'] as List),
+        {'id': 20, 'source': 'Masa', 'createdAt': '2026-11-27T12:00:00Z', 'payments': [],
+         'batches': [{'id': 1, 'createdAt': '2026-11-27T12:00:00Z', 'lines': [{'name': 'x', 'qty': 1, 'price': 70}]}]},
+      ],
+    };
+    final t = teamPerformance(withPeople, PerformanceRange.day, today);
+    final people = (t['people'] as List).cast<Map>();
+    expect(people.map((p) => p['name']), ['Ayşe', 'Mehmet', 'Yeni'],
+        reason: 'inactive with no activity is hidden; idle last');
+    final mine = personalPerformance(withPeople, me, PerformanceRange.day, today);
+    for (final k in ['orders', 'additions', 'salesCents', 'workedMinutes']) {
+      expect(people.first[k], mine[k], reason: k);
+    }
+    expect((t['unassigned'] as Map)['orders'], 1);
+    expect((t['unassigned'] as Map)['salesCents'], 7000);
+    final totals = t['totals'] as Map;
+    expect(totals['orders'], 3 + 1 + 1);
+    expect(totals['salesCents'], 31000 + people[1]['salesCents'] + 7000);
+  });
 }

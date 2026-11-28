@@ -14,6 +14,7 @@ library;
 import 'daily_report.dart';
 import 'finance_logic.dart' show financeRows;
 import 'payroll.dart';
+import 'personal_performance.dart';
 import 'workforce.dart' show addDays, isCalendarDay, istanbulDayOfInstant, weekStartOf;
 import 'finance_sync_server.dart';
 import 'lan_auth_gate.dart';
@@ -73,6 +74,22 @@ class YoneticiApi {
             'session': ctx.toJson(),
             'financeAllowed': financeAllowed(secure: secure),
           });
+        case ('GET', 'team-performance'):
+          // Ekip Performansı: people need staff.view; amounts need sales.view
+          // and the finance gate, like Genel Bakış.
+          final d = _guard(token, 'staff.view');
+          if (!d.allowed) return GateReply(d.status, {'error': d.error});
+          final team = teamPerformance(store.read().data,
+              performanceRangeOf('${query['range'] ?? ''}'), istanbulDayOfInstant(DateTime.now()));
+          final money = financeAllowed(secure: secure) && _can(d.context!, 'sales.view');
+          if (!money) {
+            for (final p in (team['people'] as List).cast<Map>()) {
+              p..remove('salesCents')..remove('averageCents');
+            }
+            (team['unassigned'] as Map).remove('salesCents');
+            (team['totals'] as Map).remove('salesCents');
+          }
+          return GateReply(200, {'team': team, 'amounts': money});
         case ('GET', 'daily'):
           // §24.7 Gün Sonu Raporu: counts for dashboard.view; amounts need
           // sales.view (+ finance.view for expenses) and the finance gate.

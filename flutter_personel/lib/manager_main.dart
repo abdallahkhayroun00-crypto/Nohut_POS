@@ -11,6 +11,7 @@ import 'manager_finance.dart';
 import 'owner_api.dart';
 import 'menu_admin_page.dart';
 import 'owner_payroll.dart';
+import 'team_performance_page.dart';
 import 'pos_api.dart';
 import 'style.dart';
 import 'work_page.dart' show WorkFormat;
@@ -454,6 +455,11 @@ class _OwnerHomeState extends State<OwnerHome> {
       case 'staff':return [
         FilledButton.icon(key:const ValueKey('staff-payroll'),onPressed:openPayroll,
           icon:const Icon(Icons.payments_outlined),label:const Text('Haftalık Maaş Ödemeleri')),
+        const SizedBox(height:8),
+        OutlinedButton.icon(key:const ValueKey('staff-team-performance'),
+          onPressed:offline?null:()=>Navigator.of(context).push(MaterialPageRoute<void>(
+            builder:(_)=>TeamPerformancePage(request:api.request))),
+          icon:const Icon(Icons.insights_outlined),label:const Text('Ekip Performansı')),
         title('Maaş durumu'),
         payrollPanel(),
         title(day==ReportPeriod.day(ReportPeriod.today())?'Bugün ekip':'Ekip · ${dayLabel(day)}'),

@@ -180,4 +180,24 @@ void main() {
     final (bad, _, _) = await call('GET', '/api/yonetici/daily?day=nope', cookie: owner);
     expect(bad, 422);
   });
+
+  test('Ekip Performansı: staff.view needed, amounts only with finance gate + sales.view', () async {
+    final staff = await login('garson', 'staff-pass-1');
+    final (f, _, _) = await call('GET', '/api/yonetici/team-performance?range=week', cookie: staff);
+    expect(f, 403);
+    final owner = await login('sahip', 'owner-pass-1');
+    final (a, ab, _) = await call('GET', '/api/yonetici/team-performance?range=week', cookie: owner);
+    expect(a, 200, reason: '$ab');
+    expect((ab as Map)['amounts'], false);
+    final team = ab['team'] as Map;
+    expect(team['range'], 'week');
+    expect((team['totals'] as Map).containsKey('salesCents'), false);
+    for (final p in team['people'] as List) {
+      expect((p as Map).containsKey('salesCents'), false);
+    }
+    auth.setSetting('local_finance_http', '1');
+    final (b, bb, _) = await call('GET', '/api/yonetici/team-performance?range=week', cookie: owner);
+    expect(b, 200);
+    expect((((bb as Map)['team'] as Map)['totals'] as Map).containsKey('salesCents'), true);
+  });
 }

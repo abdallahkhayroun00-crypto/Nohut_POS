@@ -114,3 +114,65 @@ Json personalPerformance(Json state, int employeeId, PerformanceRange range,
     'note': 'Tahsilatlar kasadan kaydedildiği için kişiye atanmaz.',
   };
 }
+
+/// Ekip Performansı (W5, Yönetici): [personalPerformance] for every active
+/// employee and anyone inactive who still has activity in the window, plus
+/// one "Atanmamış" row for older orders that carry no `staffId`. Same
+/// attribution rules, so a person's row always equals their Performansım.
+/// Sorted by sales, then name; people with no activity come last.
+Json teamPerformance(Json state, PerformanceRange range, String today) {
+  final (from, to) = performanceWindow(range, today);
+  final people = <Json>[];
+  for (final e in asMaps(state['employees'])) {
+    final id = e['id'];
+    if (id is! int) continue;
+    final p = personalPerformance(state, id, range, today);
+    final busy = (p['orders'] as int) + (p['additions'] as int) +
+            (p['cancelled'] as int) + (p['workedMinutes'] as int) > 0;
+    if (e['active'] == false && !busy) continue;
+    people.add({
+      'employeeId': id,
+      'name': '${e['name'] ?? ''}'.trim(),
+      'active': e['active'] != false,
+      for (final k in ['orders', 'tables', 'pickups', 'additions', 'cancelled',
+          'openOrders', 'salesCents', 'averageCents', 'activeDays', 'workedMinutes'])
+        k: p[k],
+    });
+  }
+  var unassignedOrders = 0, unassignedCents = 0;
+  final ids = {for (final e in asMaps(state['employees'])) e['id']};
+  for (final order in asMaps(state['orders'])) {
+    if (!['Masa', 'Gel-Al'].contains(order['source']) ||
+        order['demoRemoteStatus'] != null || order['cancelled'] == true) {
+      continue;
+    }
+    final batches = asMaps(order['batches']);
+    if (batches.isEmpty || ids.contains(batches.first['staffId'])) continue;
+    if (!_inWindow(order['createdAt'], from, to)) continue;
+    unassignedOrders++;
+    unassignedCents += orderTotalCents(order);
+  }
+  int idleRank(Json p) => (p['orders'] as int) + (p['additions'] as int) +
+      (p['workedMinutes'] as int) > 0 ? 0 : 1;
+  people.sort((a, b) {
+    final idle = idleRank(a).compareTo(idleRank(b));
+    if (idle != 0) return idle;
+    final bySales = (b['salesCents'] as int).compareTo(a['salesCents'] as int);
+    return bySales != 0 ? bySales : '${a['name']}'.compareTo('${b['name']}');
+  });
+  final orders = people.fold<int>(0, (n, p) => n + (p['orders'] as int)) + unassignedOrders;
+  final sales = people.fold<int>(0, (n, p) => n + (p['salesCents'] as int)) + unassignedCents;
+  return {
+    'range': range.name,
+    'from': from,
+    'to': to,
+    'people': people,
+    'unassigned': {'orders': unassignedOrders, 'salesCents': unassignedCents},
+    'totals': {
+      'orders': orders,
+      'salesCents': sales,
+      'workedMinutes': people.fold<int>(0, (n, p) => n + (p['workedMinutes'] as int)),
+    },
+    'note': 'Tahsilatlar kasadan kaydedildiği için kişiye atanmaz.',
+  };
+}
